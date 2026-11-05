@@ -1,1 +1,1138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Character Device Drivers | NS Learning Hub</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .lesson-header {
+            background: linear-gradient(135deg, #174ea6, #2878d0);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .lesson-header h1 { margin: 0; font-size: 27px; }
+        .lesson-header p { line-height: 1.6; }
+        .lesson-content { line-height: 1.8; }
+        .lesson-content h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #e5e5e5;
+            padding-bottom: 6px;
+            margin-top: 30px;
+        }
+        .lesson-content h3 { color: #2878d0; margin-top: 22px; }
+        .lesson-content pre {
+            background: #1e1e1e;
+            color: #f1f1f1;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            line-height: 1.6;
+        }
+        .lesson-content code { font-family: Consolas, monospace; }
+        .info-box {
+            background: #eef5ff;
+            border-left: 4px solid #174ea6;
+            padding: 15px;
+            margin: 18px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff4e5;
+            border-left: 4px solid #e76f00;
+            padding: 15px;
+            margin: 18px 0;
+            border-radius: 5px;
+        }
+        .lesson-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 18px 0;
+        }
+        .lesson-table th, .lesson-table td {
+            border: 1px solid #ccc;
+            padding: 10px;
+            text-align: left;
+        }
+        .lesson-table th { background: #174ea6; color: white; }
+        .lesson-navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 35px 0;
+        }
+        .lesson-navigation a {
+            display: inline-block;
+            background: #174ea6;
+            color: white;
+            padding: 10px 17px;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+        .lesson-navigation a:hover { background: #e76f00; }
+        .lesson-footer {
+            text-align: center;
+            color: #666;
+            padding: 20px 0;
+            border-top: 1px solid #ddd;
+            margin-top: 30px;
+        }
+        @media (max-width: 700px) {
+            .lesson-header h1 { font-size: 23px; }
+            .lesson-navigation { flex-direction: column; }
+            .lesson-navigation a { text-align: center; }
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+
+    <header class="lesson-header">
+        <p>LINUX INTERNALS AND EMBEDDED LINUX • CHAPTER 12 • LESSON 10</p>
+        <h1>Character Device Drivers</h1>
+        <p>
+            Learn how to create a basic Linux character
+            device driver using kernel modules, device
+            numbers, cdev and file operations.
+        </p>
+    </header>
+
+    <main class="lesson-content">
+
+        <section>
+            <h2>1. Introduction to Character Device Drivers</h2>
+
+            <p>
+                A character device driver provides a
+                byte-oriented interface between a
+                userspace application and a device.
+            </p>
+
+            <p>
+                Applications commonly interact with
+                character devices using file operations
+                such as open(), read(), write() and close().
+            </p>
+
+            <h3>Examples</h3>
+
+            <ul>
+                <li>UART serial devices.</li>
+                <li>Terminal devices.</li>
+                <li>Some input devices.</li>
+                <li>Custom character devices.</li>
+                <li>Some embedded hardware interfaces.</li>
+            </ul>
+
+            <div class="info-box">
+                <strong>Definition:</strong>
+                A character device driver is a Linux
+                kernel driver that exposes a byte-oriented
+                device interface to userspace.
+            </div>
+        </section>
+
+        <section>
+            <h2>2. Character Device Driver Architecture</h2>
+
+            <p>
+                A userspace application accesses a
+                device node. The kernel routes the
+                file operations to the registered
+                character-device driver.
+            </p>
+
+            <pre>
+       User Application
+              |
+              v
+         open()/read()
+         write()/close()
+              |
+              v
+        Device Node (/dev)
+              |
+              v
+       Virtual File System
+              |
+              v
+       Character Device Core
+              |
+              v
+          Driver Callbacks
+              |
+              v
+         Hardware Device
+            </pre>
+
+            <p>
+                In this lesson, we build a simple
+                character driver that stores data in
+                a kernel buffer. It demonstrates the
+                driver interface without accessing
+                physical hardware.
+            </p>
+        </section>
+
+        <section>
+            <h2>3. Important Components</h2>
+
+            <h3>A. Device Number</h3>
+
+            <p>
+                Linux identifies a character device
+                using a device number containing:
+            </p>
+
+            <ul>
+                <li>Major number — identifies a device-number registration or range.</li>
+                <li>Minor number — identifies an individual device instance.</li>
+            </ul>
+
+            <h3>B. struct cdev</h3>
+
+            <p>
+                The cdev structure represents a
+                character device within the kernel.
+            </p>
+
+            <h3>C. struct file_operations</h3>
+
+            <p>
+                This structure defines the callbacks
+                used when a process accesses the device.
+            </p>
+
+            <h3>D. Device Class and Device Node</h3>
+
+            <p>
+                A device class helps organize devices
+                in the Linux device model. The device
+                model can create a device node through
+                userspace device management such as udev.
+            </p>
+        </section>
+
+        <section>
+            <h2>4. Important Kernel Functions</h2>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Function</th>
+                    <th>Purpose</th>
+                </tr>
+                <tr>
+                    <td>alloc_chrdev_region()</td>
+                    <td>Allocates character-device numbers dynamically.</td>
+                </tr>
+                <tr>
+                    <td>unregister_chrdev_region()</td>
+                    <td>Releases allocated device numbers.</td>
+                </tr>
+                <tr>
+                    <td>cdev_init()</td>
+                    <td>Initializes a cdev structure.</td>
+                </tr>
+                <tr>
+                    <td>cdev_add()</td>
+                    <td>Adds a character device to the kernel.</td>
+                </tr>
+                <tr>
+                    <td>cdev_del()</td>
+                    <td>Removes a character device.</td>
+                </tr>
+                <tr>
+                    <td>class_create()</td>
+                    <td>Creates a device class.</td>
+                </tr>
+                <tr>
+                    <td>device_create()</td>
+                    <td>Creates a device-model entry.</td>
+                </tr>
+                <tr>
+                    <td>device_destroy()</td>
+                    <td>Removes the device-model entry.</td>
+                </tr>
+                <tr>
+                    <td>class_destroy()</td>
+                    <td>Destroys the device class.</td>
+                </tr>
+            </table>
+        </section>
+
+        <section>
+            <h2>5. struct file_operations</h2>
+
+            <p>
+                struct file_operations connects
+                userspace file operations with
+                driver callback functions.
+            </p>
+
+            <h3>Common Members</h3>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Member</th>
+                    <th>Purpose</th>
+                </tr>
+                <tr>
+                    <td>.owner</td>
+                    <td>Associates operations with the owning module.</td>
+                </tr>
+                <tr>
+                    <td>.open</td>
+                    <td>Called when the device is opened.</td>
+                </tr>
+                <tr>
+                    <td>.read</td>
+                    <td>Called when data is read.</td>
+                </tr>
+                <tr>
+                    <td>.write</td>
+                    <td>Called when data is written.</td>
+                </tr>
+                <tr>
+                    <td>.release</td>
+                    <td>Called when the file is closed.</td>
+                </tr>
+                <tr>
+                    <td>.unlocked_ioctl</td>
+                    <td>Handles device-specific control operations.</td>
+                </tr>
+            </table>
+
+            <h3>Example</h3>
+
+            <pre>
+static const struct file_operations my_fops = {
+    .owner   = THIS_MODULE,
+    .open    = my_open,
+    .read    = my_read,
+    .write   = my_write,
+    .release = my_release,
+};
+            </pre>
+
+            <p>
+                The callbacks must use the kernel-defined
+                function signatures.
+            </p>
+        </section>
+
+        <section>
+            <h2>6. User Space and Kernel Space Data Transfer</h2>
+
+            <p>
+                A kernel driver cannot safely treat
+                userspace pointers as ordinary kernel
+                memory pointers.
+            </p>
+
+            <p>
+                Linux provides special functions for
+                copying data between userspace and
+                kernel space.
+            </p>
+
+            <h3>copy_to_user()</h3>
+
+            <p>
+                Copies data from a kernel buffer to
+                a userspace buffer.
+            </p>
+
+            <pre>
+copy_to_user(user_buffer, kernel_buffer, length);
+            </pre>
+
+            <h3>copy_from_user()</h3>
+
+            <p>
+                Copies data from a userspace buffer
+                into a kernel buffer.
+            </p>
+
+            <pre>
+copy_from_user(kernel_buffer, user_buffer, length);
+            </pre>
+
+            <div class="warning-box">
+                These functions return the number of
+                bytes that could not be copied, not
+                a normal negative errno value. A driver
+                should handle partial-copy failures
+                correctly.
+            </div>
+        </section>
+
+        <section>
+            <h2>7. Character Driver Development Flow</h2>
+
+            <pre>
+        Write Driver Source Code
+                  |
+                  v
+           Create Makefile
+                  |
+                  v
+          Compile Kernel Module
+                  |
+                  v
+             Load Module
+                  |
+                  v
+       Register Character Device
+                  |
+                  v
+       Create /dev Device Node
+                  |
+                  v
+       Run Userspace Test Program
+                  |
+                  v
+          Unload Kernel Module
+            </pre>
+        </section>
+
+        <section>
+            <h2>8. Practical Example: Simple Character Driver</h2>
+
+            <p>
+                We will create a simple character
+                device named <strong>mychardev</strong>.
+            </p>
+
+            <p>The driver will:</p>
+
+            <ul>
+                <li>Register a character-device number.</li>
+                <li>Initialize and add a cdev structure.</li>
+                <li>Create a device class and device node.</li>
+                <li>Implement open(), read(), write() and release().</li>
+                <li>Store received data in a kernel buffer.</li>
+                <li>Send stored data back to userspace.</li>
+            </ul>
+
+            <div class="warning-box">
+                This is a learning example, not a
+                production driver. It supports a single
+                shared buffer and is not designed for
+                concurrent access or complex device
+                lifecycle management.
+            </div>
+
+            <h3>Step 1: Create a Project Directory</h3>
+
+            <pre>
+mkdir ~/char_driver
+cd ~/char_driver
+            </pre>
+
+            <h3>Step 2: Create Driver Source File</h3>
+
+            <p>Filename: mychardev.c</p>
+
+            <pre>
+#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/cdev.h&gt;
+#include &lt;linux/device.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/string.h&gt;
+
+#define DEVICE_NAME "mychardev"
+#define CLASS_NAME  "mycharclass"
+#define BUFFER_SIZE 256
+
+static dev_t dev_number;
+static struct cdev my_cdev;
+static struct class *my_class;
+static struct device *my_device;
+
+static char device_buffer[BUFFER_SIZE];
+static size_t data_size;
+
+static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    pr_info("mychardev: device opened\n");
+    return 0;
+}
+
+static int my_release(struct inode *inode,
+                      struct file *file)
+{
+    pr_info("mychardev: device closed\n");
+    return 0;
+}
+
+static ssize_t my_read(struct file *file,
+                       char __user *user_buffer,
+                       size_t count,
+                       loff_t *offset)
+{
+    size_t available;
+    size_t bytes_to_copy;
+
+    if (*offset >= data_size)
+        return 0;
+
+    available = data_size - *offset;
+
+    bytes_to_copy = count;
+    if (bytes_to_copy > available)
+        bytes_to_copy = available;
+
+    if (copy_to_user(user_buffer,
+                     device_buffer + *offset,
+                     bytes_to_copy))
+    {
+        return -EFAULT;
+    }
+
+    *offset += bytes_to_copy;
+
+    pr_info("mychardev: read %zu bytes\n",
+            bytes_to_copy);
+
+    return bytes_to_copy;
+}
+
+static ssize_t my_write(struct file *file,
+                        const char __user *user_buffer,
+                        size_t count,
+                        loff_t *offset)
+{
+    size_t bytes_to_copy;
+
+    bytes_to_copy = count;
+
+    if (bytes_to_copy > BUFFER_SIZE)
+        bytes_to_copy = BUFFER_SIZE;
+
+    if (copy_from_user(device_buffer,
+                       user_buffer,
+                       bytes_to_copy))
+    {
+        return -EFAULT;
+    }
+
+    data_size = bytes_to_copy;
+    *offset = 0;
+
+    pr_info("mychardev: wrote %zu bytes\n",
+            bytes_to_copy);
+
+    return bytes_to_copy;
+}
+
+static const struct file_operations my_fops = {
+    .owner   = THIS_MODULE,
+    .open    = my_open,
+    .read    = my_read,
+    .write   = my_write,
+    .release = my_release,
+};
+
+static int __init my_driver_init(void)
+{
+    int ret;
+
+    pr_info("mychardev: initializing\n");
+
+    ret = alloc_chrdev_region(
+        &dev_number, 0, 1, DEVICE_NAME);
+
+    if (ret < 0)
+    {
+        pr_err("Failed to allocate device number\n");
+        return ret;
+    }
+
+    cdev_init(&my_cdev, &my_fops);
+    my_cdev.owner = THIS_MODULE;
+
+    ret = cdev_add(&my_cdev, dev_number, 1);
+
+    if (ret < 0)
+    {
+        pr_err("Failed to add cdev\n");
+        goto error_unregister;
+    }
+
+    my_class = class_create(CLASS_NAME);
+
+    if (IS_ERR(my_class))
+    {
+        ret = PTR_ERR(my_class);
+        goto error_cdev;
+    }
+
+    my_device = device_create(
+        my_class,
+        NULL,
+        dev_number,
+        NULL,
+        DEVICE_NAME
+    );
+
+    if (IS_ERR(my_device))
+    {
+        ret = PTR_ERR(my_device);
+        goto error_class;
+    }
+
+    pr_info("mychardev: registered successfully\n");
+
+    return 0;
+
+error_class:
+    class_destroy(my_class);
+
+error_cdev:
+    cdev_del(&my_cdev);
+
+error_unregister:
+    unregister_chrdev_region(dev_number, 1);
+
+    return ret;
+}
+
+static void __exit my_driver_exit(void)
+{
+    device_destroy(my_class, dev_number);
+    class_destroy(my_class);
+    cdev_del(&my_cdev);
+    unregister_chrdev_region(dev_number, 1);
+
+    pr_info("mychardev: removed\n");
+}
+
+module_init(my_driver_init);
+module_exit(my_driver_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Simple Character Device Driver");
+MODULE_VERSION("1.0");
+            </pre>
+
+            <div class="info-box">
+                <strong>Kernel API compatibility:</strong>
+                This example uses the one-argument
+                class_create() interface found in Linux
+                6.4 and newer. Older kernels use a
+                different signature. Check your kernel
+                headers before compiling.
+            </div>
+
+            <h3>Step 3: Create the Makefile</h3>
+
+            <p>Filename: Makefile</p>
+
+            <pre>
+obj-m += mychardev.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+            </pre>
+
+            <h3>Step 4: Compile the Driver</h3>
+
+            <pre>
+make
+            </pre>
+
+            <p>
+                If compilation succeeds, a kernel module
+                named mychardev.ko should be generated.
+            </p>
+
+            <h3>Step 5: Load the Driver</h3>
+
+            <pre>
+sudo insmod mychardev.ko
+            </pre>
+
+            <h3>Step 6: Check Kernel Messages</h3>
+
+            <pre>
+sudo dmesg | tail -n 20
+            </pre>
+
+            <h3>Step 7: Check Device Node</h3>
+
+            <pre>
+ls -l /dev/mychardev
+            </pre>
+
+            <p>
+                The device node should normally be created
+                through the device model and userspace
+                device management.
+            </p>
+
+            <h3>Step 8: Write Data to the Device</h3>
+
+            <pre>
+echo -n "Hello from userspace" | sudo tee /dev/mychardev
+            </pre>
+
+            <h3>Step 9: Read Data from the Device</h3>
+
+            <pre>
+sudo cat /dev/mychardev
+            </pre>
+
+            <p>Expected data:</p>
+
+            <pre>
+Hello from userspace
+            </pre>
+
+            <h3>Step 10: Unload the Driver</h3>
+
+            <pre>
+sudo rmmod mychardev
+            </pre>
+
+            <h3>Step 11: Clean Build Files</h3>
+
+            <pre>
+make clean
+            </pre>
+        </section>
+
+        <section>
+            <h2>9. Understanding the Driver Source Code</h2>
+
+            <h3>alloc_chrdev_region()</h3>
+
+            <p>
+                Allocates a dynamic major/minor number
+                range for the driver.
+            </p>
+
+            <h3>cdev_init()</h3>
+
+            <p>
+                Associates the cdev object with
+                the file_operations structure.
+            </p>
+
+            <h3>cdev_add()</h3>
+
+            <p>
+                Makes the character device available
+                to the kernel's character-device system.
+            </p>
+
+            <h3>class_create()</h3>
+
+            <p>
+                Creates a device class in the Linux
+                device model.
+            </p>
+
+            <h3>device_create()</h3>
+
+            <p>
+                Creates a device-model entry. With
+                suitable devtmpfs and userspace device
+                management, a device node appears in /dev.
+            </p>
+
+            <h3>copy_from_user()</h3>
+
+            <p>
+                Copies userspace data into the driver's
+                kernel buffer.
+            </p>
+
+            <h3>copy_to_user()</h3>
+
+            <p>
+                Copies kernel-buffer data to userspace.
+            </p>
+
+            <h3>module_init() and module_exit()</h3>
+
+            <p>
+                Define the initialization and cleanup
+                functions for the loadable kernel module.
+            </p>
+        </section>
+
+        <section>
+            <h2>10. Important Limitations of the Example</h2>
+
+            <ul>
+                <li>The driver uses a single global buffer.</li>
+                <li>It does not implement locking for concurrent access.</li>
+                <li>It does not implement non-blocking I/O.</li>
+                <li>It does not implement poll or asynchronous notification.</li>
+                <li>It does not communicate with physical hardware.</li>
+                <li>It does not provide a device-specific ioctl interface.</li>
+            </ul>
+
+            <div class="warning-box">
+                Kernel code executes with high privilege.
+                A driver bug can crash the entire system.
+                Test experimental modules in a disposable
+                virtual machine and keep important data backed up.
+            </div>
+        </section>
+
+        <section>
+            <h2>11. Troubleshooting</h2>
+
+            <h3>Problem 1: Kernel Headers Not Found</h3>
+
+            <p>Check:</p>
+
+            <pre>
+uname -r
+
+ls -l /lib/modules/$(uname -r)/build
+            </pre>
+
+            <p>
+                Install the matching kernel headers
+                if they are available for your kernel.
+            </p>
+
+            <h3>Problem 2: Module Insertion Failed</h3>
+
+            <p>Inspect:</p>
+
+            <pre>
+sudo dmesg | tail -n 30
+            </pre>
+
+            <p>
+                Check for kernel-version mismatch,
+                invalid module format, unresolved symbols
+                or module-signing restrictions.
+            </p>
+
+            <h3>Problem 3: Device Node Not Found</h3>
+
+            <p>Check:</p>
+
+            <pre>
+ls -l /dev/mychardev
+
+ls -l /sys/class/mycharclass/
+            </pre>
+
+            <p>
+                Check the kernel messages and whether
+                devtmpfs and userspace device management
+                are functioning.
+            </p>
+
+            <h3>Problem 4: Module Is Busy</h3>
+
+            <p>
+                Close applications that have the device
+                open before attempting to unload the module.
+            </p>
+        </section>
+
+        <section>
+            <h2>12. Practical Exercises</h2>
+
+            <h3>Exercise 1: Inspect the Device</h3>
+
+            <pre>
+ls -l /dev/mychardev
+            </pre>
+
+            <p>
+                Identify its type, major number and
+                minor number.
+            </p>
+
+            <h3>Exercise 2: Inspect Module Information</h3>
+
+            <pre>
+modinfo mychardev.ko
+            </pre>
+
+            <p>Record its description and license.</p>
+
+            <h3>Exercise 3: Write Different Messages</h3>
+
+            <pre>
+echo -n "Linux Driver Test" | sudo tee /dev/mychardev
+sudo cat /dev/mychardev
+            </pre>
+
+            <h3>Exercise 4: Inspect Kernel Messages</h3>
+
+            <pre>
+sudo dmesg | tail -n 30
+            </pre>
+
+            <p>
+                Identify the driver's initialization,
+                open, read, write and cleanup messages.
+            </p>
+
+            <h3>Exercise 5: Modify Buffer Size</h3>
+
+            <p>
+                Change BUFFER_SIZE from 256 to 512,
+                rebuild the module and test it again.
+            </p>
+
+            <h3>Exercise 6: Modify the Driver Description</h3>
+
+            <p>
+                Change MODULE_DESCRIPTION(), rebuild
+                the module and inspect it using modinfo.
+            </p>
+        </section>
+
+        <section>
+            <h2>13. Interview Questions and Answers</h2>
+
+            <h3>Q1. What is a character device driver?</h3>
+            <p>
+                It is a kernel driver that provides
+                a byte-oriented interface to userspace.
+            </p>
+
+            <h3>Q2. What is struct cdev?</h3>
+            <p>
+                It represents a character device in
+                the Linux kernel.
+            </p>
+
+            <h3>Q3. What is struct file_operations?</h3>
+            <p>
+                It defines callbacks for operations
+                such as open, read, write and release.
+            </p>
+
+            <h3>Q4. What is alloc_chrdev_region()?</h3>
+            <p>
+                It dynamically allocates a range
+                of character-device numbers.
+            </p>
+
+            <h3>Q5. What is cdev_add()?</h3>
+            <p>
+                It adds a character device to the
+                kernel's character-device system.
+            </p>
+
+            <h3>Q6. What is device_create()?</h3>
+            <p>
+                It creates a device-model entry
+                associated with a device number.
+            </p>
+
+            <h3>Q7. Why is copy_to_user() required?</h3>
+            <p>
+                It safely copies data from kernel
+                memory to userspace.
+            </p>
+
+            <h3>Q8. Why is copy_from_user() required?</h3>
+            <p>
+                It safely copies data from userspace
+                into kernel memory.
+            </p>
+
+            <h3>Q9. What is the purpose of cdev_del()?</h3>
+            <p>
+                It removes the character device
+                from the kernel's character-device system.
+            </p>
+
+            <h3>Q10. What is the purpose of class_create()?</h3>
+            <p>
+                It creates a class in the Linux
+                device model.
+            </p>
+
+            <h3>Q11. What does module_init() do?</h3>
+            <p>
+                It identifies the module initialization
+                function.
+            </p>
+
+            <h3>Q12. What does module_exit() do?</h3>
+            <p>
+                It identifies the module cleanup
+                function.
+            </p>
+
+            <h3>Q13. What is the difference between a major and minor number?</h3>
+            <p>
+                The major number identifies a
+                device-number registration or range.
+                The minor number identifies a device
+                instance within that range.
+            </p>
+
+            <h3>Q14. Why should kernel drivers be tested carefully?</h3>
+            <p>
+                Kernel drivers execute in privileged
+                context, so errors can affect the
+                stability of the entire system.
+            </p>
+        </section>
+
+        <section>
+            <h2>14. Multiple Choice Questions (MCQs)</h2>
+
+            <h3>Q1. Which structure represents a character device?</h3>
+            <ol type="A">
+                <li>struct cdev</li>
+                <li>struct task_struct</li>
+                <li>struct sockaddr</li>
+                <li>struct inode_table</li>
+            </ol>
+            <p><strong>Answer: A — struct cdev</strong></p>
+
+            <h3>Q2. Which structure defines character-device callbacks?</h3>
+            <ol type="A">
+                <li>struct file_operations</li>
+                <li>struct timeval</li>
+                <li>struct net_device_stats</li>
+                <li>struct utsname</li>
+            </ol>
+            <p><strong>Answer: A — struct file_operations</strong></p>
+
+            <h3>Q3. Which function allocates device numbers dynamically?</h3>
+            <ol type="A">
+                <li>alloc_chrdev_region()</li>
+                <li>device_destroy()</li>
+                <li>cdev_del()</li>
+                <li>copy_to_user()</li>
+            </ol>
+            <p><strong>Answer: A — alloc_chrdev_region()</strong></p>
+
+            <h3>Q4. Which function initializes a cdev structure?</h3>
+            <ol type="A">
+                <li>cdev_init()</li>
+                <li>cdev_del()</li>
+                <li>class_destroy()</li>
+                <li>device_create()</li>
+            </ol>
+            <p><strong>Answer: A — cdev_init()</strong></p>
+
+            <h3>Q5. Which function adds a character device?</h3>
+            <ol type="A">
+                <li>cdev_add()</li>
+                <li>cdev_init()</li>
+                <li>device_destroy()</li>
+                <li>unregister_chrdev_region()</li>
+            </ol>
+            <p><strong>Answer: A — cdev_add()</strong></p>
+
+            <h3>Q6. Which function copies data from userspace to kernel space?</h3>
+            <ol type="A">
+                <li>copy_from_user()</li>
+                <li>copy_to_user()</li>
+                <li>memcpy_to_user()</li>
+                <li>read_user()</li>
+            </ol>
+            <p><strong>Answer: A — copy_from_user()</strong></p>
+
+            <h3>Q7. Which function copies data from kernel space to userspace?</h3>
+            <ol type="A">
+                <li>copy_to_user()</li>
+                <li>copy_from_user()</li>
+                <li>kernel_read()</li>
+                <li>memcpy_from_user()</li>
+            </ol>
+            <p><strong>Answer: A — copy_to_user()</strong></p>
+
+            <h3>Q8. Which function creates a device-model entry?</h3>
+            <ol type="A">
+                <li>device_create()</li>
+                <li>device_destroy()</li>
+                <li>cdev_del()</li>
+                <li>module_exit()</li>
+            </ol>
+            <p><strong>Answer: A — device_create()</strong></p>
+
+            <h3>Q9. Which macro defines module initialization?</h3>
+            <ol type="A">
+                <li>module_init()</li>
+                <li>module_exit()</li>
+                <li>MODULE_AUTHOR()</li>
+                <li>MODULE_LICENSE()</li>
+            </ol>
+            <p><strong>Answer: A — module_init()</strong></p>
+
+            <h3>Q10. What is the usual character-device node directory?</h3>
+            <ol type="A">
+                <li>/dev</li>
+                <li>/home</li>
+                <li>/boot</li>
+                <li>/etc</li>
+            </ol>
+            <p><strong>Answer: A — /dev</strong></p>
+        </section>
+
+        <section>
+            <h2>15. Lesson Summary</h2>
+
+            <ul>
+                <li>Character drivers provide byte-oriented device interfaces.</li>
+                <li>Device numbers identify character devices.</li>
+                <li>struct cdev represents a character device.</li>
+                <li>struct file_operations defines driver callbacks.</li>
+                <li>alloc_chrdev_region() allocates device numbers.</li>
+                <li>cdev_init() initializes the cdev structure.</li>
+                <li>cdev_add() registers the character device.</li>
+                <li>copy_to_user() transfers data to userspace.</li>
+                <li>copy_from_user() transfers data from userspace.</li>
+                <li>class_create() and device_create() integrate with the device model.</li>
+                <li>Kernel modules require compatible kernel build headers.</li>
+                <li>Driver testing should be performed carefully in a controlled environment.</li>
+            </ul>
+
+            <div class="info-box">
+                <strong>Next Lesson:</strong>
+                Introduction to Embedded Linux — Learn
+                the architecture, components, boot process
+                and development workflow of embedded
+                Linux systems.
+            </div>
+        </section>
+
+    </main>
+
+    <nav class="lesson-navigation">
+        <a href="L09_Introduction_to_Device_Drivers.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="../linux.html">Linux Course</a>
+        <a href="../../index.html">Home</a>
+        <a href="L11_Introduction_to_Embedded_Linux.html">Next Lesson →</a>
+    </nav>
+
+    <footer class="lesson-footer">
+        <p><strong>NS Learning Hub</strong></p>
+        <p>Linux Internals and Embedded Linux | Chapter 12 | Lesson 10</p>
+        <p>Learn • Practise • Build</p>
+    </footer>
+
+</div>
+</body>
+</html>
