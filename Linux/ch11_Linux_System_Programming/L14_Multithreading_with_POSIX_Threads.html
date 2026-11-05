@@ -1,1 +1,1415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multithreading with POSIX Threads | NS Learning Hub</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .lesson-header {
+            background: linear-gradient(135deg, #174ea6, #2878d0);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .lesson-header h1 { margin: 0; font-size: 27px; }
+        .lesson-header p { line-height: 1.6; }
+        .lesson-content { line-height: 1.8; }
+        .lesson-content h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #e5e5e5;
+            padding-bottom: 6px;
+            margin-top: 30px;
+        }
+        .lesson-content h3 { color: #2878d0; margin-top: 22px; }
+        .lesson-content pre {
+            background: #1e1e1e;
+            color: #f1f1f1;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            line-height: 1.6;
+        }
+        .lesson-content code { font-family: Consolas, monospace; }
+        .info-box {
+            background: #eef5ff;
+            border-left: 4px solid #174ea6;
+            padding: 15px;
+            margin: 18px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff4e5;
+            border-left: 4px solid #e76f00;
+            padding: 15px;
+            margin: 18px 0;
+            border-radius: 5px;
+        }
+        .lesson-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 18px 0;
+        }
+        .lesson-table th, .lesson-table td {
+            border: 1px solid #ccc;
+            padding: 10px;
+            text-align: left;
+        }
+        .lesson-table th { background: #174ea6; color: white; }
+        .lesson-navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 35px 0;
+        }
+        .lesson-navigation a {
+            display: inline-block;
+            background: #174ea6;
+            color: white;
+            padding: 10px 17px;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+        .lesson-navigation a:hover { background: #e76f00; }
+        .lesson-footer {
+            text-align: center;
+            color: #666;
+            padding: 20px 0;
+            border-top: 1px solid #ddd;
+            margin-top: 30px;
+        }
+        @media (max-width: 700px) {
+            .lesson-header h1 { font-size: 23px; }
+            .lesson-navigation { flex-direction: column; }
+            .lesson-navigation a { text-align: center; }
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+
+    <header class="lesson-header">
+        <p>LINUX SYSTEM PROGRAMMING • CHAPTER 11 • LESSON 14</p>
+        <h1>Multithreading with POSIX Threads</h1>
+        <p>
+            Learn how to create, manage and synchronize multiple
+            threads in Linux using the POSIX Threads API.
+        </p>
+    </header>
+
+    <main class="lesson-content">
+
+        <section>
+            <h2>1. Introduction to Multithreading</h2>
+
+            <p>
+                A thread is the smallest unit of execution that can
+                be scheduled independently within a process.
+            </p>
+
+            <p>
+                A process can contain one or multiple threads.
+                Multiple threads within the same process share
+                resources such as process memory and open file
+                descriptors, while each thread has its own
+                execution context and stack.
+            </p>
+
+            <div class="info-box">
+                <strong>Definition:</strong>
+                Multithreading is the technique of executing
+                multiple threads within a single process.
+            </div>
+
+            <h3>Example</h3>
+
+            <p>
+                Consider a monitoring application:
+            </p>
+
+            <ul>
+                <li>Thread 1 reads sensor data.</li>
+                <li>Thread 2 processes the sensor data.</li>
+                <li>Thread 3 updates the user interface.</li>
+                <li>Thread 4 records data in a log file.</li>
+            </ul>
+
+            <p>
+                These threads belong to the same process and
+                can perform different tasks concurrently.
+            </p>
+        </section>
+
+        <section>
+            <h2>2. Process vs Thread</h2>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Process</th>
+                    <th>Thread</th>
+                </tr>
+                <tr>
+                    <td>An independent program in execution.</td>
+                    <td>An execution unit within a process.</td>
+                </tr>
+                <tr>
+                    <td>Has its own virtual address space.</td>
+                    <td>Shares the process address space with other threads.</td>
+                </tr>
+                <tr>
+                    <td>Has process-level resources.</td>
+                    <td>Shares many process resources.</td>
+                </tr>
+                <tr>
+                    <td>Communication often requires IPC.</td>
+                    <td>Can communicate through shared process memory.</td>
+                </tr>
+                <tr>
+                    <td>Creation generally has greater overhead.</td>
+                    <td>Thread creation is generally less expensive.</td>
+                </tr>
+                <tr>
+                    <td>Process isolation provides stronger separation.</td>
+                    <td>A faulty thread can affect the entire process.</td>
+                </tr>
+            </table>
+        </section>
+
+        <section>
+            <h2>3. Process Memory and Thread Memory</h2>
+
+            <p>
+                Threads belonging to the same process share
+                several memory and resource areas.
+            </p>
+
+            <pre>
+             PROCESS
+    +---------------------------+
+    |       Code Segment        |
+    +---------------------------+
+    |       Data Segment        |
+    +---------------------------+
+    |          Heap             |
+    +---------------------------+
+    |                           |
+    | Shared process resources  |
+    |                           |
+    +---------------------------+
+        |           |          |
+        v           v          v
+    +--------+  +--------+  +--------+
+    |Thread 1|  |Thread 2|  |Thread 3|
+    +--------+  +--------+  +--------+
+    | Stack  |  | Stack  |  | Stack  |
+    |Reg/PC  |  |Reg/PC  |  |Reg/PC  |
+    +--------+  +--------+  +--------+
+            </pre>
+
+            <h3>Shared Resources</h3>
+
+            <ul>
+                <li>Global variables.</li>
+                <li>Heap memory.</li>
+                <li>Program code.</li>
+                <li>Open file descriptors.</li>
+                <li>Process-level resources.</li>
+            </ul>
+
+            <h3>Thread-Specific Resources</h3>
+
+            <ul>
+                <li>Thread stack.</li>
+                <li>CPU register state.</li>
+                <li>Program counter.</li>
+                <li>Thread-local storage.</li>
+                <li>Thread identifier.</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>4. Introduction to POSIX Threads (Pthreads)</h2>
+
+            <p>
+                POSIX Threads, commonly called Pthreads, provide
+                a standard API for creating and managing threads
+                in POSIX-compliant operating systems.
+            </p>
+
+            <h3>Header File</h3>
+
+            <pre>
+#include &lt;pthread.h&gt;
+            </pre>
+
+            <h3>Important Pthread Functions</h3>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Function</th>
+                    <th>Purpose</th>
+                </tr>
+                <tr>
+                    <td>pthread_create()</td>
+                    <td>Creates a new thread.</td>
+                </tr>
+                <tr>
+                    <td>pthread_join()</td>
+                    <td>Waits for a joinable thread to finish.</td>
+                </tr>
+                <tr>
+                    <td>pthread_exit()</td>
+                    <td>Terminates the calling thread.</td>
+                </tr>
+                <tr>
+                    <td>pthread_self()</td>
+                    <td>Returns the calling thread ID.</td>
+                </tr>
+                <tr>
+                    <td>pthread_equal()</td>
+                    <td>Compares two thread IDs.</td>
+                </tr>
+                <tr>
+                    <td>pthread_detach()</td>
+                    <td>Marks a thread as detached.</td>
+                </tr>
+                <tr>
+                    <td>pthread_cancel()</td>
+                    <td>Requests cancellation of a thread.</td>
+                </tr>
+                <tr>
+                    <td>pthread_mutex_init()</td>
+                    <td>Initializes a mutex.</td>
+                </tr>
+                <tr>
+                    <td>pthread_mutex_lock()</td>
+                    <td>Locks a mutex.</td>
+                </tr>
+                <tr>
+                    <td>pthread_mutex_unlock()</td>
+                    <td>Unlocks a mutex.</td>
+                </tr>
+            </table>
+        </section>
+
+        <section>
+            <h2>5. pthread_create() Function</h2>
+
+            <p>
+                pthread_create() creates a new thread that starts
+                execution from a specified function.
+            </p>
+
+            <h3>Syntax</h3>
+
+            <pre>
+int pthread_create(
+    pthread_t *thread,
+    const pthread_attr_t *attr,
+    void *(*start_routine)(void *),
+    void *arg
+);
+            </pre>
+
+            <h3>Parameters</h3>
+
+            <ul>
+                <li><code>thread</code>: Stores the created thread ID.</li>
+                <li><code>attr</code>: Thread attributes; NULL selects defaults.</li>
+                <li><code>start_routine</code>: Function executed by the new thread.</li>
+                <li><code>arg</code>: Argument passed to the thread function.</li>
+            </ul>
+
+            <h3>Return Value</h3>
+
+            <p>
+                Returns 0 on success. On failure, it returns an
+                error number directly rather than setting errno
+                as a typical system call does.
+            </p>
+        </section>
+
+        <section>
+            <h2>6. First Multithreading Program</h2>
+
+            <p>
+                This program creates one new thread.
+                Both the main thread and the new thread execute
+                their own statements.
+            </p>
+
+            <h3>Program: first_thread.c</h3>
+
+            <pre>
+#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+
+void *thread_function(void *arg)
+{
+    printf("Hello from the new thread\n");
+
+    return NULL;
+}
+
+int main(void)
+{
+    pthread_t thread;
+
+    if (pthread_create(&amp;thread, NULL,
+                       thread_function, NULL) != 0)
+    {
+        printf("Thread creation failed\n");
+        return 1;
+    }
+
+    printf("Hello from the main thread\n");
+
+    pthread_join(thread, NULL);
+
+    printf("Thread execution completed\n");
+
+    return 0;
+}
+            </pre>
+
+            <h3>Compile</h3>
+
+            <pre>
+gcc first_thread.c -o first_thread -pthread
+            </pre>
+
+            <h3>Execute</h3>
+
+            <pre>
+./first_thread
+            </pre>
+
+            <h3>Possible Output</h3>
+
+            <pre>
+Hello from the main thread
+Hello from the new thread
+Thread execution completed
+            </pre>
+
+            <p>
+                The order of the first two messages is not
+                guaranteed. The scheduler determines which
+                thread runs first.
+            </p>
+
+            <div class="info-box">
+                <strong>Important:</strong>
+                pthread_join() ensures that the main thread waits
+                for the created thread before continuing.
+            </div>
+        </section>
+
+        <section>
+            <h2>7. Creating Multiple Threads</h2>
+
+            <p>
+                A process can create multiple threads to perform
+                different or repeated tasks.
+            </p>
+
+            <h3>Program: multiple_threads.c</h3>
+
+            <pre>
+#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+
+void *worker(void *arg)
+{
+    int id = *(int *)arg;
+
+    printf("Thread %d is running\n", id);
+
+    return NULL;
+}
+
+int main(void)
+{
+    pthread_t threads[3];
+    int ids[3];
+
+    for (int i = 0; i &lt; 3; i++)
+    {
+        ids[i] = i + 1;
+
+        if (pthread_create(&amp;threads[i], NULL,
+                           worker, &amp;ids[i]) != 0)
+        {
+            printf("Thread creation failed\n");
+            return 1;
+        }
+    }
+
+    for (int i = 0; i &lt; 3; i++)
+    {
+        pthread_join(threads[i], NULL);
+    }
+
+    printf("All threads completed\n");
+
+    return 0;
+}
+            </pre>
+
+            <h3>Compile</h3>
+
+            <pre>
+gcc multiple_threads.c -o multiple_threads -pthread
+            </pre>
+
+            <h3>Possible Output</h3>
+
+            <pre>
+Thread 1 is running
+Thread 3 is running
+Thread 2 is running
+All threads completed
+            </pre>
+
+            <p>
+                The order of thread messages can vary because
+                threads execute concurrently.
+            </p>
+        </section>
+
+        <section>
+            <h2>8. pthread_join() Function</h2>
+
+            <p>
+                pthread_join() waits for a specified joinable
+                thread to terminate.
+            </p>
+
+            <h3>Syntax</h3>
+
+            <pre>
+int pthread_join(pthread_t thread, void **retval);
+            </pre>
+
+            <h3>Parameters</h3>
+
+            <ul>
+                <li><code>thread</code>: Thread to wait for.</li>
+                <li><code>retval</code>: Receives the thread's return value; NULL if not needed.</li>
+            </ul>
+
+            <h3>Example</h3>
+
+            <pre>
+#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+
+void *worker(void *arg)
+{
+    printf("Worker thread executing\n");
+
+    return NULL;
+}
+
+int main(void)
+{
+    pthread_t t;
+
+    pthread_create(&amp;t, NULL, worker, NULL);
+
+    pthread_join(t, NULL);
+
+    printf("Main thread continues\n");
+
+    return 0;
+}
+            </pre>
+
+            <p>
+                The main thread continues after the worker thread
+                terminates.
+            </p>
+        </section>
+
+        <section>
+            <h2>9. pthread_exit() Function</h2>
+
+            <p>
+                pthread_exit() terminates the calling thread
+                and optionally provides a return value.
+            </p>
+
+            <h3>Syntax</h3>
+
+            <pre>
+void pthread_exit(void *retval);
+            </pre>
+
+            <h3>Example</h3>
+
+            <pre>
+#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+
+void *worker(void *arg)
+{
+    printf("Worker thread executing\n");
+
+    pthread_exit(NULL);
+}
+
+int main(void)
+{
+    pthread_t t;
+
+    pthread_create(&amp;t, NULL, worker, NULL);
+
+    pthread_join(t, NULL);
+
+    printf("Worker thread terminated\n");
+
+    return 0;
+}
+            </pre>
+
+            <div class="info-box">
+                Returning from a thread's start routine has
+                the same thread-termination effect as calling
+                pthread_exit() with that return value.
+            </div>
+        </section>
+
+        <section>
+            <h2>10. pthread_self() Function</h2>
+
+            <p>
+                pthread_self() returns the identifier of the
+                calling thread.
+            </p>
+
+            <h3>Syntax</h3>
+
+            <pre>
+pthread_t pthread_self(void);
+            </pre>
+
+            <h3>Example</h3>
+
+            <pre>
+#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+
+void *worker(void *arg)
+{
+    printf("Worker thread ID: %lu\n",
+           (unsigned long)pthread_self());
+
+    return NULL;
+}
+
+int main(void)
+{
+    pthread_t t;
+
+    printf("Main thread ID: %lu\n",
+           (unsigned long)pthread_self());
+
+    pthread_create(&amp;t, NULL, worker, NULL);
+
+    pthread_join(t, NULL);
+
+    return 0;
+}
+            </pre>
+
+            <p>
+                pthread_t is an implementation-defined type.
+                The conversion shown is suitable for common
+                Linux implementations; portable programs should
+                not assume pthread_t is always an unsigned long.
+            </p>
+        </section>
+
+        <section>
+            <h2>11. Detached Threads</h2>
+
+            <p>
+                A detached thread releases its thread-related
+                resources automatically when it terminates.
+                Another thread cannot collect its termination
+                status using pthread_join().
+            </p>
+
+            <h3>Detach a Thread</h3>
+
+            <pre>
+int pthread_detach(pthread_t thread);
+            </pre>
+
+            <h3>Example</h3>
+
+            <pre>
+#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;unistd.h&gt;
+
+void *worker(void *arg)
+{
+    printf("Detached thread started\n");
+
+    sleep(2);
+
+    printf("Detached thread finished\n");
+
+    return NULL;
+}
+
+int main(void)
+{
+    pthread_t t;
+
+    if (pthread_create(&amp;t, NULL, worker, NULL) != 0)
+    {
+        printf("Thread creation failed\n");
+        return 1;
+    }
+
+    pthread_detach(t);
+
+    printf("Main thread waiting briefly\n");
+
+    sleep(3);
+
+    return 0;
+}
+            </pre>
+
+            <p>
+                The main thread remains alive long enough for
+                the detached worker to finish.
+            </p>
+        </section>
+
+        <section>
+            <h2>12. Race Conditions</h2>
+
+            <p>
+                A race condition occurs when multiple threads
+                access shared data concurrently and the result
+                depends on their execution timing.
+            </p>
+
+            <h3>Example: Shared Counter</h3>
+
+            <pre>
+#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+
+int counter = 0;
+
+void *increment(void *arg)
+{
+    for (int i = 0; i &lt; 100000; i++)
+    {
+        counter++;
+    }
+
+    return NULL;
+}
+
+int main(void)
+{
+    pthread_t t1, t2;
+
+    pthread_create(&amp;t1, NULL, increment, NULL);
+    pthread_create(&amp;t2, NULL, increment, NULL);
+
+    pthread_join(t1, NULL);
+    pthread_join(t2, NULL);
+
+    printf("Counter = %d\n", counter);
+
+    return 0;
+}
+            </pre>
+
+            <p>
+                The expected mathematical result is 200000.
+                However, concurrent unsynchronized updates to
+                counter create a data race in C. The behaviour
+                is undefined, so the actual result cannot be
+                relied upon.
+            </p>
+        </section>
+
+        <section>
+            <h2>13. Mutex (Mutual Exclusion)</h2>
+
+            <p>
+                A mutex is a synchronization object used to
+                protect shared resources from simultaneous
+                access by multiple threads.
+            </p>
+
+            <div class="info-box">
+                <strong>Definition:</strong>
+                A mutex allows only one thread at a time to hold
+                the lock and execute a protected critical section.
+            </div>
+
+            <h3>Mutex Operations</h3>
+
+            <ul>
+                <li>Initialize the mutex.</li>
+                <li>Lock the mutex before accessing shared data.</li>
+                <li>Perform the critical section.</li>
+                <li>Unlock the mutex after completing the operation.</li>
+                <li>Destroy the mutex when no longer needed.</li>
+            </ul>
+
+            <h3>Important Functions</h3>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Function</th>
+                    <th>Purpose</th>
+                </tr>
+                <tr>
+                    <td>pthread_mutex_init()</td>
+                    <td>Initializes a mutex.</td>
+                </tr>
+                <tr>
+                    <td>pthread_mutex_lock()</td>
+                    <td>Locks a mutex.</td>
+                </tr>
+                <tr>
+                    <td>pthread_mutex_trylock()</td>
+                    <td>Attempts to lock without blocking.</td>
+                </tr>
+                <tr>
+                    <td>pthread_mutex_unlock()</td>
+                    <td>Unlocks a mutex.</td>
+                </tr>
+                <tr>
+                    <td>pthread_mutex_destroy()</td>
+                    <td>Destroys a mutex.</td>
+                </tr>
+            </table>
+        </section>
+
+        <section>
+            <h2>14. Practical Program: Mutex-Protected Counter</h2>
+
+            <p>
+                This program uses a mutex to protect a shared
+                counter from concurrent modification.
+            </p>
+
+            <h3>Program: mutex_counter.c</h3>
+
+            <pre>
+#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+
+int counter = 0;
+
+pthread_mutex_t lock;
+
+void *increment(void *arg)
+{
+    for (int i = 0; i &lt; 100000; i++)
+    {
+        pthread_mutex_lock(&amp;lock);
+
+        counter++;
+
+        pthread_mutex_unlock(&amp;lock);
+    }
+
+    return NULL;
+}
+
+int main(void)
+{
+    pthread_t t1, t2;
+
+    if (pthread_mutex_init(&amp;lock, NULL) != 0)
+    {
+        printf("Mutex initialization failed\n");
+        return 1;
+    }
+
+    if (pthread_create(&amp;t1, NULL, increment, NULL) != 0)
+    {
+        printf("Thread 1 creation failed\n");
+        pthread_mutex_destroy(&amp;lock);
+        return 1;
+    }
+
+    if (pthread_create(&amp;t2, NULL, increment, NULL) != 0)
+    {
+        printf("Thread 2 creation failed\n");
+        pthread_join(t1, NULL);
+        pthread_mutex_destroy(&amp;lock);
+        return 1;
+    }
+
+    pthread_join(t1, NULL);
+    pthread_join(t2, NULL);
+
+    printf("Final counter = %d\n", counter);
+
+    pthread_mutex_destroy(&amp;lock);
+
+    return 0;
+}
+            </pre>
+
+            <h3>Compile</h3>
+
+            <pre>
+gcc mutex_counter.c -o mutex_counter -pthread
+            </pre>
+
+            <h3>Execute</h3>
+
+            <pre>
+./mutex_counter
+            </pre>
+
+            <h3>Expected Output</h3>
+
+            <pre>
+Final counter = 200000
+            </pre>
+
+            <p>
+                The mutex ensures that only one thread updates
+                counter at a time.
+            </p>
+        </section>
+
+        <section>
+            <h2>15. Deadlock in Multithreading</h2>
+
+            <p>
+                A deadlock occurs when two or more threads wait
+                indefinitely for resources held by one another.
+            </p>
+
+            <h3>Example Situation</h3>
+
+            <pre>
+Thread 1                    Thread 2
+   |                           |
+   v                           v
+Locks Mutex A              Locks Mutex B
+   |                           |
+   v                           v
+Waits for Mutex B           Waits for Mutex A
+   |                           |
+   +-----------+---------------+
+               |
+               v
+            DEADLOCK
+            </pre>
+
+            <h3>Ways to Prevent Deadlocks</h3>
+
+            <ul>
+                <li>Acquire multiple locks in a consistent order.</li>
+                <li>Avoid holding locks longer than necessary.</li>
+                <li>Use trylock where appropriate.</li>
+                <li>Design clear ownership rules for shared resources.</li>
+                <li>Avoid unnecessary nested locking.</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>16. Mutex vs Semaphore</h2>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Mutex</th>
+                    <th>Semaphore</th>
+                </tr>
+                <tr>
+                    <td>Primarily protects a critical section.</td>
+                    <td>Coordinates access or execution using a counter.</td>
+                </tr>
+                <tr>
+                    <td>Has ownership semantics.</td>
+                    <td>Does not generally have mutex-style ownership.</td>
+                </tr>
+                <tr>
+                    <td>Typically locked and unlocked by the owning thread.</td>
+                    <td>One thread can wait while another posts.</td>
+                </tr>
+                <tr>
+                    <td>Useful for mutual exclusion.</td>
+                    <td>Useful for signaling and resource counting.</td>
+                </tr>
+            </table>
+        </section>
+
+        <section>
+            <h2>17. Thread Attributes</h2>
+
+            <p>
+                Thread attributes configure properties of a
+                thread when it is created.
+            </p>
+
+            <h3>Important Functions</h3>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Function</th>
+                    <th>Purpose</th>
+                </tr>
+                <tr>
+                    <td>pthread_attr_init()</td>
+                    <td>Initializes a thread attribute object.</td>
+                </tr>
+                <tr>
+                    <td>pthread_attr_destroy()</td>
+                    <td>Destroys the attribute object.</td>
+                </tr>
+                <tr>
+                    <td>pthread_attr_setdetachstate()</td>
+                    <td>Sets detached or joinable state.</td>
+                </tr>
+                <tr>
+                    <td>pthread_attr_setstacksize()</td>
+                    <td>Sets the thread stack size.</td>
+                </tr>
+                <tr>
+                    <td>pthread_attr_setschedpolicy()</td>
+                    <td>Sets the scheduling policy where permitted.</td>
+                </tr>
+            </table>
+
+            <p>
+                Scheduling and priority settings may require
+                special permissions and platform-specific support.
+            </p>
+        </section>
+
+        <section>
+            <h2>18. Thread Cancellation</h2>
+
+            <p>
+                pthread_cancel() requests cancellation of a
+                specified thread. Cancellation may be deferred
+                until the target reaches a cancellation point.
+            </p>
+
+            <h3>Syntax</h3>
+
+            <pre>
+int pthread_cancel(pthread_t thread);
+            </pre>
+
+            <p>
+                Cancellation is a request, not necessarily an
+                immediate termination. Threads normally use
+                deferred cancellation, and cleanup handlers can
+                release resources when cancellation occurs.
+            </p>
+
+            <div class="warning-box">
+                Avoid asynchronous cancellation in ordinary
+                application code. It can terminate a thread while
+                it holds a mutex or is modifying shared state.
+            </div>
+        </section>
+
+        <section>
+            <h2>19. Thread Scheduling</h2>
+
+            <p>
+                Linux schedules runnable threads for CPU execution.
+                Depending on available CPU cores, threads may run
+                concurrently or take turns executing.
+            </p>
+
+            <h3>Common POSIX Scheduling Policies</h3>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Policy</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td>SCHED_OTHER</td>
+                    <td>Normal time-sharing scheduling policy.</td>
+                </tr>
+                <tr>
+                    <td>SCHED_FIFO</td>
+                    <td>Real-time first-in, first-out scheduling.</td>
+                </tr>
+                <tr>
+                    <td>SCHED_RR</td>
+                    <td>Real-time round-robin scheduling.</td>
+                </tr>
+            </table>
+
+            <p>
+                Real-time scheduling policies may require
+                additional privileges and careful priority design.
+            </p>
+        </section>
+
+        <section>
+            <h2>20. Multithreading in Embedded Linux</h2>
+
+            <p>
+                Multithreading is widely used in embedded Linux
+                systems to separate tasks and improve responsiveness.
+            </p>
+
+            <h3>Example: Embedded Monitoring Application</h3>
+
+            <ul>
+                <li>Sensor thread: collects sensor measurements.</li>
+                <li>Processing thread: filters and processes measurements.</li>
+                <li>Communication thread: sends data over UART, TCP or another interface.</li>
+                <li>Logging thread: stores measurement history.</li>
+                <li>Control thread: performs control decisions.</li>
+            </ul>
+
+            <div class="info-box">
+                Shared data must be protected using appropriate
+                synchronization mechanisms such as mutexes,
+                semaphores, condition variables or atomic operations.
+            </div>
+        </section>
+
+        <section>
+            <h2>21. Useful Linux Commands</h2>
+
+            <h3>Display Threads of a Process</h3>
+
+            <pre>
+ps -T -p PID
+            </pre>
+
+            <h3>Display Threads in top</h3>
+
+            <pre>
+top -H
+            </pre>
+
+            <h3>Display Process and Thread Information</h3>
+
+            <pre>
+ps -eLf
+            </pre>
+
+            <h3>Display Thread Information in proc</h3>
+
+            <pre>
+ls /proc/PID/task/
+            </pre>
+
+            <p>
+                Replace PID with the actual process identifier.
+            </p>
+        </section>
+
+        <section>
+            <h2>22. Practical Exercises</h2>
+
+            <h3>Exercise 1: Create a Thread</h3>
+            <ol>
+                <li>Write a program using pthread_create().</li>
+                <li>Print a message from the new thread.</li>
+                <li>Wait for it using pthread_join().</li>
+            </ol>
+
+            <h3>Exercise 2: Create Multiple Threads</h3>
+            <ol>
+                <li>Create three threads.</li>
+                <li>Pass a different ID to each thread.</li>
+                <li>Print each thread's ID.</li>
+                <li>Join all threads.</li>
+            </ol>
+
+            <h3>Exercise 3: Thread Return Value</h3>
+            <ol>
+                <li>Return a result from a thread function.</li>
+                <li>Collect it using pthread_join().</li>
+                <li>Display the result in main().</li>
+            </ol>
+
+            <h3>Exercise 4: Shared Counter</h3>
+            <ol>
+                <li>Create two threads.</li>
+                <li>Increment a common counter.</li>
+                <li>Observe the unsynchronized data race.</li>
+                <li>Protect the counter using a mutex.</li>
+            </ol>
+
+            <h3>Exercise 5: Detached Thread</h3>
+            <ol>
+                <li>Create a thread.</li>
+                <li>Detach it using pthread_detach().</li>
+                <li>Allow it to finish while main remains alive.</li>
+            </ol>
+
+            <h3>Exercise 6: Thread Synchronization</h3>
+            <ol>
+                <li>Create two worker threads.</li>
+                <li>Use a mutex to protect shared data.</li>
+                <li>Verify the final counter value.</li>
+            </ol>
+        </section>
+
+        <section>
+            <h2>23. Interview Questions and Answers</h2>
+
+            <h3>Q1. What is a thread?</h3>
+            <p>
+                A thread is an execution unit within a process.
+            </p>
+
+            <h3>Q2. What is multithreading?</h3>
+            <p>
+                Multithreading is the execution of multiple
+                threads within one process.
+            </p>
+
+            <h3>Q3. What is Pthread?</h3>
+            <p>
+                Pthreads is the POSIX standard API for thread
+                creation and management.
+            </p>
+
+            <h3>Q4. Which function creates a thread?</h3>
+            <p>
+                pthread_create().
+            </p>
+
+            <h3>Q5. What is pthread_join()?</h3>
+            <p>
+                It waits for a joinable thread to terminate and
+                can collect its return value.
+            </p>
+
+            <h3>Q6. What is pthread_exit()?</h3>
+            <p>
+                It terminates the calling thread.
+            </p>
+
+            <h3>Q7. What is a race condition?</h3>
+            <p>
+                A race condition occurs when concurrent access
+                to shared data makes program behaviour depend
+                on execution timing.
+            </p>
+
+            <h3>Q8. What is a mutex?</h3>
+            <p>
+                A mutex is a mutual-exclusion synchronization
+                object used to protect shared resources.
+            </p>
+
+            <h3>Q9. What is a detached thread?</h3>
+            <p>
+                A detached thread releases its resources
+                automatically when it terminates and cannot
+                be joined.
+            </p>
+
+            <h3>Q10. What is deadlock?</h3>
+            <p>
+                Deadlock is a condition where threads wait
+                indefinitely for resources held by one another.
+            </p>
+
+            <h3>Q11. Do threads share memory?</h3>
+            <p>
+                Threads in the same process share the process
+                address space, including global variables and heap
+                memory, but have separate stacks and execution state.
+            </p>
+
+            <h3>Q12. How do you compile a Pthread program?</h3>
+            <p>
+                Use gcc with the -pthread option.
+            </p>
+
+            <h3>Q13. What is the difference between a process and a thread?</h3>
+            <p>
+                A process has its own virtual address space,
+                whereas threads share the address space and
+                many resources of their process.
+            </p>
+
+            <h3>Q14. Why is synchronization needed?</h3>
+            <p>
+                Synchronization prevents unsafe concurrent access
+                and coordinates operations on shared resources.
+            </p>
+        </section>
+
+        <section>
+            <h2>24. Multiple Choice Questions (MCQs)</h2>
+
+            <h3>Q1. Which header file is used for Pthreads?</h3>
+            <ol type="A">
+                <li>stdio.h</li>
+                <li>pthread.h</li>
+                <li>stdlib.h</li>
+                <li>unistd.h</li>
+            </ol>
+            <p><strong>Answer: B — pthread.h</strong></p>
+
+            <h3>Q2. Which function creates a new thread?</h3>
+            <ol type="A">
+                <li>pthread_join()</li>
+                <li>pthread_exit()</li>
+                <li>pthread_create()</li>
+                <li>pthread_self()</li>
+            </ol>
+            <p><strong>Answer: C — pthread_create()</strong></p>
+
+            <h3>Q3. Which function waits for a joinable thread?</h3>
+            <ol type="A">
+                <li>pthread_join()</li>
+                <li>pthread_detach()</li>
+                <li>pthread_cancel()</li>
+                <li>pthread_self()</li>
+            </ol>
+            <p><strong>Answer: A — pthread_join()</strong></p>
+
+            <h3>Q4. Which function terminates the calling thread?</h3>
+            <ol type="A">
+                <li>pthread_create()</li>
+                <li>pthread_exit()</li>
+                <li>pthread_equal()</li>
+                <li>pthread_mutex_init()</li>
+            </ol>
+            <p><strong>Answer: B — pthread_exit()</strong></p>
+
+            <h3>Q5. Which synchronization object provides mutual exclusion?</h3>
+            <ol type="A">
+                <li>Socket</li>
+                <li>Pipe</li>
+                <li>Mutex</li>
+                <li>Signal</li>
+            </ol>
+            <p><strong>Answer: C — Mutex</strong></p>
+
+            <h3>Q6. What is a race condition?</h3>
+            <ol type="A">
+                <li>A compilation error</li>
+                <li>A concurrency problem involving shared state</li>
+                <li>A memory allocation function</li>
+                <li>A file permission</li>
+            </ol>
+            <p><strong>Answer: B — A concurrency problem involving shared state</strong></p>
+
+            <h3>Q7. Which option compiles a Pthread program?</h3>
+            <ol type="A">
+                <li>gcc program.c -pthread</li>
+                <li>gcc program.c -signal</li>
+                <li>gcc program.c -fork</li>
+                <li>gcc program.c -socket</li>
+            </ol>
+            <p><strong>Answer: A — gcc program.c -pthread</strong></p>
+
+            <h3>Q8. Which function detaches a thread?</h3>
+            <ol type="A">
+                <li>pthread_join()</li>
+                <li>pthread_detach()</li>
+                <li>pthread_exit()</li>
+                <li>pthread_self()</li>
+            </ol>
+            <p><strong>Answer: B — pthread_detach()</strong></p>
+
+            <h3>Q9. Which resource is private to each thread?</h3>
+            <ol type="A">
+                <li>Global variables</li>
+                <li>Heap memory</li>
+                <li>Thread stack</li>
+                <li>Process code</li>
+            </ol>
+            <p><strong>Answer: C — Thread stack</strong></p>
+
+            <h3>Q10. What can happen if threads acquire locks in conflicting orders?</h3>
+            <ol type="A">
+                <li>Deadlock</li>
+                <li>Compilation</li>
+                <li>File creation</li>
+                <li>Process replacement</li>
+            </ol>
+            <p><strong>Answer: A — Deadlock</strong></p>
+        </section>
+
+        <section>
+            <h2>25. Lesson Summary</h2>
+
+            <ul>
+                <li>A thread is an execution unit within a process.</li>
+                <li>Pthreads provides a standard POSIX thread API.</li>
+                <li>pthread_create() creates a thread.</li>
+                <li>pthread_join() waits for a joinable thread.</li>
+                <li>pthread_exit() terminates the calling thread.</li>
+                <li>pthread_detach() releases thread resources automatically at termination.</li>
+                <li>Threads share process memory and many resources.</li>
+                <li>Race conditions occur with unsafe concurrent access.</li>
+                <li>Mutexes protect critical sections.</li>
+                <li>Deadlocks can occur when threads wait for one another's locks.</li>
+            </ul>
+
+            <div class="info-box">
+                <strong>Chapter Completed:</strong>
+                You have reached the end of Chapter 11 —
+                Linux System Programming.
+            </div>
+        </section>
+
+        <section>
+            <h2>26. Chapter 11 – Complete Lesson List</h2>
+
+            <ol>
+                <li>Introduction to System Programming</li>
+                <li>Linux System Calls</li>
+                <li>fork() System Call</li>
+                <li>exec() Family</li>
+                <li>wait() and waitpid()</li>
+                <li>Process Creation and Termination</li>
+                <li>File Input/Output System Calls</li>
+                <li>open(), read(), write() and close()</li>
+                <li>Interprocess Communication (IPC)</li>
+                <li>Pipes and Named Pipes</li>
+                <li>Shared Memory</li>
+                <li>Message Queues</li>
+                <li>Signals and Semaphores</li>
+                <li>Multithreading with POSIX Threads</li>
+            </ol>
+        </section>
+
+    </main>
+
+    <nav class="lesson-navigation">
+        <a href="L13_Signals_and_Semaphores.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="../linux.html">Linux Course</a>
+        <a href="../../index.html">Home</a>
+    </nav>
+
+    <footer class="lesson-footer">
+        <p><strong>NS Learning Hub</strong></p>
+        <p>Linux System Programming | Chapter 11 | Lesson 14</p>
+        <p>Learn • Practise • Build</p>
+    </footer>
+
+</div>
+</body>
+</html>
