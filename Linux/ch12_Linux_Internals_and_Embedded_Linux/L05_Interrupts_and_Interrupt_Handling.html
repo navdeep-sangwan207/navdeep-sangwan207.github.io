@@ -1,1 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interrupts and Interrupt Handling | NS Learning Hub</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .lesson-header {
+            background: linear-gradient(135deg, #174ea6, #2878d0);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .lesson-header h1 { margin: 0; font-size: 27px; }
+        .lesson-header p { line-height: 1.6; }
+        .lesson-content { line-height: 1.8; }
+        .lesson-content h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #e5e5e5;
+            padding-bottom: 6px;
+            margin-top: 30px;
+        }
+        .lesson-content h3 { color: #2878d0; margin-top: 22px; }
+        .lesson-content pre {
+            background: #1e1e1e;
+            color: #f1f1f1;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            line-height: 1.6;
+        }
+        .lesson-content code { font-family: Consolas, monospace; }
+        .info-box {
+            background: #eef5ff;
+            border-left: 4px solid #174ea6;
+            padding: 15px;
+            margin: 18px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff4e5;
+            border-left: 4px solid #e76f00;
+            padding: 15px;
+            margin: 18px 0;
+            border-radius: 5px;
+        }
+        .lesson-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 18px 0;
+        }
+        .lesson-table th, .lesson-table td {
+            border: 1px solid #ccc;
+            padding: 10px;
+            text-align: left;
+        }
+        .lesson-table th { background: #174ea6; color: white; }
+        .lesson-navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 35px 0;
+        }
+        .lesson-navigation a {
+            display: inline-block;
+            background: #174ea6;
+            color: white;
+            padding: 10px 17px;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+        .lesson-navigation a:hover { background: #e76f00; }
+        .lesson-footer {
+            text-align: center;
+            color: #666;
+            padding: 20px 0;
+            border-top: 1px solid #ddd;
+            margin-top: 30px;
+        }
+        @media (max-width: 700px) {
+            .lesson-header h1 { font-size: 23px; }
+            .lesson-navigation { flex-direction: column; }
+            .lesson-navigation a { text-align: center; }
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+
+    <header class="lesson-header">
+        <p>LINUX INTERNALS AND EMBEDDED LINUX • CHAPTER 12 • LESSON 05</p>
+        <h1>Interrupts and Interrupt Handling</h1>
+        <p>
+            Understand how Linux responds to hardware events,
+            processes interrupt requests and manages interrupt
+            handling efficiently.
+        </p>
+    </header>
+
+    <main class="lesson-content">
+
+        <section>
+            <h2>1. Introduction to Interrupts</h2>
+
+            <p>
+                An interrupt is a signal or event that causes
+                the processor to temporarily suspend its current
+                execution flow and transfer control to an
+                interrupt-handling mechanism.
+            </p>
+
+            <p>
+                Interrupts allow the processor to respond to
+                important events without continuously checking
+                every hardware device.
+            </p>
+
+            <div class="info-box">
+                <strong>Definition:</strong>
+                An interrupt is an event that requests processor
+                attention and causes execution to be redirected
+                to an appropriate interrupt handler.
+            </div>
+
+            <h3>Examples of Interrupt Events</h3>
+
+            <ul>
+                <li>Keyboard key press.</li>
+                <li>Mouse movement or button click.</li>
+                <li>Network packet arrival.</li>
+                <li>Timer expiration.</li>
+                <li>Storage device completion notification.</li>
+                <li>Hardware error notification.</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>2. Why Are Interrupts Required?</h2>
+
+            <p>
+                Consider a keyboard connected to a computer.
+                The CPU needs to know when a key is pressed.
+            </p>
+
+            <p>
+                Without an interrupt mechanism, the processor
+                could repeatedly check the keyboard status.
+                This approach is called polling.
+            </p>
+
+            <p>
+                With interrupts, the keyboard controller can
+                notify the processor when an event occurs.
+            </p>
+
+            <h3>Advantages of Interrupts</h3>
+
+            <ul>
+                <li>Reduce unnecessary continuous polling.</li>
+                <li>Improve processor utilization.</li>
+                <li>Support asynchronous hardware events.</li>
+                <li>Enable efficient device communication.</li>
+                <li>Improve responsiveness to external events.</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>3. Interrupt vs Polling</h2>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Interrupt</th>
+                    <th>Polling</th>
+                </tr>
+                <tr>
+                    <td>Device notifies the processor about an event.</td>
+                    <td>Processor repeatedly checks device status.</td>
+                </tr>
+                <tr>
+                    <td>Can reduce unnecessary CPU work.</td>
+                    <td>May waste CPU time checking inactive devices.</td>
+                </tr>
+                <tr>
+                    <td>Event-driven mechanism.</td>
+                    <td>Repeated checking mechanism.</td>
+                </tr>
+                <tr>
+                    <td>Requires interrupt handling support.</td>
+                    <td>Requires periodic or continuous status checks.</td>
+                </tr>
+            </table>
+
+            <h3>Polling Example</h3>
+
+            <pre>
+while (1)
+{
+    if (device_status == READY)
+    {
+        process_device_data();
+    }
+}
+            </pre>
+
+            <h3>Interrupt-Based Concept</h3>
+
+            <pre>
+void interrupt_handler(void)
+{
+    process_device_event();
+}
+            </pre>
+
+            <p>
+                The second example is conceptual C code.
+                Actual interrupt handlers depend on the
+                processor architecture and operating system.
+            </p>
+        </section>
+
+        <section>
+            <h2>4. Types of Interrupts</h2>
+
+            <h3>4.1 Hardware Interrupts</h3>
+
+            <p>
+                Hardware interrupts are generated by external
+                hardware devices or interrupt controllers.
+            </p>
+
+            <p>Examples:</p>
+
+            <ul>
+                <li>Keyboard interrupt.</li>
+                <li>Timer interrupt.</li>
+                <li>Network interface interrupt.</li>
+                <li>USB device interrupt.</li>
+            </ul>
+
+            <h3>4.2 Software Interrupts</h3>
+
+            <p>
+                Software-generated events cause execution to
+                enter a defined exception or interrupt mechanism.
+            </p>
+
+            <p>
+                Software interrupts have historically been
+                used for system services and controlled
+                transitions into privileged execution.
+            </p>
+
+            <div class="info-box">
+                On modern Linux systems, system calls commonly
+                use architecture-specific instructions such as
+                syscall on x86-64 or SVC on ARM. Do not assume
+                that every system call is implemented as a
+                traditional hardware IRQ.
+            </div>
+
+            <h3>4.3 Processor Exceptions</h3>
+
+            <p>
+                Exceptions are synchronous events generated
+                while an instruction is executing.
+            </p>
+
+            <p>Examples include:</p>
+
+            <ul>
+                <li>Division by zero.</li>
+                <li>Invalid instruction.</li>
+                <li>Page fault.</li>
+                <li>Memory access violation.</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>5. Interrupt Request (IRQ)</h2>
+
+            <p>
+                IRQ stands for Interrupt Request. It represents
+                an interrupt request associated with a hardware
+                device or interrupt source.
+            </p>
+
+            <p>
+                When a device generates an interrupt, the
+                interrupt controller routes or prioritizes
+                the request according to the system architecture.
+            </p>
+
+            <h3>Common IRQ-Related Concepts</h3>
+
+            <ul>
+                <li>Interrupt source: device or hardware event.</li>
+                <li>IRQ number: identifier used by the interrupt subsystem.</li>
+                <li>Interrupt controller: manages interrupt routing and priority.</li>
+                <li>Interrupt handler: code that handles an interrupt.</li>
+            </ul>
+
+            <div class="info-box">
+                IRQ numbers are architecture- and platform-dependent.
+                Modern systems may use interrupt controllers such
+                as APIC or GIC, and devices may use MSI/MSI-X
+                rather than traditional fixed interrupt lines.
+            </div>
+        </section>
+
+        <section>
+            <h2>6. Interrupt Service Routine (ISR)</h2>
+
+            <p>
+                An Interrupt Service Routine (ISR) is a function
+                or handler that executes in response to an
+                interrupt.
+            </p>
+
+            <p>
+                In Linux device-driver development, the interrupt
+                handler is commonly registered using
+                request_irq() or related APIs.
+            </p>
+
+            <h3>Basic Interrupt Handling Flow</h3>
+
+            <ol>
+                <li>A hardware device generates an interrupt.</li>
+                <li>The interrupt controller identifies the source.</li>
+                <li>The processor enters the appropriate interrupt context.</li>
+                <li>The Linux interrupt subsystem dispatches the handler.</li>
+                <li>The handler performs essential immediate work.</li>
+                <li>Deferred work may be scheduled if additional processing is required.</li>
+                <li>Interrupt handling completes and normal execution resumes.</li>
+            </ol>
+        </section>
+
+        <section>
+            <h2>7. Interrupt Handler in Linux</h2>
+
+            <p>
+                Linux device drivers register interrupt handlers
+                through kernel interrupt-management APIs.
+            </p>
+
+            <h3>Important Function: request_irq()</h3>
+
+            <p>
+                The request_irq() function registers an interrupt
+                handler for a specified IRQ.
+            </p>
+
+            <h3>General Syntax</h3>
+
+            <pre>
+int request_irq(
+    unsigned int irq,
+    irq_handler_t handler,
+    unsigned long flags,
+    const char *name,
+    void *dev
+);
+            </pre>
+
+            <h3>Parameters</h3>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Parameter</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td>irq</td>
+                    <td>Interrupt number.</td>
+                </tr>
+                <tr>
+                    <td>handler</td>
+                    <td>Function called when the interrupt is handled.</td>
+                </tr>
+                <tr>
+                    <td>flags</td>
+                    <td>Interrupt configuration flags.</td>
+                </tr>
+                <tr>
+                    <td>name</td>
+                    <td>Name used to identify the interrupt.</td>
+                </tr>
+                <tr>
+                    <td>dev</td>
+                    <td>Device-specific identifier or pointer.</td>
+                </tr>
+            </table>
+
+            <h3>Important Related Function</h3>
+
+            <pre>
+free_irq(irq, dev);
+            </pre>
+
+            <p>
+                free_irq() releases an interrupt registration.
+                The dev argument must match the value used when
+                registering the handler.
+            </p>
+        </section>
+
+        <section>
+            <h2>8. Conceptual Linux Interrupt Handler Example</h2>
+
+            <p>
+                The following example illustrates the structure
+                of a Linux interrupt handler. It is not a
+                standalone driver and must not be compiled or
+                loaded without a real device and correctly
+                configured interrupt source.
+            </p>
+
+            <pre>
+#include &lt;linux/module.h&gt;
+#include &lt;linux/interrupt.h&gt;
+
+static irqreturn_t my_interrupt_handler(
+    int irq,
+    void *dev_id)
+{
+    pr_info("Interrupt received: IRQ %d\n", irq);
+
+    return IRQ_HANDLED;
+}
+            </pre>
+
+            <h3>Explanation</h3>
+
+            <ul>
+                <li>irqreturn_t is the interrupt handler return type.</li>
+                <li>irq identifies the interrupt being handled.</li>
+                <li>dev_id identifies the device associated with the handler.</li>
+                <li>pr_info() writes a message to the kernel log.</li>
+                <li>IRQ_HANDLED indicates that the interrupt was handled.</li>
+            </ul>
+
+            <div class="warning-box">
+                Never request an arbitrary IRQ number on your
+                Ubuntu VM just to test this example. A real
+                driver must obtain the correct IRQ from its
+                device and platform configuration.
+            </div>
+        </section>
+
+        <section>
+            <h2>9. Top Half and Bottom Half</h2>
+
+            <p>
+                Interrupt processing is divided conceptually
+                into immediate work and deferred work.
+            </p>
+
+            <h3>9.1 Top Half</h3>
+
+            <p>
+                The top half is the immediate interrupt handler.
+                It executes in interrupt context.
+            </p>
+
+            <p>Typical responsibilities:</p>
+
+            <ul>
+                <li>Identify the interrupt source.</li>
+                <li>Acknowledge or clear the device interrupt.</li>
+                <li>Capture essential device status.</li>
+                <li>Schedule deferred processing when required.</li>
+            </ul>
+
+            <h3>9.2 Bottom Half</h3>
+
+            <p>
+                The bottom half performs work deferred from
+                the immediate interrupt handler.
+            </p>
+
+            <p>Linux provides several deferred-processing mechanisms:</p>
+
+            <ul>
+                <li>Softirqs</li>
+                <li>Tasklets (legacy mechanism; newer code generally prefers other mechanisms)</li>
+                <li>Workqueues</li>
+                <li>Threaded IRQ handlers</li>
+            </ul>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Top Half</th>
+                    <th>Deferred Processing</th>
+                </tr>
+                <tr>
+                    <td>Runs in interrupt context.</td>
+                    <td>Runs later through a suitable deferred mechanism.</td>
+                </tr>
+                <tr>
+                    <td>Must complete quickly.</td>
+                    <td>Can handle more processing.</td>
+                </tr>
+                <tr>
+                    <td>Cannot sleep.</td>
+                    <td>Workqueues and threaded handlers can sleep.</td>
+                </tr>
+                <tr>
+                    <td>Handles urgent interrupt work.</td>
+                    <td>Handles non-immediate work.</td>
+                </tr>
+            </table>
+        </section>
+
+        <section>
+            <h2>10. Softirqs</h2>
+
+            <p>
+                Softirqs are a Linux mechanism for executing
+                deferred work outside the immediate hardware
+                interrupt handler.
+            </p>
+
+            <p>
+                They are used for performance-sensitive
+                processing in parts of the kernel.
+            </p>
+
+            <h3>Examples of Softirq Usage</h3>
+
+            <ul>
+                <li>Network packet processing.</li>
+                <li>Timer-related processing.</li>
+                <li>Block I/O completion processing.</li>
+            </ul>
+
+            <p>
+                Softirq handlers execute in atomic context.
+                They must not sleep.
+            </p>
+        </section>
+
+        <section>
+            <h2>11. Tasklets</h2>
+
+            <p>
+                Tasklets are a mechanism built on top of
+                softirqs for scheduling deferred work.
+            </p>
+
+            <p>
+                They have historically been used in device
+                drivers to defer processing from interrupt
+                handlers.
+            </p>
+
+            <div class="info-box">
+                Tasklets are a legacy interface and are deprecated
+                in newer Linux kernel development. For new
+                driver designs, consider threaded IRQs,
+                workqueues or other appropriate mechanisms.
+            </div>
+        </section>
+
+        <section>
+            <h2>12. Workqueues</h2>
+
+            <p>
+                Workqueues allow kernel work to execute in
+                process context through worker threads.
+            </p>
+
+            <h3>Advantages</h3>
+
+            <ul>
+                <li>Can perform operations that may sleep.</li>
+                <li>Useful for lengthy deferred processing.</li>
+                <li>Can interact with mutex-protected resources.</li>
+                <li>Support asynchronous kernel tasks.</li>
+            </ul>
+
+            <h3>Common Workqueue APIs</h3>
+
+            <pre>
+INIT_WORK()
+schedule_work()
+flush_work()
+cancel_work_sync()
+            </pre>
+
+            <p>
+                The exact API and lifecycle depend on the
+                kernel version and driver design.
+            </p>
+        </section>
+
+        <section>
+            <h2>13. Threaded Interrupt Handlers</h2>
+
+            <p>
+                Linux supports threaded interrupt handlers.
+                They separate a short primary interrupt handler
+                from a handler that executes in a kernel thread.
+            </p>
+
+            <p>
+                This approach is useful when interrupt processing
+                needs operations that may sleep.
+            </p>
+
+            <h3>Common Registration API</h3>
+
+            <pre>
+request_threaded_irq()
+            </pre>
+
+            <p>
+                The primary handler runs in interrupt context.
+                The threaded handler runs in thread context.
+            </p>
+        </section>
+
+        <section>
+            <h2>14. Interrupt Context Restrictions</h2>
+
+            <p>
+                Interrupt context has stricter execution rules
+                than normal process context.
+            </p>
+
+            <h3>Important Restrictions</h3>
+
+            <ul>
+                <li>Do not call functions that may sleep in a hard IRQ handler.</li>
+                <li>Avoid lengthy processing.</li>
+                <li>Do not perform blocking I/O.</li>
+                <li>Use suitable synchronization primitives.</li>
+                <li>Defer lengthy work to an appropriate mechanism.</li>
+            </ul>
+
+            <div class="warning-box">
+                Calling a sleeping function from an inappropriate
+                interrupt context can cause kernel warnings,
+                deadlocks or system instability.
+            </div>
+        </section>
+
+        <section>
+            <h2>15. Viewing Interrupt Information in Linux</h2>
+
+            <p>
+                Linux exposes useful interrupt information
+                through the proc filesystem.
+            </p>
+
+            <h3>View Interrupt Statistics</h3>
+
+            <pre>
+cat /proc/interrupts
+            </pre>
+
+            <p>
+                This file shows interrupt counts and associated
+                device or interrupt-controller information.
+            </p>
+
+            <h3>Monitor Interrupt Statistics</h3>
+
+            <pre>
+watch -n 1 cat /proc/interrupts
+            </pre>
+
+            <p>
+                This refreshes the output every second.
+                Press Ctrl+C to stop.
+            </p>
+
+            <h3>View Softirq Statistics</h3>
+
+            <pre>
+cat /proc/softirqs
+            </pre>
+
+            <h3>View Kernel Messages</h3>
+
+            <pre>
+sudo dmesg | tail -n 30
+            </pre>
+
+            <div class="info-box">
+                Interrupt names and counts depend on the
+                hardware, kernel configuration and virtual
+                machine environment. Your Ubuntu VM output
+                will not necessarily match another computer.
+            </div>
+        </section>
+
+        <section>
+            <h2>16. Interrupt Handling in Embedded Systems</h2>
+
+            <p>
+                Interrupts are essential in embedded systems
+                because microcontrollers frequently respond
+                to external events in real time.
+            </p>
+
+            <h3>Examples</h3>
+
+            <ul>
+                <li>Timer interrupt for periodic scheduling.</li>
+                <li>UART interrupt for received data.</li>
+                <li>GPIO interrupt for a button press.</li>
+                <li>ADC interrupt when conversion completes.</li>
+                <li>External interrupt from a sensor.</li>
+            </ul>
+
+            <h3>Example: UART Receive Interrupt</h3>
+
+            <p>
+                When a UART peripheral receives a character,
+                it can generate an interrupt. The ISR reads
+                the received data and stores it in a buffer
+                for further processing.
+            </p>
+
+            <pre>
+void UART_IRQHandler(void)
+{
+    /* Read UART status and received data. */
+    /* Store data in a receive buffer. */
+    /* Clear or acknowledge the interrupt as required. */
+}
+            </pre>
+
+            <p>
+                This is conceptual code. Actual register
+                operations depend on the microcontroller.
+            </p>
+
+            <h3>Embedded Linux Relevance</h3>
+
+            <p>
+                In Embedded Linux, device drivers use the
+                kernel interrupt subsystem to handle hardware
+                events from UART, SPI, I2C, GPIO, network
+                controllers and other peripherals.
+            </p>
+        </section>
+
+        <section>
+            <h2>17. Practical Exercises</h2>
+
+            <h3>Exercise 1: View Interrupt Statistics</h3>
+
+            <pre>
+cat /proc/interrupts
+            </pre>
+
+            <p>
+                Identify the interrupt entries associated
+                with your virtual machine devices.
+            </p>
+
+            <h3>Exercise 2: Monitor Interrupt Counts</h3>
+
+            <pre>
+watch -n 1 cat /proc/interrupts
+            </pre>
+
+            <p>
+                Generate ordinary system activity and observe
+                whether interrupt counts change.
+            </p>
+
+            <h3>Exercise 3: View Softirq Statistics</h3>
+
+            <pre>
+cat /proc/softirqs
+            </pre>
+
+            <p>
+                Identify the NET_RX, NET_TX and TIMER categories
+                if they are present in your output.
+            </p>
+
+            <h3>Exercise 4: Compare Interrupts and Softirqs</h3>
+
+            <pre>
+cat /proc/interrupts
+cat /proc/softirqs
+            </pre>
+
+            <p>
+                Write down the difference between hardware
+                interrupt statistics and softirq statistics.
+            </p>
+
+            <h3>Exercise 5: Study Interrupt Handler Code</h3>
+
+            <p>
+                Review the conceptual request_irq() example
+                and identify the handler function, IRQ number,
+                device identifier and return value.
+            </p>
+        </section>
+
+        <section>
+            <h2>18. Interview Questions and Answers</h2>
+
+            <h3>Q1. What is an interrupt?</h3>
+            <p>
+                An interrupt is an event that requests processor
+                attention and redirects execution to an
+                appropriate handler.
+            </p>
+
+            <h3>Q2. Why are interrupts used?</h3>
+            <p>
+                They allow the processor to respond to events
+                without continuously polling every device.
+            </p>
+
+            <h3>Q3. What is an IRQ?</h3>
+            <p>
+                IRQ stands for Interrupt Request. It identifies
+                an interrupt source within the interrupt system.
+            </p>
+
+            <h3>Q4. What is an ISR?</h3>
+            <p>
+                An Interrupt Service Routine is the handler
+                responsible for responding to an interrupt.
+            </p>
+
+            <h3>Q5. What is the difference between polling and interrupts?</h3>
+            <p>
+                Polling repeatedly checks device status, while
+                interrupts notify the processor when an event occurs.
+            </p>
+
+            <h3>Q6. What is request_irq()?</h3>
+            <p>
+                It registers an interrupt handler for a specified
+                interrupt source.
+            </p>
+
+            <h3>Q7. What is free_irq()?</h3>
+            <p>
+                It releases a previously registered interrupt handler.
+            </p>
+
+            <h3>Q8. What is a top half?</h3>
+            <p>
+                It is the immediate interrupt-handling portion
+                that executes in interrupt context.
+            </p>
+
+            <h3>Q9. What is a bottom half?</h3>
+            <p>
+                It is deferred processing performed after the
+                immediate interrupt handler.
+            </p>
+
+            <h3>Q10. What is a softirq?</h3>
+            <p>
+                A softirq is a Linux mechanism for executing
+                deferred kernel processing in a non-sleeping context.
+            </p>
+
+            <h3>Q11. What is a workqueue?</h3>
+            <p>
+                A workqueue schedules kernel work to execute
+                in process context using worker threads.
+            </p>
+
+            <h3>Q12. Can an interrupt handler sleep?</h3>
+            <p>
+                A hard IRQ handler must not sleep. Deferred
+                mechanisms such as workqueues or threaded
+                handlers can perform sleepable operations.
+            </p>
+
+            <h3>Q13. Which file displays interrupt statistics?</h3>
+            <p>/proc/interrupts</p>
+
+            <h3>Q14. Which file displays softirq statistics?</h3>
+            <p>/proc/softirqs</p>
+        </section>
+
+        <section>
+            <h2>19. Multiple Choice Questions (MCQs)</h2>
+
+            <h3>Q1. What does IRQ stand for?</h3>
+            <ol type="A">
+                <li>Interrupt Request</li>
+                <li>Internal Register Queue</li>
+                <li>Input Register Query</li>
+                <li>Interrupt Read Queue</li>
+            </ol>
+            <p><strong>Answer: A — Interrupt Request</strong></p>
+
+            <h3>Q2. Which mechanism avoids continuous device polling?</h3>
+            <ol type="A">
+                <li>Looping</li>
+                <li>Interrupts</li>
+                <li>Compilation</li>
+                <li>Linking</li>
+            </ol>
+            <p><strong>Answer: B — Interrupts</strong></p>
+
+            <h3>Q3. What is an ISR?</h3>
+            <ol type="A">
+                <li>Interrupt Service Routine</li>
+                <li>Internal Software Register</li>
+                <li>Input System Resource</li>
+                <li>Interrupt Scheduling Register</li>
+            </ol>
+            <p><strong>Answer: A — Interrupt Service Routine</strong></p>
+
+            <h3>Q4. Which Linux function registers an interrupt handler?</h3>
+            <ol type="A">
+                <li>request_irq()</li>
+                <li>free_irq()</li>
+                <li>kmalloc()</li>
+                <li>copy_to_user()</li>
+            </ol>
+            <p><strong>Answer: A — request_irq()</strong></p>
+
+            <h3>Q5. Which function releases an interrupt registration?</h3>
+            <ol type="A">
+                <li>request_irq()</li>
+                <li>free_irq()</li>
+                <li>schedule_work()</li>
+                <li>printk()</li>
+            </ol>
+            <p><strong>Answer: B — free_irq()</strong></p>
+
+            <h3>Q6. Which file displays hardware interrupt statistics?</h3>
+            <ol type="A">
+                <li>/proc/modules</li>
+                <li>/proc/interrupts</li>
+                <li>/proc/cpuinfo</li>
+                <li>/etc/passwd</li>
+            </ol>
+            <p><strong>Answer: B — /proc/interrupts</strong></p>
+
+            <h3>Q7. Which mechanism can execute deferred work in process context?</h3>
+            <ol type="A">
+                <li>Workqueue</li>
+                <li>Hard IRQ handler</li>
+                <li>Polling loop</li>
+                <li>CPU register</li>
+            </ol>
+            <p><strong>Answer: A — Workqueue</strong></p>
+
+            <h3>Q8. Can a hard IRQ handler sleep?</h3>
+            <ol type="A">
+                <li>Yes, always</li>
+                <li>No</li>
+                <li>Only with printf()</li>
+                <li>Only during boot</li>
+            </ol>
+            <p><strong>Answer: B — No</strong></p>
+
+            <h3>Q9. Which file displays softirq statistics?</h3>
+            <ol type="A">
+                <li>/proc/softirqs</li>
+                <li>/proc/meminfo</li>
+                <li>/etc/hosts</li>
+                <li>/proc/version</li>
+            </ol>
+            <p><strong>Answer: A — /proc/softirqs</strong></p>
+
+            <h3>Q10. Which interrupt type is generated by an external hardware device?</h3>
+            <ol type="A">
+                <li>Hardware interrupt</li>
+                <li>Compiler warning</li>
+                <li>Linker error</li>
+                <li>Syntax error</li>
+            </ol>
+            <p><strong>Answer: A — Hardware interrupt</strong></p>
+        </section>
+
+        <section>
+            <h2>20. Lesson Summary</h2>
+
+            <ul>
+                <li>An interrupt requests processor attention.</li>
+                <li>Hardware devices generate hardware interrupts.</li>
+                <li>Exceptions are synchronous processor events.</li>
+                <li>IRQ identifies an interrupt source.</li>
+                <li>An ISR handles an interrupt event.</li>
+                <li>Linux drivers commonly use request_irq() and free_irq().</li>
+                <li>The top half performs immediate interrupt processing.</li>
+                <li>Deferred processing handles work that should not be performed immediately.</li>
+                <li>Softirqs execute deferred work in a non-sleeping context.</li>
+                <li>Workqueues execute work in process context.</li>
+                <li>/proc/interrupts displays interrupt statistics.</li>
+                <li>/proc/softirqs displays softirq statistics.</li>
+                <li>Interrupt handling is essential in Embedded Linux device drivers.</li>
+            </ul>
+
+            <div class="info-box">
+                <strong>Next Lesson:</strong>
+                Memory Management Basics — Learn how Linux
+                manages physical memory, kernel memory allocation
+                and memory-related resources.
+            </div>
+        </section>
+
+    </main>
+
+    <nav class="lesson-navigation">
+        <a href="L04_Kernel_Module_Loading_and_Unloading.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="../linux.html">Linux Course</a>
+        <a href="../../index.html">Home</a>
+        <a href="L06_Memory_Management_Basics.html">Next Lesson →</a>
+    </nav>
+
+    <footer class="lesson-footer">
+        <p><strong>NS Learning Hub</strong></p>
+        <p>Linux Internals and Embedded Linux | Chapter 12 | Lesson 5</p>
+        <p>Learn • Practise • Build</p>
+    </footer>
+
+</div>
+</body>
+</html>
