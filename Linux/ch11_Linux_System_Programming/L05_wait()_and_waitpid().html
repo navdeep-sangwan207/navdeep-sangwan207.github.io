@@ -1,1 +1,1169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+    <title>wait() and waitpid() | NS Learning Hub</title>
+    <link rel="stylesheet" href="../../style.css">
+
+    <style>
+        .lesson-header {
+            background: linear-gradient(135deg, #174ea6, #2878d0);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+
+        .lesson-header h1 {
+            margin: 0;
+            font-size: 28px;
+        }
+
+        .lesson-header p {
+            margin-bottom: 0;
+            line-height: 1.6;
+        }
+
+        .lesson-content {
+            line-height: 1.8;
+        }
+
+        .lesson-content h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #e5e5e5;
+            padding-bottom: 6px;
+            margin-top: 30px;
+        }
+
+        .lesson-content h3 {
+            color: #2878d0;
+            margin-top: 22px;
+        }
+
+        .lesson-content pre {
+            background: #1e1e1e;
+            color: #f1f1f1;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            line-height: 1.6;
+        }
+
+        .lesson-content code {
+            font-family: Consolas, monospace;
+        }
+
+        .info-box {
+            background: #eef5ff;
+            border-left: 4px solid #174ea6;
+            padding: 15px;
+            margin: 18px 0;
+            border-radius: 5px;
+        }
+
+        .warning-box {
+            background: #fff4e5;
+            border-left: 4px solid #e76f00;
+            padding: 15px;
+            margin: 18px 0;
+            border-radius: 5px;
+        }
+
+        .lesson-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 18px 0;
+        }
+
+        .lesson-table th,
+        .lesson-table td {
+            border: 1px solid #ccc;
+            padding: 10px;
+            text-align: left;
+        }
+
+        .lesson-table th {
+            background: #174ea6;
+            color: white;
+        }
+
+        .lesson-navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 35px 0;
+        }
+
+        .lesson-navigation a {
+            display: inline-block;
+            background: #174ea6;
+            color: white;
+            padding: 10px 17px;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+
+        .lesson-navigation a:hover {
+            background: #e76f00;
+        }
+
+        .lesson-footer {
+            text-align: center;
+            color: #666;
+            padding: 20px 0;
+            border-top: 1px solid #ddd;
+            margin-top: 30px;
+        }
+
+        @media (max-width: 700px) {
+            .lesson-header h1 {
+                font-size: 23px;
+            }
+
+            .lesson-navigation {
+                flex-direction: column;
+            }
+
+            .lesson-navigation a {
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <header class="lesson-header">
+        <p>LINUX SYSTEM PROGRAMMING • CHAPTER 11 • LESSON 5</p>
+        <h1>wait() and waitpid()</h1>
+        <p>
+            Understand how parent processes wait for child processes,
+            collect termination status and manage zombie processes.
+        </p>
+    </header>
+
+    <main class="lesson-content">
+
+        <section>
+            <h2>1. Introduction to wait() and waitpid()</h2>
+
+            <p>
+                In Linux, a parent process can create child processes
+                using <code>fork()</code>. After creating a child,
+                the parent may need to wait until the child terminates.
+            </p>
+
+            <p>
+                Linux provides <code>wait()</code> and
+                <code>waitpid()</code> for this purpose.
+            </p>
+
+            <div class="info-box">
+                <strong>Definition:</strong>
+                wait() and waitpid() are system-call interfaces used by
+                a parent process to collect the termination status of
+                its child processes.
+            </div>
+
+            <h3>Why Are They Required?</h3>
+
+            <ul>
+                <li>To synchronize parent and child processes.</li>
+                <li>To collect the child's exit status.</li>
+                <li>To release the child's remaining process-table resources.</li>
+                <li>To prevent unreaped zombie processes.</li>
+                <li>To control the execution sequence of processes.</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>2. Understanding Parent and Child Processes</h2>
+
+            <p>
+                A parent process creates a child using
+                <code>fork()</code>. Both processes execute independently.
+                The parent can use wait() to collect the child's
+                termination status.
+            </p>
+
+            <h3>Process Flow</h3>
+
+            <pre>
+          Parent Process
+                |
+              fork()
+                |
+          +-----+-----+
+          |           |
+          v           v
+        Parent      Child
+          |           |
+          |         Executes
+          |           |
+          |        Terminates
+          |           |
+          |           v
+          |      Exit Status
+          |           |
+          +---- wait()+
+                |
+          Parent Continues
+            </pre>
+
+            <p>
+                The parent may continue executing other instructions
+                while the child is running. If it calls wait(),
+                it blocks until an eligible child changes state
+                and can be collected.
+            </p>
+        </section>
+
+        <section>
+            <h2>3. wait() Function</h2>
+
+            <p>
+                The <code>wait()</code> function makes the calling
+                process wait until one of its child processes
+                terminates and its status is collected.
+            </p>
+
+            <h3>Header File</h3>
+
+            <pre>
+#include &lt;sys/types.h&gt;
+#include &lt;sys/wait.h&gt;
+            </pre>
+
+            <h3>Syntax</h3>
+
+            <pre>
+pid_t wait(int *status);
+            </pre>
+
+            <h3>Parameters</h3>
+
+            <ul>
+                <li>
+                    <code>status</code>: Pointer to an integer where
+                    the child's status information is stored.
+                </li>
+                <li>
+                    Pass <code>NULL</code> if the status information
+                    is not required.
+                </li>
+            </ul>
+
+            <h3>Return Value</h3>
+
+            <ul>
+                <li>Returns the PID of the child whose status was collected.</li>
+                <li>Returns -1 if an error occurs or no eligible child exists.</li>
+            </ul>
+
+            <div class="info-box">
+                <strong>Important:</strong>
+                wait() normally blocks until a child terminates.
+                It may also report a child state change if the process
+                is being traced or the appropriate options are used
+                through waitpid().
+            </div>
+        </section>
+
+        <section>
+            <h2>4. Practical Program Using wait()</h2>
+
+            <p>
+                This program creates a child process using fork().
+                The parent waits until the child terminates.
+            </p>
+
+            <h3>Program</h3>
+
+            <pre>
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int main(void)
+{
+    pid_t pid;
+    int status;
+
+    pid = fork();
+
+    if (pid &lt; 0)
+    {
+        perror("fork");
+        return 1;
+    }
+    else if (pid == 0)
+    {
+        printf("Child process is running\n");
+        printf("Child PID: %d\n", (int)getpid());
+
+        sleep(2);
+
+        printf("Child process is terminating\n");
+
+        return 5;
+    }
+    else
+    {
+        printf("Parent is waiting for child\n");
+
+        if (wait(&amp;status) == -1)
+        {
+            perror("wait");
+            return 1;
+        }
+
+        printf("Child process completed\n");
+    }
+
+    return 0;
+}
+            </pre>
+
+            <h3>Compile</h3>
+
+            <pre>
+gcc wait_example.c -o wait_example
+            </pre>
+
+            <h3>Execute</h3>
+
+            <pre>
+./wait_example
+            </pre>
+
+            <h3>Possible Output</h3>
+
+            <pre>
+Parent is waiting for child
+Child process is running
+Child PID: 2450
+Child process is terminating
+Child process completed
+            </pre>
+
+            <p>
+                The PID is system-dependent. The parent waits until
+                the child terminates, so the final parent message
+                appears after the child has completed.
+            </p>
+        </section>
+
+        <section>
+            <h2>5. Understanding Child Exit Status</h2>
+
+            <p>
+                The wait() function stores status information in
+                the integer variable passed through its status pointer.
+                This integer is encoded; it should be examined using
+                the macros provided in <code>&lt;sys/wait.h&gt;</code>.
+            </p>
+
+            <h3>Important Status Macros</h3>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Macro</th>
+                    <th>Purpose</th>
+                </tr>
+                <tr>
+                    <td><code>WIFEXITED(status)</code></td>
+                    <td>Checks whether the child terminated normally.</td>
+                </tr>
+                <tr>
+                    <td><code>WEXITSTATUS(status)</code></td>
+                    <td>Returns the child's exit code if it terminated normally.</td>
+                </tr>
+                <tr>
+                    <td><code>WIFSIGNALED(status)</code></td>
+                    <td>Checks whether the child terminated because of a signal.</td>
+                </tr>
+                <tr>
+                    <td><code>WTERMSIG(status)</code></td>
+                    <td>Returns the signal number that terminated the child.</td>
+                </tr>
+                <tr>
+                    <td><code>WIFSTOPPED(status)</code></td>
+                    <td>Checks whether the child is currently stopped.</td>
+                </tr>
+                <tr>
+                    <td><code>WSTOPSIG(status)</code></td>
+                    <td>Returns the signal that stopped the child.</td>
+                </tr>
+            </table>
+
+            <div class="warning-box">
+                <strong>Important:</strong>
+                Use WEXITSTATUS(status) only after confirming that
+                WIFEXITED(status) is true. Do not treat the raw status
+                integer as the child's exit code.
+            </div>
+        </section>
+
+        <section>
+            <h2>6. Practical Program to Read Exit Status</h2>
+
+            <p>
+                The child process exits with status code 5.
+                The parent collects and displays that exit code.
+            </p>
+
+            <h3>Program</h3>
+
+            <pre>
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int main(void)
+{
+    pid_t pid;
+    int status;
+
+    pid = fork();
+
+    if (pid &lt; 0)
+    {
+        perror("fork");
+        return 1;
+    }
+    else if (pid == 0)
+    {
+        printf("Child process running\n");
+        return 5;
+    }
+    else
+    {
+        wait(&amp;status);
+
+        if (WIFEXITED(status))
+        {
+            printf("Child exited normally\n");
+            printf("Exit status: %d\n",
+                   WEXITSTATUS(status));
+        }
+        else if (WIFSIGNALED(status))
+        {
+            printf("Child terminated by signal %d\n",
+                   WTERMSIG(status));
+        }
+    }
+
+    return 0;
+}
+            </pre>
+
+            <h3>Compile</h3>
+
+            <pre>
+gcc exit_status.c -o exit_status
+            </pre>
+
+            <h3>Execute</h3>
+
+            <pre>
+./exit_status
+            </pre>
+
+            <h3>Expected Output</h3>
+
+            <pre>
+Child process running
+Child exited normally
+Exit status: 5
+            </pre>
+        </section>
+
+        <section>
+            <h2>7. waitpid() Function</h2>
+
+            <p>
+                The <code>waitpid()</code> function provides more
+                control than wait(). It allows the parent to wait
+                for a particular child process or to check child
+                status without blocking.
+            </p>
+
+            <h3>Syntax</h3>
+
+            <pre>
+pid_t waitpid(
+    pid_t pid,
+    int *status,
+    int options
+);
+            </pre>
+
+            <h3>Parameters</h3>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Parameter</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>pid</code></td>
+                    <td>Specifies which child process or group to wait for.</td>
+                </tr>
+                <tr>
+                    <td><code>status</code></td>
+                    <td>Pointer to the child's status information.</td>
+                </tr>
+                <tr>
+                    <td><code>options</code></td>
+                    <td>Controls blocking and which child state changes are reported.</td>
+                </tr>
+            </table>
+
+            <h3>Common pid Values</h3>
+
+            <ul>
+                <li>
+                    <code>pid &gt; 0</code>: Wait for the child with that
+                    specific process ID.
+                </li>
+                <li>
+                    <code>pid == -1</code>: Wait for any child process;
+                    this is the behaviour of wait().
+                </li>
+                <li>
+                    <code>pid == 0</code>: Wait for a child in the same
+                    process group as the caller.
+                </li>
+                <li>
+                    <code>pid &lt; -1</code>: Wait for a child in the
+                    process group whose ID is <code>-pid</code>.
+                </li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>8. waitpid() Options</h2>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Option</th>
+                    <th>Purpose</th>
+                </tr>
+                <tr>
+                    <td><code>0</code></td>
+                    <td>Wait using the default blocking behaviour.</td>
+                </tr>
+                <tr>
+                    <td><code>WNOHANG</code></td>
+                    <td>Return immediately if no requested child has a reportable state change.</td>
+                </tr>
+                <tr>
+                    <td><code>WUNTRACED</code></td>
+                    <td>Also report stopped children that have not been reported.</td>
+                </tr>
+                <tr>
+                    <td><code>WCONTINUED</code></td>
+                    <td>Also report children that have resumed after being stopped.</td>
+                </tr>
+            </table>
+
+            <div class="info-box">
+                <strong>Remember:</strong>
+                WNOHANG makes waitpid() non-blocking when no requested
+                child has a reportable state change.
+            </div>
+        </section>
+
+        <section>
+            <h2>9. Practical Program Using waitpid()</h2>
+
+            <p>
+                This program waits for a specific child process using
+                its PID.
+            </p>
+
+            <h3>Program</h3>
+
+            <pre>
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int main(void)
+{
+    pid_t pid;
+    pid_t result;
+    int status;
+
+    pid = fork();
+
+    if (pid &lt; 0)
+    {
+        perror("fork");
+        return 1;
+    }
+    else if (pid == 0)
+    {
+        printf("Child process running\n");
+
+        sleep(2);
+
+        printf("Child process terminating\n");
+
+        return 10;
+    }
+    else
+    {
+        printf("Parent is waiting for PID: %d\n",
+               (int)pid);
+
+        result = waitpid(pid, &amp;status, 0);
+
+        if (result == -1)
+        {
+            perror("waitpid");
+            return 1;
+        }
+
+        printf("Collected child PID: %d\n",
+               (int)result);
+
+        if (WIFEXITED(status))
+        {
+            printf("Exit status: %d\n",
+                   WEXITSTATUS(status));
+        }
+    }
+
+    return 0;
+}
+            </pre>
+
+            <h3>Compile</h3>
+
+            <pre>
+gcc waitpid_example.c -o waitpid_example
+            </pre>
+
+            <h3>Execute</h3>
+
+            <pre>
+./waitpid_example
+            </pre>
+
+            <h3>Possible Output</h3>
+
+            <pre>
+Parent is waiting for PID: 2510
+Child process running
+Child process terminating
+Collected child PID: 2510
+Exit status: 10
+            </pre>
+
+            <p>
+                The PID shown is illustrative. The parent waits for
+                the specific child whose PID was returned by fork().
+            </p>
+        </section>
+
+        <section>
+            <h2>10. Non-Blocking waitpid() Using WNOHANG</h2>
+
+            <p>
+                Normally, waitpid() blocks until the requested child
+                has a reportable state change. With WNOHANG, the parent
+                can check the child's status and continue if the child
+                has not finished.
+            </p>
+
+            <h3>Return Values with WNOHANG</h3>
+
+            <ul>
+                <li>
+                    Positive PID: A child state change was collected.
+                </li>
+                <li>
+                    Zero: No requested child has a reportable state change.
+                </li>
+                <li>
+                    -1: An error occurred.
+                </li>
+            </ul>
+
+            <h3>Program</h3>
+
+            <pre>
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int main(void)
+{
+    pid_t pid;
+    pid_t result;
+    int status;
+
+    pid = fork();
+
+    if (pid &lt; 0)
+    {
+        perror("fork");
+        return 1;
+    }
+    else if (pid == 0)
+    {
+        sleep(3);
+        printf("Child process completed\n");
+        return 0;
+    }
+    else
+    {
+        while (1)
+        {
+            result = waitpid(pid, &amp;status, WNOHANG);
+
+            if (result == -1)
+            {
+                perror("waitpid");
+                return 1;
+            }
+
+            if (result == 0)
+            {
+                printf("Child is still running\n");
+                sleep(1);
+            }
+            else
+            {
+                printf("Child process collected\n");
+                break;
+            }
+        }
+    }
+
+    return 0;
+}
+            </pre>
+
+            <h3>Compile</h3>
+
+            <pre>
+gcc wnohang_example.c -o wnohang_example
+            </pre>
+
+            <h3>Execute</h3>
+
+            <pre>
+./wnohang_example
+            </pre>
+
+            <h3>Possible Output</h3>
+
+            <pre>
+Child is still running
+Child is still running
+Child is still running
+Child process completed
+Child process collected
+            </pre>
+
+            <p>
+                Exact output timing depends on process scheduling.
+                The parent periodically checks whether the child has
+                terminated.
+            </p>
+        </section>
+
+        <section>
+            <h2>11. Difference Between wait() and waitpid()</h2>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Feature</th>
+                    <th>wait()</th>
+                    <th>waitpid()</th>
+                </tr>
+                <tr>
+                    <td>Child selection</td>
+                    <td>Any eligible child</td>
+                    <td>Can select a particular child or process group</td>
+                </tr>
+                <tr>
+                    <td>Blocking</td>
+                    <td>Normally blocks</td>
+                    <td>Can block or use WNOHANG</td>
+                </tr>
+                <tr>
+                    <td>Options</td>
+                    <td>No options parameter</td>
+                    <td>Supports options</td>
+                </tr>
+                <tr>
+                    <td>Specific child PID</td>
+                    <td>No</td>
+                    <td>Yes</td>
+                </tr>
+                <tr>
+                    <td>Non-blocking check</td>
+                    <td>No direct option</td>
+                    <td>Yes, using WNOHANG</td>
+                </tr>
+            </table>
+        </section>
+
+        <section>
+            <h2>12. What Is a Zombie Process?</h2>
+
+            <p>
+                A zombie process is a child process that has terminated
+                but whose termination status has not yet been collected
+                by its parent.
+            </p>
+
+            <p>
+                The process has finished executing, but a small amount
+                of process-table information remains so that the parent
+                can collect its exit status.
+            </p>
+
+            <h3>How Does a Zombie Occur?</h3>
+
+            <pre>
+        Parent Process
+              |
+            fork()
+              |
+          Child Process
+              |
+          Terminates
+              |
+        Becomes Zombie
+              |
+       Parent has not yet
+       collected its status
+              |
+        Parent calls wait()
+              |
+       Zombie entry is reaped
+            </pre>
+
+            <h3>How to Check Zombie Processes</h3>
+
+            <pre>
+ps -el
+            </pre>
+
+            <p>
+                Look for a process state containing <code>Z</code>.
+                Another useful command is:
+            </p>
+
+            <pre>
+ps aux | grep ' Z '
+            </pre>
+
+            <div class="warning-box">
+                <strong>Important:</strong>
+                A zombie is already terminated. Sending it another
+                termination signal does not remove it. Its parent must
+                collect its status using wait() or waitpid(). If the
+                parent exits, the child is adopted by a system
+                reaper process, which can collect it.
+            </div>
+        </section>
+
+        <section>
+            <h2>13. What Is an Orphan Process?</h2>
+
+            <p>
+                An orphan process is a child process whose parent
+                terminates while the child is still running.
+            </p>
+
+            <p>
+                Linux reparents an orphan to an appropriate system
+                process, commonly a process acting as a subreaper
+                or the init/system manager.
+            </p>
+
+            <h3>Difference Between Zombie and Orphan</h3>
+
+            <table class="lesson-table">
+                <tr>
+                    <th>Zombie Process</th>
+                    <th>Orphan Process</th>
+                </tr>
+                <tr>
+                    <td>Child has terminated.</td>
+                    <td>Child is still running.</td>
+                </tr>
+                <tr>
+                    <td>Parent has not collected its status.</td>
+                    <td>Original parent has terminated.</td>
+                </tr>
+                <tr>
+                    <td>Needs to be reaped.</td>
+                    <td>Gets adopted by another process.</td>
+                </tr>
+                <tr>
+                    <td>Usually appears with state Z.</td>
+                    <td>May be running or sleeping.</td>
+                </tr>
+            </table>
+        </section>
+
+        <section>
+            <h2>14. Practical Exercises</h2>
+
+            <h3>Exercise 1: Basic wait()</h3>
+            <ol>
+                <li>Create a child using fork().</li>
+                <li>Make the child sleep for two seconds.</li>
+                <li>Make the parent call wait().</li>
+                <li>Observe the execution order.</li>
+            </ol>
+
+            <h3>Exercise 2: Exit Status</h3>
+            <ol>
+                <li>Make a child return status code 7.</li>
+                <li>Collect the status using wait().</li>
+                <li>Check WIFEXITED().</li>
+                <li>Print the code using WEXITSTATUS().</li>
+            </ol>
+
+            <h3>Exercise 3: Specific Child Using waitpid()</h3>
+            <ol>
+                <li>Create a child using fork().</li>
+                <li>Store its PID in the parent.</li>
+                <li>Call waitpid() with that PID.</li>
+                <li>Display the collected PID.</li>
+            </ol>
+
+            <h3>Exercise 4: Non-Blocking waitpid()</h3>
+            <ol>
+                <li>Create a child process.</li>
+                <li>Make it sleep for three seconds.</li>
+                <li>Use waitpid() with WNOHANG.</li>
+                <li>Print a message while the child is running.</li>
+            </ol>
+
+            <h3>Exercise 5: Process State Observation</h3>
+            <ol>
+                <li>Create a child that terminates immediately.</li>
+                <li>Temporarily delay the parent's wait operation.</li>
+                <li>Use ps to observe the child state.</li>
+                <li>Call wait() and observe the result.</li>
+            </ol>
+        </section>
+
+        <section>
+            <h2>15. Interview Questions and Answers</h2>
+
+            <h3>Q1. What is wait()?</h3>
+            <p>
+                wait() allows a parent process to wait for an eligible
+                child state change and collect the child's termination status.
+            </p>
+
+            <h3>Q2. What is waitpid()?</h3>
+            <p>
+                waitpid() provides control over which child or process
+                group the parent waits for and supports options such
+                as WNOHANG.
+            </p>
+
+            <h3>Q3. What is a zombie process?</h3>
+            <p>
+                A terminated child whose status has not yet been
+                collected by its parent.
+            </p>
+
+            <h3>Q4. What is an orphan process?</h3>
+            <p>
+                A child process whose original parent has terminated
+                while the child is still running.
+            </p>
+
+            <h3>Q5. What is WNOHANG?</h3>
+            <p>
+                It makes waitpid() return immediately if no requested
+                child has a reportable state change.
+            </p>
+
+            <h3>Q6. What does WIFEXITED() check?</h3>
+            <p>
+                It checks whether a child terminated normally.
+            </p>
+
+            <h3>Q7. What does WEXITSTATUS() return?</h3>
+            <p>
+                It extracts the child's exit code after normal termination.
+            </p>
+
+            <h3>Q8. What is the main difference between wait() and waitpid()?</h3>
+            <p>
+                wait() waits for any eligible child, whereas waitpid()
+                can select a particular child or process group and
+                supports additional options.
+            </p>
+
+            <h3>Q9. Can a zombie process execute instructions?</h3>
+            <p>
+                No. A zombie has already terminated and cannot execute
+                further instructions.
+            </p>
+
+            <h3>Q10. How can a parent prevent zombie processes?</h3>
+            <p>
+                It should collect terminated child statuses using
+                wait() or waitpid(), or use an appropriate child-reaping
+                strategy.
+            </p>
+        </section>
+
+        <section>
+            <h2>16. Multiple Choice Questions (MCQs)</h2>
+
+            <h3>Q1. Which function waits for any eligible child process?</h3>
+            <ol type="A">
+                <li>fork()</li>
+                <li>wait()</li>
+                <li>exec()</li>
+                <li>open()</li>
+            </ol>
+            <p><strong>Answer: B — wait()</strong></p>
+
+            <h3>Q2. Which function can wait for a specific child PID?</h3>
+            <ol type="A">
+                <li>waitpid()</li>
+                <li>printf()</li>
+                <li>read()</li>
+                <li>execv()</li>
+            </ol>
+            <p><strong>Answer: A — waitpid()</strong></p>
+
+            <h3>Q3. Which option makes waitpid() non-blocking?</h3>
+            <ol type="A">
+                <li>WEXITED</li>
+                <li>WNOHANG</li>
+                <li>WSTOPPED</li>
+                <li>WCONTINUED</li>
+            </ol>
+            <p><strong>Answer: B — WNOHANG</strong></p>
+
+            <h3>Q4. What is a zombie process?</h3>
+            <ol type="A">
+                <li>A running process</li>
+                <li>A terminated child not yet reaped</li>
+                <li>A process without memory</li>
+                <li>A kernel thread</li>
+            </ol>
+            <p><strong>Answer: B — A terminated child not yet reaped</strong></p>
+
+            <h3>Q5. Which macro checks normal child termination?</h3>
+            <ol type="A">
+                <li>WIFEXITED()</li>
+                <li>WEXIT()</li>
+                <li>WSTATUS()</li>
+                <li>WIFRUNNING()</li>
+            </ol>
+            <p><strong>Answer: A — WIFEXITED()</strong></p>
+
+            <h3>Q6. Which macro extracts a normal exit code?</h3>
+            <ol type="A">
+                <li>WIFSIGNALED()</li>
+                <li>WEXITSTATUS()</li>
+                <li>WTERMSIG()</li>
+                <li>WSTOPSIG()</li>
+            </ol>
+            <p><strong>Answer: B — WEXITSTATUS()</strong></p>
+
+            <h3>Q7. What is an orphan process?</h3>
+            <ol type="A">
+                <li>A child whose parent terminates while it is still running</li>
+                <li>A child that has already been reaped</li>
+                <li>A process that cannot execute</li>
+                <li>A process with no PID</li>
+            </ol>
+            <p><strong>Answer: A — A child whose parent terminates while it is still running</strong></p>
+
+            <h3>Q8. Which header declares wait() and waitpid()?</h3>
+            <ol type="A">
+                <li>&lt;stdio.h&gt;</li>
+                <li>&lt;stdlib.h&gt;</li>
+                <li>&lt;sys/wait.h&gt;</li>
+                <li>&lt;string.h&gt;</li>
+            </ol>
+            <p><strong>Answer: C — &lt;sys/wait.h&gt;</strong></p>
+
+            <h3>Q9. What does waitpid() return when WNOHANG is used and no requested child has a reportable state change?</h3>
+            <ol type="A">
+                <li>-1</li>
+                <li>0</li>
+                <li>1</li>
+                <li>NULL</li>
+            </ol>
+            <p><strong>Answer: B — 0</strong></p>
+
+            <h3>Q10. Which function is useful for collecting a particular child process?</h3>
+            <ol type="A">
+                <li>waitpid()</li>
+                <li>execve()</li>
+                <li>malloc()</li>
+                <li>open()</li>
+            </ol>
+            <p><strong>Answer: A — waitpid()</strong></p>
+        </section>
+
+        <section>
+            <h2>17. Lesson Summary</h2>
+
+            <ul>
+                <li>wait() allows a parent to collect an eligible child status.</li>
+                <li>waitpid() provides more control over child selection.</li>
+                <li>waitpid() supports non-blocking checks using WNOHANG.</li>
+                <li>WIFEXITED() checks normal termination.</li>
+                <li>WEXITSTATUS() extracts the normal exit code.</li>
+                <li>A zombie is terminated but not yet reaped.</li>
+                <li>An orphan is still running after its original parent terminates.</li>
+                <li>Parents should properly collect child-process statuses.</li>
+            </ul>
+
+            <div class="info-box">
+                <strong>Next Lesson:</strong>
+                Process Creation and Termination — Understand how Linux
+                creates processes, manages their execution and handles
+                process termination.
+            </div>
+        </section>
+
+    </main>
+
+    <nav class="lesson-navigation">
+        <a href="L04_exec()_Family.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="../linux.html">Linux Course</a>
+        <a href="../../index.html">Home</a>
+        <a href="L06_Process_Creation_and_Termination.html">Next Lesson →</a>
+    </nav>
+
+    <footer class="lesson-footer">
+        <p><strong>NS Learning Hub</strong></p>
+        <p>Linux System Programming | Chapter 11 | Lesson 5</p>
+        <p>Learn • Practise • Build</p>
+    </footer>
+
+</div>
+
+</body>
+</html>
