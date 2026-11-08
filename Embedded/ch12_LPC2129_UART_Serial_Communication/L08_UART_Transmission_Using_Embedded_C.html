@@ -1,1 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UART Transmission Using Embedded C - LPC2129</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-header{background:linear-gradient(135deg,#174ea6,#2878d0);color:white;padding:30px;border-radius:12px;margin-bottom:25px}
+.lesson-section{background:white;padding:22px;margin:20px 0;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+h2{color:#174ea6;border-bottom:2px solid #e76f00;padding-bottom:8px}
+h3{color:#174ea6;margin-top:22px}
+.info-box{background:#eaf2ff;border-left:5px solid #2878d0;padding:15px;margin:15px 0;border-radius:6px}
+.note-box{background:#fff4e8;border-left:5px solid #e76f00;padding:15px;margin:15px 0;border-radius:6px}
+pre{background:#17212f;color:#e8edf5;padding:16px;border-radius:8px;overflow-x:auto;line-height:1.55}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d5dce5;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+.diagram{background:#f5f8fc;border:1px solid #cbd8e8;border-radius:8px;padding:18px;margin:15px 0;text-align:center;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;text-decoration:none;border-radius:6px}
+.lesson-nav a:hover{background:#e76f00}
+@media(max-width:600px){.lesson-section{padding:16px}.lesson-nav{flex-direction:column}.lesson-nav a{text-align:center}}
+</style>
+</head>
+<body>
 
+<header class="lesson-header">
+<h1>UART Transmission Using Embedded C</h1>
+<p><strong>Course:</strong> Embedded Systems – Complete Study Course</p>
+<p><strong>Chapter 12:</strong> LPC2129 UART Serial Communication</p>
+<p><strong>Lesson 08</strong></p>
+</header>
+
+<section class="lesson-section">
+<h2>1. Introduction</h2>
+<p>UART communication can be implemented in Embedded C by configuring the UART registers and writing functions to transmit and receive serial data.</p>
+
+<p>The LPC2129 provides two UART peripherals:</p>
+<ul>
+<li>UART0</li>
+<li>UART1</li>
+</ul>
+
+<p>Each UART can operate independently and supports asynchronous serial communication.</p>
+
+<div class="info-box">
+<strong>Learning objectives</strong>
+<ul>
+<li>Configure UART0 pins and registers.</li>
+<li>Initialize UART baud rate and frame format.</li>
+<li>Transmit a single character.</li>
+<li>Transmit a string.</li>
+<li>Receive a character.</li>
+<li>Implement UART echo communication.</li>
+<li>Understand blocking and polling-based communication.</li>
+<li>Debug UART programs in Keil uVision.</li>
+</ul>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>2. Hardware and Pin Configuration</h2>
+<p>UART0 uses the following LPC2129 pins when the corresponding alternate functions are selected through PINSEL0.</p>
+
+<table>
+<tr><th>Pin</th><th>UART function</th><th>Direction</th></tr>
+<tr><td>P0.0</td><td>TXD0</td><td>Output</td></tr>
+<tr><td>P0.1</td><td>RXD0</td><td>Input</td></tr>
+</table>
+
+<p>UART1 uses:</p>
+
+<table>
+<tr><th>Pin</th><th>UART function</th><th>Direction</th></tr>
+<tr><td>P0.8</td><td>TXD1</td><td>Output</td></tr>
+<tr><td>P0.9</td><td>RXD1</td><td>Input</td></tr>
+</table>
+
+<div class="diagram">
+<strong>UART0 communication connection</strong>
+<p>LPC2129 TXD0 (P0.0) → External device RX</p>
+<p>LPC2129 RXD0 (P0.1) ← External device TX</p>
+<p>LPC2129 GND ↔ External device GND</p>
+</div>
+
+<div class="note-box">
+TX and RX connections are crossed between two communicating devices. Ensure that both devices use compatible logic voltage levels. UART logic signals are not directly equivalent to RS-232 voltage levels.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>3. UART Configuration Sequence</h2>
+<p>Before transmitting or receiving data, configure the UART peripheral.</p>
+
+<ol>
+<li>Select the UART pin functions using PINSEL0.</li>
+<li>Set DLAB to access the divisor registers.</li>
+<li>Configure DLL and DLM.</li>
+<li>Configure the fractional divider register FDR when required.</li>
+<li>Clear DLAB.</li>
+<li>Configure the data frame using LCR.</li>
+<li>Enable FIFO if required.</li>
+<li>Use THR and RBR for transmission and reception.</li>
+</ol>
+
+<div class="info-box">
+<strong>Project clock configuration:</strong> CCLK = 60 MHz and PCLK = 15 MHz. UART baud-rate calculations must use the peripheral clock, not the CPU clock.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>4. UART0 Initialization Function</h2>
+<p>The following function configures UART0 for approximately 9600 baud, 8 data bits, no parity and one stop bit (8N1).</p>
+
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+void UART0_Init(void)
+{
+    /* Configure P0.0 as TXD0 */
+    PINSEL0 &amp;= ~(3U &lt;&lt; 0);
+    PINSEL0 |=  (1U &lt;&lt; 0);
+
+    /* Configure P0.1 as RXD0 */
+    PINSEL0 &amp;= ~(3U &lt;&lt; 2);
+    PINSEL0 |=  (1U &lt;&lt; 2);
+
+    /* Enable access to baud-rate divisor registers */
+    U0LCR = 0x83;
+
+    /* Divisor configuration */
+    U0DLM = 0x00;
+    U0DLL = 0x47;
+
+    /* Fractional divider:
+       MULVAL = 8, DIVADDVAL = 3 */
+    U0FDR = 0x83;
+
+    /* Configure 8N1 and clear DLAB */
+    U0LCR = 0x03;
+
+    /* Enable and reset transmit/receive FIFOs */
+    U0FCR = 0x07;
+}</code></pre>
+
+<h3>Register explanation</h3>
+<table>
+<tr><th>Register</th><th>Purpose</th><th>Configured value</th></tr>
+<tr><td>PINSEL0</td><td>Selects UART0 pin functions</td><td>P0.0 and P0.1 set to UART0</td></tr>
+<tr><td>U0LCR</td><td>Line control and DLAB</td><td>0x83, then 0x03</td></tr>
+<tr><td>U0DLL</td><td>Divisor latch low byte</td><td>0x47</td></tr>
+<tr><td>U0DLM</td><td>Divisor latch high byte</td><td>0x00</td></tr>
+<tr><td>U0FDR</td><td>Fractional divider</td><td>0x83</td></tr>
+<tr><td>U0FCR</td><td>FIFO control</td><td>0x07</td></tr>
+</table>
+
+<div class="note-box">
+With PCLK = 15 MHz, DLL = 71, DLM = 0, MULVAL = 8 and DIVADDVAL = 3, the calculated baud rate is approximately 9603 baud. FCR reset bits are command bits and self-clear.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>5. Character Transmission</h2>
+<p>A character is transmitted by writing its byte value into the UART transmit holding register (THR).</p>
+
+<h3>Algorithm</h3>
+<ol>
+<li>Read the UART line status register.</li>
+<li>Check THRE (LSR bit 5).</li>
+<li>Wait until the transmit holding path is ready.</li>
+<li>Write the character to THR.</li>
+</ol>
+
+<h3>Embedded C function</h3>
+<pre><code>void UART0_TxChar(unsigned char ch)
+{
+    while ((U0LSR &amp; (1U &lt;&lt; 5)) == 0)
+    {
+        /* Wait until transmit holding register is empty */
+    }
+
+    U0THR = ch;
+}</code></pre>
+
+<h3>Function call</h3>
+<pre><code>UART0_TxChar('A');</code></pre>
+
+<p>This sends the character A through the UART0 transmit path.</p>
+</section>
+
+<section class="lesson-section">
+<h2>6. String Transmission</h2>
+<p>A string consists of multiple characters terminated by the null character '\0'. A string transmission function sends each character sequentially.</p>
+
+<h3>Embedded C function</h3>
+<pre><code>void UART0_TxString(const char *str)
+{
+    while (*str != '\0')
+    {
+        UART0_TxChar((unsigned char)*str);
+        str++;
+    }
+}</code></pre>
+
+<h3>Function call</h3>
+<pre><code>UART0_TxString("Hello LPC2129");</code></pre>
+
+<h3>Transmission sequence</h3>
+<div class="diagram">
+<p>H → e → l → l → o → Space → L → P → C → 2 → 1 → 2 → 9</p>
+<p>Each character is transmitted as a separate UART frame.</p>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>7. Adding a New Line</h2>
+<p>Serial terminals commonly use carriage return and line feed characters to move to the beginning of the next line.</p>
+
+<pre><code>UART0_TxString("Welcome");
+UART0_TxChar('\r');
+UART0_TxChar('\n');
+UART0_TxString("Embedded Systems");</code></pre>
+
+<p><strong>Expected terminal layout:</strong></p>
+<pre><code>Welcome
+Embedded Systems</code></pre>
+
+<p>The characters '\r' and '\n' are control characters, not ordinary printable letters.</p>
+</section>
+
+<section class="lesson-section">
+<h2>8. Character Reception</h2>
+<p>The UART receiver stores incoming data in the receive buffer or FIFO. The CPU checks the RDR flag before reading RBR.</p>
+
+<h3>Algorithm</h3>
+<ol>
+<li>Read U0LSR.</li>
+<li>Check bit 0 (RDR).</li>
+<li>Wait until received data is available.</li>
+<li>Read the character from U0RBR.</li>
+</ol>
+
+<h3>Embedded C function</h3>
+<pre><code>unsigned char UART0_RxChar(void)
+{
+    while ((U0LSR &amp; (1U &lt;&lt; 0)) == 0)
+    {
+        /* Wait until data is received */
+    }
+
+    return (unsigned char)U0RBR;
+}</code></pre>
+
+<div class="note-box">
+This is a blocking function. If no character arrives, the CPU remains inside the polling loop. A non-blocking or interrupt-driven design is preferable when the application must perform other tasks concurrently.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>9. UART Echo Program</h2>
+<p>An echo application receives a character and transmits the same character back to the sender.</p>
+
+<h3>Complete program</h3>
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+void UART0_Init(void)
+{
+    PINSEL0 &amp;= ~(3U &lt;&lt; 0);
+    PINSEL0 |=  (1U &lt;&lt; 0);
+
+    PINSEL0 &amp;= ~(3U &lt;&lt; 2);
+    PINSEL0 |=  (1U &lt;&lt; 2);
+
+    U0LCR = 0x83;
+    U0DLM = 0x00;
+    U0DLL = 0x47;
+    U0FDR = 0x83;
+    U0LCR = 0x03;
+    U0FCR = 0x07;
+}
+
+void UART0_TxChar(unsigned char ch)
+{
+    while ((U0LSR &amp; (1U &lt;&lt; 5)) == 0)
+    {
+    }
+
+    U0THR = ch;
+}
+
+unsigned char UART0_RxChar(void)
+{
+    while ((U0LSR &amp; (1U &lt;&lt; 0)) == 0)
+    {
+    }
+
+    return (unsigned char)U0RBR;
+}
+
+int main(void)
+{
+    unsigned char data;
+
+    UART0_Init();
+
+    while (1)
+    {
+        data = UART0_RxChar();
+        UART0_TxChar(data);
+    }
+}</code></pre>
+
+<h3>Expected behavior</h3>
+<p>If the sender transmits the character A, the receiver reads A and sends A back.</p>
+
+<div class="diagram">
+<strong>Echo communication</strong>
+<p>External terminal → UART0 RXD → LPC2129</p>
+<p>LPC2129 → UART0 TXD → External terminal</p>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>10. Transmitting a Number as Text</h2>
+<p>UART transmits bytes. If an integer must be displayed as decimal text, it must first be converted into ASCII characters.</p>
+
+<h3>Example using sprintf</h3>
+<pre><code>#include &lt;stdio.h&gt;
+
+void Display_Number(void)
+{
+    char buffer[20];
+    unsigned int temperature = 125;
+
+    sprintf(buffer, "Value = %u\r\n", temperature);
+
+    UART0_TxString(buffer);
+}</code></pre>
+
+<p><strong>Expected text:</strong></p>
+<pre><code>Value = 125</code></pre>
+
+<div class="note-box">
+Some embedded projects avoid sprintf because it can increase code size and RAM usage. For constrained systems, a small integer-to-string conversion function may be more suitable.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>11. UART0 and UART1 Programming Comparison</h2>
+<table>
+<tr><th>Feature</th><th>UART0</th><th>UART1</th></tr>
+<tr><td>Transmit pin</td><td>P0.0 / TXD0</td><td>P0.8 / TXD1</td></tr>
+<tr><td>Receive pin</td><td>P0.1 / RXD0</td><td>P0.9 / RXD1</td></tr>
+<tr><td>Line control</td><td>U0LCR</td><td>U1LCR</td></tr>
+<tr><td>Transmit register</td><td>U0THR</td><td>U1THR</td></tr>
+<tr><td>Receive register</td><td>U0RBR</td><td>U1RBR</td></tr>
+<tr><td>Line status</td><td>U0LSR</td><td>U1LSR</td></tr>
+</table>
+
+<p>The programming sequence is similar, but each UART uses its own register set and pin configuration.</p>
+</section>
+
+<section class="lesson-section">
+<h2>12. Polling vs Interrupt-Based UART</h2>
+<table>
+<tr><th>Polling</th><th>Interrupt-based</th></tr>
+<tr><td>CPU repeatedly checks UART status.</td><td>UART requests CPU attention through an interrupt.</td></tr>
+<tr><td>Simple to implement.</td><td>Requires interrupt configuration and an ISR.</td></tr>
+<tr><td>Can block the main program.</td><td>Allows the main program to perform other work between interrupts.</td></tr>
+<tr><td>Useful for simple applications.</td><td>Useful for more responsive communication and multitasking designs.</td></tr>
+</table>
+
+<p>Interrupt-driven UART programming is covered in the next lesson.</p>
+</section>
+
+<section class="lesson-section">
+<h2>13. Common UART Programming Errors</h2>
+<ul>
+<li>Using CCLK instead of PCLK in the baud-rate calculation.</li>
+<li>Incorrect DLL, DLM or FDR configuration.</li>
+<li>Forgetting to clear DLAB after configuring the divisor.</li>
+<li>Incorrect PINSEL0 configuration.</li>
+<li>Writing to THR without checking THRE.</li>
+<li>Reading RBR without checking RDR.</li>
+<li>Using incompatible baud rates or frame formats at the two endpoints.</li>
+<li>Connecting TX to TX and RX to RX instead of crossing the signals.</li>
+<li>Connecting MCU UART logic directly to RS-232 voltage levels.</li>
+<li>Ignoring blocking behavior in receive functions.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>14. Keil uVision Simulator Practice</h2>
+<p><strong>Objective:</strong> Build and debug a UART0 program using the LPC2129 device configuration.</p>
+
+<h3>Procedure</h3>
+<ol>
+<li>Create or open an LPC2129 Keil project.</li>
+<li>Add the UART0 Embedded C program.</li>
+<li>Select the correct LPC2129 device and startup configuration.</li>
+<li>Build the project and resolve compilation errors.</li>
+<li>Start the debugger.</li>
+<li>Inspect PINSEL0 and UART configuration registers.</li>
+<li>Set breakpoints inside UART0_Init and UART0_TxChar.</li>
+<li>Step through the register writes.</li>
+<li>Inspect U0LSR and U0THR when supported by the simulator.</li>
+<li>Use a supported serial terminal or peripheral simulation feature if available.</li>
+</ol>
+
+<div class="note-box">
+<strong>Simulator limitation:</strong> A successful build and execution do not prove that physical UART communication works. Keil simulator support for serial input/output varies by device and configuration. Without a physical board or supported UART simulation interface, verify register configuration and CPU execution only.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>15. Practical Applications</h2>
+<ul>
+<li>Sending debug messages from embedded firmware.</li>
+<li>Receiving commands from a serial terminal.</li>
+<li>Communication between a microcontroller and a PC.</li>
+<li>Sending sensor readings to a monitoring system.</li>
+<li>Configuring embedded devices through a serial console.</li>
+<li>Communication between two microcontrollers.</li>
+<li>Firmware diagnostics and troubleshooting.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>16. Interview Questions and Answers</h2>
+
+<h3>Q1. How do you initialize UART0?</h3>
+<p>Select the TXD0/RXD0 pin functions, configure DLL/DLM and FDR, set the frame format in LCR, clear DLAB and configure FIFO if required.</p>
+
+<h3>Q2. Why is PCLK used for UART baud-rate calculation?</h3>
+<p>The UART peripheral uses the peripheral clock as its input clock for baud-rate generation.</p>
+
+<h3>Q3. How do you transmit a character?</h3>
+<p>Wait for LSR bit 5 (THRE), then write the character to THR.</p>
+
+<h3>Q4. How do you receive a character?</h3>
+<p>Wait for LSR bit 0 (RDR), then read the received byte from RBR.</p>
+
+<h3>Q5. What is a UART echo program?</h3>
+<p>It receives a character and transmits the same character back to the sender.</p>
+
+<h3>Q6. Why is a null character used in string transmission?</h3>
+<p>It marks the end of a null-terminated C string.</p>
+
+<h3>Q7. What is the purpose of PINSEL0?</h3>
+<p>It selects alternate functions for LPC2129 Port 0 pins, including UART0 and UART1 functions.</p>
+
+<h3>Q8. Why should a blocking receive function be used carefully?</h3>
+<p>Because the CPU remains in the receive polling loop until data becomes available.</p>
+
+<h3>Q9. What is the difference between polling and interrupt-driven UART?</h3>
+<p>Polling repeatedly checks status flags, while interrupt-driven UART uses interrupt requests to notify the CPU of events.</p>
+
+<h3>Q10. Why is UART useful for debugging?</h3>
+<p>It provides a simple serial channel for sending diagnostic messages and receiving commands.</p>
+</section>
+
+<section class="lesson-section">
+<h2>17. Multiple Choice Questions</h2>
+
+<p><strong>1. Which pin is UART0 TXD on the LPC2129?</strong></p>
+<ol type="A"><li>P0.1</li><li>P0.0</li><li>P0.8</li><li>P0.9</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>2. Which clock is used for UART baud-rate generation?</strong></p>
+<ol type="A"><li>FOSC only</li><li>CCLK</li><li>PCLK</li><li>RTC clock</li></ol>
+<p><strong>Answer:</strong> C</p>
+
+<p><strong>3. Which register stores the transmit data?</strong></p>
+<ol type="A"><li>RBR</li><li>THR</li><li>LSR</li><li>IER</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>4. Which LSR bit indicates received data is available?</strong></p>
+<ol type="A"><li>Bit 0</li><li>Bit 1</li><li>Bit 5</li><li>Bit 6</li></ol>
+<p><strong>Answer:</strong> A</p>
+
+<p><strong>5. Which register selects UART0 pin functions?</strong></p>
+<ol type="A"><li>IODIR0</li><li>PINSEL0</li><li>U0FCR</li><li>U0THR</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>6. What does UART echo mean?</strong></p>
+<ol type="A"><li>Transmit only</li><li>Receive only</li><li>Transmit received data back</li><li>Disable transmission</li></ol>
+<p><strong>Answer:</strong> C</p>
+
+<p><strong>7. What does DLAB control?</strong></p>
+<ol type="A"><li>GPIO direction</li><li>Access to divisor latch registers</li><li>Timer operation</li><li>Interrupt priority</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>8. Which frame format is configured by U0LCR = 0x03?</strong></p>
+<ol type="A"><li>7E1</li><li>8N1</li><li>8E1</li><li>5N2</li></ol>
+<p><strong>Answer:</strong> B</p>
+</section>
+
+<section class="lesson-section">
+<h2>18. Practical Exercises</h2>
+<ol>
+<li>Configure UART0 for approximately 9600 baud and 8N1.</li>
+<li>Write a function to transmit a single character.</li>
+<li>Write a function to transmit a null-terminated string.</li>
+<li>Transmit your own text message through UART0.</li>
+<li>Write a function to receive one character.</li>
+<li>Develop a UART echo program.</li>
+<li>Transmit a decimal integer as ASCII text.</li>
+<li>Configure UART1 and compare its register usage with UART0.</li>
+<li>Inspect UART registers using the Keil debugger.</li>
+<li>Modify a blocking receive routine to use a non-blocking status check.</li>
+</ol>
+</section>
+
+<section class="lesson-section">
+<h2>19. Lesson Summary</h2>
+<ul>
+<li>UART0 uses P0.0 as TXD0 and P0.1 as RXD0.</li>
+<li>PINSEL0 selects UART alternate pin functions.</li>
+<li>UART initialization configures the baud rate and frame format.</li>
+<li>THR is used for transmitting data.</li>
+<li>RBR is used for receiving data.</li>
+<li>LSR provides status information.</li>
+<li>Polling functions wait for the required UART status flags.</li>
+<li>String transmission sends characters one by one.</li>
+<li>Echo programming sends received data back to the sender.</li>
+<li>Interrupt-based communication can reduce CPU waiting.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>20. References</h2>
+<ul>
+<li>NXP LPC2129 Datasheet.</li>
+<li>NXP UM10114 – LPC21xx and LPC22xx User Manual.</li>
+<li>Arm Keil documentation and LPC21xx device support.</li>
+</ul>
+<p><a href="https://www.nxp.com/docs/en/user-guide/UM10114.pdf" target="_blank" rel="noopener">NXP LPC21xx/22xx User Manual</a></p>
+<p><a href="https://www.keil.com/" target="_blank" rel="noopener">Arm Keil Official Website</a></p>
+</section>
+
+<div class="lesson-nav">
+<a href="L07_UART_Transmit_and_Receive_Registers.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L09_UART_Interrupt_Based_Communication.html">Next Lesson →</a>
+</div>
+
+</body>
+</html>
