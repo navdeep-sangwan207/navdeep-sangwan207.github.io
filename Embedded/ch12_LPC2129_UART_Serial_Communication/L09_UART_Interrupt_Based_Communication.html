@@ -1,1 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UART Interrupt-Based Communication - LPC2129</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-header{background:linear-gradient(135deg,#174ea6,#2878d0);color:white;padding:30px;border-radius:12px;margin-bottom:25px}
+.lesson-section{background:white;padding:22px;margin:20px 0;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+h2{color:#174ea6;border-bottom:2px solid #e76f00;padding-bottom:8px}
+h3{color:#174ea6;margin-top:22px}
+.info-box{background:#eaf2ff;border-left:5px solid #2878d0;padding:15px;margin:15px 0;border-radius:6px}
+.note-box{background:#fff4e8;border-left:5px solid #e76f00;padding:15px;margin:15px 0;border-radius:6px}
+pre{background:#17212f;color:#e8edf5;padding:16px;border-radius:8px;overflow-x:auto;line-height:1.55}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d5dce5;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+.diagram{background:#f5f8fc;border:1px solid #cbd8e8;border-radius:8px;padding:18px;margin:15px 0;text-align:center;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;text-decoration:none;border-radius:6px}
+.lesson-nav a:hover{background:#e76f00}
+@media(max-width:600px){.lesson-section{padding:16px}.lesson-nav{flex-direction:column}.lesson-nav a{text-align:center}}
+</style>
+</head>
+<body>
 
+<header class="lesson-header">
+<h1>UART Interrupt-Based Communication</h1>
+<p><strong>Course:</strong> Embedded Systems – Complete Study Course</p>
+<p><strong>Chapter 12:</strong> LPC2129 UART Serial Communication</p>
+<p><strong>Lesson 09</strong></p>
+</header>
+
+<section class="lesson-section">
+<h2>1. Introduction</h2>
+<p>In polling-based UART communication, the CPU repeatedly checks UART status flags to determine whether data is ready for transmission or reception.</p>
+
+<p>In interrupt-based UART communication, the UART peripheral generates an interrupt when a configured event occurs. The CPU temporarily suspends its current execution, executes an Interrupt Service Routine (ISR), and then returns to the interrupted program.</p>
+
+<p>The LPC2129 UART peripherals can generate interrupts for receive data, transmit holding register status and receiver line errors.</p>
+
+<div class="info-box">
+<strong>Learning objectives</strong>
+<ul>
+<li>Understand interrupt-driven UART communication.</li>
+<li>Identify UART interrupt sources.</li>
+<li>Configure the UART Interrupt Enable Register (IER).</li>
+<li>Read the Interrupt Identification Register (IIR).</li>
+<li>Configure the VIC for UART0 interrupts.</li>
+<li>Write a UART interrupt service routine.</li>
+<li>Understand receive and transmit buffering.</li>
+<li>Implement an interrupt-driven UART echo application.</li>
+</ul>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>2. Polling vs Interrupt-Based UART</h2>
+<table>
+<tr><th>Polling-based UART</th><th>Interrupt-based UART</th></tr>
+<tr><td>CPU continuously checks UART status.</td><td>UART requests CPU attention when an enabled event occurs.</td></tr>
+<tr><td>Can keep the CPU waiting.</td><td>Allows the CPU to execute other tasks between interrupts.</td></tr>
+<tr><td>Simple program structure.</td><td>Requires interrupt configuration and an ISR.</td></tr>
+<tr><td>Suitable for simple communication tasks.</td><td>Suitable for responsive applications and concurrent tasks.</td></tr>
+<tr><td>CPU may waste processing time checking flags.</td><td>CPU responds when an interrupt event occurs.</td></tr>
+</table>
+
+<div class="diagram">
+<strong>Polling-based communication</strong>
+<p>CPU → Check UART status → Wait if not ready → Check again</p>
+</div>
+
+<div class="diagram">
+<strong>Interrupt-based communication</strong>
+<p>CPU executes main program</p>
+<p>↓</p>
+<p>UART interrupt event</p>
+<p>↓</p>
+<p>CPU executes UART ISR</p>
+<p>↓</p>
+<p>CPU returns to main program</p>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>3. UART Interrupt Sources</h2>
+<p>The UART can generate several types of interrupts. The corresponding interrupt sources are enabled through the IER register.</p>
+
+<table>
+<tr><th>IER bit</th><th>Interrupt source</th><th>Description</th></tr>
+<tr><td>0</td><td>Receive Data Available</td><td>Indicates that received data has reached the configured FIFO trigger level.</td></tr>
+<tr><td>1</td><td>THRE Interrupt</td><td>Indicates that the transmit holding register or transmit FIFO is empty.</td></tr>
+<tr><td>2</td><td>Receive Line Status</td><td>Indicates receiver errors or related line-status conditions.</td></tr>
+<tr><td>3</td><td>Modem Status</td><td>Modem-status interrupt functionality, relevant to UART1.</td></tr>
+</table>
+
+<h3>1. Receive Data Available Interrupt</h3>
+<p>This interrupt indicates that received characters are available in the receive FIFO. The ISR should read the available characters before the FIFO becomes full.</p>
+
+<h3>2. THRE Interrupt</h3>
+<p>This interrupt indicates that the transmit holding register or FIFO is empty. Software can use this event to provide the next characters for transmission.</p>
+
+<h3>3. Receive Line Status Interrupt</h3>
+<p>This interrupt reports receive-related conditions such as overrun, parity, framing and break errors.</p>
+</section>
+
+<section class="lesson-section">
+<h2>4. Interrupt Enable Register (IER)</h2>
+<p>The IER register enables or disables individual UART interrupt sources.</p>
+
+<table>
+<tr><th>Bit</th><th>Function</th></tr>
+<tr><td>0</td><td>Enable Receive Data Available interrupt.</td></tr>
+<tr><td>1</td><td>Enable THRE interrupt.</td></tr>
+<tr><td>2</td><td>Enable Receive Line Status interrupt.</td></tr>
+<tr><td>3</td><td>Enable Modem Status interrupt where supported.</td></tr>
+</table>
+
+<h3>Enable receive data interrupt</h3>
+<pre><code>U0IER |= (1U &lt;&lt; 0);</code></pre>
+
+<h3>Enable transmit holding register empty interrupt</h3>
+<pre><code>U0IER |= (1U &lt;&lt; 1);</code></pre>
+
+<h3>Enable receive line status interrupt</h3>
+<pre><code>U0IER |= (1U &lt;&lt; 2);</code></pre>
+
+<h3>Enable receive and line status interrupts</h3>
+<pre><code>U0IER = (1U &lt;&lt; 0) | (1U &lt;&lt; 2);</code></pre>
+
+<div class="note-box">
+IER shares its register address with DLM. Clear DLAB in U0LCR before accessing IER.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>5. Interrupt Identification Register (IIR)</h2>
+<p>IIR identifies the highest-priority pending UART interrupt. The ISR reads IIR to determine which event requires servicing.</p>
+
+<h3>Important IIR fields</h3>
+<table>
+<tr><th>Bit</th><th>Field</th><th>Meaning</th></tr>
+<tr><td>0</td><td>Interrupt Pending</td><td>0 means an interrupt is pending; 1 means no interrupt is pending.</td></tr>
+<tr><td>3:1</td><td>Interrupt Identification</td><td>Identifies the highest-priority pending interrupt.</td></tr>
+<tr><td>5:4</td><td>FIFO status</td><td>Indicates FIFO-related status.</td></tr>
+<tr><td>7:6</td><td>FIFO status</td><td>Indicates FIFO enable status.</td></tr>
+</table>
+
+<h3>Common interrupt identification values</h3>
+<table>
+<tr><th>IIR bits 3:1</th><th>Interrupt type</th><th>Priority</th></tr>
+<tr><td>011</td><td>Receive Line Status</td><td>Highest</td></tr>
+<tr><td>010</td><td>Receive Data Available</td><td>Second</td></tr>
+<tr><td>110</td><td>Character Timeout</td><td>Third</td></tr>
+<tr><td>001</td><td>THRE</td><td>Fourth</td></tr>
+<tr><td>000</td><td>Modem Status</td><td>Lowest</td></tr>
+</table>
+
+<h3>Example: Read interrupt identification</h3>
+<pre><code>unsigned int interrupt_status;
+
+interrupt_status = U0IIR;</code></pre>
+
+<p>The ISR examines the pending bit and identification field to decide which service operation is required.</p>
+</section>
+
+<section class="lesson-section">
+<h2>6. UART Interrupt Connection to VIC</h2>
+<p>The LPC2129 uses a Vectored Interrupt Controller (VIC) to manage interrupt requests from peripherals.</p>
+
+<p>UART0 and UART1 have separate VIC interrupt source numbers.</p>
+
+<table>
+<tr><th>Peripheral</th><th>VIC source number</th></tr>
+<tr><td>UART0</td><td>6</td></tr>
+<tr><td>UART1</td><td>7</td></tr>
+</table>
+
+<div class="diagram">
+<strong>UART0 interrupt path</strong>
+<div class="diagram">UART0 interrupt event</div>
+<div class="diagram">↓</div>
+<div class="diagram">UART0 interrupt request to VIC (source 6)</div>
+<div class="diagram">↓</div>
+<div class="diagram">VIC interrupt control and routing</div>
+<div class="diagram">↓</div>
+<div class="diagram">ARM7TDMI processor IRQ exception</div>
+<div class="diagram">↓</div>
+<div class="diagram">UART0 Interrupt Service Routine</div>
+</div>
+
+<p>The UART peripheral identifies the reason for its interrupt using IIR. The VIC identifies which peripheral requested the processor interrupt.</p>
+
+<div class="info-box">
+<strong>Important distinction:</strong> IIR identifies the UART interrupt condition. VIC identifies and routes the peripheral interrupt request to the ARM7 processor.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>7. UART Interrupt Service Routine (ISR)</h2>
+<p>An Interrupt Service Routine is a special function executed when an interrupt is accepted by the processor.</p>
+
+<p>A UART ISR typically performs the following operations:</p>
+<ol>
+<li>Read the UART IIR register.</li>
+<li>Identify the interrupt source.</li>
+<li>Read received data or provide transmit data as required.</li>
+<li>Handle receiver error conditions.</li>
+<li>Repeat servicing if another UART interrupt remains pending.</li>
+<li>Complete the VIC interrupt using the appropriate acknowledgement operation.</li>
+</ol>
+
+<h3>Basic ISR structure</h3>
+<pre><code>void UART0_ISR(void) __irq
+{
+    unsigned int status;
+
+    status = U0IIR;
+
+    /* Identify and service UART interrupt */
+
+    VICVectAddr = 0;
+}</code></pre>
+
+<div class="note-box">
+The exact interrupt function declaration depends on the compiler. The example uses the Keil ARM compiler's __irq convention. Other compilers may require a different ISR attribute or vector arrangement.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>8. UART Receive Interrupt</h2>
+<p>In receive interrupt operation, the CPU does not need to continuously check the RDR flag. The UART generates an interrupt when its configured receive condition occurs.</p>
+
+<h3>Receive interrupt sequence</h3>
+<ol>
+<li>Enable the receive data interrupt in IER.</li>
+<li>Configure the UART and FIFO.</li>
+<li>Receive characters through RXD.</li>
+<li>The UART generates an interrupt when the receive condition is satisfied.</li>
+<li>The VIC forwards the request to the CPU.</li>
+<li>The ISR reads the received characters from RBR.</li>
+<li>The ISR stores the characters in a software buffer.</li>
+<li>The main program processes the buffered data.</li>
+</ol>
+
+<h3>Receive service example</h3>
+<pre><code>while (U0LSR &amp; 0x01U)
+{
+    unsigned char data;
+
+    data = (unsigned char)U0RBR;
+
+    /* Store data in a receive buffer */
+}</code></pre>
+
+<p>Checking RDR repeatedly allows the ISR to drain all currently available received characters rather than reading only one byte.</p>
+</section>
+
+<section class="lesson-section">
+<h2>9. UART Transmit Interrupt</h2>
+<p>The THRE interrupt is useful when software has multiple characters waiting for transmission.</p>
+
+<h3>Transmit interrupt sequence</h3>
+<ol>
+<li>Prepare a software transmit buffer.</li>
+<li>Enable the THRE interrupt in IER.</li>
+<li>The UART requests an interrupt when the transmit holding path becomes empty.</li>
+<li>The ISR writes more characters into the transmit FIFO.</li>
+<li>When no more data is available, disable the THRE interrupt.</li>
+</ol>
+
+<h3>Transmit service example</h3>
+<pre><code>if (U0LSR &amp; (1U &lt;&lt; 5))
+{
+    U0THR = transmit_data;
+}</code></pre>
+
+<p>In a complete application, the ISR obtains the next character from a transmit queue or ring buffer.</p>
+
+<div class="note-box">
+If the THRE interrupt remains enabled while no data is waiting, the UART may repeatedly request service. Disable the THRE interrupt when the software transmit queue becomes empty.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>10. Software Ring Buffers</h2>
+<p>A ring buffer is a circular memory structure used to temporarily store data between an interrupt routine and the main program.</p>
+
+<p>It is particularly useful in UART applications because characters may arrive faster than the main program can process them.</p>
+
+<div class="diagram">
+<strong>Conceptual circular buffer</strong>
+<table>
+<tr><th>Position 0</th><th>Position 1</th><th>Position 2</th><th>Position 3</th></tr>
+<tr><td>A</td><td>B</td><td>C</td><td>D</td></tr>
+</table>
+<p>Head points to the next write position.</p>
+<p>Tail points to the next read position.</p>
+</div>
+
+<h3>Basic ring buffer operations</h3>
+<ul>
+<li>Producer writes a character at the head position.</li>
+<li>Head advances to the next position.</li>
+<li>Consumer reads a character from the tail position.</li>
+<li>Tail advances to the next position.</li>
+<li>When the next head position equals tail, the buffer is full.</li>
+</ul>
+
+<p>Using a buffer size that is a power of two allows efficient index wrapping with a bit mask.</p>
+</section>
+
+<section class="lesson-section">
+<h2>11. Complete Interrupt-Driven UART0 Echo Program</h2>
+<p><strong>Objective:</strong> Receive UART0 characters using interrupts, store them in a receive ring buffer, and transmit them back using a transmit ring buffer.</p>
+
+<p>This example uses:</p>
+<ul>
+<li>UART0 at approximately 9600 baud.</li>
+<li>8 data bits, no parity, one stop bit.</li>
+<li>UART0 VIC source 6.</li>
+<li>Receive data and receive line status interrupts.</li>
+<li>THRE interrupt for transmit buffering.</li>
+<li>64-byte receive and transmit ring buffers.</li>
+</ul>
+
+<h3>Complete Embedded C program</h3>
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+#define UART0_SOURCE       6U
+#define UART_BUFFER_SIZE   64U
+#define UART_BUFFER_MASK   (UART_BUFFER_SIZE - 1U)
+
+volatile unsigned char rx_buffer[UART_BUFFER_SIZE];
+volatile unsigned char tx_buffer[UART_BUFFER_SIZE];
+
+volatile unsigned int rx_head = 0;
+volatile unsigned int rx_tail = 0;
+
+volatile unsigned int tx_head = 0;
+volatile unsigned int tx_tail = 0;
+
+volatile unsigned int uart_error_flags = 0;
+volatile unsigned int rx_overflow_count = 0;
+
+
+/* UART0 initialization */
+void UART0_Init(void)
+{
+    /* Configure P0.0 as TXD0 */
+    PINSEL0 &amp;= ~(3U &lt;&lt; 0);
+    PINSEL0 |=  (1U &lt;&lt; 0);
+
+    /* Configure P0.1 as RXD0 */
+    PINSEL0 &amp;= ~(3U &lt;&lt; 2);
+    PINSEL0 |=  (1U &lt;&lt; 2);
+
+    /* Disable UART interrupts during configuration */
+    U0IER = 0x00;
+
+    /* Enable divisor latch access */
+    U0LCR = 0x83;
+
+    U0DLM = 0x00;
+    U0DLL = 0x47;
+    U0FDR = 0x83;
+
+    /* 8 data bits, no parity, one stop bit */
+    U0LCR = 0x03;
+
+    /* Enable and reset FIFOs */
+    U0FCR = 0x07;
+
+    /* Enable receive data and line status interrupts */
+    U0IER = (1U &lt;&lt; 0) | (1U &lt;&lt; 2);
+}
+
+
+/* Add a received character to the RX buffer */
+void UART0_StoreReceivedData(unsigned char data)
+{
+    unsigned int next;
+
+    next = (rx_head + 1U) &amp; UART_BUFFER_MASK;
+
+    if (next != rx_tail)
+    {
+        rx_buffer[rx_head] = data;
+        rx_head = next;
+    }
+    else
+    {
+        rx_overflow_count++;
+    }
+}
+
+
+/* Add a character to the TX buffer */
+void UART0_SendByte(unsigned char data)
+{
+    unsigned int next;
+
+    do
+    {
+        next = (tx_head + 1U) &amp; UART_BUFFER_MASK;
+    }
+    while (next == tx_tail);
+
+    tx_buffer[tx_head] = data;
+    tx_head = next;
+
+    /* Enable THRE interrupt */
+    U0IER |= (1U &lt;&lt; 1);
+}
+
+
+/* UART0 interrupt service routine */
+void UART0_ISR(void) __irq
+{
+    unsigned int iir;
+    unsigned int lsr;
+    unsigned int count;
+    unsigned char data;
+
+    /* Service pending UART interrupt conditions */
+    while (1)
+    {
+        iir = U0IIR;
+
+        /* Bit 0 = 1 means no UART interrupt is pending */
+        if (iir &amp; 0x01U)
+        {
+            break;
+        }
+
+        switch (iir &amp; 0x0EU)
+        {
+            case 0x06U:
+                /* Receive Line Status interrupt */
+                lsr = U0LSR;
+
+                uart_error_flags |= (lsr &amp; 0x1EU);
+
+                /* Read available data if present */
+                while (lsr &amp; 0x01U)
+                {
+                    data = (unsigned char)U0RBR;
+                    UART0_StoreReceivedData(data);
+
+                    lsr = U0LSR;
+                }
+                break;
+
+            case 0x04U:
+            case 0x0CU:
+                /* Receive Data Available or Character Timeout */
+                while (U0LSR &amp; 0x01U)
+                {
+                    data = (unsigned char)U0RBR;
+                    UART0_StoreReceivedData(data);
+                }
+                break;
+
+            case 0x02U:
+                /* THRE interrupt: fill transmit FIFO */
+                count = 0;
+
+                while ((tx_tail != tx_head) &amp;&amp;
+                       (count &lt; 16U))
+                {
+                    U0THR = tx_buffer[tx_tail];
+
+                    tx_tail = (tx_tail + 1U)
+                              &amp; UART_BUFFER_MASK;
+
+                    count++;
+                }
+
+                /* Disable THRE interrupt when queue is empty */
+                if (tx_tail == tx_head)
+                {
+                    U0IER &amp;= ~(1U &lt;&lt; 1);
+                }
+                break;
+
+            default:
+                /* No additional service operation */
+                break;
+        }
+    }
+
+    /* Signal completion of the VIC vectored interrupt */
+    VICVectAddr = 0;
+}
+
+
+/* Read one character from the RX buffer */
+int UART0_ReadByte(unsigned char *data)
+{
+    if (rx_tail == rx_head)
+    {
+        return 0;
+    }
+
+    *data = rx_buffer[rx_tail];
+
+    rx_tail = (rx_tail + 1U) &amp; UART_BUFFER_MASK;
+
+    return 1;
+}
+
+
+/* Configure VIC for UART0 */
+void UART0_VIC_Init(void)
+{
+    /* Disable UART0 VIC source while configuring */
+    VICIntEnClr = (1U &lt;&lt; UART0_SOURCE);
+
+    /* Configure UART0 as an IRQ source */
+    VICIntSelect &amp;= ~(1U &lt;&lt; UART0_SOURCE);
+
+    /* Install UART0 ISR in vector slot 0 */
+    VICVectAddr0 = (unsigned int)UART0_ISR;
+
+    VICVectCntl0 = (1U &lt;&lt; 5) | UART0_SOURCE;
+
+    /* Enable UART0 interrupt in VIC */
+    VICIntEnable = (1U &lt;&lt; UART0_SOURCE);
+}
+
+
+int main(void)
+{
+    unsigned char received_data;
+
+    UART0_Init();
+
+    UART0_VIC_Init();
+
+    while (1)
+    {
+        /* Process received characters outside the ISR */
+        if (UART0_ReadByte(&amp;received_data))
+        {
+            /* Echo the received character */
+            UART0_SendByte(received_data);
+        }
+    }
+}</code></pre>
+
+<h3>Program explanation</h3>
+<table>
+<tr><th>Function or variable</th><th>Purpose</th></tr>
+<tr><td>UART0_Init()</td><td>Configures UART0 pins, baud rate, frame format and interrupts.</td></tr>
+<tr><td>UART0_VIC_Init()</td><td>Configures the VIC to route UART0 interrupts.</td></tr>
+<tr><td>UART0_ISR()</td><td>Services receive, line-status and transmit interrupts.</td></tr>
+<tr><td>UART0_StoreReceivedData()</td><td>Stores incoming characters in the RX ring buffer.</td></tr>
+<tr><td>UART0_SendByte()</td><td>Adds a character to the TX ring buffer and enables THRE interrupt.</td></tr>
+<tr><td>UART0_ReadByte()</td><td>Retrieves a received character from the RX ring buffer.</td></tr>
+<tr><td>rx_head / rx_tail</td><td>Manage the receive ring buffer.</td></tr>
+<tr><td>tx_head / tx_tail</td><td>Manage the transmit ring buffer.</td></tr>
+</table>
+
+<h3>Expected application behavior</h3>
+<ol>
+<li>The UART receives a character.</li>
+<li>The UART generates a receive interrupt.</li>
+<li>The ISR reads the character and stores it in the RX buffer.</li>
+<li>The main loop retrieves the character.</li>
+<li>The main loop places the character in the TX buffer.</li>
+<li>The THRE interrupt sends the character through TXD0.</li>
+</ol>
+
+<div class="note-box">
+<strong>Important implementation considerations:</strong>
+<ul>
+<li>The example uses a 64-entry ring buffer with one slot reserved to distinguish full from empty; usable capacity is 63 bytes.</li>
+<li>The main-loop transmit enqueue function waits if the TX buffer is full. It is not suitable for calling from an ISR.</li>
+<li>The example assumes the Keil ARM compiler's __irq convention.</li>
+<li>For a production design, review compiler-specific interrupt declarations, atomic access to shared data, interrupt masking requirements, and queue-overflow handling.</li>
+<li>UART error flags are recorded for diagnosis. A production application should also define an explicit error recovery policy.</li>
+</ul>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>12. Interrupt Acknowledgement</h2>
+<p>Two separate operations are important when servicing a UART interrupt.</p>
+
+<h3>1. Service or clear the peripheral condition</h3>
+<p>The UART interrupt condition must be handled. For example:</p>
+<ul>
+<li>Read RBR to remove received data from the receive FIFO.</li>
+<li>Provide more data to THR for a THRE interrupt.</li>
+<li>Read LSR and handle receiver error conditions.</li>
+</ul>
+
+<h3>2. Complete the VIC vectored interrupt</h3>
+<pre><code>VICVectAddr = 0;</code></pre>
+
+<p>This write indicates completion of the current vectored interrupt service to the VIC.</p>
+
+<div class="info-box">
+Clearing or servicing the UART peripheral condition and completing the VIC interrupt are not interchangeable. Both responsibilities must be handled correctly.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>13. Character Timeout Interrupt</h2>
+<p>When FIFO operation is enabled, a receive data available interrupt may be generated when the configured FIFO trigger level is reached.</p>
+
+<p>Consider a receive FIFO trigger level of eight characters. If only three characters arrive and no more data follows, the trigger level may never be reached.</p>
+
+<p>The character timeout interrupt allows software to service data that remains in the receive FIFO after a period of inactivity.</p>
+
+<div class="diagram">
+<strong>Example: Receive FIFO trigger</strong>
+<p>Trigger level = 8 characters</p>
+<p>Received characters = A, B, C</p>
+<p>No additional characters arrive</p>
+<p>↓</p>
+<p>Character timeout condition</p>
+<p>↓</p>
+<p>UART interrupt and receive FIFO service</p>
+</div>
+
+<p>The ISR should read the available characters when it receives a character timeout interrupt.</p>
+</section>
+
+<section class="lesson-section">
+<h2>14. UART Interrupt Priority</h2>
+<p>The UART uses internal interrupt prioritization to determine which pending UART condition should be reported through IIR.</p>
+
+<p>Common priority order:</p>
+<ol>
+<li>Receive Line Status.</li>
+<li>Receive Data Available.</li>
+<li>Character Timeout.</li>
+<li>THRE.</li>
+<li>Modem Status.</li>
+</ol>
+
+<p>The VIC separately manages interrupt requests from different peripherals. The UART's internal priority and the VIC's interrupt routing are two distinct mechanisms.</p>
+</section>
+
+<section class="lesson-section">
+<h2>15. Best Practices for UART ISR Design</h2>
+<ul>
+<li>Keep interrupt service routines short and predictable.</li>
+<li>Read received data promptly to prevent FIFO overrun.</li>
+<li>Use software buffers to separate data reception from application processing.</li>
+<li>Disable THRE interrupts when no transmit data is waiting.</li>
+<li>Handle receive errors rather than silently ignoring them.</li>
+<li>Avoid long delays inside an ISR.</li>
+<li>Avoid blocking functions inside an ISR.</li>
+<li>Avoid lengthy formatted output operations such as printf inside an ISR.</li>
+<li>Use volatile for variables shared between interrupt and main-program contexts where required.</li>
+<li>Remember that volatile does not guarantee atomicity or mutual exclusion.</li>
+<li>Review buffer overflow and concurrent-access behavior.</li>
+<li>Complete VIC interrupt servicing correctly.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>16. Keil uVision Simulator Practice</h2>
+<p><strong>Objective:</strong> Build and debug an interrupt-driven UART0 program.</p>
+
+<h3>Procedure</h3>
+<ol>
+<li>Open the LPC2129 project in Keil uVision.</li>
+<li>Add the interrupt-driven UART0 program.</li>
+<li>Build the project.</li>
+<li>Start the debugger.</li>
+<li>Set breakpoints in UART0_Init(), UART0_VIC_Init() and UART0_ISR().</li>
+<li>Inspect U0LCR, U0IER, U0IIR and U0LSR.</li>
+<li>Inspect VICIntEnable and VICVectCntl0.</li>
+<li>Inspect the RX and TX buffer indexes.</li>
+<li>Use a supported UART simulation or input/output facility if available.</li>
+<li>Observe ISR execution only when the simulator supports the required UART interrupt events.</li>
+</ol>
+
+<h3>Important registers to inspect</h3>
+<table>
+<tr><th>Register</th><th>Purpose</th></tr>
+<tr><td>U0IER</td><td>UART interrupt enable configuration.</td></tr>
+<tr><td>U0IIR</td><td>UART interrupt identification.</td></tr>
+<tr><td>U0LSR</td><td>Transmit and receive status.</td></tr>
+<tr><td>VICIntEnable</td><td>Enabled VIC interrupt sources.</td></tr>
+<tr><td>VICIntSelect</td><td>IRQ/FIQ source selection.</td></tr>
+<tr><td>VICVectAddr0</td><td>Handler address for vector slot 0.</td></tr>
+<tr><td>VICVectCntl0</td><td>Vector slot control and source selection.</td></tr>
+</table>
+
+<div class="note-box">
+<strong>Simulator limitation:</strong> Keil uVision simulator support for UART external input/output and interrupt events depends on the selected device and simulator configuration. If UART events cannot be generated, verify compilation, register configuration, buffer logic and ISR code structure. Do not interpret successful compilation as proof of physical serial communication.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>17. Common Mistakes</h2>
+<ul>
+<li>Enabling IER interrupts without enabling the corresponding VIC source.</li>
+<li>Enabling a VIC source without configuring the UART interrupt source.</li>
+<li>Using the wrong VIC source number for UART0 or UART1.</li>
+<li>Reading only one byte when several characters are available in the FIFO.</li>
+<li>Failing to identify the pending interrupt using IIR.</li>
+<li>Leaving THRE interrupts enabled when the transmit buffer is empty.</li>
+<li>Failing to service receive line-status errors.</li>
+<li>Forgetting to complete the VIC interrupt.</li>
+<li>Performing lengthy operations inside the ISR.</li>
+<li>Using shared buffer indexes without considering concurrent access.</li>
+<li>Assuming volatile makes every shared operation atomic.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>18. Interview Questions and Answers</h2>
+
+<h3>Q1. What is interrupt-driven UART communication?</h3>
+<p>It is a communication method in which the UART generates interrupts when configured transmit or receive events occur.</p>
+
+<h3>Q2. What is the purpose of IER?</h3>
+<p>IER enables or disables individual UART interrupt sources.</p>
+
+<h3>Q3. What is the purpose of IIR?</h3>
+<p>IIR identifies the highest-priority pending UART interrupt condition.</p>
+
+<h3>Q4. What is the VIC source number for UART0?</h3>
+<p>UART0 uses VIC interrupt source number 6 on the LPC2129.</p>
+
+<h3>Q5. What is the VIC source number for UART1?</h3>
+<p>UART1 uses VIC interrupt source number 7.</p>
+
+<h3>Q6. What is a UART ISR?</h3>
+<p>It is an Interrupt Service Routine that handles UART interrupt events such as received data, transmit readiness and receiver errors.</p>
+
+<h3>Q7. What is a THRE interrupt?</h3>
+<p>It indicates that the UART transmit holding path is empty and can accept more data.</p>
+
+<h3>Q8. What is a character timeout interrupt?</h3>
+<p>It indicates that data remains in the receive FIFO without reaching the configured trigger level for the specified timeout period.</p>
+
+<h3>Q9. Why are ring buffers used in UART applications?</h3>
+<p>They temporarily store received or outgoing characters and separate interrupt-level processing from application-level processing.</p>
+
+<h3>Q10. Why should an ISR be short?</h3>
+<p>A short ISR reduces interrupt latency, limits CPU time spent in interrupt context and improves system responsiveness.</p>
+
+<h3>Q11. What is the purpose of VICVectAddr = 0?</h3>
+<p>It signals completion of the current vectored interrupt service to the VIC.</p>
+
+<h3>Q12. Does volatile guarantee atomic access?</h3>
+<p>No. Volatile prevents certain compiler optimizations, but it does not guarantee atomicity, mutual exclusion or thread safety.</p>
+</section>
+
+<section class="lesson-section">
+<h2>19. Multiple Choice Questions</h2>
+
+<p><strong>1. Which register enables UART interrupts?</strong></p>
+<ol type="A"><li>U0THR</li><li>U0IER</li><li>U0RBR</li><li>U0FCR</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>2. Which register identifies a pending UART interrupt?</strong></p>
+<ol type="A"><li>U0IIR</li><li>U0LCR</li><li>U0DLL</li><li>U0DLM</li></ol>
+<p><strong>Answer:</strong> A</p>
+
+<p><strong>3. What is the VIC source number for UART0?</strong></p>
+<ol type="A"><li>4</li><li>5</li><li>6</li><li>7</li></ol>
+<p><strong>Answer:</strong> C</p>
+
+<p><strong>4. What is the VIC source number for UART1?</strong></p>
+<ol type="A"><li>4</li><li>5</li><li>6</li><li>7</li></ol>
+<p><strong>Answer:</strong> D</p>
+
+<p><strong>5. Which interrupt indicates that the transmit holding path is empty?</strong></p>
+<ol type="A"><li>RDA</li><li>THRE</li><li>RLS</li><li>CTI</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>6. Which structure is commonly used to buffer UART data?</strong></p>
+<ol type="A"><li>Stack only</li><li>Ring buffer</li><li>Linked list only</li><li>Binary tree</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>7. Which operation completes a vectored interrupt service?</strong></p>
+<ol type="A"><li>U0THR = 0</li><li>U0IER = 0</li><li>VICVectAddr = 0</li><li>PINSEL0 = 0</li></ol>
+<p><strong>Answer:</strong> C</p>
+
+<p><strong>8. What does IIR bit 0 equal to 0 indicate?</strong></p>
+<ol type="A"><li>No interrupt pending</li><li>Interrupt pending</li><li>FIFO disabled</li><li>UART disabled</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>9. Which interrupt is used to report receiver errors?</strong></p>
+<ol type="A"><li>THRE</li><li>Receive Line Status</li><li>Transmit Complete</li><li>Timer Match</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>10. What is a key advantage of interrupt-driven UART?</strong></p>
+<ol type="A"><li>It removes the need for baud-rate configuration</li><li>It eliminates all communication errors</li><li>It reduces continuous CPU polling</li><li>It removes the need for RXD and TXD pins</li></ol>
+<p><strong>Answer:</strong> C</p>
+</section>
+
+<section class="lesson-section">
+<h2>20. Practical Exercises</h2>
+<ol>
+<li>Explain polling-based and interrupt-based UART communication.</li>
+<li>Configure UART0 receive data interrupts.</li>
+<li>Configure UART0 receive line status interrupts.</li>
+<li>Explain the function of IER and IIR.</li>
+<li>Configure VIC source 6 for UART0.</li>
+<li>Write a basic UART0 ISR.</li>
+<li>Write an ISR that stores received characters in a buffer.</li>
+<li>Implement a transmit ring buffer using THRE interrupts.</li>
+<li>Develop an interrupt-driven UART echo application.</li>
+<li>Explain character timeout interrupts.</li>
+<li>Identify overrun, parity and framing errors.</li>
+<li>Debug UART interrupt configuration using Keil uVision.</li>
+</ol>
+</section>
+
+<section class="lesson-section">
+<h2>21. Lesson Summary</h2>
+<ul>
+<li>Interrupt-driven UART avoids continuous CPU polling.</li>
+<li>IER enables UART interrupt sources.</li>
+<li>IIR identifies the pending UART interrupt condition.</li>
+<li>UART0 uses VIC source 6.</li>
+<li>UART1 uses VIC source 7.</li>
+<li>The UART ISR services receive, transmit and error conditions.</li>
+<li>Ring buffers separate interrupt-level data handling from application processing.</li>
+<li>THRE interrupts support buffered transmission.</li>
+<li>Receive interrupts allow incoming characters to be collected promptly.</li>
+<li>VIC completion and peripheral servicing are separate responsibilities.</li>
+<li>ISRs should be short, predictable and carefully designed.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>22. References</h2>
+<ul>
+<li>NXP LPC2129 Datasheet.</li>
+<li>NXP UM10114 – LPC21xx and LPC22xx User Manual, UART and VIC chapters.</li>
+<li>Arm7TDMI Technical Reference Manual.</li>
+<li>Arm Keil documentation – LPC21xx device support.</li>
+</ul>
+<p><a href="https://www.nxp.com/docs/en/user-guide/UM10114.pdf" target="_blank" rel="noopener">NXP LPC21xx/22xx User Manual</a></p>
+<p><a href="https://www.keil.com/" target="_blank" rel="noopener">Arm Keil Official Website</a></p>
+</section>
+
+<div class="lesson-nav">
+<a href="L08_UART_Transmission_Using_Embedded_C.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L10_UART_Programming_Exercises.html">Next Lesson →</a>
+</div>
+
+</body>
+</html>
