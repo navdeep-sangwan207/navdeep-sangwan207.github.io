@@ -1,1 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CAN Bit Timing and Configuration - Embedded Systems</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-header{background:linear-gradient(135deg,#174ea6,#2878d0);color:white;padding:28px;border-radius:12px;margin-bottom:25px}
+.lesson-section{background:#fff;padding:22px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.lesson-section h2{color:#174ea6;border-bottom:2px solid #e5edf8;padding-bottom:9px}
+.lesson-section h3{color:#2878d0;margin-top:22px}
+.lesson-section p,.lesson-section li{line-height:1.75}
+.info-box{background:#eef5ff;border-left:4px solid #2878d0;padding:15px;margin:16px 0;border-radius:6px;line-height:1.7}
+.warning-box{background:#fff7e8;border-left:4px solid #e76f00;padding:15px;margin:16px 0;border-radius:6px;line-height:1.7}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d8e0ea;padding:11px;text-align:left}
+th{background:#eaf2ff;color:#174ea6}
+tr:nth-child(even){background:#f8faff}
+pre.code{background:#17212f;color:#e7edf5;padding:16px;border-radius:8px;overflow-x:auto;line-height:1.6}
+.diagram{background:#f7f9fc;padding:18px;border:1px solid #dce5f1;border-radius:8px;overflow-x:auto;margin:18px 0}
+.diagram pre{width:max-content;max-width:100%;margin:10px auto;white-space:pre;color:#17345d;line-height:1.6}
+.question{background:#f5f8fc;padding:13px;margin:12px 0;border-radius:6px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:12px 18px;border-radius:6px;text-decoration:none;font-weight:600}
+.lesson-nav a:hover{background:#2878d0}
+@media(max-width:600px){.lesson-section{padding:16px}.lesson-header{padding:21px}.lesson-nav{flex-direction:column}.lesson-nav a{text-align:center}}
+</style>
+</head>
+<body>
+<main class="container">
 
+<header class="lesson-header">
+<h1>Lesson 10: CAN Bit Timing and Configuration</h1>
+<p>Understand CAN bit-rate generation, time quanta, synchronization, timing segments, sample-point selection and LPC2129 Bit Timing Register configuration using Embedded C.</p>
+</header>
+
+<section class="lesson-section">
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Explain why CAN bit timing is important.</li>
+<li>Understand CAN nominal bit time.</li>
+<li>Define Time Quantum (TQ).</li>
+<li>Explain synchronization and timing segments.</li>
+<li>Understand the Baud Rate Prescaler (BRP).</li>
+<li>Understand Synchronization Jump Width (SJW).</li>
+<li>Calculate CAN baud rate from the VPB clock.</li>
+<li>Calculate the sample point.</li>
+<li>Understand LPC2129 BTR register fields.</li>
+<li>Configure a CAN controller for a selected nominal bit rate.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>2. Introduction to CAN Bit Timing</h2>
+<p>CAN bit timing determines how long each bit remains on the bus and when a CAN controller samples the bus to identify the transmitted value.</p>
+
+<p>Every CAN node connected to the same network must use compatible nominal bit timing. If nodes use incompatible bit rates or unsuitable timing parameters, communication may fail.</p>
+
+<h3>Why Is Bit Timing Important?</h3>
+<ul>
+<li>Ensures reliable transmission and reception.</li>
+<li>Allows nodes to synchronize with each other.</li>
+<li>Provides a suitable bus sampling point.</li>
+<li>Compensates for timing differences between nodes.</li>
+<li>Helps account for propagation delay and oscillator tolerance.</li>
+</ul>
+
+<div class="info-box">
+CAN bit timing is not simply a baud-rate number. It includes the prescaler, synchronization segment, propagation and phase segments, sample point and synchronization jump width.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>3. Nominal CAN Bit Time</h2>
+<p>One nominal CAN bit is divided into four logical segments.</p>
+
+<div class="diagram">
+<pre>
+|<----------- One Nominal CAN Bit Time ----------->|
+
++----------+----------------------+----------------+
+| SYNC_SEG |        TSEG1         |     TSEG2      |
++----------+----------------------+----------------+
+           |                      |
+           |                      |
+     Propagation Segment     Phase Segment 2
+     + Phase Segment 1
+
+                              ^
+                              |
+                         Sample Point
+</pre>
+</div>
+
+<p>The four segments are:</p>
+<ol>
+<li><strong>SYNC_SEG:</strong> Used to synchronize CAN nodes with a bus transition.</li>
+<li><strong>PROP_SEG:</strong> Compensates for signal propagation delay in the network.</li>
+<li><strong>PHASE_SEG1:</strong> Helps compensate for phase errors and ends at the sample point.</li>
+<li><strong>PHASE_SEG2:</strong> Extends from the sample point to the next nominal bit boundary.</li>
+</ol>
+
+<p>In the LPC2129 BTR, PROP_SEG and PHASE_SEG1 are represented together by the TSEG1 field.</p>
+</section>
+
+<section class="lesson-section">
+<h2>4. Time Quantum (TQ)</h2>
+<p>Time Quantum is the basic time unit used by the CAN controller to construct a nominal CAN bit.</p>
+
+<p>The LPC2129 derives the CAN clock from the VPB peripheral clock using the Baud Rate Prescaler.</p>
+
+<p><strong>Time Quantum:</strong></p>
+<pre class="code"><code>TQ = (BRP + 1) / VPB Clock</code></pre>
+
+<p>Here, BRP is the value programmed into the BTR register's prescaler field.</p>
+
+<h3>Example</h3>
+<p>Assume:</p>
+<pre class="code"><code>VPB Clock = 15 MHz
+BRP field = 4
+
+TQ = (4 + 1) / 15,000,000
+
+TQ = 5 / 15,000,000
+
+TQ = 0.3333 microseconds</code></pre>
+
+<p>Each CAN timing segment is formed from an integer number of time quanta.</p>
+</section>
+
+<section class="lesson-section">
+<h2>5. Baud Rate Prescaler (BRP)</h2>
+<p>The BRP field divides the VPB clock to generate the CAN time quantum.</p>
+
+<p>For the LPC2129:</p>
+<pre class="code"><code>CAN Clock = VPB Clock / (BRP + 1)
+
+TQ = 1 / CAN Clock</code></pre>
+
+<h3>Example</h3>
+<p>For a VPB clock of 15 MHz:</p>
+<div class="table-wrap">
+<table>
+<tr><th>BRP Field</th><th>Divider</th><th>CAN Clock</th><th>TQ</th></tr>
+<tr><td>0</td><td>1</td><td>15 MHz</td><td>66.67 ns</td></tr>
+<tr><td>1</td><td>2</td><td>7.5 MHz</td><td>133.33 ns</td></tr>
+<tr><td>2</td><td>3</td><td>5 MHz</td><td>200 ns</td></tr>
+<tr><td>4</td><td>5</td><td>3 MHz</td><td>333.33 ns</td></tr>
+<tr><td>9</td><td>10</td><td>1.5 MHz</td><td>666.67 ns</td></tr>
+</table>
+</div>
+
+<div class="info-box">
+The BTR register stores the BRP field value, not the divider directly. A BRP field value of 4 means division by 5.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>6. Synchronization Segment (SYNC_SEG)</h2>
+<p>The synchronization segment is the first part of each nominal CAN bit.</p>
+
+<ul>
+<li>It is one time quantum long.</li>
+<li>It provides the expected timing reference for a bit transition.</li>
+<li>CAN nodes use bus transitions to synchronize their internal timing.</li>
+</ul>
+
+<pre class="code"><code>SYNC_SEG = 1 TQ</code></pre>
+</section>
+
+<section class="lesson-section">
+<h2>7. Propagation Segment (PROP_SEG)</h2>
+<p>The propagation segment compensates for the time taken by signals to travel through the CAN network.</p>
+
+<p>Propagation delay can arise from:</p>
+<ul>
+<li>Bus cable length.</li>
+<li>Transceiver propagation delay.</li>
+<li>Signal path delays.</li>
+<li>Network topology.</li>
+</ul>
+
+<p>The propagation segment is included within the LPC2129 TSEG1 field together with PHASE_SEG1.</p>
+</section>
+
+<section class="lesson-section">
+<h2>8. Phase Segment 1 (PHASE_SEG1)</h2>
+<p>PHASE_SEG1 is the portion of the bit before the sample point, following the propagation segment.</p>
+
+<ul>
+<li>It helps compensate for phase errors.</li>
+<li>It can be lengthened during synchronization.</li>
+<li>It ends at the sample point.</li>
+</ul>
+
+<p>The LPC2129 BTR does not provide separate register fields for PROP_SEG and PHASE_SEG1. They are combined into TSEG1.</p>
+</section>
+
+<section class="lesson-section">
+<h2>9. Phase Segment 2 (PHASE_SEG2)</h2>
+<p>PHASE_SEG2 begins at the sample point and continues to the next nominal bit boundary.</p>
+
+<ul>
+<li>It provides the remaining part of the nominal bit time.</li>
+<li>It can be shortened during synchronization.</li>
+<li>Its programmed duration is represented by TSEG2.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>10. Sample Point</h2>
+<p>The sample point is the instant when the CAN controller reads the bus state to determine whether the current bit is dominant or recessive.</p>
+
+<p>It occurs at the boundary between PHASE_SEG1 and PHASE_SEG2.</p>
+
+<h3>Sample Point Formula</h3>
+<pre class="code"><code>Sample Point (%) =
+[(1 + TSEG1_actual) / Total TQ] x 100</code></pre>
+
+<p>For LPC2129 BTR field values:</p>
+<pre class="code"><code>Sample Point (%) =
+[(TSEG1_field + 2) /
+ (TSEG1_field + TSEG2_field + 3)] x 100</code></pre>
+
+<h3>Example</h3>
+<pre class="code"><code>TSEG1 field = 10
+TSEG2 field = 2
+
+Sample Point =
+[(10 + 2) / (10 + 2 + 3)] x 100
+
+= 12 / 15 x 100
+
+= 80%</code></pre>
+
+<div class="info-box">
+A sample point of 80% means the controller samples the bus after 80% of the nominal bit duration has elapsed.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>11. Synchronization Jump Width (SJW)</h2>
+<p>SJW defines the maximum amount by which the controller may adjust a phase segment during resynchronization.</p>
+
+<p>It helps the CAN controller compensate for phase differences caused by oscillator tolerance and propagation effects.</p>
+
+<pre class="code"><code>SJW duration = (SJW field + 1) x TQ</code></pre>
+
+<h3>Example</h3>
+<pre class="code"><code>SJW field = 1
+
+SJW = (1 + 1) TQ
+
+SJW = 2 TQ</code></pre>
+
+<p>For a valid timing configuration, SJW must not exceed the programmed PHASE_SEG1 or PHASE_SEG2 duration, and it must remain within the controller's supported range.</p>
+</section>
+
+<section class="lesson-section">
+<h2>12. Total Number of Time Quanta</h2>
+<p>The nominal CAN bit consists of:</p>
+
+<pre class="code"><code>Total TQ = SYNC_SEG + TSEG1_actual + TSEG2_actual
+
+Total TQ = 1 + TSEG1_actual + TSEG2_actual</code></pre>
+
+<p>Since the LPC2129 BTR stores TSEG1 and TSEG2 as values one less than their actual time-quantum lengths:</p>
+
+<pre class="code"><code>Total TQ =
+TSEG1_field + TSEG2_field + 3</code></pre>
+
+<p>The three additional quanta represent:</p>
+<ul>
+<li>One quantum for SYNC_SEG.</li>
+<li>One quantum added to the TSEG1 field.</li>
+<li>One quantum added to the TSEG2 field.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>13. CAN Baud Rate Formula for LPC2129</h2>
+<p>The nominal CAN bit rate is calculated using the VPB clock, BRP, TSEG1 and TSEG2.</p>
+
+<pre class="code"><code>CAN Bit Rate =
+VPB Clock /
+[(BRP + 1) x (TSEG1_field + TSEG2_field + 3)]</code></pre>
+
+<p>Bit time:</p>
+<pre class="code"><code>Bit Time = 1 / CAN Bit Rate</code></pre>
+
+<h3>Important</h3>
+<p>The BRP, TSEG1 and TSEG2 values in the formula are the actual values stored in their respective BTR fields. The formula already accounts for the hardware's plus-one encoding.</p>
+</section>
+
+<section class="lesson-section">
+<h2>14. LPC2129 CAN Bit Timing Register (BTR)</h2>
+<p>The CAN Bit Timing Register configures the timing parameters for a CAN controller.</p>
+
+<p>For CAN1, the register is CAN1BTR. For CAN2, the corresponding register is CAN2BTR.</p>
+
+<h3>BTR Register Field Organization</h3>
+<div class="table-wrap">
+<table>
+<tr><th>Bits</th><th>Field</th><th>Description</th></tr>
+<tr><td>9:0</td><td>BRP</td><td>Baud Rate Prescaler</td></tr>
+<tr><td>13:10</td><td>Reserved</td><td>Must not be written as 1</td></tr>
+<tr><td>15:14</td><td>SJW</td><td>Synchronization Jump Width</td></tr>
+<tr><td>19:16</td><td>TSEG1</td><td>Propagation Segment + Phase Segment 1</td></tr>
+<tr><td>22:20</td><td>TSEG2</td><td>Phase Segment 2</td></tr>
+<tr><td>23</td><td>SAM</td><td>Sampling mode</td></tr>
+<tr><td>31:24</td><td>Reserved</td><td>Must not be written as 1</td></tr>
+</table>
+</div>
+
+<h3>SAM Bit</h3>
+<div class="table-wrap">
+<table>
+<tr><th>SAM</th><th>Operation</th></tr>
+<tr><td>0</td><td>Sample the bus once per bit</td></tr>
+<tr><td>1</td><td>Sample the bus three times per bit</td></tr>
+</table>
+</div>
+
+<p>Single sampling is recommended for high-speed buses. Triple sampling is intended for lower to medium-speed applications where the additional sampling behavior is appropriate.</p>
+</section>
+
+<section class="lesson-section">
+<h2>15. BTR Register Configuration Restrictions</h2>
+<p>The LPC2129 BTR register can be written only while the corresponding CAN controller is in Reset Mode.</p>
+
+<ul>
+<li>Set the controller's Reset Mode bit before changing BTR.</li>
+<li>Do not write ones into reserved BTR bits.</li>
+<li>Use supported BRP, SJW, TSEG1 and TSEG2 values.</li>
+<li>Ensure SJW is compatible with the phase-segment lengths.</li>
+<li>Leave Reset Mode after configuration is complete.</li>
+</ul>
+
+<div class="warning-box">
+Changing BTR while the controller is in normal operating mode is not permitted. Configure timing before starting normal CAN communication.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>16. Practical Calculation: 500 kbps at 15 MHz VPB</h2>
+<p>Assume the following project configuration:</p>
+
+<pre class="code"><code>VPB Clock = 15 MHz
+Required CAN Bit Rate = 500 kbps</code></pre>
+
+<h3>Step 1: Select BRP</h3>
+<p>Choose BRP field = 1.</p>
+<pre class="code"><code>CAN Clock = 15 MHz / (1 + 1)
+
+CAN Clock = 7.5 MHz
+
+TQ = 1 / 7.5 MHz
+
+TQ = 133.33 ns</code></pre>
+
+<h3>Step 2: Select TSEG1 and TSEG2</h3>
+<p>Choose:</p>
+<pre class="code"><code>TSEG1 field = 10
+TSEG2 field = 2
+
+Actual TSEG1 = 11 TQ
+Actual TSEG2 = 3 TQ</code></pre>
+
+<h3>Step 3: Calculate Total TQ</h3>
+<pre class="code"><code>Total TQ = 1 + 11 + 3
+
+Total TQ = 15</code></pre>
+
+<h3>Step 4: Calculate Bit Rate</h3>
+<pre class="code"><code>CAN Bit Rate = 7.5 MHz / 15
+
+CAN Bit Rate = 500,000 bits/second
+
+CAN Bit Rate = 500 kbps</code></pre>
+
+<h3>Step 5: Calculate Sample Point</h3>
+<pre class="code"><code>Sample Point = (1 + 11) / 15 x 100
+
+Sample Point = 80%</code></pre>
+
+<h3>Step 6: Select SJW</h3>
+<p>Choose SJW field = 0.</p>
+<pre class="code"><code>Actual SJW = 0 + 1
+
+SJW = 1 TQ</code></pre>
+
+<h3>Step 7: Calculate BTR Value</h3>
+<pre class="code"><code>BRP   = 1
+SJW   = 0
+TSEG1 = 10
+TSEG2 = 2
+SAM   = 0
+
+BTR = BRP
+    | (SJW   &lt;&lt; 14)
+    | (TSEG1 &lt;&lt; 16)
+    | (TSEG2 &lt;&lt; 20)
+
+BTR = 0x002A0001</code></pre>
+
+<badge color="success">Calculated nominal bit rate: 500 kbps</badge>
+</section>
+
+<section class="lesson-section">
+<h2>17. Understanding the Existing Project BTR Value</h2>
+<p>The project configuration previously used the following CAN BTR value:</p>
+
+<pre class="code"><code>CAN1 BTR = 0x00364004
+
+VPB Clock = 15 MHz</code></pre>
+
+<p>Decode the value using the LPC2129 BTR field positions:</p>
+
+<pre class="code"><code>BRP   = (BTR >> 0)  & 0x3FF = 4
+SJW   = (BTR >> 14) & 0x03  = 1
+TSEG1 = (BTR >> 16) & 0x0F  = 6
+TSEG2 = (BTR >> 20) & 0x07  = 3
+SAM   = (BTR >> 23) & 0x01  = 0</code></pre>
+
+<p>Calculate the CAN clock:</p>
+<pre class="code"><code>CAN Clock = 15 MHz / (4 + 1)
+
+CAN Clock = 3 MHz</code></pre>
+
+<p>Calculate total TQ:</p>
+<pre class="code"><code>Total TQ = 6 + 3 + 3
+
+Total TQ = 12</code></pre>
+
+<p>Calculate nominal bit rate:</p>
+<pre class="code"><code>CAN Bit Rate = 3 MHz / 12
+
+CAN Bit Rate = 250,000 bits/second
+
+CAN Bit Rate = 250 kbps</code></pre>
+
+<p>Calculate the sample point:</p>
+<pre class="code"><code>Sample Point = (6 + 2) / 12 x 100
+
+Sample Point = 66.67%</code></pre>
+
+<p>Calculate SJW:</p>
+<pre class="code"><code>SJW = (1 + 1) TQ
+
+SJW = 2 TQ</code></pre>
+
+<div class="info-box">
+Under the LPC2129 BTR field definitions, the value 0x00364004 corresponds to a nominal 250 kbps bit rate with a 66.67% sample point when VPB is 15 MHz.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>18. Embedded C: Configure CAN1 Bit Timing</h2>
+<p>The following example demonstrates the register configuration sequence for the 500 kbps calculation above.</p>
+
+<pre class="code"><code>#include &lt;LPC21xx.h&gt;
+
+#define CAN_RESET_MODE   (1U &lt;&lt; 0)
+
+#define CAN_BTR_500K     0x002A0001U
+
+int main(void)
+{
+    /*
+       Enter CAN1 reset mode.
+       BTR can only be written in reset mode.
+    */
+    C1MOD = CAN_RESET_MODE;
+
+    /*
+       Configure CAN1 bit timing:
+       VPB clock = 15 MHz
+       Nominal bit rate = 500 kbps
+       BRP field = 1
+       TSEG1 field = 10
+       TSEG2 field = 2
+       SJW field = 0
+       Single sampling
+    */
+    C1BTR = CAN_BTR_500K;
+
+    /*
+       Additional CAN configuration is required:
+       - Pin multiplexing
+       - Acceptance filter
+       - Transmit/receive setup
+       - Interrupt configuration if required
+    */
+
+    /*
+       Leave reset mode to begin normal operation.
+    */
+    C1MOD = 0x00U;
+
+    while (1)
+    {
+        /* CAN application processing */
+    }
+}</code></pre>
+
+<div class="warning-box">
+This is a focused bit-timing example. A complete CAN application must also configure the CAN pins, acceptance filter, message handling and external transceiver. Confirm that the device header uses the C1MOD and C1BTR register names; some headers use CAN1MOD and CAN1BTR.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>19. Selecting the Correct CAN Bit Rate</h2>
+<p>Common nominal CAN bit rates include:</p>
+
+<div class="table-wrap">
+<table>
+<tr><th>Bit Rate</th><th>Bit Duration</th><th>Typical Context</th></tr>
+<tr><td>10 kbps</td><td>100 µs</td><td>Low-speed networks</td></tr>
+<tr><td>20 kbps</td><td>50 µs</td><td>Low-speed networks</td></tr>
+<tr><td>50 kbps</td><td>20 µs</td><td>Low-speed applications</td></tr>
+<tr><td>100 kbps</td><td>10 µs</td><td>Industrial applications</td></tr>
+<tr><td>125 kbps</td><td>8 µs</td><td>Industrial CAN networks</td></tr>
+<tr><td>250 kbps</td><td>4 µs</td><td>Embedded control</td></tr>
+<tr><td>500 kbps</td><td>2 µs</td><td>Automotive and industrial CAN</td></tr>
+<tr><td>1 Mbps</td><td>1 µs</td><td>High-speed Classical CAN</td></tr>
+</table>
+</div>
+
+<p>The actual usable bit rate depends on network length, cable characteristics, transceiver propagation delay, topology and timing margins.</p>
+</section>
+
+<section class="lesson-section">
+<h2>20. Relationship Between CAN Bit Rate and Bus Length</h2>
+<p>CAN bit rate and network length are related through signal propagation delay.</p>
+
+<ul>
+<li>Higher bit rates generally require shorter bus lengths.</li>
+<li>Longer networks introduce greater propagation delay.</li>
+<li>Transceiver delays must be included in timing analysis.</li>
+<li>Branch lengths and topology affect signal quality.</li>
+<li>Termination and cable impedance must be appropriate.</li>
+</ul>
+
+<div class="info-box">
+A bit-rate value cannot be selected independently of the physical CAN network. Check the transceiver datasheet and applicable physical-layer specifications before finalizing the design.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>21. Single Sampling and Triple Sampling</h2>
+<p>The LPC2129 BTR SAM field selects how the CAN bus is sampled.</p>
+
+<div class="table-wrap">
+<table>
+<tr><th>SAM Value</th><th>Sampling Behavior</th></tr>
+<tr><td>0</td><td>One sample per bit</td></tr>
+<tr><td>1</td><td>Three samples per bit</td></tr>
+</table>
+</div>
+
+<h3>Single Sampling</h3>
+<ul>
+<li>Samples the bus once at the defined sample point.</li>
+<li>Recommended for high-speed buses.</li>
+</ul>
+
+<h3>Triple Sampling</h3>
+<ul>
+<li>Samples the bus three times per bit.</li>
+<li>Intended for lower to medium-speed applications.</li>
+<li>Does not replace correct electrical design or termination.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>22. Common Bit Timing Configuration Errors</h2>
+<ul>
+<li>Using CCLK instead of VPB clock in the calculation.</li>
+<li>Forgetting the plus-one encoding of BRP.</li>
+<li>Forgetting the plus-one encoding of TSEG1 and TSEG2.</li>
+<li>Using an incorrect total number of time quanta.</li>
+<li>Choosing an unsuitable sample point.</li>
+<li>Setting SJW larger than an allowed phase segment.</li>
+<li>Writing BTR outside Reset Mode.</li>
+<li>Writing ones into reserved BTR bits.</li>
+<li>Configuring different bit rates on nodes sharing the same CAN bus.</li>
+<li>Ignoring transceiver and cable propagation delays.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>23. Keil uVision Simulator Practice</h2>
+<p>The user project uses Keil uVision simulation without a physical LPC2129 board.</p>
+
+<h3>Suggested Activities</h3>
+<ol>
+<li>Create an LPC2129 project.</li>
+<li>Include the correct device header.</li>
+<li>Enter CAN1 Reset Mode.</li>
+<li>Load the BTR value 0x002A0001.</li>
+<li>Inspect the BTR register in the debugger.</li>
+<li>Decode BRP, SJW, TSEG1, TSEG2 and SAM.</li>
+<li>Calculate the nominal bit rate manually.</li>
+<li>Repeat the exercise with BTR = 0x00364004.</li>
+<li>Compare the calculated bit rates.</li>
+</ol>
+
+<div class="warning-box">
+Keil register inspection can help verify the programmed value, but it does not prove that a physical CAN network operates at the calculated bit rate. Real bus verification requires a supported CAN model or hardware, an external transceiver and a compatible second CAN node.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>24. Interview Questions and Answers</h2>
+
+<div class="question"><strong>Q1. What is CAN bit timing?</strong><p>It defines the duration of a CAN bit and the point at which the controller samples the bus.</p></div>
+<div class="question"><strong>Q2. What is a Time Quantum?</strong><p>The basic time unit used to construct a nominal CAN bit.</p></div>
+<div class="question"><strong>Q3. What is BRP?</strong><p>The Baud Rate Prescaler divides the VPB clock to generate the CAN clock.</p></div>
+<div class="question"><strong>Q4. What is SJW?</strong><p>Synchronization Jump Width defines the maximum phase adjustment during resynchronization.</p></div>
+<div class="question"><strong>Q5. What is TSEG1?</strong><p>It combines the propagation segment and Phase Segment 1.</p></div>
+<div class="question"><strong>Q6. What is TSEG2?</strong><p>It represents Phase Segment 2, which follows the sample point.</p></div>
+<div class="question"><strong>Q7. What is the sample point?</strong><p>The point where the CAN controller samples the bus to determine the bit value.</p></div>
+<div class="question"><strong>Q8. What is the purpose of the BTR register?</strong><p>It configures BRP, SJW, TSEG1, TSEG2 and sampling mode.</p></div>
+<div class="question"><strong>Q9. When can BTR be written?</strong><p>When the CAN controller is in Reset Mode.</p></div>
+<div class="question"><strong>Q10. What is the CAN bit-rate formula for LPC2129?</strong><p>VPB clock divided by (BRP + 1) multiplied by (TSEG1 field + TSEG2 field + 3).</p></div>
+<div class="question"><strong>Q11. What is the meaning of SAM = 1?</strong><p>The controller samples the bus three times per bit.</p></div>
+<div class="question"><strong>Q12. Why must CAN nodes use compatible bit timing?</strong><p>To ensure that all nodes correctly interpret bit boundaries and sample transmitted data.</p></div>
+</section>
+
+<section class="lesson-section">
+<h2>25. Multiple Choice Questions</h2>
+
+<div class="question">
+<strong>1. What is the basic time unit used in CAN bit timing?</strong>
+<p>A. Byte<br>B. Time Quantum<br>C. Word<br>D. Frame</p>
+<details><summary>Show Answer</summary><p><strong>Answer: B. Time Quantum</strong></p></details>
+</div>
+
+<div class="question">
+<strong>2. Which clock is used by the LPC2129 CAN bit timing calculation?</strong>
+<p>A. UART clock<br>B. VPB clock<br>C. ADC clock<br>D. External crystal directly</p>
+<details><summary>Show Answer</summary><p><strong>Answer: B. VPB clock</strong></p></details>
+</div>
+
+<div class="question">
+<strong>3. Which register configures CAN bit timing?</strong>
+<p>A. MOD<br>B. CMR<br>C. BTR<br>D. GSR</p>
+<details><summary>Show Answer</summary><p><strong>Answer: C. BTR</strong></p></details>
+</div>
+
+<div class="question">
+<strong>4. What does BRP mean?</strong>
+<p>A. Bus Reset Protocol<br>B. Baud Rate Prescaler<br>C. Bit Reception Priority<br>D. Bus Register Pointer</p>
+<details><summary>Show Answer</summary><p><strong>Answer: B. Baud Rate Prescaler</strong></p></details>
+</div>
+
+<div class="question">
+<strong>5. Which segment contains the sample point at its end?</strong>
+<p>A. SYNC_SEG<br>B. TSEG1<br>C. TSEG2<br>D. EOF</p>
+<details><summary>Show Answer</summary><p><strong>Answer: B. TSEG1</strong></p></details>
+</div>
+
+<div class="question">
+<strong>6. What does SJW stand for?</strong>
+<p>A. Serial Jump Width<br>B. Synchronization Jump Width<br>C. Sample Joint Window<br>D. Signal Jitter Width</p>
+<details><summary>Show Answer</summary><p><strong>Answer: B. Synchronization Jump Width</strong></p></details>
+</div>
+
+<div class="question">
+<strong>7. When can LPC2129 BTR be written?</strong>
+<p>A. Only in Reset Mode<br>B. Only in Sleep Mode<br>C. Only during transmission<br>D. At any time</p>
+<details><summary>Show Answer</summary><p><strong>Answer: A. Only in Reset Mode</strong></p></details>
+</div>
+
+<div class="question">
+<strong>8. What does SAM = 1 select?</strong>
+<p>A. One sample<br>B. Two samples<br>C. Three samples<br>D. No sampling</p>
+<details><summary>Show Answer</summary><p><strong>Answer: C. Three samples</strong></p></details>
+</div>
+
+<div class="question">
+<strong>9. What is the total TQ formula for LPC2129 BTR field values?</strong>
+<p>A. BRP + SJW<br>B. TSEG1 + TSEG2 + 3<br>C. TSEG1 + TSEG2<br>D. BRP x SJW</p>
+<details><summary>Show Answer</summary><p><strong>Answer: B. TSEG1 + TSEG2 + 3</strong></p></details>
+</div>
+
+<div class="question">
+<strong>10. What is the nominal bit rate for VPB = 15 MHz and BTR = 0x00364004?</strong>
+<p>A. 125 kbps<br>B. 250 kbps<br>C. 500 kbps<br>D. 1 Mbps</p>
+<details><summary>Show Answer</summary><p><strong>Answer: B. 250 kbps</strong></p></details>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>26. Practical Exercises</h2>
+<ol>
+<li>Define CAN bit timing.</li>
+<li>Draw the four segments of a nominal CAN bit.</li>
+<li>Explain the purpose of Time Quantum.</li>
+<li>Calculate TQ for VPB = 15 MHz and BRP = 4.</li>
+<li>Explain the purpose of BRP and SJW.</li>
+<li>Calculate total TQ for TSEG1 = 10 and TSEG2 = 2.</li>
+<li>Calculate the nominal bit rate for VPB = 15 MHz, BRP = 1, TSEG1 = 10 and TSEG2 = 2.</li>
+<li>Calculate the sample point for the same configuration.</li>
+<li>Decode BTR = 0x00364004.</li>
+<li>Write an Embedded C program to configure CAN1 BTR in Reset Mode.</li>
+<li>Explain the difference between single and triple sampling.</li>
+<li>Inspect a BTR value using the Keil debugger.</li>
+</ol>
+</section>
+
+<section class="lesson-section">
+<h2>27. Lesson Summary</h2>
+<ul>
+<li>CAN bit timing determines bit duration and the bus sampling point.</li>
+<li>One nominal bit consists of SYNC_SEG, PROP_SEG, PHASE_SEG1 and PHASE_SEG2.</li>
+<li>PROP_SEG and PHASE_SEG1 are combined in the LPC2129 TSEG1 field.</li>
+<li>TSEG2 represents PHASE_SEG2.</li>
+<li>BRP divides the VPB clock.</li>
+<li>SJW controls synchronization adjustment.</li>
+<li>The sample point occurs at the end of TSEG1.</li>
+<li>The BTR register configures BRP, SJW, TSEG1, TSEG2 and SAM.</li>
+<li>BTR can be written only in Reset Mode.</li>
+<li>Correct bit timing is essential for reliable CAN communication.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>28. References</h2>
+<ul>
+<li>NXP UM10114 – LPC21xx and LPC22xx User Manual, CAN controller chapter, Bus Timing Register section.</li>
+<li>NXP LPC2129 Datasheet.</li>
+<li>ISO 11898-1 – CAN Data Link Layer and Physical Coding.</li>
+<li>NXP AN10438 – Philips LPC2000 CAN Driver.</li>
+</ul>
+<p><a href="https://www.nxp.com/docs/en/user-guide/UM10114.pdf" target="_blank" rel="noopener">NXP UM10114 – LPC21xx and LPC22xx User Manual</a></p>
+<p><a href="https://www.nxp.com.cn/docs/en/application-note/AN10438.pdf" target="_blank" rel="noopener">NXP AN10438 – LPC2000 CAN Driver</a></p>
+</section>
+
+<nav class="lesson-nav">
+<a href="L09_LPC2129_CAN_Controller_Architecture.html">← Previous Lesson</a>
+<a href="index.html">Chapter 16 Index</a>
+<a href="L11_CAN_Communication_Programming.html">Next Lesson →</a>
+</nav>
+
+</main>
+</body>
+</html>
