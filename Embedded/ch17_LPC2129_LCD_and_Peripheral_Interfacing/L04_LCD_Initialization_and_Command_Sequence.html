@@ -1,1 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LCD Initialization and Command Sequence</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-header{background:linear-gradient(135deg,#174ea6,#2878d0);color:white;padding:28px;border-radius:12px;margin-bottom:25px}
+.lesson-header h1{margin:0 0 12px}
+.lesson-header p{margin:6px 0;line-height:1.6}
+.lesson-section{background:#fff;padding:22px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 9px rgba(0,0,0,.07)}
+.lesson-section h2{color:#174ea6;border-bottom:2px solid #e5edf8;padding-bottom:9px}
+.lesson-section h3{color:#2878d0}
+.info-box,.note-box,.warning-box{padding:15px;margin:15px 0;border-radius:6px;line-height:1.7}
+.info-box{background:#eef5ff;border-left:4px solid #2878d0}
+.note-box{background:#effaf3;border-left:4px solid #269653}
+.warning-box{background:#fff4e8;border-left:4px solid #e76f00}
+pre{background:#17212f;color:#e8edf5;padding:17px;border-radius:8px;overflow-x:auto;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d9e2ef;padding:10px;text-align:left}
+th{background:#eaf1fb;color:#174ea6}
+.diagram{background:#f3f7fc;border:1px solid #cbd9ed;border-radius:8px;padding:18px;text-align:center;margin:16px 0;line-height:1.8}
+.diagram-box{display:inline-block;background:white;border:2px solid #2878d0;border-radius:7px;padding:12px 18px;margin:6px;color:#174ea6;font-weight:bold}
+.question{background:#f6f8fb;padding:13px;border-radius:7px;margin:12px 0}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-nav a:hover{background:#2878d0}
+@media(max-width:600px){.lesson-section{padding:15px}.lesson-header h1{font-size:23px}table{font-size:13px}}
+</style>
+</head>
+<body>
+<main class="container">
 
+<header class="lesson-header">
+<h1>Lesson 04: LCD Initialization and Command Sequence</h1>
+<p><strong>Chapter 17:</strong> LPC2129 LCD and Peripheral Interfacing</p>
+<p><strong>Topic:</strong> LCD Power-Up, Interface Configuration and Initialization</p>
+<p><strong>Controller Reference:</strong> HD44780-Compatible 16x2 LCD</p>
+</header>
+
+<section class="lesson-section">
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Explain why LCD initialization is necessary.</li>
+<li>Understand the LCD power-up requirements.</li>
+<li>Describe the 8-bit and 4-bit initialization sequences.</li>
+<li>Configure a 16x2 LCD for two-line operation.</li>
+<li>Generate command and data enable pulses.</li>
+<li>Implement software delays for LCD operations.</li>
+<li>Write an initialization routine for the LPC2129.</li>
+<li>Identify common initialization failures.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>2. Why LCD Initialization Is Required</h2>
+<p>
+After power is applied, an LCD controller must be placed into a known
+operating configuration before it can reliably receive commands and
+character data.
+</p>
+<p>Initialization establishes parameters such as:</p>
+<ul>
+<li>Interface width: 8-bit or 4-bit.</li>
+<li>Number of display lines.</li>
+<li>Character font configuration.</li>
+<li>Display ON/OFF state.</li>
+<li>Cursor visibility and blinking.</li>
+<li>Entry mode and address-counter behavior.</li>
+</ul>
+
+<div class="info-box">
+An LCD may receive power and show dark blocks, but this does not mean
+that its controller has been initialized correctly. Power, contrast,
+wiring and software initialization must all be checked.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>3. LCD Initialization Overview</h2>
+<div class="diagram">
+<div class="diagram-box">Apply LCD Power</div>
+<div>↓</div>
+<div class="diagram-box">Wait for Power Stabilization</div>
+<div>↓</div>
+<div class="diagram-box">Configure Interface Width</div>
+<div>↓</div>
+<div class="diagram-box">Set Display Function</div>
+<div>↓</div>
+<div class="diagram-box">Configure Display Control</div>
+<div>↓</div>
+<div class="diagram-box">Set Entry Mode</div>
+<div>↓</div>
+<div class="diagram-box">Clear Display</div>
+<div>↓</div>
+<div class="diagram-box">Ready for Character Data</div>
+</div>
+<p>
+The exact initialization sequence depends on the LCD controller and
+whether the interface is 8-bit or 4-bit. Follow the module datasheet
+rather than assuming every character LCD has identical timing.
+</p>
+</section>
+
+<section class="lesson-section">
+<h2>4. Power-Up Delay</h2>
+<p>
+The controller requires time after power becomes valid before it can
+reliably process initialization instructions.
+</p>
+<p>
+For a common HD44780-compatible controller, the datasheet specifies
+a power-on waiting interval before the first Function Set operation.
+The exact interval depends on the supply ramp and controller version.
+</p>
+<ul>
+<li>Ensure the supply reaches its valid operating range.</li>
+<li>Wait for the specified power-on interval.</li>
+<li>Keep control signals in known states during startup.</li>
+<li>Begin the initialization sequence only after the required wait.</li>
+</ul>
+<div class="warning-box">
+Do not treat a short arbitrary delay as a universal power-up solution.
+Use the power-supply and initialization timing requirements from the
+actual LCD controller datasheet.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>5. 8-Bit LCD Initialization</h2>
+<p>
+In 8-bit mode, all eight data lines D0-D7 are connected to the
+microcontroller. A complete command or character byte is transferred
+in one bus operation.
+</p>
+
+<h3>Common 8-Bit Initialization Commands</h3>
+<table>
+<tr><th>Sequence</th><th>Command</th><th>Purpose</th></tr>
+<tr><td>1</td><td>0x38</td><td>8-bit interface, two lines, 5x8 font</td></tr>
+<tr><td>2</td><td>0x0C</td><td>Display ON, cursor OFF, blink OFF</td></tr>
+<tr><td>3</td><td>0x06</td><td>Increment address, no display shift</td></tr>
+<tr><td>4</td><td>0x01</td><td>Clear display</td></tr>
+</table>
+
+<p>
+This is a commonly used logical initialization sequence after the
+required power-on procedure. A robust implementation must also
+observe the controller's required waits and any repeated Function Set
+steps specified by its datasheet.
+</p>
+
+<h3>Command 0x38</h3>
+<ul>
+<li>DL = 1: 8-bit interface.</li>
+<li>N = 1: two-line mode.</li>
+<li>F = 0: 5x8 character font.</li>
+</ul>
+
+<h3>Command 0x0C</h3>
+<ul>
+<li>Display enabled.</li>
+<li>Cursor disabled.</li>
+<li>Cursor blinking disabled.</li>
+</ul>
+
+<h3>Command 0x06</h3>
+<ul>
+<li>Address counter increments after data access.</li>
+<li>Display does not shift automatically.</li>
+</ul>
+
+<h3>Command 0x01</h3>
+<ul>
+<li>Clears display contents.</li>
+<li>Returns the address counter to the home address.</li>
+<li>Requires a longer execution wait than ordinary commands.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>6. 4-Bit LCD Initialization</h2>
+<p>
+In 4-bit mode, only D4-D7 are used for data transfer. Each 8-bit
+command or data byte is sent in two portions:
+</p>
+<ol>
+<li>Upper nibble (bits 7-4).</li>
+<li>Lower nibble (bits 3-0).</li>
+</ol>
+
+<h3>Why Is a Special Startup Sequence Needed?</h3>
+<p>
+At power-up, the LCD controller's interface state may not yet be
+known to the microcontroller. The initialization procedure therefore
+uses special nibble transfers to establish 4-bit operation before
+sending complete two-nibble commands.
+</p>
+
+<h3>Typical 4-Bit Startup Concept</h3>
+<ol>
+<li>Wait for the required power-on interval.</li>
+<li>Send the special Function Set nibble 0x3 as specified by the datasheet.</li>
+<li>Repeat the required Function Set nibble transfers with the prescribed waits.</li>
+<li>Send nibble 0x2 to select 4-bit operation.</li>
+<li>Send complete commands using two nibbles each.</li>
+<li>Configure two-line mode, display control and entry mode.</li>
+<li>Clear the display and wait for completion.</li>
+</ol>
+
+<div class="warning-box">
+The special startup nibbles are not ordinary complete 8-bit command
+bytes. Do not send 0x30 and 0x20 as normal full-byte transfers when
+the controller is being synchronized into 4-bit mode. Follow the
+specific controller datasheet sequence.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>7. Enable Pulse Generation</h2>
+<p>
+The Enable signal is used to latch a command or data transfer. The
+microcontroller must establish the control and data signals before
+applying the enable pulse.
+</p>
+
+<h3>Basic Transfer Sequence</h3>
+<ol>
+<li>Set RS to command or data mode.</li>
+<li>Set RW LOW for a write.</li>
+<li>Place the command or data byte on the bus.</li>
+<li>Wait for the required setup time.</li>
+<li>Set EN HIGH.</li>
+<li>Maintain the required enable pulse width.</li>
+<li>Set EN LOW to complete the transfer.</li>
+<li>Wait for the controller's execution time before the next transfer.</li>
+</ol>
+
+<div class="diagram">
+<div class="diagram-box">Set RS and RW</div>
+<div>↓</div>
+<div class="diagram-box">Place Data on Bus</div>
+<div>↓</div>
+<div class="diagram-box">EN HIGH</div>
+<div>↓</div>
+<div class="diagram-box">EN LOW</div>
+<div>↓</div>
+<div class="diagram-box">Execution Wait</div>
+</div>
+
+<h3>Conceptual Enable Timing</h3>
+<pre><code>RS/RW : ---- stable -------------------------
+
+DATA  : ---- valid data ---------------------
+
+EN    : ______|‾‾‾‾‾|________________________
+              HIGH
+           Enable pulse</code></pre>
+
+<p>
+The diagram is conceptual. Actual setup time, hold time, enable pulse
+width and enable-cycle time must meet the controller datasheet.
+</p>
+</section>
+
+<section class="lesson-section">
+<h2>8. LPC2129 LCD Pin Configuration</h2>
+<p>
+The course project uses the following 8-bit GPIO connection:
+</p>
+
+<table>
+<tr><th>LCD Signal</th><th>LPC2129 Pin</th></tr>
+<tr><td>RS</td><td>P0.10</td></tr>
+<tr><td>RW</td><td>P0.12</td></tr>
+<tr><td>EN</td><td>P0.13</td></tr>
+<tr><td>D0</td><td>P0.15</td></tr>
+<tr><td>D1</td><td>P0.16</td></tr>
+<tr><td>D2</td><td>P0.17</td></tr>
+<tr><td>D3</td><td>P0.18</td></tr>
+<tr><td>D4</td><td>P0.19</td></tr>
+<tr><td>D5</td><td>P0.20</td></tr>
+<tr><td>D6</td><td>P0.21</td></tr>
+<tr><td>D7</td><td>P0.22</td></tr>
+</table>
+
+<p>
+For GPIO operation, the corresponding PINSEL fields must be cleared.
+IODIR0 must configure all selected pins as outputs.
+</p>
+
+<div class="warning-box">
+P0.10 is also used in the course's earlier LED example. Do not use
+the LCD and that LED on the same pin at the same time. Check the
+complete project pin allocation before connecting peripherals.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>9. Software Delay for LCD Timing</h2>
+<p>
+When RW is tied LOW, the microcontroller cannot read the LCD busy
+flag. Software must therefore wait long enough for the controller
+to complete each operation.
+</p>
+
+<p>
+A simple loop can demonstrate the concept, but its duration depends
+on CPU clock, compiler optimization, generated instructions and
+debugger behavior.
+</p>
+
+<pre><code>void Delay_Short(volatile unsigned int count)
+{
+    while (count--)
+    {
+        /* Software delay loop */
+    }
+}</code></pre>
+
+<div class="note-box">
+This loop is not a calibrated timebase. For reliable firmware, use
+a hardware timer or a verified delay routine and select delays from
+the LCD datasheet. Clear Display and Return Home need longer waits
+than ordinary data writes.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>10. Complete LPC2129 8-Bit LCD Initialization Program</h2>
+
+<p>
+The following example uses the established project pin mapping.
+It initializes the GPIO pins, performs a common 8-bit LCD setup and
+writes a test character. The delay constants are placeholders and
+must be calibrated for the actual hardware and compiler.
+</p>
+
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+#define LCD_RS   (1U &lt;&lt; 10)
+#define LCD_RW   (1U &lt;&lt; 12)
+#define LCD_EN   (1U &lt;&lt; 13)
+
+#define LCD_DATA_MASK (0xFFU &lt;&lt; 15)
+#define LCD_ALL_MASK  (LCD_RS | LCD_RW | LCD_EN | LCD_DATA_MASK)
+
+void Delay_Loop(volatile unsigned int count)
+{
+    while (count--)
+    {
+        /* Uncalibrated software delay */
+    }
+}
+
+void LCD_GPIO_Init(void)
+{
+    /* Select GPIO function for control pins */
+    PINSEL0 &amp;= ~((3U &lt;&lt; 20) |
+                 (3U &lt;&lt; 24) |
+                 (3U &lt;&lt; 26));
+
+    /* Select GPIO function for P0.15 */
+    PINSEL0 &amp;= ~(3U &lt;&lt; 30);
+
+    /* Select GPIO function for P0.16 to P0.22 */
+    PINSEL1 &amp;= ~0x3FFFU;
+
+    /* Configure all LCD pins as outputs */
+    IODIR0 |= LCD_ALL_MASK;
+
+    /* Initialize signals LOW */
+    IOCLR0 = LCD_ALL_MASK;
+}
+
+void LCD_WriteBus(unsigned char value)
+{
+    IOCLR0 = LCD_DATA_MASK;
+    IOSET0 = ((unsigned int)value &lt;&lt; 15);
+}
+
+void LCD_EnablePulse(void)
+{
+    IOSET0 = LCD_EN;
+
+    /* Placeholder: implement datasheet-compliant pulse timing */
+    Delay_Loop(10U);
+
+    IOCLR0 = LCD_EN;
+
+    /* Placeholder: implement required hold timing */
+    Delay_Loop(10U);
+}
+
+void LCD_Command(unsigned char command)
+{
+    IOCLR0 = LCD_RS;
+    IOCLR0 = LCD_RW;
+
+    LCD_WriteBus(command);
+    LCD_EnablePulse();
+
+    /* Placeholder execution delay */
+    Delay_Loop(5000U);
+}
+
+void LCD_Data(unsigned char data)
+{
+    IOSET0 = LCD_RS;
+    IOCLR0 = LCD_RW;
+
+    LCD_WriteBus(data);
+    LCD_EnablePulse();
+
+    /* Placeholder execution delay */
+    Delay_Loop(5000U);
+}
+
+void LCD_Init(void)
+{
+    /* Wait after power-up; calibrate to controller datasheet */
+    Delay_Loop(50000U);
+
+    /* 8-bit, two-line, 5x8 font */
+    LCD_Command(0x38);
+
+    /* Display ON, cursor OFF */
+    LCD_Command(0x0C);
+
+    /* Increment address, no display shift */
+    LCD_Command(0x06);
+
+    /* Clear display */
+    LCD_Command(0x01);
+
+    /* Clear command requires a longer wait */
+    Delay_Loop(50000U);
+}
+
+int main(void)
+{
+    LCD_GPIO_Init();
+    LCD_Init();
+
+    LCD_Command(0x80);
+    LCD_Data('L');
+
+    while (1)
+    {
+    }
+}</code></pre>
+
+<h3>Program Explanation</h3>
+<ul>
+<li><code>LCD_GPIO_Init()</code> selects GPIO functions and configures the LCD pins as outputs.</li>
+<li><code>LCD_WriteBus()</code> places a byte on P0.15-P0.22.</li>
+<li><code>LCD_EnablePulse()</code> generates the enable transition.</li>
+<li><code>LCD_Command()</code> sends an instruction with RS=0 and RW=0.</li>
+<li><code>LCD_Data()</code> sends character data with RS=1 and RW=0.</li>
+<li><code>LCD_Init()</code> applies the common 8-bit configuration sequence.</li>
+<li><code>main()</code> initializes the LCD and sends the character L.</li>
+</ul>
+
+<div class="warning-box">
+The loop counts in this demonstration are not guaranteed microsecond
+or millisecond delays. They are placeholders, not validated timing
+values. Before using a physical LCD, implement calibrated timing
+based on the selected CPU clock, compiler and controller datasheet.
+Also verify voltage compatibility between the LPC2129 and LCD module.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>11. Expected Operation</h2>
+<p>
+If the physical wiring, supply, contrast, pin configuration and
+datasheet-compliant timing are correct, the example is intended to:
+</p>
+<ol>
+<li>Initialize the LCD in 8-bit, two-line mode.</li>
+<li>Turn the display ON with the cursor hidden.</li>
+<li>Select incrementing entry mode.</li>
+<li>Clear the display.</li>
+<li>Position the cursor at the first character of row one.</li>
+<li>Write the character <strong>L</strong>.</li>
+</ol>
+
+<div class="note-box">
+The intended physical display result is the character L at the
+beginning of the first row. This is an expected result, not a claim
+that it has been observed on the user's simulator or hardware.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>12. Common LCD Initialization Problems</h2>
+
+<table>
+<tr><th>Problem</th><th>Possible Cause</th></tr>
+<tr><td>Display shows dark blocks</td><td>Contrast or initialization problem</td></tr>
+<tr><td>No visible characters</td><td>Incorrect contrast, wiring or command sequence</td></tr>
+<tr><td>Random characters</td><td>Incorrect data mapping or timing</td></tr>
+<tr><td>Only one row behaves correctly</td><td>Incorrect line configuration or module-specific mapping</td></tr>
+<tr><td>LCD stops responding</td><td>Enable pulse or timing error</td></tr>
+<tr><td>Commands appear as characters</td><td>RS signal set incorrectly</td></tr>
+<tr><td>Unstable display</td><td>Supply, ground, signal integrity or timing issue</td></tr>
+<tr><td>Works intermittently after reset</td><td>Power-up delay or initialization sequence issue</td></tr>
+</table>
+</section>
+
+<section class="lesson-section">
+<h2>13. Interview Questions and Answers</h2>
+
+<div class="question">
+<strong>Q1. Why is LCD initialization required?</strong>
+<p>It places the controller into a known interface and display configuration.</p>
+</div>
+
+<div class="question">
+<strong>Q2. What does command 0x38 do?</strong>
+<p>It selects an 8-bit interface, two-line mode and 5x8 font.</p>
+</div>
+
+<div class="question">
+<strong>Q3. What does command 0x0C do?</strong>
+<p>It turns the display ON while disabling the cursor and cursor blinking.</p>
+</div>
+
+<div class="question">
+<strong>Q4. What does command 0x06 do?</strong>
+<p>It selects incrementing address mode without display shifting.</p>
+</div>
+
+<div class="question">
+<strong>Q5. Why is a longer delay required after command 0x01?</strong>
+<p>Clear Display takes longer to execute than ordinary instructions.</p>
+</div>
+
+<div class="question">
+<strong>Q6. How many data lines are used in 8-bit mode?</strong>
+<p>Eight data lines, D0-D7.</p>
+</div>
+
+<div class="question">
+<strong>Q7. How many data lines are used in 4-bit mode?</strong>
+<p>Four data lines, D4-D7.</p>
+</div>
+
+<div class="question">
+<strong>Q8. What is the purpose of the enable pulse?</strong>
+<p>It causes the LCD controller to latch the bus transfer.</p>
+</div>
+
+<div class="question">
+<strong>Q9. How can the busy flag be checked?</strong>
+<p>Set RS=0 and RW=1, then read D7 when the interface supports reading.</p>
+</div>
+
+<div class="question">
+<strong>Q10. What should be done when RW is tied LOW?</strong>
+<p>Use datasheet-compliant software or timer delays instead of busy-flag polling.</p>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>14. Multiple-Choice Questions</h2>
+
+<div class="question">
+<p><strong>1. Which command selects 8-bit, two-line operation?</strong></p>
+<p>A. 0x01</p><p>B. 0x06</p><p>C. 0x38</p><p>D. 0x0C</p>
+<strong>Answer: C. 0x38</strong>
+</div>
+
+<div class="question">
+<p><strong>2. Which command turns the display ON and cursor OFF?</strong></p>
+<p>A. 0x08</p><p>B. 0x0C</p><p>C. 0x0E</p><p>D. 0x0F</p>
+<strong>Answer: B. 0x0C</strong>
+</div>
+
+<div class="question">
+<p><strong>3. Which command clears the display?</strong></p>
+<p>A. 0x01</p><p>B. 0x02</p><p>C. 0x06</p><p>D. 0x10</p>
+<strong>Answer: A. 0x01</strong>
+</div>
+
+<div class="question">
+<p><strong>4. Which command selects incrementing entry mode without display shift?</strong></p>
+<p>A. 0x04</p><p>B. 0x05</p><p>C. 0x06</p><p>D. 0x07</p>
+<strong>Answer: C. 0x06</strong>
+</div>
+
+<div class="question">
+<p><strong>5. Which signal latches an LCD bus transfer?</strong></p>
+<p>A. RS</p><p>B. RW</p><p>C. EN</p><p>D. V0</p>
+<strong>Answer: C. EN</strong>
+</div>
+
+<div class="question">
+<p><strong>6. Which pins are used for 4-bit data transfer?</strong></p>
+<p>A. D0-D3</p><p>B. D4-D7</p><p>C. D0-D7</p><p>D. RS and RW</p>
+<strong>Answer: B. D4-D7</strong>
+</div>
+
+<div class="question">
+<p><strong>7. What is required when RW is permanently LOW?</strong></p>
+<p>A. Busy-flag polling</p><p>B. Read operations</p><p>C. Software or timer delays</p><p>D. No timing control</p>
+<strong>Answer: C. Software or timer delays</strong>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>15. Practical Exercises</h2>
+<ol>
+<li>Explain the need for LCD initialization.</li>
+<li>Write the common 8-bit initialization command sequence.</li>
+<li>Decode command 0x38.</li>
+<li>Decode command 0x0C.</li>
+<li>Decode command 0x06.</li>
+<li>Explain the special startup procedure for 4-bit mode.</li>
+<li>Draw the enable pulse sequence for a command write.</li>
+<li>Write an LPC2129 GPIO initialization routine for the LCD pins.</li>
+<li>Write separate command and data functions.</li>
+<li>Explain why Clear Display needs a longer execution wait.</li>
+</ol>
+</section>
+
+<section class="lesson-section">
+<h2>16. Keil uVision Simulator Practice</h2>
+<ol>
+<li>Create an LPC2129 project in Keil uVision.</li>
+<li>Add the startup file and <code>LPC21xx.h</code>.</li>
+<li>Enter the LCD initialization program.</li>
+<li>Build the project and resolve compilation errors.</li>
+<li>Run the debugger and step through <code>LCD_GPIO_Init()</code>.</li>
+<li>Inspect PINSEL0 and PINSEL1.</li>
+<li>Inspect IODIR0 and the output state changes.</li>
+<li>Step through the command sequence and inspect RS, RW, EN and data masks.</li>
+</ol>
+
+<div class="warning-box">
+Keil uVision simulator support for an external character LCD varies
+by device model. Register inspection can verify software operations,
+but it does not prove that an LCD has physically initialized or
+displayed a character.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>17. Lesson Summary</h2>
+<ul>
+<li>Initialization places the LCD controller into a known state.</li>
+<li>Power-up waiting time must meet controller requirements.</li>
+<li>8-bit mode uses D0-D7; 4-bit mode uses D4-D7.</li>
+<li>Command 0x38 selects 8-bit, two-line, 5x8 mode.</li>
+<li>Command 0x0C enables the display and hides the cursor.</li>
+<li>Command 0x06 selects incrementing entry mode.</li>
+<li>Command 0x01 clears the display and requires a longer wait.</li>
+<li>The enable pulse latches each bus transfer.</li>
+<li>Software delays must be calibrated or replaced with a timer-based method.</li>
+<li>LPC2129 GPIO and PINSEL registers configure the interface pins.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>18. References</h2>
+<ul>
+<li>NXP LPC2129 User Manual, UM10114.</li>
+<li>HD44780U Dot Matrix Liquid Crystal Display Controller/Driver Datasheet.</li>
+<li>Keil MDK-ARM Documentation.</li>
+</ul>
+</section>
+
+<nav class="lesson-nav">
+<a href="L03_LCD_Command_and_Data_Registers.html">&larr; Previous Lesson</a>
+<a href="index.html">Chapter 17 Index</a>
+<a href="L05_LCD_String_and_Number_Display.html">Next Lesson &rarr;</a>
+</nav>
+
+</main>
+</body>
+</html>
