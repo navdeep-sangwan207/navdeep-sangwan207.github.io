@@ -1,1 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UART Programming Exercises - LPC2129</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-header{background:linear-gradient(135deg,#174ea6,#2878d0);color:white;padding:30px;border-radius:12px;margin-bottom:25px}
+.lesson-section{background:white;padding:22px;margin:20px 0;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+h2{color:#174ea6;border-bottom:2px solid #e76f00;padding-bottom:8px}
+h3{color:#174ea6;margin-top:22px}
+.info-box{background:#eaf2ff;border-left:5px solid #2878d0;padding:15px;margin:15px 0;border-radius:6px}
+.note-box{background:#fff4e8;border-left:5px solid #e76f00;padding:15px;margin:15px 0;border-radius:6px}
+pre{background:#17212f;color:#e8edf5;padding:16px;border-radius:8px;overflow-x:auto;line-height:1.55}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d5dce5;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+.diagram{background:#f5f8fc;border:1px solid #cbd8e8;border-radius:8px;padding:18px;margin:15px 0;text-align:center;overflow-x:auto}
+.exercise{border:1px solid #d5dce5;border-left:5px solid #2878d0;padding:17px;margin:18px 0;border-radius:7px}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;text-decoration:none;border-radius:6px}
+.lesson-nav a:hover{background:#e76f00}
+@media(max-width:600px){.lesson-section{padding:16px}.lesson-nav{flex-direction:column}.lesson-nav a{text-align:center}}
+</style>
+</head>
+<body>
 
+<header class="lesson-header">
+<h1>UART Programming Exercises</h1>
+<p><strong>Course:</strong> Embedded Systems – Complete Study Course</p>
+<p><strong>Chapter 12:</strong> LPC2129 UART Serial Communication</p>
+<p><strong>Lesson 10 – Final Lesson</strong></p>
+</header>
+
+<section class="lesson-section">
+<h2>1. Introduction</h2>
+<p>This lesson provides practical programming exercises for UART communication using the LPC2129 microcontroller and Embedded C.</p>
+
+<p>The exercises progress from basic UART configuration to complete serial communication applications.</p>
+
+<div class="info-box">
+<strong>Learning objectives</strong>
+<ul>
+<li>Configure UART0 and UART1.</li>
+<li>Calculate and configure baud rates.</li>
+<li>Transmit individual characters and strings.</li>
+<li>Receive serial data.</li>
+<li>Implement an echo application.</li>
+<li>Understand UART FIFO operation.</li>
+<li>Configure UART interrupts.</li>
+<li>Debug UART programs using Keil uVision.</li>
+<li>Identify common serial communication errors.</li>
+</ul>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>2. LPC2129 UART Reference</h2>
+
+<table>
+<tr><th>Parameter</th><th>UART0</th><th>UART1</th></tr>
+<tr><td>Transmit pin</td><td>P0.0 / TXD0</td><td>P0.8 / TXD1</td></tr>
+<tr><td>Receive pin</td><td>P0.1 / RXD0</td><td>P0.9 / RXD1</td></tr>
+<tr><td>VIC source</td><td>6</td><td>7</td></tr>
+<tr><td>Transmit register</td><td>U0THR</td><td>U1THR</td></tr>
+<tr><td>Receive register</td><td>U0RBR</td><td>U1RBR</td></tr>
+<tr><td>Line control</td><td>U0LCR</td><td>U1LCR</td></tr>
+<tr><td>Line status</td><td>U0LSR</td><td>U1LSR</td></tr>
+</table>
+
+<h3>Important UART registers</h3>
+<table>
+<tr><th>Register</th><th>Purpose</th></tr>
+<tr><td>THR</td><td>Transmit data.</td></tr>
+<tr><td>RBR</td><td>Receive data.</td></tr>
+<tr><td>DLL/DLM</td><td>Baud-rate divisor.</td></tr>
+<tr><td>FDR</td><td>Fractional baud-rate divider.</td></tr>
+<tr><td>LCR</td><td>Frame format and divisor-latch access.</td></tr>
+<tr><td>LSR</td><td>Transmit and receive status.</td></tr>
+<tr><td>IER</td><td>Interrupt enable.</td></tr>
+<tr><td>IIR</td><td>Interrupt identification.</td></tr>
+<tr><td>FCR</td><td>FIFO control.</td></tr>
+</table>
+</section>
+
+<section class="lesson-section">
+<h2>3. Project Clock Configuration</h2>
+<p>The following exercises use the established LPC2129 project clock configuration.</p>
+
+<table>
+<tr><th>Clock parameter</th><th>Value</th></tr>
+<tr><td>Oscillator frequency</td><td>12 MHz</td></tr>
+<tr><td>CPU clock (CCLK)</td><td>60 MHz</td></tr>
+<tr><td>Peripheral clock (PCLK)</td><td>15 MHz</td></tr>
+</table>
+
+<p>UART baud-rate generation uses PCLK.</p>
+
+<h3>Baud-rate formula</h3>
+<p>Without fractional adjustment:</p>
+<pre><code>Baud Rate = PCLK / (16 × Divisor)</code></pre>
+
+<p>With fractional adjustment:</p>
+<pre><code>Baud Rate =
+PCLK / [16 × Divisor × (1 + DIVADDVAL / MULVAL)]</code></pre>
+
+<p>Where:</p>
+<ul>
+<li>Divisor = 256 × DLM + DLL.</li>
+<li>DIVADDVAL is the fractional divider addition value.</li>
+<li>MULVAL is the fractional divider multiplier value.</li>
+</ul>
+
+<h3>Example: Approximately 9600 baud</h3>
+<table>
+<tr><th>Parameter</th><th>Value</th></tr>
+<tr><td>PCLK</td><td>15,000,000 Hz</td></tr>
+<tr><td>DLL</td><td>71</td></tr>
+<tr><td>DLM</td><td>0</td></tr>
+<tr><td>MULVAL</td><td>8</td></tr>
+<tr><td>DIVADDVAL</td><td>3</td></tr>
+<tr><td>FDR</td><td>0x83</td></tr>
+<tr><td>Calculated baud rate</td><td>Approximately 9603 baud</td></tr>
+</table>
+</section>
+
+<section class="lesson-section">
+<h2>4. Common UART0 Initialization Function</h2>
+<p>The following initialization function is reused in the exercises.</p>
+
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+void UART0_Init(void)
+{
+    /* Select TXD0 on P0.0 */
+    PINSEL0 &amp;= ~(3U &lt;&lt; 0);
+    PINSEL0 |=  (1U &lt;&lt; 0);
+
+    /* Select RXD0 on P0.1 */
+    PINSEL0 &amp;= ~(3U &lt;&lt; 2);
+    PINSEL0 |=  (1U &lt;&lt; 2);
+
+    /* Enable divisor latch access */
+    U0LCR = 0x83;
+
+    /* Baud-rate divisor */
+    U0DLM = 0x00;
+    U0DLL = 0x47;
+    U0FDR = 0x83;
+
+    /* 8 data bits, no parity, one stop bit */
+    U0LCR = 0x03;
+
+    /* Enable and reset FIFOs */
+    U0FCR = 0x07;
+}</code></pre>
+
+<div class="note-box">
+The fractional divider settings produce approximately 9603 baud with PCLK = 15 MHz. The actual communication rate must be compatible with the connected device.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>5. Exercise 1 – Configure UART0</h2>
+
+<div class="exercise">
+<strong>Objective:</strong> Configure UART0 for approximately 9600 baud and 8N1 frame format.
+
+<p><strong>Tasks:</strong></p>
+<ol>
+<li>Select P0.0 as TXD0.</li>
+<li>Select P0.1 as RXD0.</li>
+<li>Configure DLL, DLM and FDR.</li>
+<li>Configure LCR for 8N1.</li>
+<li>Enable FIFO.</li>
+</ol>
+
+<strong>Program:</strong>
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+int main(void)
+{
+    PINSEL0 &amp;= ~0x0FU;
+    PINSEL0 |= 0x05U;
+
+    U0LCR = 0x83;
+    U0DLM = 0x00;
+    U0DLL = 0x47;
+    U0FDR = 0x83;
+
+    U0LCR = 0x03;
+    U0FCR = 0x07;
+
+    while (1)
+    {
+    }
+}</code></pre>
+
+<strong>Expected result:</strong>
+<p>UART0 pin selection, baud-rate registers and frame format are configured. Verify the register values in the Keil debugger.</p>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>6. Exercise 2 – Transmit a Single Character</h2>
+
+<div class="exercise">
+<strong>Objective:</strong> Transmit the character A using UART0 polling.
+
+<strong>Program:</strong>
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+void UART0_Init(void)
+{
+    PINSEL0 &amp;= ~0x0FU;
+    PINSEL0 |= 0x05U;
+
+    U0LCR = 0x83;
+    U0DLM = 0;
+    U0DLL = 0x47;
+    U0FDR = 0x83;
+    U0LCR = 0x03;
+}
+
+void UART0_TxChar(unsigned char ch)
+{
+    while ((U0LSR &amp; (1U &lt;&lt; 5)) == 0)
+    {
+    }
+
+    U0THR = ch;
+}
+
+int main(void)
+{
+    UART0_Init();
+
+    while (1)
+    {
+        UART0_TxChar('A');
+    }
+}</code></pre>
+
+<strong>Expected result:</strong>
+<p>The program repeatedly sends the character A through the UART0 transmit path. A connected serial receiver or supported simulator terminal is required to observe the character.</p>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>7. Exercise 3 – Transmit a String</h2>
+
+<div class="exercise">
+<strong>Objective:</strong> Transmit a message through UART0.
+
+<strong>Program:</strong>
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+void UART0_Init(void)
+{
+    PINSEL0 &amp;= ~0x0FU;
+    PINSEL0 |= 0x05U;
+
+    U0LCR = 0x83;
+    U0DLM = 0;
+    U0DLL = 0x47;
+    U0FDR = 0x83;
+    U0LCR = 0x03;
+}
+
+void UART0_TxChar(unsigned char ch)
+{
+    while ((U0LSR &amp; (1U &lt;&lt; 5)) == 0)
+    {
+    }
+
+    U0THR = ch;
+}
+
+void UART0_TxString(const char *str)
+{
+    while (*str != '\0')
+    {
+        UART0_TxChar((unsigned char)*str);
+        str++;
+    }
+}
+
+int main(void)
+{
+    UART0_Init();
+
+    UART0_TxString("Welcome to Embedded Systems\r\n");
+
+    while (1)
+    {
+    }
+}</code></pre>
+
+<strong>Expected result:</strong>
+<pre><code>Welcome to Embedded Systems</code></pre>
+<p>The string is transmitted once after initialization.</p>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>8. Exercise 4 – Receive a Character</h2>
+
+<div class="exercise">
+<strong>Objective:</strong> Receive one character through UART0.
+
+<strong>Program:</strong>
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+void UART0_Init(void)
+{
+    PINSEL0 &amp;= ~0x0FU;
+    PINSEL0 |= 0x05U;
+
+    U0LCR = 0x83;
+    U0DLM = 0;
+    U0DLL = 0x47;
+    U0FDR = 0x83;
+    U0LCR = 0x03;
+}
+
+unsigned char UART0_RxChar(void)
+{
+    while ((U0LSR &amp; 0x01U) == 0)
+    {
+    }
+
+    return (unsigned char)U0RBR;
+}
+
+int main(void)
+{
+    unsigned char received;
+
+    UART0_Init();
+
+    while (1)
+    {
+        received = UART0_RxChar();
+    }
+}</code></pre>
+
+<strong>Expected result:</strong>
+<p>The CPU waits until a character arrives, then reads it from U0RBR and stores it in the variable <code>received</code>.</p>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>9. Exercise 5 – UART Echo Program</h2>
+
+<div class="exercise">
+<strong>Objective:</strong> Receive a character and transmit the same character back.
+
+<strong>Program:</strong>
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+void UART0_Init(void)
+{
+    PINSEL0 &amp;= ~0x0FU;
+    PINSEL0 |= 0x05U;
+
+    U0LCR = 0x83;
+    U0DLM = 0;
+    U0DLL = 0x47;
+    U0FDR = 0x83;
+    U0LCR = 0x03;
+    U0FCR = 0x07;
+}
+
+int main(void)
+{
+    unsigned char data;
+
+    UART0_Init();
+
+    while (1)
+    {
+        while ((U0LSR &amp; 0x01U) == 0)
+        {
+        }
+
+        data = (unsigned char)U0RBR;
+
+        while ((U0LSR &amp; (1U &lt;&lt; 5)) == 0)
+        {
+        }
+
+        U0THR = data;
+    }
+}</code></pre>
+
+<strong>Expected result:</strong>
+<p>Every received character is transmitted back to the sender.</p>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>10. Exercise 6 – Check UART Error Flags</h2>
+
+<div class="exercise">
+<strong>Objective:</strong> Read the UART line status register and identify receiver errors.
+
+<strong>Program:</strong>
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+volatile unsigned int uart_errors;
+
+void UART0_CheckErrors(void)
+{
+    unsigned int status;
+
+    status = U0LSR;
+
+    uart_errors = status &amp; 0x1EU;
+}
+
+int main(void)
+{
+    PINSEL0 &amp;= ~0x0FU;
+    PINSEL0 |= 0x05U;
+
+    U0LCR = 0x83;
+    U0DLM = 0;
+    U0DLL = 0x47;
+    U0FDR = 0x83;
+    U0LCR = 0x03;
+
+    while (1)
+    {
+        UART0_CheckErrors();
+    }
+}</code></pre>
+
+<strong>Expected result:</strong>
+<p>The variable <code>uart_errors</code> stores the receiver error-status bits observed in LSR bits 1 through 4.</p>
+
+<div class="note-box">
+This exercise demonstrates status inspection. It does not inject errors into the UART or guarantee that the simulator will generate error conditions.
+</div>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>11. Exercise 7 – Configure UART FIFO</h2>
+
+<div class="exercise">
+<strong>Objective:</strong> Enable UART0 FIFO and select a receive trigger level.
+
+<p><strong>Task:</strong> Configure the receive FIFO trigger level for eight characters.</p>
+
+<strong>Program:</strong>
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+int main(void)
+{
+    /* Enable FIFO */
+    U0FCR = 0x01;
+
+    /* Enable FIFO and clear RX/TX FIFOs */
+    U0FCR = 0x07;
+
+    /* Enable FIFO with 8-character RX trigger */
+    U0FCR = 0x81;
+
+    while (1)
+    {
+    }
+}</code></pre>
+
+<strong>Expected result:</strong>
+<p>FIFO operation is enabled with the receive trigger level selected as eight characters.</p>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>12. Exercise 8 – Configure UART1</h2>
+
+<div class="exercise">
+<strong>Objective:</strong> Configure UART1 using P0.8 and P0.9.
+
+<strong>Program:</strong>
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+void UART1_Init(void)
+{
+    /* P0.8 = TXD1 */
+    PINSEL0 &amp;= ~(3U &lt;&lt; 16);
+    PINSEL0 |=  (1U &lt;&lt; 16);
+
+    /* P0.9 = RXD1 */
+    PINSEL0 &amp;= ~(3U &lt;&lt; 18);
+    PINSEL0 |=  (1U &lt;&lt; 18);
+
+    U1LCR = 0x83;
+
+    U1DLM = 0x00;
+    U1DLL = 0x47;
+    U1FDR = 0x83;
+
+    U1LCR = 0x03;
+    U1FCR = 0x07;
+}
+
+void UART1_TxChar(unsigned char ch)
+{
+    while ((U1LSR &amp; (1U &lt;&lt; 5)) == 0)
+    {
+    }
+
+    U1THR = ch;
+}
+
+int main(void)
+{
+    UART1_Init();
+
+    while (1)
+    {
+        UART1_TxChar('B');
+    }
+}</code></pre>
+
+<strong>Expected result:</strong>
+<p>UART1 is configured and repeatedly sends the character B through TXD1 when the UART is operational.</p>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>13. Exercise 9 – Enable UART0 Receive Interrupt</h2>
+
+<div class="exercise">
+<strong>Objective:</strong> Enable UART0 receive data interrupts and configure the VIC.
+
+<strong>Program:</strong>
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+#define UART0_SOURCE 6U
+
+volatile unsigned char received_data;
+volatile unsigned int data_received = 0;
+
+void UART0_ISR(void) __irq
+{
+    unsigned int iir;
+
+    while (1)
+    {
+        iir = U0IIR;
+
+        if (iir &amp; 0x01U)
+        {
+            break;
+        }
+
+        if ((iir &amp; 0x0EU) == 0x04U ||
+            (iir &amp; 0x0EU) == 0x0CU)
+        {
+            while (U0LSR &amp; 0x01U)
+            {
+                received_data = (unsigned char)U0RBR;
+                data_received++;
+            }
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    VICVectAddr = 0;
+}
+
+int main(void)
+{
+    PINSEL0 &amp;= ~0x0FU;
+    PINSEL0 |= 0x05U;
+
+    U0LCR = 0x83;
+    U0DLM = 0;
+    U0DLL = 0x47;
+    U0FDR = 0x83;
+    U0LCR = 0x03;
+
+    U0FCR = 0x07;
+
+    U0IER = (1U &lt;&lt; 0);
+
+    VICIntSelect &amp;= ~(1U &lt;&lt; UART0_SOURCE);
+
+    VICVectAddr0 = (unsigned int)UART0_ISR;
+    VICVectCntl0 = (1U &lt;&lt; 5) | UART0_SOURCE;
+
+    VICIntEnable = (1U &lt;&lt; UART0_SOURCE);
+
+    while (1)
+    {
+        /* Main application */
+    }
+}</code></pre>
+
+<strong>Expected result:</strong>
+<p>When supported receive data interrupts occur, the ISR reads the received characters and updates the data counter.</p>
+
+<div class="note-box">
+This is a focused receive-interrupt exercise. A complete application should also handle receive line-status errors, buffer incoming data, and define overflow handling. The example uses the Keil ARM compiler's __irq convention.
+</div>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>14. Exercise 10 – UART Debugging in Keil uVision</h2>
+
+<div class="exercise">
+<strong>Objective:</strong> Verify UART configuration and program execution using the debugger.
+
+<h3>Procedure</h3>
+<ol>
+<li>Open the LPC2129 project.</li>
+<li>Insert one of the UART programs from this lesson.</li>
+<li>Build the project.</li>
+<li>Start the debugger.</li>
+<li>Set a breakpoint after UART initialization.</li>
+<li>Inspect PINSEL0.</li>
+<li>Inspect U0LCR, U0DLL, U0DLM and U0FDR.</li>
+<li>Inspect U0FCR and U0IER.</li>
+<li>Step through the transmit or receive functions.</li>
+<li>Inspect U0LSR and U0THR when the simulator supports those operations.</li>
+</ol>
+
+<h3>Register checklist</h3>
+<table>
+<tr><th>Register</th><th>What to verify</th></tr>
+<tr><td>PINSEL0</td><td>UART0 or UART1 pin selection.</td></tr>
+<tr><td>U0LCR / U1LCR</td><td>Frame format and DLAB state.</td></tr>
+<tr><td>DLL / DLM</td><td>Baud-rate divisor.</td></tr>
+<tr><td>FDR</td><td>Fractional divider settings.</td></tr>
+<tr><td>LSR</td><td>Transmit and receive status.</td></tr>
+<tr><td>IER</td><td>Enabled interrupt sources.</td></tr>
+<tr><td>IIR</td><td>Pending interrupt identification.</td></tr>
+<tr><td>VIC registers</td><td>UART interrupt routing.</td></tr>
+</table>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>15. UART Troubleshooting</h2>
+
+<table>
+<tr><th>Problem</th><th>Possible cause</th><th>Suggested check</th></tr>
+<tr><td>No transmission</td><td>Incorrect TXD pin selection</td><td>Inspect PINSEL0.</td></tr>
+<tr><td>Incorrect characters</td><td>Baud-rate mismatch</td><td>Check PCLK, DLL, DLM and FDR.</td></tr>
+<tr><td>Receive data missing</td><td>Incorrect RXD configuration</td><td>Check pin selection and RX connection.</td></tr>
+<tr><td>Random characters</td><td>Frame-format mismatch or noise</td><td>Check baud rate, parity and stop bits.</td></tr>
+<tr><td>Overrun error</td><td>Receive FIFO not serviced in time</td><td>Improve receive handling.</td></tr>
+<tr><td>Interrupt not generated</td><td>IER or VIC not configured</td><td>Inspect IER and VIC configuration.</td></tr>
+<tr><td>Repeated THRE interrupts</td><td>Transmit interrupt not disabled when queue is empty</td><td>Disable IER bit 1 when no data remains.</td></tr>
+<tr><td>Terminal output is unreadable</td><td>Wrong serial settings or voltage interface</td><td>Check baud rate, frame format and interface levels.</td></tr>
+</table>
+</section>
+
+<section class="lesson-section">
+<h2>16. UART Calculation Exercises</h2>
+
+<h3>Question 1</h3>
+<p>Calculate the bit duration at 9600 baud.</p>
+<p><strong>Solution:</strong></p>
+<pre><code>Bit duration = 1 / Baud rate
+             = 1 / 9600
+             = 104.17 microseconds</code></pre>
+
+<h3>Question 2</h3>
+<p>Calculate the duration of one 8N1 frame at 9600 baud.</p>
+<p><strong>Solution:</strong></p>
+<pre><code>8N1 frame = 1 start + 8 data + 1 stop
+          = 10 bits
+
+Frame duration = 10 / 9600
+               = 1.0417 milliseconds</code></pre>
+
+<h3>Question 3</h3>
+<p>Calculate the ideal maximum payload throughput for 8N1 at 9600 baud.</p>
+<p><strong>Solution:</strong></p>
+<pre><code>Payload bits per frame = 8
+
+Frames per second = 9600 / 10
+                  = 960
+
+Payload throughput = 960 bytes/second</code></pre>
+
+<h3>Question 4</h3>
+<p>What is the role of PCLK in UART baud-rate generation?</p>
+<p><strong>Answer:</strong> PCLK provides the UART peripheral clock used by the baud-rate generator.</p>
+</section>
+
+<section class="lesson-section">
+<h2>17. Theory and Viva Questions</h2>
+<ol>
+<li>What is UART communication?</li>
+<li>What is the difference between UART and USART?</li>
+<li>What are TXD and RXD?</li>
+<li>What is the purpose of the start bit?</li>
+<li>Why is the UART stop bit normally HIGH?</li>
+<li>What is the meaning of 8N1?</li>
+<li>What is baud rate?</li>
+<li>What is the difference between baud rate and bit rate?</li>
+<li>What is the function of DLL and DLM?</li>
+<li>What is the purpose of FDR?</li>
+<li>What is DLAB?</li>
+<li>What is the difference between THR and RBR?</li>
+<li>What is the difference between THRE and TEMT?</li>
+<li>What is the function of LSR?</li>
+<li>What is an overrun error?</li>
+<li>What is FIFO?</li>
+<li>What is the difference between polling and interrupt-based UART?</li>
+<li>What is the purpose of IER and IIR?</li>
+<li>What is the UART0 VIC source number?</li>
+<li>Why should an ISR be short?</li>
+</ol>
+</section>
+
+<section class="lesson-section">
+<h2>18. Multiple Choice Questions</h2>
+
+<p><strong>1. UART0 TXD is available on:</strong></p>
+<ol type="A"><li>P0.1</li><li>P0.0</li><li>P0.8</li><li>P0.9</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>2. UART baud-rate generation uses:</strong></p>
+<ol type="A"><li>CCLK</li><li>PCLK</li><li>RTC clock</li><li>External interrupt clock</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>3. Which register holds outgoing data?</strong></p>
+<ol type="A"><li>RBR</li><li>THR</li><li>LSR</li><li>IIR</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>4. Which LSR bit indicates received data availability?</strong></p>
+<ol type="A"><li>Bit 0</li><li>Bit 1</li><li>Bit 5</li><li>Bit 6</li></ol>
+<p><strong>Answer:</strong> A</p>
+
+<p><strong>5. Which register controls FIFO operation?</strong></p>
+<ol type="A"><li>IER</li><li>FCR</li><li>LCR</li><li>DLL</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>6. UART0 uses which VIC source?</strong></p>
+<ol type="A"><li>4</li><li>5</li><li>6</li><li>7</li></ol>
+<p><strong>Answer:</strong> C</p>
+
+<p><strong>7. Which register identifies the UART interrupt?</strong></p>
+<ol type="A"><li>IER</li><li>IIR</li><li>THR</li><li>RBR</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>8. Which flag indicates that the entire transmitter is empty?</strong></p>
+<ol type="A"><li>RDR</li><li>THRE</li><li>TEMT</li><li>OE</li></ol>
+<p><strong>Answer:</strong> C</p>
+
+<p><strong>9. A UART echo program:</strong></p>
+<ol type="A"><li>Only transmits data</li><li>Only receives data</li><li>Transmits received data back</li><li>Disables UART</li></ol>
+<p><strong>Answer:</strong> C</p>
+
+<p><strong>10. Which statement about volatile is correct?</strong></p>
+<ol type="A"><li>It guarantees atomicity</li><li>It disables all interrupts</li><li>It prevents certain compiler optimizations on accesses</li><li>It automatically protects shared buffers</li></ol>
+<p><strong>Answer:</strong> C</p>
+</section>
+
+<section class="lesson-section">
+<h2>19. Mini Projects</h2>
+
+<h3>Project 1 – Serial Text Display</h3>
+<p>Configure UART0 and transmit a startup message to a serial terminal.</p>
+
+<h3>Project 2 – UART Echo Application</h3>
+<p>Receive a character and transmit the same character back.</p>
+
+<h3>Project 3 – Serial Command Interface</h3>
+<p>Receive commands such as ON, OFF and STATUS. Decode the commands and perform the corresponding operation.</p>
+
+<h3>Project 4 – Sensor Data Transmission</h3>
+<p>Read ADC values and transmit the converted values as ASCII text through UART0.</p>
+
+<h3>Project 5 – Interrupt-Driven Serial Communication</h3>
+<p>Use UART receive and transmit interrupts with software ring buffers.</p>
+
+<h3>Project 6 – UART0 to UART1 Communication</h3>
+<p>Configure UART0 and UART1 with compatible baud rates and frame formats. Connect the transmit and receive signals appropriately when using physical hardware.</p>
+</section>
+
+<section class="lesson-section">
+<h2>20. Keil uVision Simulator Checklist</h2>
+<ul>
+<li>Build each program successfully.</li>
+<li>Inspect PINSEL0 configuration.</li>
+<li>Inspect UART baud-rate registers.</li>
+<li>Inspect U0LCR and U1LCR.</li>
+<li>Inspect FIFO configuration.</li>
+<li>Observe LSR status where supported.</li>
+<li>Step through character transmission code.</li>
+<li>Inspect receive code and buffer variables.</li>
+<li>Set breakpoints in UART interrupt handlers.</li>
+<li>Inspect VIC configuration and interrupt variables.</li>
+</ul>
+
+<div class="note-box">
+The learning environment uses Keil uVision simulation without a physical LPC2129 board. Register inspection, compilation and CPU execution can be practiced, but external UART signaling and real serial-terminal behavior cannot be assumed. Verify actual electrical communication only with suitable hardware and interface equipment.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>21. Chapter 12 – Completion Checklist</h2>
+<ul>
+<li>Understand serial communication fundamentals.</li>
+<li>Understand UART frame structure and 8N1.</li>
+<li>Understand LPC2129 UART0 and UART1 architecture.</li>
+<li>Configure UART alternate pin functions.</li>
+<li>Calculate UART baud rate using DLL, DLM and FDR.</li>
+<li>Configure the Line Control Register.</li>
+<li>Understand THR, RBR and LSR.</li>
+<li>Transmit and receive data using Embedded C.</li>
+<li>Implement polling-based communication.</li>
+<li>Implement interrupt-driven communication.</li>
+<li>Understand UART FIFO and ring buffers.</li>
+<li>Debug UART programs using Keil uVision.</li>
+</ul>
+
+<badge color="success">Chapter 12 Complete</badge>
+<p>You have completed all ten lessons in LPC2129 UART Serial Communication.</p>
+</section>
+
+<section class="lesson-section">
+<h2>22. References</h2>
+<ul>
+<li>NXP LPC2129 Datasheet.</li>
+<li>NXP UM10114 – LPC21xx and LPC22xx User Manual.</li>
+<li>Arm7TDMI Technical Reference Manual.</li>
+<li>Arm Keil documentation.</li>
+</ul>
+<p><a href="https://www.nxp.com/docs/en/user-guide/UM10114.pdf" target="_blank" rel="noopener">NXP LPC21xx/22xx User Manual</a></p>
+<p><a href="https://www.keil.com/" target="_blank" rel="noopener">Arm Keil Official Website</a></p>
+</section>
+
+<div class="lesson-nav">
+<a href="L09_UART_Interrupt_Based_Communication.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="../ch13_LPC2129_ADC_and_DAC/index.html">Next Chapter →</a>
+</div>
+
+</body>
+</html>
