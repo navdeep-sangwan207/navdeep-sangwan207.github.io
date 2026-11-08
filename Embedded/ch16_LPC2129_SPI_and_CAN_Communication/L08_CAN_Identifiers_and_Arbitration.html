@@ -1,1 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CAN Identifiers and Arbitration - Embedded Systems</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-header{background:linear-gradient(135deg,#174ea6,#2878d0);color:white;padding:28px;border-radius:12px;margin-bottom:25px}
+.lesson-section{background:#fff;padding:22px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.lesson-section h2{color:#174ea6;border-bottom:2px solid #e5edf8;padding-bottom:9px}
+.lesson-section h3{color:#2878d0;margin-top:22px}
+.lesson-section p,.lesson-section li{line-height:1.75}
+.info-box{background:#eef5ff;border-left:4px solid #2878d0;padding:15px;margin:16px 0;border-radius:6px;line-height:1.7}
+.warning-box{background:#fff7e8;border-left:4px solid #e76f00;padding:15px;margin:16px 0;border-radius:6px;line-height:1.7}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d8e0ea;padding:11px;text-align:left}
+th{background:#eaf2ff;color:#174ea6}
+tr:nth-child(even){background:#f8faff}
+pre.code{background:#17212f;color:#e7edf5;padding:16px;border-radius:8px;overflow-x:auto;line-height:1.6}
+.diagram{background:#f7f9fc;padding:18px;border:1px solid #dce5f1;border-radius:8px;overflow-x:auto;margin:18px 0}
+.diagram pre{width:max-content;max-width:100%;margin:10px auto;white-space:pre;color:#17345d;line-height:1.6}
+.question{background:#f5f8fc;padding:13px;margin:12px 0;border-radius:6px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:12px 18px;border-radius:6px;text-decoration:none;font-weight:600}
+.lesson-nav a:hover{background:#2878d0}
+@media(max-width:600px){.lesson-section{padding:16px}.lesson-header{padding:21px}.lesson-nav{flex-direction:column}.lesson-nav a{text-align:center}}
+</style>
+</head>
+<body>
+<main class="container">
 
+<header class="lesson-header">
+<h1>Lesson 08: CAN Identifiers and Arbitration</h1>
+<p>Understand CAN message identifiers, priority assignment, bit-by-bit arbitration, standard and extended frame arbitration, and how multiple nodes share the CAN bus without destroying the winning message.</p>
+</header>
+
+<section class="lesson-section">
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Explain the purpose of a CAN identifier.</li>
+<li>Differentiate message identification from node addressing.</li>
+<li>Understand standard and extended identifiers.</li>
+<li>Explain how CAN message priority is assigned.</li>
+<li>Understand dominant and recessive bus states.</li>
+<li>Describe bit-by-bit CAN arbitration.</li>
+<li>Explain why CAN arbitration is non-destructive.</li>
+<li>Analyze arbitration between multiple transmitting nodes.</li>
+<li>Understand arbitration between standard and extended frames.</li>
+<li>Identify practical CAN network design considerations.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>2. What Is a CAN Identifier?</h2>
+<p>A CAN identifier is a field in a CAN frame that identifies the message being transmitted. It also determines the message's priority when multiple nodes attempt to transmit simultaneously.</p>
+
+<p>Unlike communication protocols that use a destination address to identify a receiving device, CAN normally uses message-oriented communication. All nodes can observe transmitted frames, and each node decides which messages are relevant to it.</p>
+
+<h3>Example</h3>
+<pre class="code"><code>CAN Identifier: 0x123
+Message: Vehicle speed information
+
+CAN Identifier: 0x200
+Message: Engine temperature information
+
+CAN Identifier: 0x300
+Message: Battery voltage information</code></pre>
+
+<p>The identifier-to-message mapping is defined by the network communication design. These examples are illustrative.</p>
+
+<div class="info-box">
+<strong>Important:</strong> A CAN identifier is not necessarily the address of a transmitting node or receiving node. It identifies the message.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>3. Identifier Length</h2>
+<p>Classical CAN supports two identifier formats.</p>
+<div class="table-wrap">
+<table>
+<tr><th>Feature</th><th>Standard Format</th><th>Extended Format</th></tr>
+<tr><td>Identifier length</td><td>11 bits</td><td>29 bits</td></tr>
+<tr><td>Minimum identifier</td><td>0x000</td><td>0x00000000</td></tr>
+<tr><td>Maximum identifier</td><td>0x7FF</td><td>0x1FFFFFFF</td></tr>
+<tr><td>Number of possible values</td><td>2<sup>11</sup> = 2,048</td><td>2<sup>29</sup> = 536,870,912</td></tr>
+<tr><td>Format indicator</td><td>IDE = dominant</td><td>IDE = recessive</td></tr>
+</table>
+</div>
+
+<h3>Standard Identifier Example</h3>
+<pre class="code"><code>Identifier = 0x123
+
+Hexadecimal: 0x123
+Binary:      00100100011
+
+Length:      11 bits</code></pre>
+
+<h3>Extended Identifier Example</h3>
+<pre class="code"><code>Identifier = 0x18FF50E5
+
+Length:      29 bits
+
+Maximum:     0x1FFFFFFF</code></pre>
+</section>
+
+<section class="lesson-section">
+<h2>4. Identifier and Message Priority</h2>
+<p>CAN uses identifier-based priority. A lower numerical identifier has higher priority when competing frames are compared under the CAN arbitration rules.</p>
+
+<h3>Example Priority Assignment</h3>
+<div class="table-wrap">
+<table>
+<tr><th>Identifier</th><th>Example Message</th><th>Relative Priority</th></tr>
+<tr><td>0x080</td><td>Critical motor-control status</td><td>Highest among these examples</td></tr>
+<tr><td>0x120</td><td>Vehicle speed</td><td>Second</td></tr>
+<tr><td>0x250</td><td>Temperature data</td><td>Third</td></tr>
+<tr><td>0x500</td><td>Diagnostic information</td><td>Lowest among these examples</td></tr>
+</table>
+</div>
+
+<div class="info-box">
+A lower identifier generally wins arbitration because its binary representation presents a dominant bit earlier than a competing higher identifier. The actual priority plan must be designed for the complete network.
+</div>
+
+<h3>Important Design Considerations</h3>
+<ul>
+<li>Assign high priority to time-critical messages.</li>
+<li>Assign lower priority to non-critical background messages.</li>
+<li>Consider message transmission frequency.</li>
+<li>Consider worst-case bus loading.</li>
+<li>Avoid assigning identifiers without a network-wide plan.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>5. Dominant and Recessive Bits</h2>
+<p>CAN uses two logical bus states:</p>
+<div class="table-wrap">
+<table>
+<tr><th>State</th><th>Logical Value</th><th>Bus Behavior</th></tr>
+<tr><td>Dominant</td><td>0</td><td>Overrides a recessive bit.</td></tr>
+<tr><td>Recessive</td><td>1</td><td>Remains visible when all transmitting nodes send recessive.</td></tr>
+</table>
+</div>
+
+<h3>Wired-AND Behavior</h3>
+<p>At the logical level, the shared CAN bus behaves like a wired-AND arrangement: a dominant zero from any transmitting node makes the observed bus state dominant.</p>
+
+<pre class="code"><code>Node A transmits: 0
+Node B transmits: 1
+--------------------
+Bus state:         0</code></pre>
+
+<div class="info-box">
+The dominant state wins over the recessive state. This electrical property makes CAN arbitration possible.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>6. What Is CAN Arbitration?</h2>
+<p>CAN arbitration is the process used to decide which node may continue transmitting when two or more nodes begin transmitting at the same time.</p>
+
+<p>Each transmitting node monitors the bus while sending its identifier. If a node sends a recessive bit but observes a dominant bit, it recognizes that another node has a higher-priority message and stops transmitting.</p>
+
+<h3>Arbitration Characteristics</h3>
+<ul>
+<li>Multiple nodes may start transmission together.</li>
+<li>Each node sends its identifier bit by bit.</li>
+<li>Dominant bits override recessive bits.</li>
+<li>A node that loses arbitration stops transmitting.</li>
+<li>The winning node continues its frame without restarting.</li>
+<li>The losing node can attempt transmission again when the bus becomes available.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>7. Non-Destructive Arbitration</h2>
+<p>CAN arbitration is called non-destructive because the arbitration process does not corrupt the frame transmitted by the winning node.</p>
+
+<p>Nodes compare their transmitted bits with the actual bus state. A losing node stops transmitting as soon as it detects that it has lost arbitration.</p>
+
+<div class="diagram">
+<pre>
+Node A:  Identifier bits ----\
+                               +---- Shared CAN Bus
+Node B:  Identifier bits ----/          |
+                                          |
+                              Dominant/recessive comparison
+                                          |
+                                  Winning node continues
+                                  Losing node stops
+</pre>
+</div>
+
+<h3>Why Is It Non-Destructive?</h3>
+<ol>
+<li>All nodes synchronize at the beginning of the frame.</li>
+<li>They transmit identifier bits in the same order.</li>
+<li>The bus resolves conflicting bits using dominant and recessive states.</li>
+<li>A losing node withdraws before it corrupts the winning frame.</li>
+<li>The winning node continues transmitting the remaining fields.</li>
+</ol>
+</section>
+
+<section class="lesson-section">
+<h2>8. Bit-by-Bit Arbitration Example</h2>
+<p>Consider two nodes transmitting standard identifiers simultaneously.</p>
+
+<pre class="code"><code>Node A Identifier = 0x100
+Node B Identifier = 0x120</code></pre>
+
+<h3>Convert Identifiers to 11-Bit Binary</h3>
+<pre class="code"><code>Node A: 00100000000
+Node B: 00100100000</code></pre>
+
+<div class="table-wrap">
+<table>
+<tr><th>Bit Position</th><th>Node A</th><th>Node B</th><th>Bus State</th><th>Result</th></tr>
+<tr><td>1</td><td>0</td><td>0</td><td>0</td><td>Both continue</td></tr>
+<tr><td>2</td><td>0</td><td>0</td><td>0</td><td>Both continue</td></tr>
+<tr><td>3</td><td>1</td><td>1</td><td>1</td><td>Both continue</td></tr>
+<tr><td>4</td><td>0</td><td>0</td><td>0</td><td>Both continue</td></tr>
+<tr><td>5</td><td>0</td><td>0</td><td>0</td><td>Both continue</td></tr>
+<tr><td>6</td><td>0</td><td>1</td><td>0</td><td>Node B loses</td></tr>
+</table>
+</div>
+
+<h3>Explanation</h3>
+<ul>
+<li>Both nodes transmit the same bits through the first five positions.</li>
+<li>At the sixth position, Node A sends dominant 0.</li>
+<li>Node B sends recessive 1.</li>
+<li>The bus state is dominant 0.</li>
+<li>Node B detects the mismatch and stops transmitting.</li>
+<li>Node A continues its frame.</li>
+</ul>
+
+<badge color="success">Winner: Node A — 0x100</badge>
+<div class="info-box">
+The lower identifier, 0x100, wins because its first differing bit is dominant while the competing identifier transmits recessive.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>9. Another Arbitration Example</h2>
+<p>Consider three nodes transmitting the following standard identifiers:</p>
+
+<pre class="code"><code>Node A = 0x080
+Node B = 0x100
+Node C = 0x200</code></pre>
+
+<h3>11-Bit Binary Values</h3>
+<pre class="code"><code>Node A = 00010000000
+Node B = 00100000000
+Node C = 01000000000</code></pre>
+
+<p>At the first identifier bit:</p>
+<ul>
+<li>Node A transmits dominant 0.</li>
+<li>Node B transmits dominant 0.</li>
+<li>Node C transmits recessive 1.</li>
+<li>Node C loses arbitration.</li>
+</ul>
+
+<p>Nodes A and B continue comparing their identifiers. At the next differing bit, Node A sends dominant 0 while Node B sends recessive 1. Node B loses.</p>
+
+<badge color="success">Winner: Node A — 0x080</badge>
+</section>
+
+<section class="lesson-section">
+<h2>10. Arbitration and Identifier Ordering</h2>
+<p>For standard frames of the same format, comparing identifiers numerically gives the priority order: the smaller identifier wins.</p>
+
+<pre class="code"><code>0x080 < 0x100 < 0x200 < 0x500
+
+Priority:
+0x080 = Highest
+0x100 = Second
+0x200 = Third
+0x500 = Lowest</code></pre>
+
+<p>This rule is useful for assigning message identifiers in an embedded network.</p>
+
+<div class="warning-box">
+Do not assume that comparing only the numerical identifier is sufficient for every mixed standard/extended arbitration case. The frame-format bits also participate in arbitration.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>11. Standard and Extended Frame Arbitration</h2>
+<p>Standard and extended frames use different identifier formats. Their arbitration fields must be considered together.</p>
+
+<h3>Important Arbitration Fields</h3>
+<div class="table-wrap">
+<table>
+<tr><th>Field</th><th>Standard Frame</th><th>Extended Frame</th></tr>
+<tr><td>Identifier base</td><td>11-bit identifier</td><td>11-bit base identifier</td></tr>
+<tr><td>SRR</td><td>Not present</td><td>Recessive substitute remote request bit</td></tr>
+<tr><td>IDE</td><td>Dominant</td><td>Recessive</td></tr>
+<tr><td>Identifier extension</td><td>Not present</td><td>18 additional identifier bits</td></tr>
+</table>
+</div>
+
+<h3>Standard Versus Extended Arbitration</h3>
+<p>When a standard frame and an extended frame have the same first 11 identifier bits, the standard frame wins at the format comparison point.</p>
+
+<p>The standard frame transmits a dominant RTR bit in the position where the extended frame transmits the recessive SRR bit. The dominant standard-frame bit therefore wins arbitration.</p>
+
+<div class="info-box">
+The result depends on the arbitration fields, not simply on comparing an 11-bit number with a 29-bit number as ordinary integers.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>12. Arbitration and Remote Frames</h2>
+<p>In Classical CAN, the RTR bit also participates in arbitration.</p>
+
+<div class="table-wrap">
+<table>
+<tr><th>Frame</th><th>RTR Bit</th><th>Relative Result for Otherwise Matching Standard Identifier</th></tr>
+<tr><td>Data frame</td><td>Dominant 0</td><td>Higher priority</td></tr>
+<tr><td>Remote frame</td><td>Recessive 1</td><td>Loses to matching data frame</td></tr>
+</table>
+</div>
+
+<p>If a data frame and remote frame use the same standard identifier and begin together, the data frame wins at the RTR bit because dominant 0 overrides recessive 1.</p>
+</section>
+
+<section class="lesson-section">
+<h2>13. What Happens to a Losing Node?</h2>
+<p>A node that loses arbitration does not treat the event as a transmission error.</p>
+
+<ul>
+<li>It stops transmitting its frame.</li>
+<li>It changes to receiver behavior and observes the winning frame.</li>
+<li>It does not send an error frame merely because it lost arbitration.</li>
+<li>It can attempt to transmit again when the bus becomes available.</li>
+</ul>
+
+<div class="info-box">
+Losing arbitration is a normal CAN bus operation. It is not the same as detecting a bit, CRC or form error.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>14. Arbitration Versus Error Detection</h2>
+<div class="table-wrap">
+<table>
+<tr><th>Feature</th><th>Arbitration Loss</th><th>Transmission Error</th></tr>
+<tr><td>Reason</td><td>Another node sends a higher-priority frame</td><td>Protocol violation or detected corruption</td></tr>
+<tr><td>Expected?</td><td>Normal operation</td><td>Indicates an error condition</td></tr>
+<tr><td>Winning frame</td><td>Continues normally</td><td>May be interrupted and retransmitted</td></tr>
+<tr><td>Error frame</td><td>Not generated solely due to arbitration loss</td><td>May be generated by the CAN controller</td></tr>
+<tr><td>Node behavior</td><td>Stops transmitting and receives</td><td>Follows CAN error-handling rules</td></tr>
+</table>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>15. CAN Arbitration Timing</h2>
+<p>Arbitration occurs during the identifier and associated arbitration fields. Each node must sample the bus at the correct point in the bit period.</p>
+
+<h3>Important Timing Parameters</h3>
+<ul>
+<li>Nominal bit rate.</li>
+<li>Synchronization segment.</li>
+<li>Propagation segment.</li>
+<li>Phase segments.</li>
+<li>Sample point.</li>
+<li>Synchronization jump width.</li>
+</ul>
+
+<p>All nodes on a CAN network must use compatible nominal bit timing.</p>
+
+<div class="info-box">
+Arbitration reliability depends on correct bit timing, oscillator tolerance, cable propagation delay, transceiver characteristics and network topology.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>16. Priority and Bus Loading</h2>
+<p>Identifier priority influences how quickly a message can gain access to the bus.</p>
+
+<h3>High-Priority Messages</h3>
+<ul>
+<li>Safety-related information.</li>
+<li>Time-critical motor-control messages.</li>
+<li>Fast-changing control signals.</li>
+</ul>
+
+<h3>Lower-Priority Messages</h3>
+<ul>
+<li>Non-critical diagnostic information.</li>
+<li>Slow-changing status information.</li>
+<li>Background monitoring data.</li>
+</ul>
+
+<div class="warning-box">
+A low-priority message can experience long delays if higher-priority traffic continuously occupies the bus. Network design must consider worst-case response time and bus utilization.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>17. CAN Acceptance Filtering</h2>
+<p>Acceptance filtering allows a CAN controller to select which received identifiers should be passed to the application or receive buffers.</p>
+
+<h3>Purpose</h3>
+<ul>
+<li>Reduce unnecessary software processing.</li>
+<li>Accept relevant message identifiers.</li>
+<li>Reject unwanted traffic from application-level handling.</li>
+<li>Improve receive-buffer management.</li>
+</ul>
+
+<p>Acceptance filtering does not change the priority of a message on the bus. Arbitration is performed by the CAN protocol itself.</p>
+
+<div class="info-box">
+The LPC2129 includes an Acceptance Filter that can be configured to select messages for its CAN controllers. Detailed LPC2129 CAN controller programming is covered in the later lessons of this chapter.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>18. CAN Identifier Design Example</h2>
+<p>Consider an embedded control system with four message categories.</p>
+
+<div class="table-wrap">
+<table>
+<tr><th>Identifier</th><th>Message</th><th>Priority</th><th>Example Period</th></tr>
+<tr><td>0x080</td><td>Emergency status</td><td>Highest</td><td>Event-driven</td></tr>
+<tr><td>0x120</td><td>Motor speed feedback</td><td>High</td><td>10 ms</td></tr>
+<tr><td>0x240</td><td>Temperature monitoring</td><td>Medium</td><td>100 ms</td></tr>
+<tr><td>0x500</td><td>Diagnostic status</td><td>Lower</td><td>500 ms</td></tr>
+</table>
+</div>
+
+<p>This is an illustrative identifier plan. Actual message periods and priorities must be calculated according to system deadlines, payload sizes and bus load.</p>
+</section>
+
+<section class="lesson-section">
+<h2>19. Practical Identifier Conversion</h2>
+<h3>Example 1: Convert 0x100 into 11-bit Binary</h3>
+<pre class="code"><code>Hexadecimal = 0x100
+Decimal     = 256
+
+11-bit binary:
+00100000000</code></pre>
+
+<h3>Example 2: Convert 0x200 into 11-bit Binary</h3>
+<pre class="code"><code>Hexadecimal = 0x200
+Decimal     = 512
+
+11-bit binary:
+01000000000</code></pre>
+
+<h3>Example 3: Compare Priority</h3>
+<pre class="code"><code>0x100 = 00100000000
+0x200 = 01000000000
+
+At the first bit:
+0 versus 0 -> Both continue
+
+At the second bit:
+0 versus 1 -> 0x100 wins</code></pre>
+</section>
+
+<section class="lesson-section">
+<h2>20. Common Mistakes</h2>
+<ul>
+<li>Assuming the CAN identifier is always a device address.</li>
+<li>Assuming a higher numerical identifier has higher priority.</li>
+<li>Confusing dominant and recessive bit values.</li>
+<li>Assuming arbitration loss is a CAN transmission error.</li>
+<li>Assuming a losing node corrupts the winning frame.</li>
+<li>Comparing standard and extended identifiers without considering IDE and SRR.</li>
+<li>Ignoring bus loading and message deadlines.</li>
+<li>Assuming acceptance filtering changes bus arbitration.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>21. Interview Questions and Answers</h2>
+
+<div class="question"><strong>Q1. What is a CAN identifier?</strong><p>A field that identifies a CAN message and participates in determining its priority.</p></div>
+<div class="question"><strong>Q2. What is the length of a standard CAN identifier?</strong><p>11 bits.</p></div>
+<div class="question"><strong>Q3. What is the length of an extended CAN identifier?</strong><p>29 bits.</p></div>
+<div class="question"><strong>Q4. Which identifier has higher priority?</strong><p>For otherwise comparable frames, the lower numerical identifier has higher priority.</p></div>
+<div class="question"><strong>Q5. What is CAN arbitration?</strong><p>A process that selects which node continues transmitting when multiple nodes start together.</p></div>
+<div class="question"><strong>Q6. Why is CAN arbitration non-destructive?</strong><p>A losing node stops transmitting when it detects a dominant bus bit where it sent recessive, allowing the winning frame to continue.</p></div>
+<div class="question"><strong>Q7. What is a dominant bit?</strong><p>Logical 0, which overrides a recessive bit on the shared bus.</p></div>
+<div class="question"><strong>Q8. What is a recessive bit?</strong><p>Logical 1, which is visible when no node drives a dominant state.</p></div>
+<div class="question"><strong>Q9. Does arbitration loss generate an error frame?</strong><p>No. Losing arbitration is normal CAN behavior and does not itself generate an error frame.</p></div>
+<div class="question"><strong>Q10. What happens to a node that loses arbitration?</strong><p>It stops transmitting, receives the winning frame and retries when the bus becomes available.</p></div>
+<div class="question"><strong>Q11. Does acceptance filtering determine message priority?</strong><p>No. Acceptance filtering selects received messages for controller handling; it does not change arbitration priority.</p></div>
+<div class="question"><strong>Q12. Which frame wins when matching standard and extended frames have the same first 11 identifier bits?</strong><p>The standard frame wins at the arbitration comparison between its dominant RTR bit and the extended frame's recessive SRR bit.</p></div>
+</section>
+
+<section class="lesson-section">
+<h2>22. Multiple Choice Questions</h2>
+
+<div class="question">
+<strong>1. What is the length of a standard CAN identifier?</strong>
+<p>A. 8 bits<br>B. 11 bits<br>C. 16 bits<br>D. 29 bits</p>
+<details><summary>Show Answer</summary><p><strong>Answer: B. 11 bits</strong></p></details>
+</div>
+
+<div class="question">
+<strong>2. Which identifier generally has higher priority?</strong>
+<p>A. 0x700<br>B. 0x500<br>C. 0x100<br>D. 0x7FF</p>
+<details><summary>Show Answer</summary><p><strong>Answer: C. 0x100</strong></p></details>
+</div>
+
+<div class="question">
+<strong>3. Which bit represents the dominant state?</strong>
+<p>A. 0<br>B. 1<br>C. 2<br>D. 3</p>
+<details><summary>Show Answer</summary><p><strong>Answer: A. 0</strong></p></details>
+</div>
+
+<div class="question">
+<strong>4. Which bit represents the recessive state?</strong>
+<p>A. 0<br>B. 1<br>C. 2<br>D. 3</p>
+<details><summary>Show Answer</summary><p><strong>Answer: B. 1</strong></p></details>
+</div>
+
+<div class="question">
+<strong>5. What happens when a node sends recessive but observes dominant?</strong>
+<p>A. It resets the controller<br>B. It wins arbitration<br>C. It loses arbitration<br>D. It sends an error frame</p>
+<details><summary>Show Answer</summary><p><strong>Answer: C. It loses arbitration</strong></p></details>
+</div>
+
+<div class="question">
+<strong>6. CAN arbitration is described as:</strong>
+<p>A. Destructive<br>B. Non-destructive<br>C. Random<br>D. Time-division only</p>
+<details><summary>Show Answer</summary><p><strong>Answer: B. Non-destructive</strong></p></details>
+</div>
+
+<div class="question">
+<strong>7. What happens to a node after it loses arbitration?</strong>
+<p>A. It sends an error frame<br>B. It stops transmitting and receives<br>C. It resets the bus<br>D. It disconnects permanently</p>
+<details><summary>Show Answer</summary><p><strong>Answer: B. It stops transmitting and receives</strong></p></details>
+</div>
+
+<div class="question">
+<strong>8. Does arbitration loss alone indicate a transmission error?</strong>
+<p>A. Yes<br>B. No</p>
+<details><summary>Show Answer</summary><p><strong>Answer: B. No</strong></p></details>
+</div>
+
+<div class="question">
+<strong>9. Which field identifies standard or extended format?</strong>
+<p>A. DLC<br>B. CRC<br>C. IDE<br>D. EOF</p>
+<details><summary>Show Answer</summary><p><strong>Answer: C. IDE</strong></p></details>
+</div>
+
+<div class="question">
+<strong>10. What does acceptance filtering do?</strong>
+<p>A. Changes identifier priority<br>B. Selects received messages for controller handling<br>C. Changes the bus voltage<br>D. Generates the CRC</p>
+<details><summary>Show Answer</summary><p><strong>Answer: B. Selects received messages for controller handling</strong></p></details>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>23. Practical Exercises</h2>
+<ol>
+<li>Explain the purpose of a CAN identifier.</li>
+<li>Convert 0x100 into an 11-bit binary value.</li>
+<li>Convert 0x200 into an 11-bit binary value.</li>
+<li>Compare the priority of identifiers 0x080, 0x100 and 0x200.</li>
+<li>Explain dominant and recessive states.</li>
+<li>Draw a bit-by-bit arbitration example between two nodes.</li>
+<li>Explain why CAN arbitration is non-destructive.</li>
+<li>Differentiate arbitration loss from a transmission error.</li>
+<li>Explain standard versus extended frame arbitration.</li>
+<li>Design a simple identifier priority plan for a motor-control network.</li>
+</ol>
+</section>
+
+<section class="lesson-section">
+<h2>24. Lesson Summary</h2>
+<ul>
+<li>CAN identifiers identify messages and determine arbitration priority.</li>
+<li>Standard identifiers contain 11 bits.</li>
+<li>Extended identifiers contain 29 bits.</li>
+<li>Lower numerical identifiers generally have higher priority.</li>
+<li>Dominant represents logical 0.</li>
+<li>Recessive represents logical 1.</li>
+<li>Dominant bits override recessive bits.</li>
+<li>Arbitration is performed bit by bit.</li>
+<li>A node loses when it sends recessive but observes dominant during arbitration.</li>
+<li>Arbitration is non-destructive.</li>
+<li>Arbitration loss is not itself a transmission error.</li>
+<li>Acceptance filtering does not change bus priority.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>25. References</h2>
+<ul>
+<li>NXP LPC21xx and LPC22xx User Manual, UM10114.</li>
+<li>NXP LPC2129 Datasheet.</li>
+<li>ISO 11898-1 – CAN Data Link Layer and Physical Coding.</li>
+<li>CAN controller and transceiver technical documentation.</li>
+</ul>
+<p><a href="https://www.nxp.com/docs/en/user-guide/UM10114.pdf" target="_blank" rel="noopener">NXP UM10114 – LPC21xx and LPC22xx User Manual</a></p>
+</section>
+
+<nav class="lesson-nav">
+<a href="L07_CAN_Bus_Architecture_and_Message_Frames.html">← Previous Lesson</a>
+<a href="index.html">Chapter 16 Index</a>
+<a href="L09_LPC2129_CAN_Controller_Architecture.html">Next Lesson →</a>
+</nav>
+
+</main>
+</body>
+</html>
