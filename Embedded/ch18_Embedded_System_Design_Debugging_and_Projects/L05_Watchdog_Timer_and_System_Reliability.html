@@ -1,1 +1,1173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Watchdog Timer and System Reliability</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-header {
+    background: linear-gradient(135deg,#174ea6,#2878d0);
+    color: white;
+    padding: 28px;
+    border-radius: 12px;
+    margin-bottom: 25px;
+}
+.lesson-section {
+    background: #fff;
+    padding: 22px;
+    margin-bottom: 22px;
+    border-radius: 10px;
+    box-shadow: 0 2px 9px rgba(0,0,0,.07);
+}
+.lesson-section h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 9px;
+}
+.lesson-section h3 { color: #2878d0; }
+.note,.warning,.example {
+    padding: 15px;
+    border-radius: 7px;
+    margin: 15px 0;
+    line-height: 1.7;
+}
+.note {
+    background: #eef5ff;
+    border-left: 4px solid #2878d0;
+}
+.warning {
+    background: #fff4e8;
+    border-left: 4px solid #e76f00;
+}
+.example {
+    background: #effaf3;
+    border-left: 4px solid #269653;
+}
+pre {
+    background: #172033;
+    color: #e6edf3;
+    padding: 17px;
+    border-radius: 8px;
+    overflow-x: auto;
+    line-height: 1.55;
+}
+code { font-family: Consolas,monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th,td {
+    border: 1px solid #dce3ed;
+    padding: 11px;
+    text-align: left;
+}
+th { background: #174ea6; color: white; }
+tr:nth-child(even) { background: #f4f7fb; }
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 12px 17px;
+    border-radius: 6px;
+}
+.lesson-nav a:hover { background: #2878d0; }
+ul,ol { line-height: 1.8; }
+</style>
+</head>
+<body>
+<main class="container">
 
+<header class="lesson-header">
+    <h1>Lesson 05: Watchdog Timer and System Reliability</h1>
+    <p><strong>Chapter 18:</strong> Embedded System Design, Debugging and Projects</p>
+    <p><strong>Level:</strong> Advanced</p>
+    <p>
+        Learn watchdog timer principles, timeout management,
+        firmware recovery, fault detection and techniques for
+        building reliable embedded systems.
+    </p>
+</header>
+
+<section class="lesson-section">
+    <h2>1. Introduction to System Reliability</h2>
+    <p>
+        System reliability is the ability of an embedded system
+        to perform its intended functions correctly over a
+        specified period under defined operating conditions.
+    </p>
+    <p>
+        Embedded systems may operate continuously in industrial
+        equipment, vehicles, medical instruments, communication
+        devices and consumer products. Unexpected firmware failures
+        can interrupt their operation.
+    </p>
+
+    <p>Common causes of system failure include:</p>
+    <ul>
+        <li>Software deadlocks and infinite loops.</li>
+        <li>Unexpected program execution paths.</li>
+        <li>Stack overflow and memory corruption.</li>
+        <li>Power supply instability.</li>
+        <li>Electrical noise and electromagnetic interference.</li>
+        <li>Peripheral communication failures.</li>
+        <li>Incorrect timing and synchronization.</li>
+        <li>Hardware faults and component failures.</li>
+    </ul>
+
+    <div class="example">
+        <strong>Example:</strong> Consider an embedded temperature
+        monitoring system. If the firmware becomes stuck while
+        communicating with a sensor, it may stop updating the
+        display and responding to new measurements. A correctly
+        designed recovery mechanism can help restore operation.
+    </div>
+</section>
+
+<section class="lesson-section">
+    <h2>2. What Is a Watchdog Timer?</h2>
+    <p>
+        A watchdog timer (WDT) is a hardware timer used to detect
+        firmware that has stopped making expected progress.
+        The application periodically services or refreshes the
+        watchdog before its timeout expires.
+    </p>
+    <p>
+        If the watchdog is not serviced within the configured
+        time, the watchdog generates its specified response.
+        Depending on the microcontroller, this may be a reset,
+        interrupt or another hardware-defined action.
+    </p>
+
+    <h3>Basic Operating Principle</h3>
+    <ol>
+        <li>The firmware configures the watchdog timer.</li>
+        <li>The watchdog begins counting.</li>
+        <li>The application performs its normal operations.</li>
+        <li>The application services the watchdog at an appropriate point.</li>
+        <li>The watchdog counter is restarted or cleared according to the hardware design.</li>
+        <li>If servicing does not occur before timeout, the watchdog response is triggered.</li>
+    </ol>
+
+    <h3>Watchdog Block Diagram</h3>
+    <pre>
+        +-------------------------+
+        |     Main Firmware       |
+        |                         |
+        | Sensor Read             |
+        | Data Processing         |
+        | Communication           |
+        | Output Control          |
+        +------------+------------+
+                     |
+                     | Valid service
+                     v
+        +-------------------------+
+        |     Watchdog Timer      |
+        |                         |
+        | Counter / Timeout       |
+        +------------+------------+
+                     |
+             Timeout expires
+                     |
+                     v
+        +-------------------------+
+        | Hardware Response       |
+        |                         |
+        | System Reset / IRQ      |
+        | (device dependent)      |
+        +-------------------------+
+    </pre>
+
+    <div class="note">
+        A watchdog is a recovery mechanism, not a guarantee that
+        firmware is correct. It can recover from certain hangs,
+        but it cannot automatically identify or repair every
+        software or hardware fault.
+    </div>
+</section>
+
+<section class="lesson-section">
+    <h2>3. Why Is a Watchdog Timer Required?</h2>
+    <p>
+        A microcontroller may continue receiving power while
+        its firmware is no longer executing correctly.
+        Without an appropriate recovery mechanism, the system
+        may remain stuck indefinitely.
+    </p>
+
+    <h3>Typical Situations</h3>
+    <table>
+        <tr>
+            <th>Problem</th>
+            <th>Possible Watchdog Benefit</th>
+        </tr>
+        <tr>
+            <td>Firmware stuck in an infinite loop</td>
+            <td>Can trigger recovery if the loop prevents valid servicing</td>
+        </tr>
+        <tr>
+            <td>Software deadlock</td>
+            <td>Can reset a system that stops making progress</td>
+        </tr>
+        <tr>
+            <td>Unexpected program flow</td>
+            <td>May detect loss of normal execution</td>
+        </tr>
+        <tr>
+            <td>Peripheral communication wait</td>
+            <td>Can recover if a blocked task prevents servicing</td>
+        </tr>
+        <tr>
+            <td>Temporary software malfunction</td>
+            <td>May restore operation through a controlled reset</td>
+        </tr>
+    </table>
+
+    <div class="warning">
+        If a watchdog is serviced unconditionally inside a loop,
+        the system may continue servicing it even when an important
+        task has failed. Watchdog servicing must represent genuine
+        application progress.
+    </div>
+</section>
+
+<section class="lesson-section">
+    <h2>4. Types of Watchdog Timers</h2>
+
+    <h3>4.1 Hardware Watchdog</h3>
+    <p>
+        A hardware watchdog is implemented independently of the
+        main application software execution path. It can continue
+        operating even when the CPU is stuck, provided its clock
+        and power source remain operational.
+    </p>
+    <ul>
+        <li>Can detect firmware execution failures.</li>
+        <li>May operate from a dedicated clock source.</li>
+        <li>Can generate a hardware reset.</li>
+        <li>Is generally more dependable than a software-only timer for detecting CPU hangs.</li>
+    </ul>
+
+    <h3>4.2 Software Watchdog</h3>
+    <p>
+        A software watchdog is implemented using a timer or
+        periodic software task. The application monitors whether
+        important tasks have completed within their expected time.
+    </p>
+    <ul>
+        <li>Can monitor multiple application tasks.</li>
+        <li>Can identify individual task timeouts.</li>
+        <li>Depends on the software scheduler or monitoring mechanism continuing to execute.</li>
+    </ul>
+
+    <h3>4.3 Windowed Watchdog</h3>
+    <p>
+        A windowed watchdog requires servicing within a defined
+        time window. Servicing too early or too late can cause
+        a fault response.
+    </p>
+    <p>
+        It helps detect both missed servicing and unexpected
+        execution timing.
+    </p>
+
+    <table>
+        <tr>
+            <th>Type</th>
+            <th>Operation</th>
+            <th>Typical Purpose</th>
+        </tr>
+        <tr>
+            <td>Hardware watchdog</td>
+            <td>Hardware counter and timeout</td>
+            <td>Recovery from processor or firmware hangs</td>
+        </tr>
+        <tr>
+            <td>Software watchdog</td>
+            <td>Software task monitoring</td>
+            <td>Monitoring application task progress</td>
+        </tr>
+        <tr>
+            <td>Windowed watchdog</td>
+            <td>Service allowed only in a defined interval</td>
+            <td>Detecting incorrect servicing timing</td>
+        </tr>
+    </table>
+</section>
+
+<section class="lesson-section">
+    <h2>5. Watchdog Timer Timeout</h2>
+    <p>
+        The watchdog timeout is the maximum permitted interval
+        between valid service operations, subject to the
+        microcontroller's watchdog implementation.
+    </p>
+
+    <h3>Timeout Selection</h3>
+    <p>
+        The timeout must be long enough to accommodate the
+        application's worst-case execution time, including
+        scheduling delays and expected temporary operations.
+    </p>
+
+    <p>A suitable design considers:</p>
+    <ul>
+        <li>Maximum task execution time.</li>
+        <li>Interrupt latency.</li>
+        <li>Communication timeouts.</li>
+        <li>Scheduling intervals.</li>
+        <li>Temporary CPU load increases.</li>
+        <li>Required system recovery time.</li>
+    </ul>
+
+    <h3>Example Calculation</h3>
+    <p>
+        Assume a monitoring application has the following
+        approximate execution requirements:
+    </p>
+
+    <table>
+        <tr>
+            <th>Operation</th>
+            <th>Maximum Time</th>
+        </tr>
+        <tr>
+            <td>Sensor reading</td>
+            <td>20 ms</td>
+        </tr>
+        <tr>
+            <td>Data processing</td>
+            <td>10 ms</td>
+        </tr>
+        <tr>
+            <td>Display update</td>
+            <td>15 ms</td>
+        </tr>
+        <tr>
+            <td>Communication operation</td>
+            <td>30 ms</td>
+        </tr>
+        <tr>
+            <td>Additional scheduling allowance</td>
+            <td>25 ms</td>
+        </tr>
+        <tr>
+            <th>Total estimated interval</th>
+            <th>100 ms</th>
+        </tr>
+    </table>
+
+    <p>
+        A watchdog timeout must exceed the worst-case interval
+        between valid service operations, with an appropriate
+        safety margin.
+    </p>
+
+    <div class="warning">
+        The 100 ms example is illustrative. Real timeout selection
+        requires measured or justified worst-case execution times,
+        device clock tolerances and the actual watchdog timing
+        specification.
+    </div>
+</section>
+
+<section class="lesson-section">
+    <h2>6. LPC2129 Watchdog Timer Overview</h2>
+    <p>
+        The LPC2129 includes an on-chip watchdog timer. It can
+        be configured to monitor firmware execution and request
+        a processor reset when the watchdog timeout condition
+        occurs.
+    </p>
+
+    <h3>Important Watchdog Registers</h3>
+    <table>
+        <tr>
+            <th>Register</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td>WDMOD</td>
+            <td>Watchdog mode and status control</td>
+        </tr>
+        <tr>
+            <td>WDTC</td>
+            <td>Watchdog timer constant</td>
+        </tr>
+        <tr>
+            <td>WDFEED</td>
+            <td>Watchdog feed sequence register</td>
+        </tr>
+        <tr>
+            <td>WDTV</td>
+            <td>Watchdog timer value</td>
+        </tr>
+    </table>
+
+    <h3>WDMOD Register</h3>
+    <p>
+        WDMOD controls watchdog operating mode and provides
+        watchdog status information.
+    </p>
+
+    <table>
+        <tr>
+            <th>Bit</th>
+            <th>Name</th>
+            <th>Function</th>
+        </tr>
+        <tr>
+            <td>0</td>
+            <td>WDEN</td>
+            <td>Watchdog enable</td>
+        </tr>
+        <tr>
+            <td>1</td>
+            <td>WDRESET</td>
+            <td>Watchdog reset enable</td>
+        </tr>
+        <tr>
+            <td>2</td>
+            <td>WDTOF</td>
+            <td>Watchdog time-out flag</td>
+        </tr>
+        <tr>
+            <td>3</td>
+            <td>WDINT</td>
+            <td>Watchdog interrupt flag</td>
+        </tr>
+    </table>
+
+    <h3>WDTC Register</h3>
+    <p>
+        WDTC stores the watchdog timer constant. It determines
+        the watchdog timeout according to the watchdog clock
+        and the LPC2129 watchdog timing specification.
+    </p>
+
+    <h3>WDFEED Register</h3>
+    <p>
+        The watchdog must be fed using a specific two-write
+        sequence:
+    </p>
+    <ol>
+        <li>Write 0xAA to WDFEED.</li>
+        <li>Write 0x55 to WDFEED immediately afterward.</li>
+    </ol>
+
+    <pre><code>WDFEED = 0xAAU;
+WDFEED = 0x55U;</code></pre>
+
+    <div class="warning">
+        The two feed writes must follow the required sequence
+        without an intervening operation that violates the
+        watchdog feed timing requirement. Do not replace this
+        sequence with a single write or a read-modify-write
+        operation.
+    </div>
+</section>
+
+<section class="lesson-section">
+    <h2>7. LPC2129 Watchdog Clock and Timeout Calculation</h2>
+    <p>
+        The watchdog timeout depends on the watchdog clock source
+        and the programmed timer constant.
+    </p>
+    <p>
+        For the LPC2129, the watchdog timer uses the microcontroller
+        watchdog clock derived from the system clock according to
+        the device's clocking specification.
+    </p>
+
+    <p>The general timer relationship is:</p>
+    <pre><code>Timeout = Watchdog Timer Constant
+          / Watchdog Timer Clock Frequency</code></pre>
+
+    <p>
+        For an accurate LPC2129 calculation, use the watchdog
+        clock definition and timing formula in the device
+        user manual. Do not substitute PCLK automatically:
+        the watchdog clock is not simply the peripheral clock.
+    </p>
+
+    <div class="note">
+        User project clock configuration:
+        FOSC = 12 MHz, CCLK = 60 MHz and PCLK = 15 MHz.
+        These values do not by themselves establish the exact
+        watchdog timeout. The watchdog clock source and
+        implementation-specific divider must also be considered.
+    </div>
+</section>
+
+<section class="lesson-section">
+    <h2>8. LPC2129 Watchdog Initialization</h2>
+    <p>
+        A typical watchdog setup involves:
+    </p>
+    <ol>
+        <li>Configure the watchdog timer constant.</li>
+        <li>Configure watchdog mode.</li>
+        <li>Enable reset mode if reset recovery is required.</li>
+        <li>Enable the watchdog.</li>
+        <li>Feed the watchdog using the required sequence.</li>
+        <li>Service it at suitable points in the application.</li>
+    </ol>
+
+    <h3>Example Register Configuration</h3>
+    <pre><code>#include &lt;LPC21xx.h&gt;
+
+#define WD_ENABLE       (1U &lt;&lt; 0)
+#define WD_RESET_ENABLE (1U &lt;&lt; 1)
+
+static void Watchdog_Feed(void)
+{
+    WDFEED = 0xAAU;
+    WDFEED = 0x55U;
+}
+
+static void Watchdog_Init(void)
+{
+    /*
+       Example timer constant only.
+       Select the actual value using the
+       LPC2129 watchdog timing specification.
+    */
+    WDTC = 0x0000FFFFU;
+
+    /*
+       Enable watchdog and watchdog reset.
+       Configure before normal application operation.
+    */
+    WDMOD = WD_ENABLE | WD_RESET_ENABLE;
+
+    Watchdog_Feed();
+}
+
+int main(void)
+{
+    Watchdog_Init();
+
+    while (1)
+    {
+        /*
+           Application tasks go here.
+        */
+
+        Watchdog_Feed();
+    }
+}</code></pre>
+
+    <div class="warning">
+        This is an instructional register-level example, not a
+        validated production timeout configuration. The WDTC
+        value must be calculated for the required timeout and
+        checked against the LPC2129 watchdog clock and timer
+        limits. Also verify the device-specific watchdog enable,
+        mode and feed requirements before running on hardware.
+    </div>
+</section>
+
+<section class="lesson-section">
+    <h2>9. Correct Watchdog Servicing Strategy</h2>
+    <p>
+        The watchdog should be serviced only when the application
+        has completed the operations that demonstrate healthy
+        execution.
+    </p>
+
+    <h3>Incorrect Servicing Strategy</h3>
+    <pre><code>while (1)
+{
+    Watchdog_Feed();
+
+    /* Important application tasks may never execute */
+}</code></pre>
+
+    <p>
+        This code feeds the watchdog continuously. If the
+        application has stopped performing useful work, the
+        watchdog may never detect the problem.
+    </p>
+
+    <h3>Improved Application Structure</h3>
+    <pre><code>while (1)
+{
+    Read_Sensor();
+
+    Process_Data();
+
+    Update_Display();
+
+    Send_Status();
+
+    /*
+       Feed only after the required application
+       operations have completed successfully.
+    */
+    Watchdog_Feed();
+}</code></pre>
+
+    <p>
+        This is a simplified example. In a larger system, each
+        critical task should report successful completion to
+        a central watchdog supervisor.
+    </p>
+</section>
+
+<section class="lesson-section">
+    <h2>10. Task Monitoring with a Software Watchdog</h2>
+    <p>
+        A software watchdog supervisor monitors the progress
+        of multiple tasks. Each critical task reports completion
+        through a flag, counter or heartbeat.
+    </p>
+
+    <h3>Example Task Monitoring Concept</h3>
+    <pre><code>#include &lt;stdint.h&gt;
+
+#define SENSOR_TASK_DONE  (1U &lt;&lt; 0)
+#define DISPLAY_TASK_DONE (1U &lt;&lt; 1)
+#define UART_TASK_DONE    (1U &lt;&lt; 2)
+
+volatile uint32_t task_status = 0U;
+
+void Sensor_Task(void)
+{
+    /* Read and validate sensor */
+    task_status |= SENSOR_TASK_DONE;
+}
+
+void Display_Task(void)
+{
+    /* Update display */
+    task_status |= DISPLAY_TASK_DONE;
+}
+
+void UART_Task(void)
+{
+    /* Process communication */
+    task_status |= UART_TASK_DONE;
+}
+
+int main(void)
+{
+    const uint32_t ALL_TASKS_DONE =
+        SENSOR_TASK_DONE |
+        DISPLAY_TASK_DONE |
+        UART_TASK_DONE;
+
+    while (1)
+    {
+        task_status = 0U;
+
+        Sensor_Task();
+        Display_Task();
+        UART_Task();
+
+        if (task_status == ALL_TASKS_DONE)
+        {
+            Watchdog_Feed();
+        }
+
+        /*
+           If a required task fails to complete,
+           the watchdog is not serviced.
+        */
+    }
+}</code></pre>
+
+    <div class="warning">
+        This example demonstrates the monitoring concept only.
+        In a real interrupt-driven or RTOS application, task flags
+        require suitable synchronization and time-bounded monitoring.
+        The software supervisor must itself be protected against
+        becoming stuck or falsely reporting success.
+    </div>
+</section>
+
+<section class="lesson-section">
+    <h2>11. Reset Handling and Recovery</h2>
+    <p>
+        When a watchdog reset occurs, the processor restarts
+        according to the microcontroller reset sequence.
+        The startup code executes and the application initializes
+        its required resources.
+    </p>
+
+    <h3>Typical Recovery Sequence</h3>
+    <ol>
+        <li>Watchdog timeout occurs.</li>
+        <li>Hardware requests a reset.</li>
+        <li>Processor restarts.</li>
+        <li>Startup code initializes the runtime environment.</li>
+        <li>Firmware checks reset-cause information if available.</li>
+        <li>Required peripherals are initialized.</li>
+        <li>Application enters its normal operating state.</li>
+    </ol>
+
+    <h3>Why Reset-Cause Information Matters</h3>
+    <p>
+        Recording the reset cause helps developers distinguish
+        watchdog resets from power-on resets, external resets
+        and other supported reset sources.
+    </p>
+
+    <div class="note">
+        The LPC2129 watchdog mode and status bits provide
+        watchdog-related information. Check the reset-status
+        and startup behaviour in the LPC2129 user manual before
+        implementing a persistent reset-cause diagnostic.
+    </div>
+</section>
+
+<section class="lesson-section">
+    <h2>12. Reliability Techniques Beyond Watchdogs</h2>
+    <p>
+        A reliable embedded system requires several complementary
+        design techniques. A watchdog alone is insufficient.
+    </p>
+
+    <h3>12.1 Input Validation</h3>
+    <p>
+        Validate sensor readings, communication packets and
+        configuration values before using them.
+    </p>
+
+    <h3>12.2 Error Detection</h3>
+    <p>
+        Use checksums, parity, CRC and protocol status checks
+        where appropriate.
+    </p>
+
+    <h3>12.3 Timeout Handling</h3>
+    <p>
+        Use bounded waits for peripheral operations. Avoid
+        indefinite waiting for hardware flags or communication
+        responses.
+    </p>
+
+    <h3>12.4 Safe-State Design</h3>
+    <p>
+        Define what the system should do when a fault is detected.
+        For example, a motor-control application may need to
+        disable drive outputs when a critical fault occurs.
+    </p>
+
+    <h3>12.5 Power Supply Monitoring</h3>
+    <p>
+        Use suitable power supervision and brown-out protection
+        where supported by the microcontroller and system design.
+    </p>
+
+    <h3>12.6 Defensive Programming</h3>
+    <ul>
+        <li>Check function return values.</li>
+        <li>Validate array indexes.</li>
+        <li>Check pointer validity.</li>
+        <li>Use bounded buffers.</li>
+        <li>Handle communication errors.</li>
+        <li>Avoid undefined behaviour.</li>
+    </ul>
+</section>
+
+<section class="lesson-section">
+    <h2>13. Watchdog Timer vs. Normal Timer</h2>
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Normal Timer</th>
+            <th>Watchdog Timer</th>
+        </tr>
+        <tr>
+            <td>Main purpose</td>
+            <td>Generate timing events and measure intervals</td>
+            <td>Detect missing firmware servicing</td>
+        </tr>
+        <tr>
+            <td>Typical use</td>
+            <td>Periodic interrupts, delays and event timing</td>
+            <td>System supervision and recovery</td>
+        </tr>
+        <tr>
+            <td>Servicing</td>
+            <td>Configured according to application timing</td>
+            <td>Must be serviced before watchdog timeout</td>
+        </tr>
+        <tr>
+            <td>Failure response</td>
+            <td>Depends on configured timer action</td>
+            <td>Device-specific timeout response</td>
+        </tr>
+        <tr>
+            <td>Reliability role</td>
+            <td>Supports application timing</td>
+            <td>Supports fault recovery</td>
+        </tr>
+    </table>
+</section>
+
+<section class="lesson-section">
+    <h2>14. Common Watchdog Design Mistakes</h2>
+    <ul>
+        <li>Choosing a timeout that is too short.</li>
+        <li>Choosing a timeout that is unnecessarily long.</li>
+        <li>Feeding the watchdog unconditionally.</li>
+        <li>Feeding the watchdog from an interrupt that runs even when application tasks have failed.</li>
+        <li>Ignoring communication timeouts.</li>
+        <li>Failing to check reset-cause information.</li>
+        <li>Using an incorrect watchdog clock calculation.</li>
+        <li>Ignoring the required feed sequence.</li>
+        <li>Assuming watchdog reset fixes the original fault permanently.</li>
+        <li>Failing to test recovery behaviour.</li>
+    </ul>
+
+    <div class="warning">
+        Never use watchdog servicing as a substitute for
+        diagnosing faults. Repeated watchdog resets may hide
+        an underlying software, hardware or power problem.
+    </div>
+</section>
+
+<section class="lesson-section">
+    <h2>15. Watchdog Testing and Validation</h2>
+    <p>
+        Watchdog behaviour should be tested deliberately during
+        development. A test plan should verify both normal
+        servicing and timeout recovery.
+    </p>
+
+    <table>
+        <tr>
+            <th>Test</th>
+            <th>Procedure</th>
+            <th>Expected Behaviour</th>
+        </tr>
+        <tr>
+            <td>Normal operation</td>
+            <td>Service watchdog at the intended interval</td>
+            <td>No watchdog timeout</td>
+        </tr>
+        <tr>
+            <td>Missing service</td>
+            <td>Stop servicing the watchdog</td>
+            <td>Configured timeout response occurs</td>
+        </tr>
+        <tr>
+            <td>Task failure</td>
+            <td>Prevent one critical task from reporting completion</td>
+            <td>Supervisor withholds watchdog service</td>
+        </tr>
+        <tr>
+            <td>Reset recovery</td>
+            <td>Allow watchdog reset to occur</td>
+            <td>Startup and recovery sequence execute</td>
+        </tr>
+        <tr>
+            <td>Repeated failure</td>
+            <td>Simulate repeated application failure</td>
+            <td>Fault is detected and recorded where possible</td>
+        </tr>
+    </table>
+
+    <h3>Testing Checklist</h3>
+    <ul>
+        <li>Confirm the watchdog clock configuration.</li>
+        <li>Confirm the timeout calculation.</li>
+        <li>Verify the feed sequence.</li>
+        <li>Check normal servicing behaviour.</li>
+        <li>Test intentional watchdog timeout.</li>
+        <li>Verify reset and startup behaviour.</li>
+        <li>Check whether reset cause is recorded correctly.</li>
+        <li>Verify that outputs enter a safe state after recovery.</li>
+    </ul>
+</section>
+
+<section class="lesson-section">
+    <h2>16. Keil uVision Simulator Practice</h2>
+    <p>
+        The LPC2129 project can be used to study watchdog-related
+        firmware structure and inspect supported registers.
+    </p>
+
+    <h3>Practice Activities</h3>
+    <ol>
+        <li>Create an LPC2129 project in Keil uVision.</li>
+        <li>Include the LPC21xx device header.</li>
+        <li>Write a watchdog feed function.</li>
+        <li>Review the WDMOD, WDTC, WDFEED and WDTV register definitions.</li>
+        <li>Compile the watchdog initialization code.</li>
+        <li>Inspect available watchdog registers in the debugger.</li>
+        <li>Review the startup and reset-handling code.</li>
+        <li>Document the intended timeout and recovery sequence.</li>
+    </ol>
+
+    <div class="warning">
+        Keil simulator support for watchdog timeout and reset
+        behaviour depends on the selected LPC2129 device model
+        and simulator implementation. A successful build or
+        register inspection does not prove that a physical
+        watchdog reset has occurred. Validate actual watchdog
+        behaviour on supported hardware before deployment.
+    </div>
+</section>
+
+<section class="lesson-section">
+    <h2>17. Interview Questions and Answers</h2>
+
+    <h3>Q1. What is a watchdog timer?</h3>
+    <p>
+        A watchdog timer is a hardware timer used to detect
+        missing firmware servicing and initiate a configured
+        recovery response.
+    </p>
+
+    <h3>Q2. Why is a watchdog timer used?</h3>
+    <p>
+        It helps recover from certain firmware hangs, deadlocks
+        and unexpected execution failures.
+    </p>
+
+    <h3>Q3. What is watchdog timeout?</h3>
+    <p>
+        It is the configured time interval within which the
+        watchdog must receive a valid service operation.
+    </p>
+
+    <h3>Q4. What is watchdog feeding?</h3>
+    <p>
+        Feeding is the required operation that refreshes or
+        restarts the watchdog counter.
+    </p>
+
+    <h3>Q5. What is a hardware watchdog?</h3>
+    <p>
+        It is a watchdog implemented in hardware, often capable
+        of detecting a CPU hang independently of normal application
+        execution.
+    </p>
+
+    <h3>Q6. What is a software watchdog?</h3>
+    <p>
+        It is a software monitoring mechanism that checks whether
+        application tasks are completing within expected intervals.
+    </p>
+
+    <h3>Q7. What is a windowed watchdog?</h3>
+    <p>
+        It is a watchdog that accepts service only within a
+        defined time window.
+    </p>
+
+    <h3>Q8. What is WDFEED in LPC2129?</h3>
+    <p>
+        WDFEED is the watchdog feed register. It requires the
+        specified sequence of 0xAA followed by 0x55.
+    </p>
+
+    <h3>Q9. What is WDMOD?</h3>
+    <p>
+        WDMOD is the watchdog mode register used to configure
+        watchdog operation and examine watchdog status.
+    </p>
+
+    <h3>Q10. Why should the watchdog not be fed continuously?</h3>
+    <p>
+        Unconditional servicing can prevent the watchdog from
+        detecting a system in which critical application tasks
+        have stopped making progress.
+    </p>
+
+    <h3>Q11. What is a safe state?</h3>
+    <p>
+        A safe state is a predefined system condition that
+        reduces risk when a fault is detected.
+    </p>
+
+    <h3>Q12. Does a watchdog prevent every system failure?</h3>
+    <p>
+        No. It detects certain missing-servicing conditions.
+        It does not replace fault diagnosis, input validation,
+        hardware protection or system-level testing.
+    </p>
+</section>
+
+<section class="lesson-section">
+    <h2>18. Multiple Choice Questions</h2>
+
+    <p><strong>1. What is the main purpose of a watchdog timer?</strong></p>
+    <ol type="A">
+        <li>Generate ADC values</li>
+        <li>Detect missing firmware servicing</li>
+        <li>Store program instructions</li>
+        <li>Generate UART characters</li>
+    </ol>
+    <p><strong>Answer:</strong> B</p>
+
+    <p><strong>2. What happens when a reset-enabled watchdog times out?</strong></p>
+    <ol type="A">
+        <li>It may reset the processor</li>
+        <li>It increases Flash capacity</li>
+        <li>It changes the CPU architecture</li>
+        <li>It disables all memory</li>
+    </ol>
+    <p><strong>Answer:</strong> A</p>
+
+    <p><strong>3. Which LPC2129 register is used to feed the watchdog?</strong></p>
+    <ol type="A">
+        <li>WDMOD</li>
+        <li>WDTC</li>
+        <li>WDFEED</li>
+        <li>WDTV</li>
+    </ol>
+    <p><strong>Answer:</strong> C</p>
+
+    <p><strong>4. What is the first value in the LPC2129 feed sequence?</strong></p>
+    <ol type="A">
+        <li>0x55</li>
+        <li>0xAA</li>
+        <li>0xFF</li>
+        <li>0x00</li>
+    </ol>
+    <p><strong>Answer:</strong> B</p>
+
+    <p><strong>5. What is the second value in the feed sequence?</strong></p>
+    <ol type="A">
+        <li>0xAA</li>
+        <li>0xFF</li>
+        <li>0x55</li>
+        <li>0x11</li>
+    </ol>
+    <p><strong>Answer:</strong> C</p>
+
+    <p><strong>6. What can an unconditional watchdog feed cause?</strong></p>
+    <ol type="A">
+        <li>It can hide a failed application task</li>
+        <li>It increases SRAM</li>
+        <li>It improves ADC resolution</li>
+        <li>It changes UART parity</li>
+    </ol>
+    <p><strong>Answer:</strong> A</p>
+
+    <p><strong>7. Which watchdog type checks that servicing occurs within a permitted interval?</strong></p>
+    <ol type="A">
+        <li>Software-only timer</li>
+        <li>Windowed watchdog</li>
+        <li>UART timer</li>
+        <li>Capture timer</li>
+    </ol>
+    <p><strong>Answer:</strong> B</p>
+
+    <p><strong>8. What should be considered when selecting a watchdog timeout?</strong></p>
+    <ol type="A">
+        <li>Worst-case execution time</li>
+        <li>Scheduling delays</li>
+        <li>Communication timeouts</li>
+        <li>All of the above</li>
+    </ol>
+    <p><strong>Answer:</strong> D</p>
+</section>
+
+<section class="lesson-section">
+    <h2>19. Practical Exercises</h2>
+    <ol>
+        <li>Explain the operating principle of a watchdog timer.</li>
+        <li>Compare hardware, software and windowed watchdogs.</li>
+        <li>Explain why embedded systems need watchdog protection.</li>
+        <li>Describe the LPC2129 watchdog register set.</li>
+        <li>Write a C function that performs the 0xAA and 0x55 feed sequence.</li>
+        <li>Explain the purpose of WDMOD and WDTC.</li>
+        <li>Develop a watchdog timeout calculation using a specified watchdog clock.</li>
+        <li>Design a task-monitoring scheme for sensor, display and UART tasks.</li>
+        <li>Prepare a test plan for normal servicing and watchdog reset recovery.</li>
+        <li>Explain why watchdog servicing must depend on actual application progress.</li>
+    </ol>
+</section>
+
+<section class="lesson-section">
+    <h2>20. Mini-Project: Watchdog-Protected Sensor Monitoring System</h2>
+    <h3>Objective</h3>
+    <p>
+        Design a sensor monitoring application that uses a
+        watchdog supervisor to detect failure of critical
+        application operations.
+    </p>
+
+    <h3>Required Modules</h3>
+    <ul>
+        <li>LPC2129 microcontroller.</li>
+        <li>ADC sensor input.</li>
+        <li>Timer for periodic scheduling.</li>
+        <li>LCD for measurement display.</li>
+        <li>UART for diagnostic messages.</li>
+        <li>Watchdog timer for system supervision.</li>
+    </ul>
+
+    <h3>Functional Sequence</h3>
+    <ol>
+        <li>Initialize the system clock and peripherals.</li>
+        <li>Initialize ADC, LCD, UART and timer modules.</li>
+        <li>Configure the watchdog using a verified timeout.</li>
+        <li>Read the sensor value.</li>
+        <li>Validate and process the measurement.</li>
+        <li>Update the LCD and communication status.</li>
+        <li>Report completion to the watchdog supervisor.</li>
+        <li>Service the watchdog only after all required operations succeed.</li>
+        <li>Investigate the recovery sequence when a task fails.</li>
+    </ol>
+
+    <h3>Expected Design Outcome</h3>
+    <p>
+        The application should continue normal operation while
+        critical tasks complete correctly. If a monitored task
+        fails to make progress, the watchdog supervisor should
+        withhold servicing so that the configured recovery
+        mechanism can operate.
+    </p>
+
+    <div class="warning">
+        This project is a firmware design exercise. With the
+        user's Keil simulator-only setup, do not claim that an
+        actual external sensor, LCD or watchdog reset has been
+        physically tested.
+    </div>
+</section>
+
+<section class="lesson-section">
+    <h2>21. Lesson Summary</h2>
+    <ul>
+        <li>System reliability is essential for continuous embedded operation.</li>
+        <li>A watchdog detects missing servicing within a configured interval.</li>
+        <li>Hardware, software and windowed watchdogs have different roles.</li>
+        <li>Timeout selection must account for worst-case execution time.</li>
+        <li>LPC2129 provides WDMOD, WDTC, WDFEED and WDTV registers.</li>
+        <li>The LPC2129 watchdog feed sequence is 0xAA followed by 0x55.</li>
+        <li>Watchdog servicing should represent genuine application progress.</li>
+        <li>Task monitoring can supervise multiple critical operations.</li>
+        <li>Reset-cause analysis helps diagnose system failures.</li>
+        <li>Watchdog protection should be combined with other reliability techniques.</li>
+        <li>Recovery behaviour must be tested and validated.</li>
+    </ul>
+</section>
+
+<nav class="lesson-nav">
+    <a href="L04_Memory_Usage_and_Code_Optimization.html">
+        &larr; Previous Lesson
+    </a>
+    <a href="index.html">Chapter 18 Index</a>
+    <a href="L06_Low_Power_Embedded_System_Design.html">
+        Next Lesson &rarr;
+    </a>
+</nav>
+
+</main>
+</body>
+</html>
