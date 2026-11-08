@@ -1,1 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UART Baud Rate Generation – LPC2129</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-header{background:linear-gradient(135deg,#174ea6,#2878d0);color:white;padding:30px;border-radius:12px;margin-bottom:25px}
+.lesson-section{background:white;padding:22px;margin:20px 0;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+h2{color:#174ea6;border-bottom:2px solid #e76f00;padding-bottom:8px}
+h3{color:#174ea6;margin-top:22px}
+.info-box{background:#eaf2ff;border-left:5px solid #2878d0;padding:15px;margin:15px 0;border-radius:6px}
+.note-box{background:#fff4e8;border-left:5px solid #e76f00;padding:15px;margin:15px 0;border-radius:6px}
+pre{background:#17212f;color:#e8edf5;padding:16px;border-radius:8px;overflow-x:auto;line-height:1.55}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d5dce5;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+.diagram{background:#f5f8fc;border:1px solid #cbd8e8;border-radius:8px;padding:18px;margin:15px 0;text-align:center;overflow-x:auto}
+.formula{background:#17212f;color:#fff;padding:18px;border-radius:8px;text-align:center;margin:15px 0;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;text-decoration:none;border-radius:6px}
+.lesson-nav a:hover{background:#e76f00}
+@media(max-width:600px){.lesson-section{padding:16px}.lesson-nav{flex-direction:column}.lesson-nav a{text-align:center}}
+</style>
+</head>
+<body>
 
+<header class="lesson-header">
+<h1>UART Baud Rate Generation – LPC2129</h1>
+<p><strong>Course:</strong> Embedded Systems – Complete Study Course</p>
+<p><strong>Chapter 12:</strong> LPC2129 UART Serial Communication</p>
+<p><strong>Lesson 05</strong></p>
+</header>
+
+<section class="lesson-section">
+<h2>1. Introduction</h2>
+<p>Baud-rate generation is an important part of UART communication. The baud rate determines the speed at which serial symbols are transmitted and received.</p>
+
+<p>The LPC2129 UART peripheral generates the required serial timing using the peripheral clock (PCLK), divisor latch registers and fractional divider configuration.</p>
+
+<p>The main registers involved are:</p>
+<ul>
+<li>DLL – Divisor Latch Low.</li>
+<li>DLM – Divisor Latch High.</li>
+<li>FDR – Fractional Divider Register.</li>
+<li>LCR – Line Control Register.</li>
+</ul>
+
+<div class="info-box">
+<strong>Learning objectives</strong>
+<ul>
+<li>Understand baud rate and bit duration.</li>
+<li>Understand the relationship between PCLK and UART baud rate.</li>
+<li>Calculate the divisor latch value.</li>
+<li>Understand DLL and DLM.</li>
+<li>Understand the fractional divider and FDR.</li>
+<li>Understand the DLAB bit.</li>
+<li>Calculate UART settings for 9600 and 115200 baud.</li>
+<li>Write a UART baud-rate initialization program.</li>
+</ul>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>2. What Is Baud Rate?</h2>
+<p>Baud rate represents the number of signal symbols transmitted per second.</p>
+
+<p>In conventional binary UART communication, one symbol represents one bit. Therefore, the numerical baud rate and bit rate are normally equal.</p>
+
+<table>
+<tr><th>Baud rate</th><th>Approximate bit duration</th></tr>
+<tr><td>9600</td><td>104.17 microseconds</td></tr>
+<tr><td>19200</td><td>52.08 microseconds</td></tr>
+<tr><td>38400</td><td>26.04 microseconds</td></tr>
+<tr><td>57600</td><td>17.36 microseconds</td></tr>
+<tr><td>115200</td><td>8.68 microseconds</td></tr>
+</table>
+
+<h3>Bit duration formula</h3>
+<div class="formula">
+Bit Duration = 1 / Baud Rate
+</div>
+
+<p>For 9600 baud:</p>
+<p>Bit duration = 1 / 9600 = approximately 104.17 microseconds.</p>
+
+<p>For 115200 baud:</p>
+<p>Bit duration = 1 / 115200 = approximately 8.68 microseconds.</p>
+</section>
+
+<section class="lesson-section">
+<h2>3. Role of Peripheral Clock (PCLK)</h2>
+<p>The UART baud-rate generator uses the peripheral clock as its timing source.</p>
+
+<p>In the LPC2129 project configuration used in this course:</p>
+
+<table>
+<tr><th>Clock</th><th>Value</th></tr>
+<tr><td>Oscillator frequency (FOSC)</td><td>12 MHz</td></tr>
+<tr><td>CPU clock (CCLK)</td><td>60 MHz</td></tr>
+<tr><td>Peripheral clock (PCLK)</td><td>15 MHz</td></tr>
+<tr><td>VPBDIV setting</td><td>0x00 (CCLK/4)</td></tr>
+</table>
+
+<p>The UART baud-rate calculation must use PCLK, not automatically the CPU clock or oscillator frequency.</p>
+
+<div class="note-box">
+For this project, use PCLK = 15,000,000 Hz in the UART calculations. If the clock configuration changes, the UART divisor must be recalculated.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>4. Basic UART Baud-Rate Formula</h2>
+<p>When the fractional divider is disabled, the UART baud rate is calculated using:</p>
+
+<div class="formula">
+Baud Rate = PCLK / (16 × Divisor)
+</div>
+
+<p>Where:</p>
+<ul>
+<li>PCLK is the peripheral clock frequency.</li>
+<li>Divisor is the combined value stored in DLL and DLM.</li>
+</ul>
+
+<p>The combined divisor is:</p>
+<div class="formula">
+Divisor = (256 × DLM) + DLL
+</div>
+
+<p>Rearranging the baud-rate equation:</p>
+<div class="formula">
+Divisor = PCLK / (16 × Baud Rate)
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>5. DLL and DLM Registers</h2>
+<p>The divisor latch registers store the integer divisor used by the UART baud-rate generator.</p>
+
+<table>
+<tr><th>Register</th><th>Function</th></tr>
+<tr><td>DLL</td><td>Stores the lower 8 bits of the divisor.</td></tr>
+<tr><td>DLM</td><td>Stores the upper 8 bits of the divisor.</td></tr>
+</table>
+
+<p>Together, DLL and DLM form a 16-bit divisor value.</p>
+
+<h3>Example</h3>
+<p>Suppose the divisor is 300 decimal.</p>
+<ul>
+<li>300 decimal = 0x012C hexadecimal.</li>
+<li>DLL = 0x2C.</li>
+<li>DLM = 0x01.</li>
+</ul>
+
+<p>The combined value is:</p>
+<div class="formula">
+(256 × 1) + 44 = 300
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>6. DLAB – Divisor Latch Access Bit</h2>
+<p>DLL and DLM share register addresses with other UART registers. The DLAB bit in the Line Control Register controls which registers are accessible at those addresses.</p>
+
+<p>DLAB is bit 7 of LCR.</p>
+
+<table>
+<tr><th>DLAB</th><th>Register access</th></tr>
+<tr><td>0</td><td>Normal access to RBR/THR and IER.</td></tr>
+<tr><td>1</td><td>Access to DLL and DLM at the corresponding register addresses.</td></tr>
+</table>
+
+<h3>Enable divisor latch access</h3>
+<pre><code>U0LCR |= (1U &lt;&lt; 7);</code></pre>
+
+<h3>Disable divisor latch access</h3>
+<pre><code>U0LCR &amp;= ~(1U &lt;&lt; 7);</code></pre>
+
+<div class="note-box">
+After programming DLL and DLM, clear DLAB before using normal receive, transmit and interrupt-enable register access.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>7. Fractional Divider Register (FDR)</h2>
+<p>The LPC2129 UART baud-rate generator supports fractional adjustment through the Fractional Divider Register, where implemented by the device revision and peripheral configuration.</p>
+
+<p>The FDR contains two important fields:</p>
+
+<table>
+<tr><th>Bits</th><th>Field</th><th>Function</th></tr>
+<tr><td>[3:0]</td><td>DIVADDVAL</td><td>Fractional divider addition value.</td></tr>
+<tr><td>[7:4]</td><td>MULVAL</td><td>Fractional divider multiplier value.</td></tr>
+<tr><td>[31:8]</td><td>Reserved</td><td>Do not write ones to reserved bits.</td></tr>
+</table>
+
+<h3>Valid configuration conditions</h3>
+<ul>
+<li>1 ≤ MULVAL ≤ 15.</li>
+<li>0 ≤ DIVADDVAL ≤ 14.</li>
+<li>DIVADDVAL must be smaller than MULVAL.</li>
+<li>MULVAL must not be zero.</li>
+</ul>
+
+<p>When DIVADDVAL is zero, the fractional adjustment is disabled.</p>
+
+<h3>FDR value calculation</h3>
+<div class="formula">
+FDR = (MULVAL × 16) + DIVADDVAL
+</div>
+
+<p>For example, if MULVAL = 8 and DIVADDVAL = 3:</p>
+<p>FDR = (8 × 16) + 3 = 131 decimal = 0x83.</p>
+</section>
+
+<section class="lesson-section">
+<h2>8. Complete Baud-Rate Formula with Fractional Divider</h2>
+<p>When fractional adjustment is used, the baud rate is calculated as:</p>
+
+<div class="formula">
+Baud Rate = PCLK / [16 × Divisor × (1 + DIVADDVAL/MULVAL)]
+</div>
+
+<p>Where:</p>
+<ul>
+<li>Divisor = (256 × DLM) + DLL.</li>
+<li>DIVADDVAL is the FDR fractional addition value.</li>
+<li>MULVAL is the FDR multiplier value.</li>
+</ul>
+
+<p>The fractional factor adjusts the effective divisor to obtain a baud rate closer to the desired value.</p>
+
+<div class="info-box">
+The fractional divider improves baud-rate accuracy when the basic integer divisor cannot represent the required baud rate closely enough.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>9. Baud-Rate Calculation – 9600 Baud</h2>
+<p><strong>Given:</strong></p>
+<ul>
+<li>PCLK = 15 MHz.</li>
+<li>Desired baud rate = 9600.</li>
+</ul>
+
+<h3>Step 1: Calculate the ideal divisor without fractional adjustment</h3>
+<p>Divisor = 15,000,000 / (16 × 9600)</p>
+<p>Divisor = 97.65625.</p>
+
+<p>The nearest integer divisor is 98.</p>
+
+<h3>Step 2: Calculate the actual baud rate without FDR adjustment</h3>
+<p>Actual baud rate = 15,000,000 / (16 × 98)</p>
+<p>Actual baud rate = approximately 9566.33 baud.</p>
+
+<p>Error = approximately -0.351%.</p>
+
+<h3>Step 3: Improve accuracy using fractional adjustment</h3>
+<p>One valid configuration is:</p>
+
+<table>
+<tr><th>Register field</th><th>Value</th></tr>
+<tr><td>DLM</td><td>0x00</td></tr>
+<tr><td>DLL</td><td>71 decimal = 0x47</td></tr>
+<tr><td>MULVAL</td><td>8</td></tr>
+<tr><td>DIVADDVAL</td><td>3</td></tr>
+<tr><td>FDR</td><td>0x83</td></tr>
+</table>
+
+<p>Actual baud rate:</p>
+<p>15,000,000 / [16 × 71 × (1 + 3/8)]</p>
+<p>Actual baud rate ≈ 9603.07 baud.</p>
+
+<p>Percentage error ≈ +0.032%.</p>
+
+<badge color="success">Improved accuracy</badge>
+<p>This fractional configuration produces a baud rate much closer to 9600 than the integer-only configuration.</p>
+</section>
+
+<section class="lesson-section">
+<h2>10. Baud-Rate Calculation – 115200 Baud</h2>
+<p><strong>Given:</strong></p>
+<ul>
+<li>PCLK = 15 MHz.</li>
+<li>Desired baud rate = 115200.</li>
+</ul>
+
+<h3>Step 1: Calculate the ideal divisor without fractional adjustment</h3>
+<p>Divisor = 15,000,000 / (16 × 115200)</p>
+<p>Divisor ≈ 8.1389.</p>
+
+<p>The nearest integer divisor is 8.</p>
+
+<h3>Step 2: Calculate the actual baud rate without FDR adjustment</h3>
+<p>Actual baud rate = 15,000,000 / (16 × 8)</p>
+<p>Actual baud rate = 117187.5 baud.</p>
+
+<p>Error ≈ +1.725%.</p>
+
+<h3>Step 3: Improve accuracy using fractional adjustment</h3>
+<p>One valid configuration is:</p>
+
+<table>
+<tr><th>Register field</th><th>Value</th></tr>
+<tr><td>DLM</td><td>0x00</td></tr>
+<tr><td>DLL</td><td>6</td></tr>
+<tr><td>MULVAL</td><td>14</td></tr>
+<tr><td>DIVADDVAL</td><td>5</td></tr>
+<tr><td>FDR</td><td>0xE5</td></tr>
+</table>
+
+<p>Actual baud rate:</p>
+<p>15,000,000 / [16 × 6 × (1 + 5/14)]</p>
+<p>Actual baud rate ≈ 115131.58 baud.</p>
+
+<p>Percentage error ≈ -0.0594%.</p>
+
+<badge color="success">Improved accuracy</badge>
+<p>This fractional configuration provides a much closer result to 115200 baud.</p>
+</section>
+
+<section class="lesson-section">
+<h2>11. UART0 Baud-Rate Initialization Program</h2>
+<p><strong>Objective:</strong> Configure UART0 for approximately 9600 baud using the 15 MHz PCLK and fractional divider.</p>
+
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+void UART0_Init(void)
+{
+    /* Configure UART0 pins */
+    PINSEL0 &amp;= ~(3U &lt;&lt; 0);
+    PINSEL0 |=  (1U &lt;&lt; 0);
+
+    PINSEL0 &amp;= ~(3U &lt;&lt; 2);
+    PINSEL0 |=  (1U &lt;&lt; 2);
+
+    /* Enable access to divisor latches */
+    U0LCR = 0x83;
+
+    /*
+       DLAB = 1
+       8 data bits
+       1 stop bit
+       No parity
+    */
+
+    /* Configure divisor */
+    U0DLM = 0x00;
+    U0DLL = 0x47;
+
+    /* Configure fractional divider */
+    U0FDR = 0x83;
+
+    /* Disable divisor latch access */
+    U0LCR = 0x03;
+}
+
+int main(void)
+{
+    UART0_Init();
+
+    while (1)
+    {
+    }
+}</code></pre>
+
+<h3>Register configuration</h3>
+<table>
+<tr><th>Register</th><th>Value</th><th>Purpose</th></tr>
+<tr><td>U0LCR</td><td>0x83</td><td>DLAB enabled; 8-bit data, one stop bit, no parity.</td></tr>
+<tr><td>U0DLM</td><td>0x00</td><td>Divisor high byte.</td></tr>
+<tr><td>U0DLL</td><td>0x47</td><td>Divisor low byte = 71.</td></tr>
+<tr><td>U0FDR</td><td>0x83</td><td>MULVAL = 8, DIVADDVAL = 3.</td></tr>
+<tr><td>U0LCR</td><td>0x03</td><td>DLAB disabled; normal register access.</td></tr>
+</table>
+
+<h3>Expected result</h3>
+<ul>
+<li>UART0 pin functions are selected.</li>
+<li>UART0 is configured for 8N1 framing.</li>
+<li>The calculated baud rate is approximately 9603.07 baud.</li>
+<li>The program remains in the infinite loop.</li>
+</ul>
+
+<div class="note-box">
+This program configures the UART but does not transmit a character. A separate transmit routine is required. Confirm that the selected LPC2129 device header and hardware revision support the FDR register before using this configuration.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>12. UART1 Baud-Rate Initialization Program</h2>
+<p><strong>Objective:</strong> Configure UART1 for approximately 9600 baud using the same PCLK and divisor settings.</p>
+
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+void UART1_Init(void)
+{
+    /* Configure UART1 pins */
+    PINSEL0 &amp;= ~(3U &lt;&lt; 16);
+    PINSEL0 |=  (1U &lt;&lt; 16);
+
+    PINSEL0 &amp;= ~(3U &lt;&lt; 18);
+    PINSEL0 |=  (1U &lt;&lt; 18);
+
+    /* Enable divisor latch access */
+    U1LCR = 0x83;
+
+    /* Configure divisor */
+    U1DLM = 0x00;
+    U1DLL = 0x47;
+
+    /* Configure fractional divider */
+    U1FDR = 0x83;
+
+    /* Disable divisor latch access */
+    U1LCR = 0x03;
+}
+
+int main(void)
+{
+    UART1_Init();
+
+    while (1)
+    {
+    }
+}</code></pre>
+
+<p><strong>Expected result:</strong> UART1 is configured for approximately 9603.07 baud with 8N1 framing.</p>
+</section>
+
+<section class="lesson-section">
+<h2>13. Important Programming Precautions</h2>
+<ul>
+<li>Use the correct peripheral clock value in the calculation.</li>
+<li>Set DLAB before writing DLL and DLM.</li>
+<li>Clear DLAB after configuring the divisor.</li>
+<li>Keep DIVADDVAL smaller than MULVAL.</li>
+<li>Do not set MULVAL to zero.</li>
+<li>Do not modify FDR while transmitting or receiving data.</li>
+<li>When fractional adjustment is active and DLM is zero, ensure DLL is at least 3.</li>
+<li>Check the exact UART register availability in the LPC2129 device documentation.</li>
+<li>Ensure both communicating devices use compatible baud-rate and frame settings.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>14. Baud-Rate Error</h2>
+<p>The actual baud rate may differ slightly from the desired baud rate because the divisor settings are discrete.</p>
+
+<div class="formula">
+Error (%) = [(Actual − Desired) / Desired] × 100
+</div>
+
+<p>The absolute percentage error is useful when comparing different divisor configurations.</p>
+
+<table>
+<tr><th>Desired baud</th><th>Configuration</th><th>Calculated baud</th><th>Approximate absolute error</th></tr>
+<tr><td>9600</td><td>Integer divisor 98</td><td>9566.33</td><td>0.351%</td></tr>
+<tr><td>9600</td><td>DLL 71, FDR 0x83</td><td>9603.07</td><td>0.032%</td></tr>
+<tr><td>115200</td><td>Integer divisor 8</td><td>117187.5</td><td>1.725%</td></tr>
+<tr><td>115200</td><td>DLL 6, FDR 0xE5</td><td>115131.58</td><td>0.059%</td></tr>
+</table>
+
+<p>These calculations assume an exact 15 MHz PCLK. Actual hardware baud-rate accuracy also depends on clock-source tolerance and the receiving device's timing tolerance.</p>
+</section>
+
+<section class="lesson-section">
+<h2>15. Keil uVision Simulator Practice</h2>
+<p><strong>Objective:</strong> Inspect UART0 divisor and fractional divider configuration.</p>
+
+<h3>Procedure</h3>
+<ol>
+<li>Open the LPC2129 project in Keil uVision.</li>
+<li>Set the project clock configuration to the intended values.</li>
+<li>Insert the UART0 initialization program.</li>
+<li>Build the project.</li>
+<li>Start the debugger.</li>
+<li>Run the initialization code.</li>
+<li>Inspect U0LCR, U0DLL, U0DLM and U0FDR if supported by the debugger.</li>
+<li>Verify that DLAB is cleared after initialization.</li>
+<li>Repeat with UART1 if required.</li>
+</ol>
+
+<h3>Expected register values</h3>
+<table>
+<tr><th>Register</th><th>Expected value</th></tr>
+<tr><td>U0DLL</td><td>0x47</td></tr>
+<tr><td>U0DLM</td><td>0x00</td></tr>
+<tr><td>U0FDR</td><td>0x83</td></tr>
+<tr><td>U0LCR</td><td>0x03 after initialization</td></tr>
+</table>
+
+<div class="note-box">
+Keil uVision simulator support for the LPC2129 UART peripheral may vary. Register inspection can verify the programmed configuration, but it does not by itself demonstrate a physical serial signal or confirm communication with an external device.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>16. Common Mistakes</h2>
+<ul>
+<li>Using CCLK instead of PCLK in the baud-rate formula.</li>
+<li>Forgetting the factor of 16 in the divisor calculation.</li>
+<li>Writing DLL and DLM while DLAB is cleared.</li>
+<li>Leaving DLAB enabled after initialization.</li>
+<li>Using an invalid MULVAL or DIVADDVAL combination.</li>
+<li>Changing FDR while serial communication is active.</li>
+<li>Assuming the nearest integer divisor always gives an acceptable error.</li>
+<li>Using different baud-rate settings at the two ends of a serial link.</li>
+<li>Assuming the simulator's register view proves physical UART communication.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>17. Interview Questions and Answers</h2>
+
+<h3>Q1. What is baud rate?</h3>
+<p>Baud rate is the number of signal symbols transmitted per second. In ordinary binary UART communication, one symbol represents one bit.</p>
+
+<h3>Q2. Which clock is used for UART baud-rate generation?</h3>
+<p>The peripheral clock (PCLK).</p>
+
+<h3>Q3. What is the basic UART baud-rate formula?</h3>
+<p>Baud rate = PCLK / (16 × Divisor), when fractional adjustment is disabled.</p>
+
+<h3>Q4. What is the function of DLL?</h3>
+<p>DLL stores the lower eight bits of the divisor.</p>
+
+<h3>Q5. What is the function of DLM?</h3>
+<p>DLM stores the upper eight bits of the divisor.</p>
+
+<h3>Q6. What is DLAB?</h3>
+<p>DLAB is bit 7 of LCR. It selects access to divisor latch registers.</p>
+
+<h3>Q7. What is the purpose of FDR?</h3>
+<p>FDR provides fractional adjustment to the baud-rate generator.</p>
+
+<h3>Q8. What is MULVAL?</h3>
+<p>MULVAL is the fractional divider multiplier field in FDR.</p>
+
+<h3>Q9. What is DIVADDVAL?</h3>
+<p>DIVADDVAL is the fractional divider addition field in FDR.</p>
+
+<h3>Q10. Why is fractional adjustment useful?</h3>
+<p>It can reduce baud-rate error when the integer divisor alone cannot produce a sufficiently accurate baud rate.</p>
+
+<h3>Q11. What happens when DIVADDVAL is zero?</h3>
+<p>The fractional divider does not alter the baud rate.</p>
+
+<h3>Q12. Should FDR be changed during active communication?</h3>
+<p>No. Changing it during transmission or reception can corrupt or lose data.</p>
+</section>
+
+<section class="lesson-section">
+<h2>18. Multiple Choice Questions</h2>
+
+<p><strong>1. Which clock is used for UART baud-rate generation?</strong></p>
+<ol type="A"><li>Only FOSC</li><li>Only CCLK</li><li>PCLK</li><li>RTC clock</li></ol>
+<p><strong>Answer:</strong> C</p>
+
+<p><strong>2. Which register stores the lower divisor byte?</strong></p>
+<ol type="A"><li>DLM</li><li>DLL</li><li>LCR</li><li>FDR</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>3. Which register stores the upper divisor byte?</strong></p>
+<ol type="A"><li>DLL</li><li>DLM</li><li>IER</li><li>LSR</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>4. Which LCR bit controls divisor latch access?</strong></p>
+<ol type="A"><li>Bit 0</li><li>Bit 1</li><li>Bit 4</li><li>Bit 7</li></ol>
+<p><strong>Answer:</strong> D</p>
+
+<p><strong>5. Which register provides fractional baud-rate adjustment?</strong></p>
+<ol type="A"><li>FDR</li><li>LSR</li><li>THR</li><li>RBR</li></ol>
+<p><strong>Answer:</strong> A</p>
+
+<p><strong>6. What is the basic baud-rate formula?</strong></p>
+<ol type="A"><li>PCLK × Divisor</li><li>PCLK / (16 × Divisor)</li><li>CCLK / Divisor</li><li>FOSC × 16</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>7. Which FDR field is stored in bits [7:4]?</strong></p>
+<ol type="A"><li>DIVADDVAL</li><li>MULVAL</li><li>DLAB</li><li>DLL</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>8. What is the required relationship between DIVADDVAL and MULVAL?</strong></p>
+<ol type="A"><li>DIVADDVAL must be greater</li><li>They must be equal</li><li>DIVADDVAL must be smaller</li><li>Both must be zero</li></ol>
+<p><strong>Answer:</strong> C</p>
+
+<p><strong>9. What does DIVADDVAL = 0 mean?</strong></p>
+<ol type="A"><li>UART disabled</li><li>Fractional adjustment disabled</li><li>Maximum baud rate</li><li>Receiver reset</li></ol>
+<p><strong>Answer:</strong> B</p>
+
+<p><strong>10. What is the configured baud rate in the 9600 example using DLL = 71 and FDR = 0x83?</strong></p>
+<ol type="A"><li>9600 exactly</li><li>Approximately 9603.07</li><li>Approximately 9566.33</li><li>115200</li></ol>
+<p><strong>Answer:</strong> B</p>
+</section>
+
+<section class="lesson-section">
+<h2>19. Practical Exercises</h2>
+<ol>
+<li>Define baud rate and bit duration.</li>
+<li>Explain the role of PCLK in UART baud-rate generation.</li>
+<li>Write the basic UART baud-rate formula.</li>
+<li>Calculate the divisor for 9600 baud using PCLK = 15 MHz.</li>
+<li>Calculate the actual baud rate using divisor 98.</li>
+<li>Explain the purpose of DLL and DLM.</li>
+<li>Explain DLAB and its effect on register access.</li>
+<li>Explain the FDR register fields.</li>
+<li>Calculate the baud rate using DLL = 71, MULVAL = 8 and DIVADDVAL = 3.</li>
+<li>Calculate the baud rate using DLL = 6, MULVAL = 14 and DIVADDVAL = 5.</li>
+<li>Write an initialization program for UART0 at approximately 9600 baud.</li>
+<li>Write an initialization program for UART1 at approximately 9600 baud.</li>
+<li>Inspect the UART divisor registers in Keil uVision.</li>
+</ol>
+</section>
+
+<section class="lesson-section">
+<h2>20. Lesson Summary</h2>
+<ul>
+<li>UART baud rate determines serial communication speed.</li>
+<li>The UART baud-rate generator uses PCLK.</li>
+<li>DLL and DLM store the integer divisor.</li>
+<li>DLAB controls access to the divisor latch registers.</li>
+<li>FDR provides fractional baud-rate adjustment.</li>
+<li>MULVAL and DIVADDVAL are the FDR configuration fields.</li>
+<li>Fractional adjustment can reduce baud-rate error.</li>
+<li>The divisor must be recalculated if PCLK changes.</li>
+<li>FDR should not be modified during active data transfer.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>21. References</h2>
+<ul>
+<li>NXP UM10114 – LPC21xx and LPC22xx User Manual, UART0 and UART1 chapters.</li>
+<li>NXP LPC2129 Datasheet – peripheral clock and UART specifications.</li>
+<li>Arm Keil documentation – LPC21xx device support.</li>
+</ul>
+<p><a href="https://www.nxp.com/docs/en/user-guide/UM10114.pdf" target="_blank" rel="noopener">NXP LPC21xx/22xx User Manual (UM10114)</a></p>
+<p><a href="https://www.keil.com/" target="_blank" rel="noopener">Arm Keil Official Website</a></p>
+</section>
+
+<div class="lesson-nav">
+<a href="L04_UART_Pin_Configuration.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L06_UART_Line_Control_Register.html">Next Lesson →</a>
+</div>
+
+</body>
+</html>
