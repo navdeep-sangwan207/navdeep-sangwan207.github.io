@@ -1,1 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LPC2129 PWM Architecture - Chapter 14</title>
+  <link rel="stylesheet" href="../../style.css">
 
+  <style>
+    .lesson-header {
+      background: linear-gradient(135deg, #174ea6, #2878d0);
+      color: white;
+      padding: 28px;
+      border-radius: 12px;
+      margin-bottom: 25px;
+    }
+
+    .lesson-header h1 { margin: 0 0 10px; font-size: 27px; }
+    .lesson-header p { margin: 0; line-height: 1.6; }
+
+    .content-section {
+      background: #fff;
+      padding: 22px;
+      margin: 22px 0;
+      border-radius: 10px;
+      box-shadow: 0 2px 9px rgba(0,0,0,0.08);
+    }
+
+    .content-section h2 {
+      color: #174ea6;
+      border-bottom: 2px solid #e76f00;
+      padding-bottom: 8px;
+      margin-top: 0;
+    }
+
+    .content-section h3 { color: #2878d0; margin-top: 22px; }
+    .content-section p, .content-section li { line-height: 1.75; }
+    .content-section ul, .content-section ol { padding-left: 24px; }
+
+    .definition {
+      background: #eaf2ff;
+      border-left: 5px solid #174ea6;
+      padding: 15px;
+      border-radius: 6px;
+      margin: 15px 0;
+    }
+
+    .note {
+      background: #fff4e5;
+      border-left: 5px solid #e76f00;
+      padding: 15px;
+      border-radius: 6px;
+      margin: 15px 0;
+    }
+
+    .success {
+      background: #eaf7ee;
+      border-left: 5px solid #238636;
+      padding: 15px;
+      border-radius: 6px;
+      margin: 15px 0;
+    }
+
+    .formula {
+      background: #f3f6fa;
+      padding: 16px;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+      margin: 15px 0;
+      overflow-x: auto;
+    }
+
+    .diagram {
+      background: #f8fafc;
+      border: 1px solid #d7e0ec;
+      padding: 18px;
+      border-radius: 8px;
+      margin: 18px 0;
+      overflow-x: auto;
+    }
+
+    .diagram pre {
+      font-family: Consolas, monospace;
+      font-size: 14px;
+      line-height: 1.7;
+      white-space: pre;
+      margin: 0;
+    }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 15px 0;
+      min-width: 520px;
+    }
+
+    th, td {
+      border: 1px solid #d5dce5;
+      padding: 11px;
+      text-align: left;
+    }
+
+    th { background: #174ea6; color: white; }
+    tr:nth-child(even) { background: #f4f7fb; }
+
+    .code-block {
+      background: #17212f;
+      color: #e6edf3;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-family: Consolas, monospace;
+      line-height: 1.6;
+    }
+
+    .question {
+      margin: 15px 0;
+      padding: 13px;
+      background: #f4f7fb;
+      border-radius: 7px;
+    }
+
+    .navigation {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 25px 0;
+    }
+
+    .navigation a {
+      display: inline-block;
+      padding: 11px 17px;
+      background: #174ea6;
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+
+    .navigation a:hover { background: #2878d0; }
+
+    @media (max-width: 600px) {
+      .lesson-header h1 { font-size: 22px; }
+      .content-section { padding: 16px; }
+      .navigation { flex-direction: column; }
+      .navigation a { text-align: center; }
+    }
+  </style>
+</head>
+
+<body>
+<main class="container">
+
+  <header class="lesson-header">
+    <h1>Lesson 03: LPC2129 PWM Architecture</h1>
+    <p>
+      Understand the internal architecture of the LPC2129 PWM
+      peripheral, including its prescaler, timer counter, match
+      registers, PWM control logic, latch enable mechanism,
+      and output channels.
+    </p>
+  </header>
+
+  <section class="content-section">
+    <h2>1. Learning Objectives</h2>
+    <p>After completing this lesson, you will be able to:</p>
+    <ul>
+      <li>Explain the architecture of the LPC2129 PWM peripheral.</li>
+      <li>Understand the relationship between PCLK, PWMPR, PWMPC, and PWMTC.</li>
+      <li>Identify the functions of match registers MR0 to MR6.</li>
+      <li>Understand the PWM Match Control Register.</li>
+      <li>Explain the roles of PWMPCR and PWMLER.</li>
+      <li>Understand the six PWM output channels.</li>
+      <li>Describe the basic PWM initialization sequence.</li>
+      <li>Inspect PWM registers during Keil uVision debugging.</li>
+    </ul>
+  </section>
+
+  <section class="content-section">
+    <h2>2. Introduction to LPC2129 PWM Architecture</h2>
+
+    <p>
+      The LPC2129 microcontroller contains a dedicated Pulse Width
+      Modulator peripheral. It is based on the standard timer
+      architecture and uses a 32-bit timer counter, a programmable
+      prescaler, seven match registers, and PWM output-control logic.
+    </p>
+
+    <p>
+      The peripheral generates up to six PWM output channels.
+      The PWM hardware controls the output transitions using
+      match events, reducing the need for software to toggle
+      GPIO pins continuously.
+    </p>
+
+    <div class="definition">
+      <strong>Definition:</strong>
+      The LPC2129 PWM peripheral is a hardware timing and output
+      control unit that generates periodic pulse-width-modulated
+      signals using timer counting and match-register comparisons.
+    </div>
+
+    <h3>Main Architectural Blocks</h3>
+    <ul>
+      <li>Peripheral clock input (PCLK).</li>
+      <li>Prescale Register (PWMPR).</li>
+      <li>Prescale Counter (PWMPC).</li>
+      <li>Timer Counter (PWMTC).</li>
+      <li>Match Registers (PWMMR0 to PWMMR6).</li>
+      <li>Match Control Register (PWMMCR).</li>
+      <li>PWM Control Register (PWMPCR).</li>
+      <li>PWM Latch Enable Register (PWMLER).</li>
+      <li>PWM output logic and pin multiplexing.</li>
+    </ul>
+  </section>
+
+  <section class="content-section">
+    <h2>3. LPC2129 PWM Block Diagram</h2>
+
+    <p>
+      The following simplified diagram shows the major functional
+      blocks involved in PWM generation.
+    </p>
+
+    <div class="diagram">
+      <pre>
+                Peripheral Clock
+                     PCLK
+                       |
+                       v
+              +------------------+
+              | Prescale Register|
+              |     PWMPR        |
+              +------------------+
+                       |
+                       v
+              +------------------+
+              | Prescale Counter |
+              |     PWMPC        |
+              +------------------+
+                       |
+                       v
+              +------------------+
+              |  Timer Counter   |
+              |     PWMTC        |
+              +------------------+
+                       |
+                       v
+              +------------------+
+              |  Match Comparators|
+              |  MR0 to MR6      |
+              +------------------+
+                       |
+             +---------+----------+
+             |                    |
+             v                    v
+      +-------------+      +-------------+
+      | Match Control|      | PWM Output  |
+      |   PWMMCR     |      |   Logic     |
+      +-------------+      +-------------+
+                                  |
+                         +--------+--------+
+                         |                 |
+                         v                 v
+                    +---------+       +---------+
+                    | PWMPCR  |       | PWMLER  |
+                    | Output  |       | Shadow  |
+                    | Control |       | Updates |
+                    +---------+       +---------+
+                         |
+                         v
+                  PWM1 to PWM6
+                   Output Pins
+      </pre>
+    </div>
+
+    <p>
+      The diagram is a simplified functional representation.
+      In the actual peripheral, the match registers, shadow
+      registers, match-control logic, and PWM output logic
+      operate together to generate the waveforms.
+    </p>
+  </section>
+
+  <section class="content-section">
+    <h2>4. Peripheral Clock (PCLK)</h2>
+
+    <p>
+      The PWM peripheral receives its timing reference from
+      the peripheral clock, PCLK.
+    </p>
+
+    <p>
+      The timer counter does not necessarily increment on every
+      PCLK cycle. Its increment rate is controlled by the
+      prescaler.
+    </p>
+
+    <p>
+      In your LPC2129 clock configuration:
+    </p>
+
+    <ul>
+      <li>Oscillator frequency (FOSC) = 12 MHz.</li>
+      <li>CPU clock (CCLK) = 60 MHz.</li>
+      <li>Peripheral clock (PCLK) = 15 MHz.</li>
+      <li>Peripheral clock divider ratio = 4.</li>
+    </ul>
+
+    <div class="formula">
+      PCLK = 60 MHz / 4 = 15 MHz
+    </div>
+
+    <p>
+      Therefore, the PWM prescaler receives a 15 MHz clock
+      in this configuration.
+    </p>
+
+    <div class="note">
+      <strong>Important:</strong>
+      PCLK is the input clock to the PWM timing section.
+      It is not necessarily the final PWM output frequency.
+      The prescaler and match-register period determine
+      the PWM timing.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>5. Prescaler and Prescale Counter</h2>
+
+    <h3>5.1 PWM Prescale Register (PWMPR)</h3>
+
+    <p>
+      PWMPR determines how many PCLK cycles are counted before
+      the PWM timer counter is incremented.
+    </p>
+
+    <div class="formula">
+      PWMTC increment interval = (PWMPR + 1) / PCLK
+    </div>
+
+    <p>
+      For a PCLK of 15 MHz and PWMPR = 14:
+    </p>
+
+    <div class="formula">
+      Timer tick frequency = 15 MHz / (14 + 1)
+      = 1 MHz
+    </div>
+
+    <div class="success">
+      The PWM timer counter increments once every 1 microsecond.
+    </div>
+
+    <h3>5.2 PWM Prescale Counter (PWMPC)</h3>
+
+    <p>
+      PWMPC is the internal prescale counter. It increments
+      with the peripheral clock and is compared against PWMPR.
+      When the prescale count reaches the programmed value,
+      the timer counter is incremented and the prescale counter
+      starts another counting interval.
+    </p>
+
+    <h3>Example: PWMPR = 4</h3>
+
+    <div class="diagram">
+      <pre>
+PCLK cycles:       0   1   2   3   4   5   6 ...
+Prescale count:    0   1   2   3   4   0   1 ...
+Timer counter:     0   0   0   0   0   1   1 ...
+                                      ^
+                              Timer increments
+      </pre>
+    </div>
+
+    <p>
+      The timer counter increments once for every PWMPR + 1
+      peripheral clock cycles.
+    </p>
+  </section>
+
+  <section class="content-section">
+    <h2>6. PWM Timer Counter (PWMTC)</h2>
+
+    <p>
+      PWMTC is a 32-bit counter used to track PWM timing.
+      It increments according to the prescaler configuration.
+    </p>
+
+    <p>
+      The value of PWMTC is continuously compared with the
+      programmed match-register values.
+    </p>
+
+    <h3>Main Functions</h3>
+    <ul>
+      <li>Provides the timing reference for PWM generation.</li>
+      <li>Increments according to PWMPR and PWMPC.</li>
+      <li>Is compared with match registers MR0 to MR6.</li>
+      <li>Can be reset by a configured match event.</li>
+      <li>Can be enabled or reset through PWMTCR.</li>
+    </ul>
+
+    <h3>PWM Timer Control Register (PWMTCR)</h3>
+
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Bit</th>
+          <th>Symbol</th>
+          <th>Function</th>
+        </tr>
+        <tr>
+          <td>0</td>
+          <td>Counter Enable</td>
+          <td>Enables the PWM timer counter and prescale counter.</td>
+        </tr>
+        <tr>
+          <td>1</td>
+          <td>Counter Reset</td>
+          <td>Resets PWMTC and PWMPC while asserted.</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>Reserved</td>
+          <td>Do not write a 1 to reserved bits.</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>PWM Enable</td>
+          <td>Enables PWM mode.</td>
+        </tr>
+      </table>
+    </div>
+
+    <p>Common configurations:</p>
+
+    <div class="formula">
+      PWMTCR = 0x02
+      <br>
+      Reset PWM timer and prescale counter
+    </div>
+
+    <div class="formula">
+      PWMTCR = 0x09
+      <br>
+      Enable counter and PWM mode
+    </div>
+
+    <div class="note">
+      The reset bit must be released after initialization.
+      Do not leave PWMTCR bit 1 set when expecting the counter
+      to run.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>7. PWM Match Registers (PWMMR0 to PWMMR6)</h2>
+
+    <p>
+      The LPC2129 PWM peripheral contains seven 32-bit match
+      registers. The timer counter value is continuously compared
+      against these registers.
+    </p>
+
+    <p>
+      When PWMTC equals a match-register value, the corresponding
+      match event can control a PWM output and may also generate
+      an interrupt, reset the timer, or stop it if configured.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Register</th>
+          <th>Main PWM Function</th>
+        </tr>
+        <tr>
+          <td>PWMMR0</td>
+          <td>Defines the PWM cycle rate and starts a new cycle.</td>
+        </tr>
+        <tr>
+          <td>PWMMR1</td>
+          <td>Controls PWM1 edge and can participate in PWM2 double-edge control.</td>
+        </tr>
+        <tr>
+          <td>PWMMR2</td>
+          <td>Controls PWM2 edge and can participate in PWM3 double-edge control.</td>
+        </tr>
+        <tr>
+          <td>PWMMR3</td>
+          <td>Controls PWM3 edge and can participate in PWM4 double-edge control.</td>
+        </tr>
+        <tr>
+          <td>PWMMR4</td>
+          <td>Controls PWM4 edge and can participate in PWM5 double-edge control.</td>
+        </tr>
+        <tr>
+          <td>PWMMR5</td>
+          <td>Controls PWM5 edge and can participate in PWM6 double-edge control.</td>
+        </tr>
+        <tr>
+          <td>PWMMR6</td>
+          <td>Controls the PWM6 edge.</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="definition">
+      <strong>Important relationship:</strong>
+      MR0 establishes the common PWM repetition rate.
+      The remaining match registers determine the edge positions
+      for the individual PWM outputs.
+    </div>
+
+    <p>
+      In single-edge mode, MR0 sets the beginning of each PWM
+      cycle and the corresponding channel match register
+      determines when that output goes LOW.
+    </p>
+
+    <p>
+      In double-edge mode, two match registers are used to
+      determine the two edge positions of a channel. PWM1
+      cannot provide an independently positioned double-edge
+      waveform because MR0 is already used for the period.
+    </p>
+  </section>
+
+  <section class="content-section">
+    <h2>8. PWM Match Control Register (PWMMCR)</h2>
+
+    <p>
+      PWMMCR controls what happens when the PWM timer counter
+      matches one of the match registers.
+    </p>
+
+    <p>For each match register, three control bits are provided:</p>
+
+    <ul>
+      <li><strong>Interrupt:</strong> Generates an interrupt on match.</li>
+      <li><strong>Reset:</strong> Resets the PWM timer counter on match.</li>
+      <li><strong>Stop:</strong> Stops the PWM timer and prescale counter on match.</li>
+    </ul>
+
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Match Register</th>
+          <th>Interrupt Bit</th>
+          <th>Reset Bit</th>
+          <th>Stop Bit</th>
+        </tr>
+        <tr><td>MR0</td><td>0</td><td>1</td><td>2</td></tr>
+        <tr><td>MR1</td><td>3</td><td>4</td><td>5</td></tr>
+        <tr><td>MR2</td><td>6</td><td>7</td><td>8</td></tr>
+        <tr><td>MR3</td><td>9</td><td>10</td><td>11</td></tr>
+        <tr><td>MR4</td><td>12</td><td>13</td><td>14</td></tr>
+        <tr><td>MR5</td><td>15</td><td>16</td><td>17</td></tr>
+        <tr><td>MR6</td><td>18</td><td>19</td><td>20</td></tr>
+      </table>
+    </div>
+
+    <h3>Example: Reset PWMTC on MR0 Match</h3>
+
+    <div class="code-block">
+PWMMCR = (1U << 1);
+    </div>
+
+    <p>
+      This enables the reset action when MR0 matches PWMTC.
+      It does not enable an interrupt.
+    </p>
+
+    <div class="note">
+      For continuous PWM generation, the MR0 reset action is
+      normally enabled so the timer begins another PWM cycle
+      after reaching the period match.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>9. PWM Control Register (PWMPCR)</h2>
+
+    <p>
+      PWMPCR controls which PWM output channels are enabled
+      and selects single-edge or double-edge operation for
+      channels that support the selection.
+    </p>
+
+    <h3>Output Enable Bits</h3>
+
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Bit</th>
+          <th>Function</th>
+        </tr>
+        <tr><td>9</td><td>Enable PWM1 output</td></tr>
+        <tr><td>10</td><td>Enable PWM2 output</td></tr>
+        <tr><td>11</td><td>Enable PWM3 output</td></tr>
+        <tr><td>12</td><td>Enable PWM4 output</td></tr>
+        <tr><td>13</td><td>Enable PWM5 output</td></tr>
+        <tr><td>14</td><td>Enable PWM6 output</td></tr>
+      </table>
+    </div>
+
+    <h3>Single-Edge and Double-Edge Selection</h3>
+
+    <p>
+      PWMPCR also contains selection bits for PWM channels 2 to 6.
+      These bits select whether the corresponding output uses
+      single-edge or double-edge control.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Bit</th>
+          <th>Function</th>
+        </tr>
+        <tr><td>2</td><td>PWM2 double-edge selection</td></tr>
+        <tr><td>3</td><td>PWM3 double-edge selection</td></tr>
+        <tr><td>4</td><td>PWM4 double-edge selection</td></tr>
+        <tr><td>5</td><td>PWM5 double-edge selection</td></tr>
+        <tr><td>6</td><td>PWM6 double-edge selection</td></tr>
+      </table>
+    </div>
+
+    <div class="note">
+      PWM1 does not have an independent double-edge selection
+      because MR0 is used to define the PWM period. The detailed
+      channel behavior is covered in Lesson 06.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>10. PWM Latch Enable Register (PWMLER)</h2>
+
+    <p>
+      PWMLER controls when newly written match-register values
+      become active.
+    </p>
+
+    <p>
+      The PWM peripheral uses shadow registers so that a new
+      period or pulse-width value can be transferred at a
+      controlled point in the PWM cycle.
+    </p>
+
+    <p>
+      This prevents an update from changing the output at an
+      arbitrary point in the current cycle and producing an
+      unintended pulse.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Bit</th>
+          <th>Function</th>
+        </tr>
+        <tr><td>0</td><td>Latch new MR0 value</td></tr>
+        <tr><td>1</td><td>Latch new MR1 value</td></tr>
+        <tr><td>2</td><td>Latch new MR2 value</td></tr>
+        <tr><td>3</td><td>Latch new MR3 value</td></tr>
+        <tr><td>4</td><td>Latch new MR4 value</td></tr>
+        <tr><td>5</td><td>Latch new MR5 value</td></tr>
+        <tr><td>6</td><td>Latch new MR6 value</td></tr>
+      </table>
+    </div>
+
+    <h3>Example</h3>
+
+    <div class="code-block">
+PWMMR0 = 1000U;
+PWMMR1 = 250U;
+
+/* Request transfer of new MR0 and MR1 values */
+PWMLER = (1U << 0) | (1U << 1);
+    </div>
+
+    <p>
+      The latch request allows the new match values to take
+      effect at the PWM update boundary. Software should write
+      the new values first and then set the corresponding
+      PWMLER bits.
+    </p>
+  </section>
+
+  <section class="content-section">
+    <h2>11. PWM Output Channels</h2>
+
+    <p>
+      The LPC2129 PWM peripheral provides six output channels:
+      PWM1, PWM2, PWM3, PWM4, PWM5, and PWM6.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Channel</th>
+          <th>Output</th>
+          <th>Single-Edge Match</th>
+        </tr>
+        <tr><td>1</td><td>PWM1</td><td>MR0 sets; MR1 clears</td></tr>
+        <tr><td>2</td><td>PWM2</td><td>MR0 sets; MR2 clears</td></tr>
+        <tr><td>3</td><td>PWM3</td><td>MR0 sets; MR3 clears</td></tr>
+        <tr><td>4</td><td>PWM4</td><td>MR0 sets; MR4 clears</td></tr>
+        <tr><td>5</td><td>PWM5</td><td>MR0 sets; MR5 clears</td></tr>
+        <tr><td>6</td><td>PWM6</td><td>MR0 sets; MR6 clears</td></tr>
+      </table>
+    </div>
+
+    <p>
+      In single-edge mode, the outputs normally become HIGH at
+      the beginning of each PWM period and become LOW when
+      their individual match event occurs.
+    </p>
+
+    <div class="note">
+      The table describes single-edge operation. In double-edge
+      mode, the match-register pairings differ. Refer to the
+      PWM channel selection rules in Lesson 06.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>12. PWM Timing Example Using Project Clock</h2>
+
+    <p>
+      Use the following project clock and timer configuration:
+    </p>
+
+    <ul>
+      <li>PCLK = 15 MHz.</li>
+      <li>PWMPR = 14.</li>
+      <li>Timer counter tick frequency = 1 MHz.</li>
+      <li>Timer counter tick interval = 1 microsecond.</li>
+      <li>PWMMR0 = 1000.</li>
+      <li>PWMMR1 = 250.</li>
+    </ul>
+
+    <h3>Step 1: Calculate Timer Tick Frequency</h3>
+
+    <div class="formula">
+      f<sub>TC</sub> = 15 MHz / (14 + 1)
+      = 1 MHz
+    </div>
+
+    <h3>Step 2: Calculate Timer Tick Interval</h3>
+
+    <div class="formula">
+      T<sub>tick</sub> = 1 / 1 MHz = 1 µs
+    </div>
+
+    <h3>Step 3: Calculate Nominal PWM Period</h3>
+
+    <div class="formula">
+      T<sub>PWM</sub> ≈ 1000 × 1 µs = 1 ms
+    </div>
+
+    <h3>Step 4: Calculate Nominal Frequency</h3>
+
+    <div class="formula">
+      f<sub>PWM</sub> ≈ 1 / 1 ms = 1 kHz
+    </div>
+
+    <h3>Step 5: Calculate PWM1 Duty Cycle</h3>
+
+    <div class="formula">
+      Duty Cycle ≈ (250 / 1000) × 100 = 25%
+    </div>
+
+    <div class="success">
+      <strong>Nominal result:</strong>
+      The example is configured for approximately 1 kHz PWM
+      with a 25% HIGH duty cycle on PWM1.
+    </div>
+
+    <p>
+      The exact period follows the peripheral's timer and match
+      event sequencing. The calculation above is the nominal
+      timer-count relationship used for configuration.
+    </p>
+  </section>
+
+  <section class="content-section">
+    <h2>13. Basic PWM Initialization Program</h2>
+
+    <p>
+      The following example demonstrates the main PWM register
+      configuration sequence for PWM1 in single-edge mode.
+    </p>
+
+    <div class="code-block">
+#include &lt;LPC21xx.h&gt;
+
+void PWM_Init(void)
+{
+    /* Stop and reset PWM timer */
+    PWMTCR = (1U << 1);
+
+    /* Configure prescaler:
+       PCLK = 15 MHz
+       PWMPR = 14
+       Timer tick = 1 MHz */
+    PWMPR = 14U;
+    PWMPC = 0U;
+    PWMTC = 0U;
+
+    /* Set PWM period */
+    PWMMR0 = 1000U;
+
+    /* PWM1 pulse width match */
+    PWMMR1 = 250U;
+
+    /* Reset timer on MR0 match */
+    PWMMCR = (1U << 1);
+
+    /* Single-edge mode:
+       PWM1 output enable is PCR bit 9 */
+    PWMPCR = (1U << 9);
+
+    /* Latch MR0 and MR1 */
+    PWMLER = (1U << 0) | (1U << 1);
+
+    /* Enable PWM timer and PWM mode */
+    PWMTCR = (1U << 0) | (1U << 3);
+}
+
+int main(void)
+{
+    PWM_Init();
+
+    while (1)
+    {
+        /* PWM is generated by the hardware peripheral */
+    }
+}
+    </div>
+
+    <h3>Program Explanation</h3>
+
+    <ol>
+      <li>PWMTCR resets the timer and prescale counter.</li>
+      <li>PWMPR sets the timer counter increment interval.</li>
+      <li>PWMPC and PWMTC are initialized to zero.</li>
+      <li>PWMMR0 defines the nominal PWM period.</li>
+      <li>PWMMR1 defines the PWM1 falling-edge position in single-edge mode.</li>
+      <li>PWMMCR resets the counter when MR0 matches.</li>
+      <li>PWMPCR enables PWM1 output.</li>
+      <li>PWMLER requests transfer of the new match values.</li>
+      <li>PWMTCR enables the timer and PWM mode.</li>
+    </ol>
+
+    <div class="note">
+      <strong>Pin configuration requirement:</strong>
+      This example shows the peripheral-register configuration.
+      The physical PWM1 output pin must also be selected through
+      the appropriate PINSEL field for the exact LPC2129 package
+      and pin assignment. Pin multiplexing is covered separately
+      in the pin-configuration lesson. Do not assume that enabling
+      PWMPCR alone connects the signal to a package pin.
+    </div>
+
+    <div class="note">
+      <strong>Keil simulator limitation:</strong>
+      This program demonstrates register configuration. Whether
+      PWMTC, match logic, and PWM output waveforms are simulated
+      depends on the selected Keil device model. Do not treat
+      successful compilation or register writes as proof of a
+      physical PWM waveform.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>14. Hardware PWM Generation vs Software Toggling</h2>
+
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Feature</th>
+          <th>Hardware PWM</th>
+          <th>Software GPIO Toggling</th>
+        </tr>
+        <tr>
+          <td>Timing source</td>
+          <td>Dedicated PWM timer and match hardware</td>
+          <td>CPU instructions and software delays</td>
+        </tr>
+        <tr>
+          <td>CPU involvement</td>
+          <td>Low after setup</td>
+          <td>Repeated CPU execution required</td>
+        </tr>
+        <tr>
+          <td>Timing consistency</td>
+          <td>Generally more consistent</td>
+          <td>Can vary with interrupt and code execution</td>
+        </tr>
+        <tr>
+          <td>Multiple channels</td>
+          <td>Dedicated output channels</td>
+          <td>Requires software scheduling</td>
+        </tr>
+        <tr>
+          <td>Typical application</td>
+          <td>Motor control and power control</td>
+          <td>Simple timing demonstrations</td>
+        </tr>
+      </table>
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>15. Keil uVision Simulator Practice</h2>
+
+    <p><strong>Objective:</strong> Inspect PWM peripheral register configuration.</p>
+
+    <h3>Procedure</h3>
+    <ol>
+      <li>Create or open an LPC2129 project in Keil uVision.</li>
+      <li>Add the PWM initialization program.</li>
+      <li>Build the project and check for compilation errors.</li>
+      <li>Start a debugging session.</li>
+      <li>Execute the program until PWM_Init() completes.</li>
+      <li>Inspect PWMTCR, PWMPR, PWMPC, and PWMTC.</li>
+      <li>Inspect PWMMR0 and PWMMR1.</li>
+      <li>Inspect PWMMCR, PWMPCR, and PWMLER.</li>
+      <li>Check whether the selected simulator model supports PWM peripheral execution.</li>
+    </ol>
+
+    <h3>Expected Register Configuration</h3>
+
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Register</th>
+          <th>Configured Value</th>
+          <th>Purpose</th>
+        </tr>
+        <tr><td>PWMPR</td><td>14</td><td>1 MHz timer tick with 15 MHz PCLK</td></tr>
+        <tr><td>PWMMR0</td><td>1000</td><td>Nominal period count</td></tr>
+        <tr><td>PWMMR1</td><td>250</td><td>PWM1 pulse-width match</td></tr>
+        <tr><td>PWMMCR</td><td>0x02</td><td>Reset on MR0 match</td></tr>
+        <tr><td>PWMPCR</td><td>0x0200</td><td>Enable PWM1 output</td></tr>
+        <tr><td>PWMLER</td><td>0x03</td><td>Latch MR0 and MR1</td></tr>
+        <tr><td>PWMTCR</td><td>0x09</td><td>Enable timer and PWM mode</td></tr>
+      </table>
+    </div>
+
+    <div class="note">
+      These are the values written by the example. A register
+      readback may differ for status or hardware-managed bits.
+      PWM output observation is dependent on simulator support.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>16. Common Configuration Mistakes</h2>
+
+    <ul>
+      <li>Using CCLK instead of PCLK in the PWM timer calculation.</li>
+      <li>Forgetting the prescaler relationship PWMPR + 1.</li>
+      <li>Setting MR0 but not enabling reset on MR0 match.</li>
+      <li>Forgetting to enable PWM mode using PWMTCR bit 3.</li>
+      <li>Forgetting to enable the required output channel in PWMPCR.</li>
+      <li>Not setting the corresponding PWMLER latch bit.</li>
+      <li>Using an incorrect PWM output pin function in PINSEL.</li>
+      <li>Programming a channel match value greater than the period match.</li>
+      <li>Assuming the Keil simulator necessarily models the PWM output.</li>
+    </ul>
+  </section>
+
+  <section class="content-section">
+    <h2>17. Interview Questions and Answers</h2>
+
+    <h3>Q1. How many PWM output channels are available in LPC2129?</h3>
+    <p>
+      LPC2129 provides six PWM output channels.
+    </p>
+
+    <h3>Q2. What is the function of PWMPR?</h3>
+    <p>
+      PWMPR determines how many PCLK cycles are counted before
+      PWMTC increments.
+    </p>
+
+    <h3>Q3. What is PWMPC?</h3>
+    <p>
+      PWMPC is the prescale counter that counts peripheral clock
+      cycles up to the prescaler value.
+    </p>
+
+    <h3>Q4. What is PWMTC?</h3>
+    <p>
+      PWMTC is the 32-bit timer counter used as the timing
+      reference for PWM match events.
+    </p>
+
+    <h3>Q5. What is the function of MR0?</h3>
+    <p>
+      MR0 defines the common PWM repetition rate by controlling
+      the timer cycle reset.
+    </p>
+
+    <h3>Q6. What is the function of PWMMCR?</h3>
+    <p>
+      PWMMCR configures interrupt, reset, and stop actions
+      for match events.
+    </p>
+
+    <h3>Q7. What is the purpose of PWMPCR?</h3>
+    <p>
+      PWMPCR enables PWM outputs and selects single-edge or
+      double-edge control for applicable channels.
+    </p>
+
+    <h3>Q8. What is the function of PWMLER?</h3>
+    <p>
+      PWMLER requests that new match-register values be transferred
+      from shadow registers at a controlled PWM update point.
+    </p>
+
+    <h3>Q9. Why is hardware PWM preferred for motor control?</h3>
+    <p>
+      It generates consistent timing with less CPU involvement
+      than repeatedly toggling GPIO pins in software.
+    </p>
+
+    <h3>Q10. Why is PINSEL configuration required?</h3>
+    <p>
+      PINSEL connects the selected physical microcontroller pin
+      to its PWM peripheral function.
+    </p>
+  </section>
+
+  <section class="content-section">
+    <h2>18. Multiple Choice Questions</h2>
+
+    <div class="question">
+      <p><strong>1. How many PWM output channels does LPC2129 provide?</strong></p>
+      <ol type="A">
+        <li>2</li>
+        <li>4</li>
+        <li>6</li>
+        <li>8</li>
+      </ol>
+      <p><strong>Answer:</strong> C - 6</p>
+    </div>
+
+    <div class="question">
+      <p><strong>2. Which register controls the PWM prescaler?</strong></p>
+      <ol type="A">
+        <li>PWMPCR</li>
+        <li>PWMPR</li>
+        <li>PWMMCR</li>
+        <li>PWMLER</li>
+      </ol>
+      <p><strong>Answer:</strong> B - PWMPR</p>
+    </div>
+
+    <div class="question">
+      <p><strong>3. Which register contains the PWM timer count?</strong></p>
+      <ol type="A">
+        <li>PWMTC</li>
+        <li>PWMMR0</li>
+        <li>PWMPCR</li>
+        <li>PWMIR</li>
+      </ol>
+      <p><strong>Answer:</strong> A - PWMTC</p>
+    </div>
+
+    <div class="question">
+      <p><strong>4. Which register enables PWM output channels?</strong></p>
+      <ol type="A">
+        <li>PWMPR</li>
+        <li>PWMPCR</li>
+        <li>PWMMCR</li>
+        <li>PWMTCR</li>
+      </ol>
+      <p><strong>Answer:</strong> B - PWMPCR</p>
+    </div>
+
+    <div class="question">
+      <p><strong>5. Which register requests new match values to be latched?</strong></p>
+      <ol type="A">
+        <li>PWMLER</li>
+        <li>PWMPC</li>
+        <li>PWMIR</li>
+        <li>PWMTCR</li>
+      </ol>
+      <p><strong>Answer:</strong> A - PWMLER</p>
+    </div>
+
+    <div class="question">
+      <p><strong>6. Which PWMTCR bit enables PWM mode?</strong></p>
+      <ol type="A">
+        <li>Bit 0</li>
+        <li>Bit 1</li>
+        <li>Bit 2</li>
+        <li>Bit 3</li>
+      </ol>
+      <p><strong>Answer:</strong> D - Bit 3</p>
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>19. Practice Exercises</h2>
+
+    <ol>
+      <li>Draw the block diagram of the LPC2129 PWM peripheral.</li>
+      <li>Explain the relationship between PWMPR, PWMPC, and PWMTC.</li>
+      <li>List all seven PWM match registers.</li>
+      <li>Explain the role of MR0 in PWM generation.</li>
+      <li>Describe the functions of PWMMCR.</li>
+      <li>Explain the output-enable bits of PWMPCR.</li>
+      <li>Explain the purpose of PWMLER.</li>
+      <li>Calculate the timer tick frequency for PCLK = 15 MHz and PWMPR = 14.</li>
+      <li>Calculate nominal PWM frequency for MR0 = 1000 using the timer tick from Exercise 8.</li>
+      <li>Write an Embedded C initialization function for PWM1.</li>
+    </ol>
+  </section>
+
+  <section class="content-section">
+    <h2>20. Lesson Summary</h2>
+
+    <ul>
+      <li>LPC2129 contains a dedicated six-channel PWM peripheral.</li>
+      <li>The PWM peripheral uses a 32-bit timer and prescaler.</li>
+      <li>PWMPR controls the timer counter increment interval.</li>
+      <li>PWMPC counts PCLK cycles for prescaling.</li>
+      <li>PWMTC is compared with match registers MR0 to MR6.</li>
+      <li>MR0 defines the common PWM period.</li>
+      <li>PWMMCR controls match interrupt, reset, and stop actions.</li>
+      <li>PWMPCR enables PWM outputs and selects edge-control modes.</li>
+      <li>PWMLER synchronizes new match-register values.</li>
+      <li>PINSEL must connect the selected pin to its PWM function.</li>
+    </ul>
+  </section>
+
+  <section class="content-section">
+    <h2>21. References</h2>
+
+    <ul>
+      <li>
+        NXP UM10114 - LPC21xx and LPC22xx User Manual,
+        Chapter 16: Pulse Width Modulator.
+      </li>
+      <li>NXP LPC2129 Datasheet - pin configuration and device specifications.</li>
+      <li>Keil MDK and uVision documentation.</li>
+      <li>ARM7TDMI-S Technical Reference Manual.</li>
+    </ul>
+
+    <p>
+      Official reference:
+      <a href="https://www.nxp.com/docs/en/user-guide/UM10114.pdf"
+         target="_blank" rel="noopener">
+        NXP UM10114 User Manual
+      </a>
+    </p>
+  </section>
+
+  <nav class="navigation">
+    <a href="L02_PWM_Principle_and_Duty_Cycle.html">
+      ← Previous Lesson
+    </a>
+
+    <a href="index.html">
+      Chapter 14 Index
+    </a>
+
+    <a href="L04_PWM_Match_Registers.html">
+      Next: PWM Match Registers →
+    </a>
+  </nav>
+
+</main>
+</body>
+</html>
