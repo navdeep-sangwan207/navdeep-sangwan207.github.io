@@ -1,1 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Keypad Interfacing with LPC2129</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-header{background:linear-gradient(135deg,#174ea6,#2878d0);color:white;padding:28px;border-radius:12px;margin-bottom:25px}
+.lesson-header h1{margin:0 0 12px}
+.lesson-header p{margin:6px 0;line-height:1.6}
+.lesson-section{background:#fff;padding:22px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 9px rgba(0,0,0,.07)}
+.lesson-section h2{color:#174ea6;border-bottom:2px solid #e5edf8;padding-bottom:9px}
+.lesson-section h3{color:#2878d0}
+.info-box,.note-box,.warning-box{padding:15px;margin:15px 0;border-radius:6px;line-height:1.7}
+.info-box{background:#eef5ff;border-left:4px solid #2878d0}
+.note-box{background:#effaf3;border-left:4px solid #269653}
+.warning-box{background:#fff4e8;border-left:4px solid #e76f00}
+pre{background:#17212f;color:#e8edf5;padding:17px;border-radius:8px;overflow-x:auto;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d9e2ef;padding:10px;text-align:left}
+th{background:#eaf1fb;color:#174ea6}
+.diagram{background:#f3f7fc;border:1px solid #cbd9ed;border-radius:8px;padding:18px;text-align:center;margin:16px 0;line-height:1.8}
+.diagram-box{display:inline-block;background:white;border:2px solid #2878d0;border-radius:7px;padding:12px 18px;margin:6px;color:#174ea6;font-weight:bold}
+.question{background:#f6f8fb;padding:13px;border-radius:7px;margin:12px 0}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-nav a:hover{background:#2878d0}
+@media(max-width:600px){.lesson-section{padding:15px}.lesson-header h1{font-size:23px}table{font-size:13px}}
+</style>
+</head>
+<body>
+<main class="container">
 
+<header class="lesson-header">
+<h1>Lesson 06: Keypad Interfacing</h1>
+<p><strong>Chapter 17:</strong> LPC2129 LCD and Peripheral Interfacing</p>
+<p><strong>Topic:</strong> Matrix Keypad Architecture, Scanning and Key Detection</p>
+<p><strong>Microcontroller:</strong> LPC2129 ARM7</p>
+</header>
+
+<section class="lesson-section">
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Explain the working principle of a matrix keypad.</li>
+<li>Differentiate between a matrix keypad and individual push buttons.</li>
+<li>Understand row and column organization.</li>
+<li>Configure LPC2129 GPIO pins for keypad interfacing.</li>
+<li>Implement row-column scanning.</li>
+<li>Identify a pressed key from its row and column.</li>
+<li>Understand switch debouncing and key release detection.</li>
+<li>Interface a keypad with an LCD for user input.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>2. Introduction to Keypads</h2>
+<p>
+A keypad is an input device used to enter numbers, characters or
+commands into an embedded system. It contains multiple switches
+arranged in a convenient layout.
+</p>
+
+<p>Common keypad applications include:</p>
+<ul>
+<li>Digital door locks.</li>
+<li>Electronic calculators.</li>
+<li>Industrial control panels.</li>
+<li>Access-control systems.</li>
+<li>Banking terminals.</li>
+<li>Embedded menu navigation.</li>
+</ul>
+
+<div class="info-box">
+A keypad provides a human-machine interface (HMI). The
+microcontroller scans its input lines to determine which key
+has been pressed.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>3. Individual Push Buttons vs Matrix Keypad</h2>
+
+<table>
+<tr><th>Individual Push Buttons</th><th>Matrix Keypad</th></tr>
+<tr><td>Each button generally uses a separate input pin.</td><td>Rows and columns share GPIO lines.</td></tr>
+<tr><td>Simple input detection.</td><td>Requires a scanning algorithm.</td></tr>
+<tr><td>More pins for many buttons.</td><td>Fewer pins for many buttons.</td></tr>
+<tr><td>Suitable for a small number of switches.</td><td>Suitable for numeric and command keypads.</td></tr>
+</table>
+
+<h3>GPIO Pin Requirement</h3>
+<p>
+For a keypad with R rows and C columns, the basic matrix requires
+R+C GPIO lines instead of R×C separate input lines.
+</p>
+
+<table>
+<tr><th>Keypad</th><th>Individual Switch Inputs</th><th>Matrix GPIO Lines</th></tr>
+<tr><td>3x4</td><td>12</td><td>7</td></tr>
+<tr><td>4x4</td><td>16</td><td>8</td></tr>
+<tr><td>5x4</td><td>20</td><td>9</td></tr>
+</table>
+</section>
+
+<section class="lesson-section">
+<h2>4. Matrix Keypad Architecture</h2>
+<p>
+A matrix keypad connects switches between row and column conductors.
+When a key is pressed, it electrically connects one row to one column.
+</p>
+
+<h3>4x4 Keypad Layout</h3>
+<div class="diagram">
+<table>
+<tr><th></th><th>Column 1</th><th>Column 2</th><th>Column 3</th><th>Column 4</th></tr>
+<tr><th>Row 1</th><td>1</td><td>2</td><td>3</td><td>A</td></tr>
+<tr><th>Row 2</th><td>4</td><td>5</td><td>6</td><td>B</td></tr>
+<tr><th>Row 3</th><td>7</td><td>8</td><td>9</td><td>C</td></tr>
+<tr><th>Row 4</th><td>*</td><td>0</td><td>#</td><td>D</td></tr>
+</table>
+</div>
+
+<p>
+A 4x4 keypad has four row lines and four column lines. Each of its
+16 keys connects one row to one column when pressed.
+</p>
+
+<h3>Internal Connection Concept</h3>
+<div class="diagram">
+<div class="diagram-box">Row 1</div>
+<div>↓</div>
+<div class="diagram-box">Key Switch</div>
+<div>↓</div>
+<div class="diagram-box">Column 1</div>
+<p><strong>Example:</strong> Pressing key 1 connects Row 1 and Column 1.</p>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>5. Row and Column Scanning Principle</h2>
+<p>
+The microcontroller detects a key by activating one row at a time
+and reading the column inputs.
+</p>
+
+<h3>Basic Scanning Steps</h3>
+<ol>
+<li>Configure row lines as outputs.</li>
+<li>Configure column lines as inputs.</li>
+<li>Set all row outputs to their inactive state.</li>
+<li>Activate the first row.</li>
+<li>Read all column inputs.</li>
+<li>If a column indicates a pressed key, record its row and column.</li>
+<li>Repeat for the remaining rows.</li>
+<li>Apply debounce and key-release handling.</li>
+</ol>
+
+<div class="diagram">
+<div class="diagram-box">Activate Row 1</div>
+<div>↓</div>
+<div class="diagram-box">Read Columns</div>
+<div>↓</div>
+<div class="diagram-box">Activate Row 2</div>
+<div>↓</div>
+<div class="diagram-box">Read Columns</div>
+<div>↓</div>
+<div class="diagram-box">Continue Through All Rows</div>
+</div>
+
+<div class="note-box">
+The example program below uses active-LOW scanning: one row is
+driven LOW while the other rows remain HIGH. A pressed key pulls
+its corresponding column LOW. External or internal pull-up
+resistors are required on the column inputs.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>6. LPC2129 GPIO Pin Configuration</h2>
+<p>
+For a 4x4 keypad demonstration, the following GPIO allocation is
+used. These pins are an example project allocation, not a fixed
+keypad pin assignment of the LPC2129.
+</p>
+
+<table>
+<tr><th>Keypad Signal</th><th>LPC2129 GPIO</th><th>Direction</th></tr>
+<tr><td>Row 1</td><td>P0.4</td><td>Output</td></tr>
+<tr><td>Row 2</td><td>P0.5</td><td>Output</td></tr>
+<tr><td>Row 3</td><td>P0.6</td><td>Output</td></tr>
+<tr><td>Row 4</td><td>P0.7</td><td>Output</td></tr>
+<tr><td>Column 1</td><td>P0.8</td><td>Input</td></tr>
+<tr><td>Column 2</td><td>P0.9</td><td>Input</td></tr>
+<tr><td>Column 3</td><td>P0.14</td><td>Input</td></tr>
+<tr><td>Column 4</td><td>P0.23</td><td>Input</td></tr>
+</table>
+
+<h3>GPIO Direction Configuration</h3>
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+#define ROW_MASK (0x0FU &lt;&lt; 4)
+
+#define COL_MASK ((1U &lt;&lt; 8)  | \
+                  (1U &lt;&lt; 9)  | \
+                  (1U &lt;&lt; 14) | \
+                  (1U &lt;&lt; 23))
+
+void Keypad_GPIO_Init(void)
+{
+    /* Select GPIO function for P0.4 to P0.9 */
+    PINSEL0 &amp;= ~0x000FFFF0U;
+
+    /* Select GPIO for P0.14 */
+    PINSEL0 &amp;= ~(3U &lt;&lt; 28);
+
+    /* Select GPIO for P0.23 */
+    PINSEL1 &amp;= ~(3U &lt;&lt; 14);
+
+    /* Configure row lines as outputs */
+    IODIR0 |= ROW_MASK;
+
+    /* Configure column lines as inputs */
+    IODIR0 &amp;= ~COL_MASK;
+
+    /* Set all rows HIGH */
+    IOSET0 = ROW_MASK;
+}</code></pre>
+
+<div class="warning-box">
+The example uses P0.4-P0.9, P0.14 and P0.23. Check the complete
+project pin allocation before using these pins with other
+peripherals. Column inputs need suitable pull-ups. The GPIO
+configuration does not automatically enable a pull-up on every
+LPC2129 pin.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>7. Understanding the Scanning Logic</h2>
+<p>
+Assume Row 1 is driven LOW while all other rows remain HIGH.
+If key 5 is pressed, it connects Row 2 and Column 2. When Row 2
+is scanned LOW, Column 2 is detected LOW.
+</p>
+
+<table>
+<tr><th>Active Row</th><th>Pressed Key</th><th>Detected Column</th></tr>
+<tr><td>Row 1</td><td>1, 2, 3 or A</td><td>Column 1-4</td></tr>
+<tr><td>Row 2</td><td>4, 5, 6 or B</td><td>Column 1-4</td></tr>
+<tr><td>Row 3</td><td>7, 8, 9 or C</td><td>Column 1-4</td></tr>
+<tr><td>Row 4</td><td>*, 0, # or D</td><td>Column 1-4</td></tr>
+</table>
+
+<h3>Column Detection</h3>
+<p>
+For active-LOW scanning, a column bit equal to zero indicates that
+a key may be pressed in the currently active row.
+</p>
+
+<pre><code>if ((IOPIN0 &amp; (1U &lt;&lt; 8)) == 0U)
+{
+    /* Column 1 is LOW */
+}</code></pre>
+</section>
+
+<section class="lesson-section">
+<h2>8. Keypad Key Mapping</h2>
+<p>
+The program needs a lookup table to convert row and column positions
+into the actual character printed on the keypad.
+</p>
+
+<pre><code>const char keypad_map[4][4] =
+{
+    {'1', '2', '3', 'A'},
+    {'4', '5', '6', 'B'},
+    {'7', '8', '9', 'C'},
+    {'*', '0', '#', 'D'}
+};</code></pre>
+
+<p>
+For example, row index 1 and column index 1 identify the character
+'5'. The array uses zero-based indexing.
+</p>
+</section>
+
+<section class="lesson-section">
+<h2>9. Complete 4x4 Keypad Scanning Program</h2>
+<p>
+This program scans one row at a time and returns the first detected
+key. It uses active-LOW columns and assumes external or verified
+internal pull-up resistors.
+</p>
+
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+#define ROW_MASK (0x0FU &lt;&lt; 4)
+
+#define COL_MASK ((1U &lt;&lt; 8)  | \
+                  (1U &lt;&lt; 9)  | \
+                  (1U &lt;&lt; 14) | \
+                  (1U &lt;&lt; 23))
+
+const char keypad_map[4][4] =
+{
+    {'1', '2', '3', 'A'},
+    {'4', '5', '6', 'B'},
+    {'7', '8', '9', 'C'},
+    {'*', '0', '#', 'D'}
+};
+
+const unsigned int row_pins[4] =
+{
+    4U, 5U, 6U, 7U
+};
+
+const unsigned int col_pins[4] =
+{
+    8U, 9U, 14U, 23U
+};
+
+void Delay_Short(volatile unsigned int count)
+{
+    while (count--)
+    {
+        /* Demonstration delay only */
+    }
+}
+
+void Keypad_Init(void)
+{
+    PINSEL0 &amp;= ~0x000FFFF0U;
+    PINSEL0 &amp;= ~(3U &lt;&lt; 28);
+    PINSEL1 &amp;= ~(3U &lt;&lt; 14);
+
+    IODIR0 |= ROW_MASK;
+    IODIR0 &amp;= ~COL_MASK;
+
+    IOSET0 = ROW_MASK;
+}
+
+char Keypad_Scan(void)
+{
+    unsigned int row;
+    unsigned int col;
+
+    for (row = 0U; row &lt; 4U; row++)
+    {
+        /* Keep all rows inactive */
+        IOSET0 = ROW_MASK;
+
+        /* Activate one row LOW */
+        IOCLR0 = (1U &lt;&lt; row_pins[row]);
+
+        Delay_Short(100U);
+
+        for (col = 0U; col &lt; 4U; col++)
+        {
+            if ((IOPIN0 &amp; (1U &lt;&lt; col_pins[col])) == 0U)
+            {
+                /* Key detected */
+                IOSET0 = ROW_MASK;
+                return keypad_map[row][col];
+            }
+        }
+    }
+
+    IOSET0 = ROW_MASK;
+    return '\0';
+}
+
+int main(void)
+{
+    char key;
+
+    Keypad_Init();
+
+    while (1)
+    {
+        key = Keypad_Scan();
+
+        if (key != '\0')
+        {
+            /* Inspect key in debugger */
+            volatile char detected_key = key;
+            (void)detected_key;
+
+            /* Wait for key release in a simple demonstration */
+            while ((IOPIN0 &amp; COL_MASK) != COL_MASK)
+            {
+                Delay_Short(100U);
+            }
+
+            Delay_Short(5000U);
+        }
+    }
+}</code></pre>
+
+<h3>Program Explanation</h3>
+<ul>
+<li><code>Keypad_Init()</code> configures row outputs and column inputs.</li>
+<li><code>keypad_map[][]</code> stores the key labels.</li>
+<li><code>row_pins[]</code> stores the row GPIO pin numbers.</li>
+<li><code>col_pins[]</code> stores the column GPIO pin numbers.</li>
+<li><code>Keypad_Scan()</code> activates each row and checks the columns.</li>
+<li>A detected row-column combination is converted into a character.</li>
+<li><code>'\0'</code> indicates that no key was detected.</li>
+</ul>
+
+<div class="warning-box">
+This is a basic single-key scanner, not a complete multi-key rollover
+driver. Its key-release loop assumes the column inputs return HIGH
+when no key is pressed. With multiple simultaneous keys, matrix
+ghosting can occur unless the keypad includes isolation diodes and
+the scanning algorithm handles multiple-key states.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>10. Key Debouncing</h2>
+<p>
+Mechanical keypad contacts do not always change cleanly between
+HIGH and LOW. When a key is pressed or released, the contact may
+produce several rapid transitions.
+</p>
+<p>This behavior is called switch bouncing.</p>
+
+<div class="diagram">
+<div class="diagram-box">Key Press</div>
+<div>↓</div>
+<div class="diagram-box">Contact Bouncing</div>
+<div>↓</div>
+<div class="diagram-box">Debounce Verification</div>
+<div>↓</div>
+<div class="diagram-box">Stable Key Detection</div>
+</div>
+
+<h3>Software Debouncing Concept</h3>
+<ol>
+<li>Detect a possible key press.</li>
+<li>Wait for a short debounce interval.</li>
+<li>Read the same key position again.</li>
+<li>Accept the key only if it remains pressed.</li>
+<li>Wait for the key to be released before accepting another press.</li>
+</ol>
+
+<pre><code>if (key_detected)
+{
+    Delay_Short(DEBOUNCE_COUNT);
+
+    if (same_key_is_still_pressed)
+    {
+        /* Accept key press */
+    }
+}</code></pre>
+
+<div class="note-box">
+The delay above is conceptual. A production implementation should
+use a timer-based debounce interval selected for the keypad's
+mechanical characteristics. The release state should also be
+verified.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>11. Interfacing Keypad with LCD</h2>
+<p>
+A keypad and LCD can be combined to create a simple user interface.
+The keypad provides input, and the LCD displays the detected key.
+</p>
+
+<div class="diagram">
+<div class="diagram-box">4x4 Keypad</div>
+<div>↓</div>
+<div class="diagram-box">LPC2129 GPIO</div>
+<div>↓</div>
+<div class="diagram-box">Key Scanning and Mapping</div>
+<div>↓</div>
+<div class="diagram-box">LCD Driver</div>
+<div>↓</div>
+<div class="diagram-box">16x2 LCD</div>
+</div>
+
+<h3>Example Application Logic</h3>
+<pre><code>char key;
+
+key = Keypad_Scan();
+
+if (key != '\0')
+{
+    LCD_Command(0x80U);
+    LCD_String("KEY PRESSED:");
+
+    LCD_Command(0xC0U);
+    LCD_Data(key);
+}</code></pre>
+
+<p>
+The example assumes that the LCD driver from the previous lessons
+has already been initialized and that the keypad and LCD use
+non-conflicting GPIO pins.
+</p>
+
+<div class="warning-box">
+The keypad example uses P0.4-P0.9, P0.14 and P0.23. The LCD uses
+P0.10, P0.12, P0.13 and P0.15-P0.22. Check all PINSEL and GPIO
+assignments before combining the two drivers in one project.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>12. Common Keypad Interfacing Problems</h2>
+<table>
+<tr><th>Problem</th><th>Possible Cause</th></tr>
+<tr><td>No key detected</td><td>Incorrect GPIO direction or missing pull-ups</td></tr>
+<tr><td>Wrong character displayed</td><td>Incorrect row-column lookup table</td></tr>
+<tr><td>Multiple key detections</td><td>Contact bounce or repeated scanning</td></tr>
+<tr><td>Keys appear permanently pressed</td><td>Incorrect wiring or column input configuration</td></tr>
+<tr><td>Unstable key detection</td><td>Floating input lines or poor electrical connections</td></tr>
+<tr><td>Unexpected multiple-key results</td><td>Matrix ghosting or unsupported multi-key scanning</td></tr>
+<tr><td>LCD and keypad interfere</td><td>Conflicting GPIO pin assignments</td></tr>
+</table>
+</section>
+
+<section class="lesson-section">
+<h2>13. Applications of Keypad Interfacing</h2>
+<ul>
+<li>Password-based electronic door locks.</li>
+<li>Digital calculators.</li>
+<li>Industrial machine control panels.</li>
+<li>Menu-driven embedded systems.</li>
+<li>Data-entry terminals.</li>
+<li>Programmable timers and counters.</li>
+<li>Embedded configuration interfaces.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>14. Interview Questions and Answers</h2>
+
+<div class="question">
+<strong>Q1. What is a matrix keypad?</strong>
+<p>A matrix keypad arranges switches into rows and columns to reduce GPIO pin requirements.</p>
+</div>
+
+<div class="question">
+<strong>Q2. How many GPIO lines are required for a 4x4 keypad?</strong>
+<p>Four row lines plus four column lines, giving eight GPIO lines.</p>
+</div>
+
+<div class="question">
+<strong>Q3. What is keypad scanning?</strong>
+<p>It is the process of activating rows one at a time and reading column inputs to identify a pressed key.</p>
+</div>
+
+<div class="question">
+<strong>Q4. Why are pull-up resistors used?</strong>
+<p>They keep inactive column inputs at a defined HIGH logic level.</p>
+</div>
+
+<div class="question">
+<strong>Q5. What is switch debouncing?</strong>
+<p>It is the process of rejecting rapid unwanted transitions caused by mechanical contact bouncing.</p>
+</div>
+
+<div class="question">
+<strong>Q6. What is key mapping?</strong>
+<p>It converts a row-column index into the character assigned to that keypad position.</p>
+</div>
+
+<div class="question">
+<strong>Q7. What is keypad ghosting?</strong>
+<p>It is an ambiguous detection condition in which multiple pressed keys can create unintended row-column paths.</p>
+</div>
+
+<div class="question">
+<strong>Q8. What does a null character returned by a scanner indicate?</strong>
+<p>In this example, it indicates that no key was detected.</p>
+</div>
+
+<div class="question">
+<strong>Q9. Why should the program wait for key release?</strong>
+<p>It prevents one continuous press from being interpreted as repeated separate key presses.</p>
+</div>
+
+<div class="question">
+<strong>Q10. Can a keypad share GPIO pins with an LCD?</strong>
+<p>Only if the wiring and software are deliberately designed for sharing. The example drivers here use separate pin allocations.</p>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>15. Multiple-Choice Questions</h2>
+
+<div class="question">
+<p><strong>1. How many GPIO lines are required for a 4x4 keypad?</strong></p>
+<p>A. 4</p><p>B. 6</p><p>C. 8</p><p>D. 16</p>
+<strong>Answer: C. 8</strong>
+</div>
+
+<div class="question">
+<p><strong>2. What is the purpose of row scanning?</strong></p>
+<p>A. Generate PWM</p><p>B. Identify a pressed key</p><p>C. Configure ADC</p><p>D. Transmit UART data</p>
+<strong>Answer: B. Identify a pressed key</strong>
+</div>
+
+<div class="question">
+<p><strong>3. In active-LOW scanning, what indicates a pressed key?</strong></p>
+<p>A. Column HIGH</p><p>B. Column LOW</p><p>C. Row floating</p><p>D. Timer overflow</p>
+<strong>Answer: B. Column LOW</strong>
+</div>
+
+<div class="question">
+<p><strong>4. Which lines are usually configured as outputs in this scanning method?</strong></p>
+<p>A. Rows</p><p>B. Columns</p><p>C. Both always inputs</p><p>D. Neither</p>
+<strong>Answer: A. Rows</strong>
+</div>
+
+<div class="question">
+<p><strong>5. Which lines are configured as inputs?</strong></p>
+<p>A. Rows</p><p>B. Columns</p><p>C. LCD data bus</p><p>D. PWM outputs</p>
+<strong>Answer: B. Columns</strong>
+</div>
+
+<div class="question">
+<p><strong>6. What causes switch bouncing?</strong></p>
+<p>A. Clock frequency</p><p>B. Mechanical contact transitions</p><p>C. ADC resolution</p><p>D. UART baud rate</p>
+<strong>Answer: B. Mechanical contact transitions</strong>
+</div>
+
+<div class="question">
+<p><strong>7. What is keypad ghosting?</strong></p>
+<p>A. LCD contrast error</p><p>B. Ambiguous multiple-key detection</p><p>C. Timer reset</p><p>D. UART framing error</p>
+<strong>Answer: B. Ambiguous multiple-key detection</strong>
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>16. Practical Exercises</h2>
+<ol>
+<li>Draw the internal connection layout of a 4x4 keypad.</li>
+<li>Calculate the GPIO lines required for a 3x4 keypad.</li>
+<li>Configure four GPIO pins as row outputs.</li>
+<li>Configure four GPIO pins as column inputs.</li>
+<li>Write a program to scan the first row.</li>
+<li>Extend the scanner to all four rows.</li>
+<li>Create a row-column lookup table.</li>
+<li>Implement key debounce and release detection.</li>
+<li>Display the detected key on a 16x2 LCD.</li>
+<li>Design a basic keypad-based password-entry interface.</li>
+</ol>
+</section>
+
+<section class="lesson-section">
+<h2>17. Keil uVision Simulator Practice</h2>
+<ol>
+<li>Create an LPC2129 project in Keil uVision.</li>
+<li>Add the startup file and <code>LPC21xx.h</code>.</li>
+<li>Build the keypad scanning program.</li>
+<li>Inspect PINSEL0 and PINSEL1 configuration.</li>
+<li>Inspect IODIR0 row and column directions.</li>
+<li>Step through the row scanning loop.</li>
+<li>Inspect the column input mask.</li>
+<li>Check the lookup table and returned character.</li>
+<li>Test key-release and debounce logic using suitable simulated input support, if available.</li>
+</ol>
+
+<div class="warning-box">
+The standard Keil LPC2129 simulator may not provide a physical
+matrix keypad model or external switch stimulus. Do not assume that
+a key press can be simulated simply by writing to IOPIN0. Verify
+input stimulus support for the selected device model. Register
+inspection and program execution alone do not prove physical keypad
+operation.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>18. Lesson Summary</h2>
+<ul>
+<li>A matrix keypad organizes switches into rows and columns.</li>
+<li>A 4x4 keypad uses eight GPIO lines for 16 keys.</li>
+<li>Row-column scanning identifies the pressed key.</li>
+<li>Pull-up resistors establish defined inactive input levels.</li>
+<li>Key mapping converts row and column positions into characters.</li>
+<li>Debouncing rejects unwanted mechanical transitions.</li>
+<li>Key-release handling prevents repeated detection of one press.</li>
+<li>Multiple-key operation may require ghosting prevention.</li>
+<li>The LPC2129 GPIO interface can scan a matrix keypad.</li>
+<li>A keypad and LCD can form a simple embedded user interface.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>19. References</h2>
+<ul>
+<li>NXP LPC2129 User Manual, UM10114.</li>
+<li>LPC2000 GPIO and PINSEL documentation.</li>
+<li>Matrix keypad module datasheet.</li>
+<li>Keil MDK-ARM Documentation.</li>
+</ul>
+</section>
+
+<nav class="lesson-nav">
+<a href="L05_LCD_String_and_Number_Display.html">&larr; Previous Lesson</a>
+<a href="index.html">Chapter 17 Index</a>
+<a href="L07_Seven_Segment_Display_Interfacing.html">Next Lesson &rarr;</a>
+</nav>
+
+</main>
+</body>
+</html>
