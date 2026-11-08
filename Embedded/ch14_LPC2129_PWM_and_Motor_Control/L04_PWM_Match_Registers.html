@@ -1,1 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PWM Match Registers - Chapter 14</title>
+  <link rel="stylesheet" href="../../style.css">
+  <style>
+    .lesson-header {
+      background: linear-gradient(135deg, #174ea6, #2878d0);
+      color: white;
+      padding: 28px;
+      border-radius: 12px;
+      margin-bottom: 25px;
+    }
+    .lesson-header h1 { margin: 0 0 10px; font-size: 27px; }
+    .lesson-header p { margin: 0; line-height: 1.6; }
+    .content-section {
+      background: #fff;
+      padding: 22px;
+      margin: 22px 0;
+      border-radius: 10px;
+      box-shadow: 0 2px 9px rgba(0,0,0,.08);
+    }
+    .content-section h2 {
+      color: #174ea6;
+      border-bottom: 2px solid #e76f00;
+      padding-bottom: 8px;
+      margin-top: 0;
+    }
+    .content-section h3 { color: #2878d0; margin-top: 22px; }
+    .content-section p, .content-section li { line-height: 1.75; }
+    .content-section ul, .content-section ol { padding-left: 24px; }
+    .definition, .note, .success {
+      padding: 15px;
+      border-radius: 6px;
+      margin: 15px 0;
+    }
+    .definition { background: #eaf2ff; border-left: 5px solid #174ea6; }
+    .note { background: #fff4e5; border-left: 5px solid #e76f00; }
+    .success { background: #eaf7ee; border-left: 5px solid #238636; }
+    .formula {
+      background: #f3f6fa;
+      padding: 16px;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+      margin: 15px 0;
+      overflow-x: auto;
+    }
+    .diagram {
+      background: #f8fafc;
+      border: 1px solid #d7e0ec;
+      padding: 18px;
+      border-radius: 8px;
+      margin: 18px 0;
+      overflow-x: auto;
+    }
+    .diagram pre {
+      font-family: Consolas, monospace;
+      font-size: 14px;
+      line-height: 1.7;
+      white-space: pre;
+      margin: 0;
+    }
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 15px 0;
+      min-width: 520px;
+    }
+    th, td {
+      border: 1px solid #d5dce5;
+      padding: 11px;
+      text-align: left;
+    }
+    th { background: #174ea6; color: white; }
+    tr:nth-child(even) { background: #f4f7fb; }
+    .code-block {
+      background: #17212f;
+      color: #e6edf3;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-family: Consolas, monospace;
+      line-height: 1.6;
+    }
+    .question {
+      margin: 15px 0;
+      padding: 13px;
+      background: #f4f7fb;
+      border-radius: 7px;
+    }
+    .navigation {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 25px 0;
+    }
+    .navigation a {
+      display: inline-block;
+      padding: 11px 17px;
+      background: #174ea6;
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .navigation a:hover { background: #2878d0; }
+    @media(max-width:600px) {
+      .lesson-header h1 { font-size: 22px; }
+      .content-section { padding: 16px; }
+      .navigation { flex-direction: column; }
+      .navigation a { text-align: center; }
+    }
+  </style>
+</head>
+<body>
+<main class="container">
 
+  <header class="lesson-header">
+    <h1>Lesson 04: PWM Match Registers</h1>
+    <p>
+      Understand how LPC2129 PWM match registers control the
+      PWM period, output pulse width, edge positions, and
+      match-related actions.
+    </p>
+  </header>
+
+  <section class="content-section">
+    <h2>1. Learning Objectives</h2>
+    <p>After completing this lesson, you will be able to:</p>
+    <ul>
+      <li>Explain the purpose of PWM match registers.</li>
+      <li>Identify the functions of PWMMR0 to PWMMR6.</li>
+      <li>Understand how MR0 determines the PWM period.</li>
+      <li>Calculate PWM frequency using the timer tick and MR0.</li>
+      <li>Calculate duty cycle using a channel match value.</li>
+      <li>Understand match events and their control actions.</li>
+      <li>Explain match-register pairings in single-edge and double-edge modes.</li>
+      <li>Program basic match-register values in Embedded C.</li>
+    </ul>
+  </section>
+
+  <section class="content-section">
+    <h2>2. Introduction to PWM Match Registers</h2>
+    <p>
+      Match registers are programmable registers used by the
+      LPC2129 PWM peripheral to determine when specific events
+      occur during a PWM cycle.
+    </p>
+    <p>
+      The PWM timer counter (PWMTC) continuously increments
+      according to the peripheral clock and prescaler. Its
+      current value is compared with the programmed match
+      register values.
+    </p>
+    <div class="definition">
+      <strong>Definition:</strong>
+      A PWM match register stores a timer count value. When
+      PWMTC reaches that value, the PWM peripheral recognizes
+      a match event and performs the configured action.
+    </div>
+    <p>
+      The LPC2129 provides seven match registers:
+      PWMMR0, PWMMR1, PWMMR2, PWMMR3, PWMMR4, PWMMR5,
+      and PWMMR6.
+    </p>
+  </section>
+
+  <section class="content-section">
+    <h2>3. Match Register Architecture</h2>
+    <div class="diagram">
+      <pre>
+                 PWM Timer Counter
+                       PWMTC
+                         |
+             +-----------+-----------+
+             |           |           |
+             v           v           v
+           MR0         MR1         MR2
+             |           |           |
+             +-----------+-----------+
+                         |
+                  Match Comparators
+                         |
+             +-----------+-----------+
+             |           |           |
+             v           v           v
+           MR3         MR4         MR5
+                         |
+                        MR6
+                         |
+                         v
+                 PWM Match Events
+                         |
+             +-----------+-----------+
+             |           |           |
+             v           v           v
+          PWM Output   Interrupt   Timer Reset/
+            Logic       Flag       Stop Action
+      </pre>
+    </div>
+    <p>
+      Each match register can be compared against PWMTC.
+      The result of a match is used by the PWM control logic
+      and the match-control configuration.
+    </p>
+  </section>
+
+  <section class="content-section">
+    <h2>4. PWMMR0 – PWM Period Register</h2>
+    <p>
+      PWMMR0 is the primary period match register. It establishes
+      the timer count at which the PWM cycle is restarted when
+      the MR0 reset action is enabled.
+    </p>
+    <p>
+      The timer counter counts upward. When PWMTC matches MR0,
+      the configured reset action resets the counter and begins
+      another PWM period.
+    </p>
+
+    <h3>Example</h3>
+    <div class="code-block">
+PWMMR0 = 1000U;
+PWMMCR = (1U << 1);  /* Reset PWMTC on MR0 match */
+    </div>
+    <p>
+      If the timer tick interval is 1 microsecond, MR0 = 1000
+      gives a nominal PWM period of approximately 1 millisecond.
+    </p>
+
+    <div class="formula">
+      PWM Period ≈ MR0 × Timer Tick Interval
+    </div>
+    <div class="formula">
+      PWM Frequency ≈ 1 / PWM Period
+    </div>
+    <div class="note">
+      The equations describe the nominal timer-count relationship.
+      Exact boundary timing depends on the counter's starting
+      state and the peripheral's match/reset sequence.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>5. PWMMR1 to PWMMR6 – Channel Match Registers</h2>
+    <p>
+      The channel match registers determine the positions of
+      PWM output transitions within the period.
+    </p>
+    <p>
+      In single-edge mode, MR0 establishes the beginning of
+      each PWM cycle. The corresponding channel match register
+      determines when the output becomes LOW.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Register</th>
+          <th>Single-Edge Channel</th>
+          <th>Function</th>
+        </tr>
+        <tr>
+          <td>PWMMR1</td>
+          <td>PWM1</td>
+          <td>Sets PWM1 falling-edge position.</td>
+        </tr>
+        <tr>
+          <td>PWMMR2</td>
+          <td>PWM2</td>
+          <td>Sets PWM2 falling-edge position.</td>
+        </tr>
+        <tr>
+          <td>PWMMR3</td>
+          <td>PWM3</td>
+          <td>Sets PWM3 falling-edge position.</td>
+        </tr>
+        <tr>
+          <td>PWMMR4</td>
+          <td>PWM4</td>
+          <td>Sets PWM4 falling-edge position.</td>
+        </tr>
+        <tr>
+          <td>PWMMR5</td>
+          <td>PWM5</td>
+          <td>Sets PWM5 falling-edge position.</td>
+        </tr>
+        <tr>
+          <td>PWMMR6</td>
+          <td>PWM6</td>
+          <td>Sets PWM6 falling-edge position.</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="note">
+      In double-edge mode, channels 2 to 6 use two match values
+      to define their two edge positions. MR0 remains reserved
+      for the common PWM period. PWM1 does not support independent
+      double-edge positioning.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>6. Match Event Operation</h2>
+    <p>
+      A match event occurs when the timer counter reaches the
+      value stored in a match register.
+    </p>
+    <p>
+      For example, if:
+    </p>
+    <ul>
+      <li>PWMTC starts at zero.</li>
+      <li>PWMMR0 = 1000.</li>
+      <li>PWMMR1 = 250.</li>
+    </ul>
+    <p>
+      The PWM1 match event occurs when the timer reaches 250,
+      and the MR0 period event occurs when the timer reaches
+      1000.
+    </p>
+
+    <div class="diagram">
+      <pre>
+Timer count:
+
+0             250                         1000
+|--------------|----------------------------|
+               ^                            ^
+               |                            |
+          MR1 match                      MR0 match
+          PWM1 LOW                       Period reset
+
+PWM1 output:
+
+HIGH           LOW
+|--------------|----------------------------|
+      250 counts       Remaining period
+      </pre>
+    </div>
+
+    <p>
+      This illustrates the basic single-edge concept. The exact
+      output transition behavior is controlled by the PWM
+      peripheral's match and output-control logic.
+    </p>
+  </section>
+
+  <section class="content-section">
+    <h2>7. PWM Match Control Register (PWMMCR)</h2>
+    <p>
+      PWMMCR determines whether a match event generates an
+      interrupt, resets the timer, or stops the timer.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Match</th>
+          <th>Interrupt</th>
+          <th>Reset</th>
+          <th>Stop</th>
+        </tr>
+        <tr><td>MR0</td><td>Bit 0</td><td>Bit 1</td><td>Bit 2</td></tr>
+        <tr><td>MR1</td><td>Bit 3</td><td>Bit 4</td><td>Bit 5</td></tr>
+        <tr><td>MR2</td><td>Bit 6</td><td>Bit 7</td><td>Bit 8</td></tr>
+        <tr><td>MR3</td><td>Bit 9</td><td>Bit 10</td><td>Bit 11</td></tr>
+        <tr><td>MR4</td><td>Bit 12</td><td>Bit 13</td><td>Bit 14</td></tr>
+        <tr><td>MR5</td><td>Bit 15</td><td>Bit 16</td><td>Bit 17</td></tr>
+        <tr><td>MR6</td><td>Bit 18</td><td>Bit 19</td><td>Bit 20</td></tr>
+      </table>
+    </div>
+
+    <h3>Example 1: Reset on MR0 Match</h3>
+    <div class="code-block">
+PWMMCR = (1U << 1);
+    </div>
+
+    <h3>Example 2: Interrupt and Reset on MR0 Match</h3>
+    <div class="code-block">
+PWMMCR = (1U << 0) | (1U << 1);
+    </div>
+
+    <h3>Example 3: Stop on MR0 Match</h3>
+    <div class="code-block">
+PWMMCR = (1U << 2);
+    </div>
+
+    <div class="note">
+      For continuous PWM operation, resetting the counter on
+      MR0 is commonly used. Enabling the stop action on MR0
+      instead stops the timer when that match occurs.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>8. PWM Period and Frequency Calculation</h2>
+    <p>
+      The timer tick interval is determined by PCLK and PWMPR.
+    </p>
+    <div class="formula">
+      Timer Tick = (PWMPR + 1) / PCLK
+    </div>
+    <p>
+      The nominal PWM period is then determined by the MR0
+      count value.
+    </p>
+    <div class="formula">
+      PWM Period ≈ MR0 × Timer Tick
+    </div>
+    <div class="formula">
+      PWM Frequency ≈ PCLK / [(PWMPR + 1) × MR0]
+    </div>
+
+    <h3>Numerical Example</h3>
+    <p>Given:</p>
+    <ul>
+      <li>PCLK = 15 MHz.</li>
+      <li>PWMPR = 14.</li>
+      <li>PWMMR0 = 1000.</li>
+    </ul>
+
+    <p>Timer tick frequency:</p>
+    <div class="formula">
+      15,000,000 / 15 = 1,000,000 Hz
+    </div>
+
+    <p>Timer tick interval:</p>
+    <div class="formula">
+      1 / 1,000,000 = 1 µs
+    </div>
+
+    <p>Nominal PWM period:</p>
+    <div class="formula">
+      1000 × 1 µs = 1 ms
+    </div>
+
+    <p>Nominal PWM frequency:</p>
+    <div class="formula">
+      1 / 0.001 = 1000 Hz = 1 kHz
+    </div>
+
+    <div class="success">
+      The configuration produces a nominal 1 kHz PWM period.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>9. Duty Cycle Calculation Using Match Registers</h2>
+    <p>
+      Duty cycle is the percentage of one PWM period during
+      which the output remains HIGH.
+    </p>
+    <div class="formula">
+      Duty Cycle = (HIGH Time / Total Period) × 100
+    </div>
+    <p>
+      In single-edge mode, when MR0 defines the period and the
+      channel match register defines the falling edge:
+    </p>
+    <div class="formula">
+      Duty Cycle ≈ (Channel Match / MR0) × 100
+    </div>
+
+    <h3>Example 1: 25% Duty Cycle</h3>
+    <div class="code-block">
+PWMMR0 = 1000U;
+PWMMR1 = 250U;
+    </div>
+    <div class="formula">
+      Duty Cycle ≈ (250 / 1000) × 100 = 25%
+    </div>
+
+    <h3>Example 2: 50% Duty Cycle</h3>
+    <div class="code-block">
+PWMMR0 = 1000U;
+PWMMR1 = 500U;
+    </div>
+    <div class="formula">
+      Duty Cycle ≈ (500 / 1000) × 100 = 50%
+    </div>
+
+    <h3>Example 3: 75% Duty Cycle</h3>
+    <div class="code-block">
+PWMMR0 = 1000U;
+PWMMR1 = 750U;
+    </div>
+    <div class="formula">
+      Duty Cycle ≈ (750 / 1000) × 100 = 75%
+    </div>
+
+    <div class="note">
+      These calculations assume normal single-edge operation
+      and a channel match value between zero and the period
+      match. Boundary values and special output states should
+      be checked against the device manual.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>10. Match Register Updates and PWMLER</h2>
+    <p>
+      When software changes a match-register value, the new
+      value must be transferred into the active PWM match
+      register using the corresponding PWMLER bit.
+    </p>
+    <p>
+      This mechanism allows updates to occur at a controlled
+      PWM boundary rather than changing the active timing
+      in the middle of a cycle.
+    </p>
+
+    <h3>Example: Change PWM1 Duty Cycle</h3>
+    <div class="code-block">
+/* Existing period */
+PWMMR0 = 1000U;
+
+/* New PWM1 pulse-width match */
+PWMMR1 = 600U;
+
+/* Request MR1 update */
+PWMLER = (1U << 1);
+    </div>
+    <p>
+      The new MR1 value is requested for transfer at the
+      appropriate PWM latch point.
+    </p>
+
+    <div class="note">
+      If multiple match values must change together, write all
+      required values first and then set all corresponding
+      latch bits in one PWMLER write.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>11. Single-Edge and Double-Edge Match Pairing</h2>
+    <h3>Single-Edge Mode</h3>
+    <p>
+      In single-edge mode, MR0 defines the common period and
+      each enabled channel uses its corresponding match register
+      to determine the falling-edge position.
+    </p>
+
+    <h3>Double-Edge Mode</h3>
+    <p>
+      In double-edge mode, the PWM output can have independently
+      positioned rising and falling edges within a PWM period.
+      This is useful when pulse placement must be controlled
+      separately from the period boundary.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Channel</th>
+          <th>Single-Edge Match</th>
+          <th>Double-Edge Match Pair</th>
+        </tr>
+        <tr><td>PWM1</td><td>MR1</td><td>Not independently supported</td></tr>
+        <tr><td>PWM2</td><td>MR2</td><td>MR1 and MR2</td></tr>
+        <tr><td>PWM3</td><td>MR3</td><td>MR2 and MR3</td></tr>
+        <tr><td>PWM4</td><td>MR4</td><td>MR3 and MR4</td></tr>
+        <tr><td>PWM5</td><td>MR5</td><td>MR4 and MR5</td></tr>
+        <tr><td>PWM6</td><td>MR6</td><td>MR5 and MR6</td></tr>
+      </table>
+    </div>
+
+    <p>
+      The double-edge match pairing uses adjacent match registers.
+      The exact output transition behavior and edge ordering
+      must be configured according to the PWM peripheral
+      specification.
+    </p>
+  </section>
+
+  <section class="content-section">
+    <h2>12. Embedded C Program: Configure PWM1 Match Values</h2>
+    <p>
+      The following example configures PWM1 for a nominal
+      1 kHz output with approximately 25% duty cycle.
+    </p>
+
+    <div class="code-block">
+#include &lt;LPC21xx.h&gt;
+
+void PWM1_Init(void)
+{
+    /* Reset PWM timer */
+    PWMTCR = (1U << 1);
+
+    /* Configure 1 MHz timer tick */
+    PWMPR = 14U;
+    PWMPC = 0U;
+    PWMTC = 0U;
+
+    /* Configure period and pulse width */
+    PWMMR0 = 1000U;
+    PWMMR1 = 250U;
+
+    /* Reset counter on MR0 match */
+    PWMMCR = (1U << 1);
+
+    /* Enable PWM1 output */
+    PWMPCR = (1U << 9);
+
+    /* Latch MR0 and MR1 */
+    PWMLER = (1U << 0) | (1U << 1);
+
+    /* Enable timer and PWM mode */
+    PWMTCR = (1U << 0) | (1U << 3);
+}
+
+int main(void)
+{
+    PWM1_Init();
+
+    while (1)
+    {
+        /* PWM hardware controls the output */
+    }
+}
+    </div>
+
+    <h3>Program Explanation</h3>
+    <ol>
+      <li>Reset the PWM timer.</li>
+      <li>Configure PWMPR for a 1 MHz timer tick.</li>
+      <li>Set MR0 to 1000 for the nominal period.</li>
+      <li>Set MR1 to 250 for the PWM1 falling-edge position.</li>
+      <li>Configure MR0 reset action in PWMMCR.</li>
+      <li>Enable PWM1 through PWMPCR.</li>
+      <li>Request MR0 and MR1 latch updates.</li>
+      <li>Enable the PWM timer and PWM mode.</li>
+    </ol>
+
+    <div class="note">
+      This is a peripheral-register example. Configure the
+      correct PWM1 pin function through PINSEL before expecting
+      the waveform on a physical pin. The exact pin assignment
+      must be checked against the LPC2129 pin-multiplexing table.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>13. Practical Applications of Match Registers</h2>
+    <ul>
+      <li>DC motor speed control using PWM duty-cycle adjustment.</li>
+      <li>LED brightness control.</li>
+      <li>Power converter switching control.</li>
+      <li>Servo control pulse generation, subject to timing requirements.</li>
+      <li>Multiple PWM output generation with different pulse widths.</li>
+      <li>Controlled pulse positioning in embedded applications.</li>
+    </ul>
+    <div class="note">
+      A microcontroller PWM pin cannot drive a motor directly.
+      Physical motor control requires an appropriate driver
+      stage, external power supply, and protection circuitry.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>14. Keil uVision Simulator Practice</h2>
+    <p><strong>Objective:</strong> Inspect PWM match-register configuration.</p>
+    <ol>
+      <li>Open the LPC2129 Keil project.</li>
+      <li>Add the PWM1 initialization function.</li>
+      <li>Build the project.</li>
+      <li>Start a debugging session.</li>
+      <li>Execute the program through PWM1_Init().</li>
+      <li>Inspect PWMPR and PWMTC.</li>
+      <li>Inspect PWMMR0 and PWMMR1.</li>
+      <li>Inspect PWMMCR and PWMPCR.</li>
+      <li>Inspect PWMLER after initialization.</li>
+      <li>Check whether the selected simulator model supports PWM peripheral operation.</li>
+    </ol>
+
+    <h3>Expected Configuration Values</h3>
+    <div class="table-wrap">
+      <table>
+        <tr><th>Register</th><th>Expected Written Value</th></tr>
+        <tr><td>PWMPR</td><td>14</td></tr>
+        <tr><td>PWMMR0</td><td>1000</td></tr>
+        <tr><td>PWMMR1</td><td>250</td></tr>
+        <tr><td>PWMMCR</td><td>0x02</td></tr>
+        <tr><td>PWMPCR</td><td>0x0200</td></tr>
+        <tr><td>PWMLER</td><td>0x03</td></tr>
+        <tr><td>PWMTCR</td><td>0x09</td></tr>
+      </table>
+    </div>
+
+    <div class="note">
+      Register values demonstrate the software configuration.
+      They do not establish that a physical PWM waveform has
+      been generated. Simulator support for the PWM peripheral
+      and waveform display depends on the selected device model.
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>15. Common Mistakes</h2>
+    <ul>
+      <li>Using CCLK instead of PCLK for timer calculations.</li>
+      <li>Ignoring the PWMPR + 1 relationship.</li>
+      <li>Programming MR0 without enabling its reset action.</li>
+      <li>Using a channel match value greater than the period value.</li>
+      <li>Forgetting to enable the PWM channel in PWMPCR.</li>
+      <li>Forgetting to set the relevant PWMLER latch bit.</li>
+      <li>Confusing match-register values with microseconds without calculating the timer tick.</li>
+      <li>Assuming all channels support double-edge operation independently.</li>
+      <li>Assuming PWM register configuration automatically selects the physical output pin.</li>
+    </ul>
+  </section>
+
+  <section class="content-section">
+    <h2>16. Interview Questions and Answers</h2>
+
+    <h3>Q1. How many match registers are available in LPC2129 PWM?</h3>
+    <p>Seven match registers, MR0 through MR6.</p>
+
+    <h3>Q2. What is the main purpose of MR0?</h3>
+    <p>MR0 establishes the PWM period and repetition rate.</p>
+
+    <h3>Q3. Which register determines the PWM1 falling edge in single-edge mode?</h3>
+    <p>PWMMR1.</p>
+
+    <h3>Q4. What happens when PWMTC equals MR0?</h3>
+    <p>
+      The MR0 match event occurs. The configured match-control
+      action can reset the counter, generate an interrupt,
+      or stop the timer.
+    </p>
+
+    <h3>Q5. Which register controls match actions?</h3>
+    <p>PWMMCR.</p>
+
+    <h3>Q6. Which register enables PWM output channels?</h3>
+    <p>PWMPCR.</p>
+
+    <h3>Q7. What is the purpose of PWMLER?</h3>
+    <p>It requests synchronized transfer of new match-register values.</p>
+
+    <h3>Q8. How is PWM frequency calculated?</h3>
+    <p>
+      First calculate the timer tick from PCLK and PWMPR.
+      Then calculate the nominal period using MR0 and take
+      its reciprocal.
+    </p>
+
+    <h3>Q9. Can PWM1 use independent double-edge positioning?</h3>
+    <p>
+      No. MR0 is reserved for the common PWM period, so PWM1
+      does not have the independent double-edge match pair
+      available to channels 2 through 6.
+    </p>
+
+    <h3>Q10. Why are match-register updates latched?</h3>
+    <p>
+      To synchronize new timing values with a PWM cycle boundary
+      and avoid unintended mid-cycle changes.
+    </p>
+  </section>
+
+  <section class="content-section">
+    <h2>17. Multiple Choice Questions</h2>
+
+    <div class="question">
+      <p><strong>1. How many PWM match registers are available?</strong></p>
+      <ol type="A"><li>4</li><li>5</li><li>6</li><li>7</li></ol>
+      <p><strong>Answer:</strong> D - 7</p>
+    </div>
+
+    <div class="question">
+      <p><strong>2. Which match register establishes the PWM period?</strong></p>
+      <ol type="A"><li>MR0</li><li>MR1</li><li>MR4</li><li>MR6</li></ol>
+      <p><strong>Answer:</strong> A - MR0</p>
+    </div>
+
+    <div class="question">
+      <p><strong>3. Which register controls match interrupt, reset, and stop actions?</strong></p>
+      <ol type="A"><li>PWMPCR</li><li>PWMMCR</li><li>PWMLER</li><li>PWMPR</li></ol>
+      <p><strong>Answer:</strong> B - PWMMCR</p>
+    </div>
+
+    <div class="question">
+      <p><strong>4. Which register requests a new match value to be latched?</strong></p>
+      <ol type="A"><li>PWMTC</li><li>PWMPC</li><li>PWMLER</li><li>PWMTCR</li></ol>
+      <p><strong>Answer:</strong> C - PWMLER</p>
+    </div>
+
+    <div class="question">
+      <p><strong>5. If the timer tick is 1 µs and MR0 is 1000, what is the nominal PWM frequency?</strong></p>
+      <ol type="A"><li>100 Hz</li><li>500 Hz</li><li>1 kHz</li><li>10 kHz</li></ol>
+      <p><strong>Answer:</strong> C - 1 kHz</p>
+    </div>
+
+    <div class="question">
+      <p><strong>6. If MR0 = 1000 and MR1 = 500, what is the nominal PWM1 duty cycle?</strong></p>
+      <ol type="A"><li>25%</li><li>50%</li><li>75%</li><li>100%</li></ol>
+      <p><strong>Answer:</strong> B - 50%</p>
+    </div>
+  </section>
+
+  <section class="content-section">
+    <h2>18. Practice Exercises</h2>
+    <ol>
+      <li>Explain the function of all seven PWM match registers.</li>
+      <li>Describe how MR0 controls the PWM period.</li>
+      <li>Calculate the timer tick for PCLK = 15 MHz and PWMPR = 14.</li>
+      <li>Calculate the nominal PWM frequency for MR0 = 2000 using the timer tick from Exercise 3.</li>
+      <li>Calculate duty cycle when MR0 = 2000 and MR1 = 500.</li>
+      <li>Write a program to configure PWM1 for 25% duty cycle.</li>
+      <li>Explain the three match actions controlled by PWMMCR.</li>
+      <li>Explain why PWMLER is required when changing match values.</li>
+      <li>Compare single-edge and double-edge match-register usage.</li>
+      <li>List the register checks required when PWM output is not observed.</li>
+    </ol>
+  </section>
+
+  <section class="content-section">
+    <h2>19. Lesson Summary</h2>
+    <ul>
+      <li>LPC2129 PWM provides seven match registers, MR0 to MR6.</li>
+      <li>MR0 establishes the common PWM period.</li>
+      <li>MR1 to MR6 control channel edge positions.</li>
+      <li>PWMTC is continuously compared with match values.</li>
+      <li>PWMMCR configures interrupt, reset, and stop actions.</li>
+      <li>PWMLER synchronizes new match-register values.</li>
+      <li>PWM frequency depends on PCLK, PWMPR, and MR0.</li>
+      <li>Single-edge duty cycle depends on the channel match position.</li>
+      <li>Double-edge mode uses adjacent match-register pairs for channels 2 to 6.</li>
+    </ul>
+  </section>
+
+  <section class="content-section">
+    <h2>20. References</h2>
+    <ul>
+      <li>NXP UM10114 - LPC21xx and LPC22xx User Manual, PWM chapter.</li>
+      <li>NXP LPC2129 Datasheet - PWM pin multiplexing and electrical specifications.</li>
+      <li>Keil MDK and uVision documentation.</li>
+    </ul>
+    <p>
+      <a href="https://www.nxp.com/docs/en/user-guide/UM10114.pdf"
+         target="_blank" rel="noopener">
+        NXP UM10114 User Manual
+      </a>
+    </p>
+  </section>
+
+  <nav class="navigation">
+    <a href="L03_LPC2129_PWM_Architecture.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 14 Index</a>
+    <a href="L05_PWM_Period_and_Pulse_Width_Configuration.html">
+      Next: PWM Period and Pulse Width →
+    </a>
+  </nav>
+
+</main>
+</body>
+</html>
