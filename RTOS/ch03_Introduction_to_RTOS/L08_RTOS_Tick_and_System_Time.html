@@ -1,1 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 08: RTOS Tick and System Time</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-container {
+            max-width: 1050px;
+            margin: 30px auto;
+            padding: 25px;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        .lesson-header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 28px 15px;
+            border-radius: 10px;
+        }
+        .lesson-header h1 { margin: 0; }
+        .lesson-header p { margin-bottom: 0; }
+        .lesson-nav {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 22px;
+            padding: 15px;
+            background: #f0f5fc;
+            border-radius: 8px;
+            margin: 18px 0;
+        }
+        .lesson-nav a {
+            color: #174ea6;
+            font-weight: bold;
+            text-decoration: none;
+        }
+        .lesson-nav a:hover { text-decoration: underline; }
+        .lesson-section { margin: 28px 0; }
+        .lesson-section h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #d5e5fa;
+            padding-bottom: 8px;
+        }
+        .lesson-section h3 { color: #245b9e; }
+        .info-box {
+            background: #edf5ff;
+            border-left: 5px solid #2878d7;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .warning-box {
+            background: #fff5e8;
+            border-left: 5px solid #e69b28;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .table-wrap { overflow-x: auto; }
+        .lesson-container table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        .lesson-container th,
+        .lesson-container td {
+            border: 1px solid #d5dce5;
+            padding: 11px;
+            text-align: left;
+        }
+        .lesson-container th {
+            background: #eaf2fc;
+            color: #174ea6;
+        }
+        .lesson-container pre {
+            background: #172235;
+            color: #e8f0ff;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            line-height: 1.5;
+        }
+        .lesson-container code { font-family: Consolas, monospace; }
+        .lesson-summary {
+            background: #f1f7ff;
+            padding: 18px;
+            border-radius: 8px;
+        }
+        .lesson-navigation-bottom {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 35px;
+        }
+        .lesson-navigation-bottom a {
+            display: inline-block;
+            background: #174ea6;
+            color: white;
+            padding: 11px 17px;
+            border-radius: 6px;
+            text-decoration: none;
+        }
+        .lesson-navigation-bottom a:hover { background: #0e3678; }
+        @media (max-width: 650px) {
+            .lesson-container { margin: 12px; padding: 16px; }
+            .lesson-navigation-bottom { flex-direction: column; }
+            .lesson-navigation-bottom a { text-align: center; }
+        }
+    </style>
+</head>
+<body>
 
+<header class="lesson-header">
+    <h1>Chapter 3: Introduction to RTOS</h1>
+    <p>Lesson 08 – RTOS Tick and System Time</p>
+</header>
+
+<nav class="lesson-nav">
+    <a href="../../index.html">Home</a>
+    <a href="../rtos.html">RTOS &amp; FreeRTOS Course</a>
+    <a href="index.html">Chapter 3</a>
+</nav>
+
+<main class="lesson-container">
+
+    <section class="lesson-section">
+        <h2>1. Learning Objectives</h2>
+        <p>After completing this lesson, you will be able to:</p>
+        <ul>
+            <li>Understand the RTOS system tick.</li>
+            <li>Explain the purpose of a tick interrupt.</li>
+            <li>Understand tick rate and tick period.</li>
+            <li>Calculate the tick interval for different tick frequencies.</li>
+            <li>Understand how an RTOS maintains system time.</li>
+            <li>Explain task delays and periodic execution.</li>
+            <li>Understand tick resolution and timing accuracy.</li>
+            <li>Describe tickless idle operation.</li>
+            <li>Understand FreeRTOS tick-related configuration.</li>
+        </ul>
+    </section>
+
+    <section class="lesson-section">
+        <h2>2. Introduction to RTOS System Time</h2>
+        <p>An RTOS requires a time reference to manage task delays, timeouts, periodic operations, and scheduling decisions.</p>
+
+        <p>The kernel maintains a system time value that advances as timer events occur.</p>
+
+        <p>In a tick-based RTOS, this time reference is commonly updated by a periodic hardware timer interrupt called the <strong>system tick interrupt</strong>.</p>
+
+        <h3>Why Does an RTOS Need System Time?</h3>
+        <ul>
+            <li>To delay tasks for specified periods.</li>
+            <li>To wake blocked tasks after a timeout.</li>
+            <li>To execute periodic application activities.</li>
+            <li>To manage software timers.</li>
+            <li>To determine when time-based scheduling operations are required.</li>
+            <li>To maintain elapsed kernel time.</li>
+        </ul>
+
+        <div class="info-box">
+            The RTOS system tick is a kernel timing mechanism. It is not necessarily the same as a calendar clock or real-time clock (RTC) that stores date and time.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>3. What Is a System Tick?</h2>
+        <p>A <strong>system tick</strong> is a periodic timing event used by a tick-based RTOS to maintain its kernel time reference.</p>
+
+        <p>A hardware timer generates an interrupt at regular intervals. The RTOS tick handler updates the kernel tick count and processes time-dependent kernel operations.</p>
+
+        <h3>System Tick Architecture</h3>
+        <pre><code>+---------------------------+
+|       Hardware Timer      |
++---------------------------+
+             |
+             v
++---------------------------+
+|   Periodic Timer Event    |
++---------------------------+
+             |
+             v
++---------------------------+
+|    Tick Interrupt (ISR)   |
++---------------------------+
+             |
+             v
++---------------------------+
+|     RTOS Tick Handler     |
+|                           |
+| Increment Tick Count      |
+| Check Task Delays         |
+| Process Timeouts          |
+| Update Scheduling State  |
++---------------------------+
+             |
+             v
++---------------------------+
+|  Scheduler Decision       |
++---------------------------+</code></pre>
+
+        <p>The exact operations performed by the tick handler depend on the RTOS implementation and configuration.</p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>4. Tick Frequency</h2>
+        <p><strong>Tick frequency</strong> is the number of system tick events generated in one second.</p>
+
+        <p>It is measured in Hertz (Hz).</p>
+
+        <h3>Common Tick Frequencies</h3>
+        <table>
+            <tr>
+                <th>Tick Frequency</th>
+                <th>Tick Period</th>
+            </tr>
+            <tr>
+                <td>100 Hz</td>
+                <td>10 ms</td>
+            </tr>
+            <tr>
+                <td>250 Hz</td>
+                <td>4 ms</td>
+            </tr>
+            <tr>
+                <td>500 Hz</td>
+                <td>2 ms</td>
+            </tr>
+            <tr>
+                <td>1000 Hz</td>
+                <td>1 ms</td>
+            </tr>
+        </table>
+
+        <h3>Tick Period Formula</h3>
+        <p>The time between consecutive tick events is:</p>
+
+        \[
+        T_{tick} = \frac{1}{f_{tick}}
+        \]
+
+        <p>Where:</p>
+        <ul>
+            <li><code>Ttick</code> = tick period in seconds.</li>
+            <li><code>ftick</code> = tick frequency in Hertz.</li>
+        </ul>
+
+        <h3>Example 1</h3>
+        <p>Calculate the tick period for a tick frequency of 1000 Hz.</p>
+
+        <pre><code>Tick Frequency = 1000 Hz
+
+Tick Period = 1 / 1000
+            = 0.001 seconds
+            = 1 ms</code></pre>
+
+        <h3>Example 2</h3>
+        <p>Calculate the tick frequency if the tick period is 5 ms.</p>
+
+        <pre><code>Tick Period = 5 ms
+            = 0.005 seconds
+
+Frequency = 1 / 0.005
+          = 200 Hz</code></pre>
+    </section>
+
+    <section class="lesson-section">
+        <h2>5. Tick Interrupt</h2>
+        <p>A timer interrupt is generated whenever the configured hardware timer reaches its programmed event condition.</p>
+
+        <p>The processor transfers execution to the interrupt handler, which performs the required tick processing.</p>
+
+        <h3>Basic Tick Interrupt Sequence</h3>
+        <ol>
+            <li>Configure a hardware timer.</li>
+            <li>Set the required timer period.</li>
+            <li>Enable the timer interrupt.</li>
+            <li>The timer reaches its match or overflow condition.</li>
+            <li>The processor enters the interrupt handler.</li>
+            <li>The RTOS updates its tick count.</li>
+            <li>Time-dependent task states are examined.</li>
+            <li>The processor returns to the appropriate execution context.</li>
+        </ol>
+
+        <div class="warning-box">
+            A tick interrupt does not necessarily cause a task context switch. A switch occurs only when required by the scheduler and supported by the configured scheduling policy.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>6. RTOS System Tick Counter</h2>
+        <p>The RTOS maintains a numerical counter representing the number of tick events that have occurred.</p>
+
+        <p>For example, if the tick frequency is 1000 Hz, approximately 1000 tick increments occur in one second.</p>
+
+        <h3>Example</h3>
+        <table>
+            <tr>
+                <th>Tick Count</th>
+                <th>Elapsed Time at 1000 Hz</th>
+            </tr>
+            <tr><td>100</td><td>100 ms</td></tr>
+            <tr><td>250</td><td>250 ms</td></tr>
+            <tr><td>500</td><td>500 ms</td></tr>
+            <tr><td>1000</td><td>1 second</td></tr>
+            <tr><td>5000</td><td>5 seconds</td></tr>
+        </table>
+
+        <h3>Elapsed Time Formula</h3>
+        \[
+        t = \frac{N}{f_{tick}}
+        \]
+
+        <p>Where:</p>
+        <ul>
+            <li><code>t</code> = elapsed time in seconds.</li>
+            <li><code>N</code> = number of elapsed ticks.</li>
+            <li><code>ftick</code> = tick frequency in Hertz.</li>
+        </ul>
+
+        <h3>Example</h3>
+        <pre><code>Tick Count = 2500
+Tick Rate  = 1000 Hz
+
+Elapsed Time = 2500 / 1000
+             = 2.5 seconds</code></pre>
+    </section>
+
+    <section class="lesson-section">
+        <h2>7. Task Delay Using System Tick</h2>
+        <p>An RTOS can use the system tick to manage task delays.</p>
+
+        <p>When a task requests a delay, the kernel moves it from the Running state to the Blocked state for the specified duration.</p>
+
+        <h3>Task Delay Sequence</h3>
+        <pre><code>+-----------------------+
+|       Task Running    |
++-----------------------+
+            |
+            v
++-----------------------+
+|   Request Task Delay  |
++-----------------------+
+            |
+            v
++-----------------------+
+|    Task Blocked       |
++-----------------------+
+            |
+            v
++-----------------------+
+| Delay Period Expires  |
++-----------------------+
+            |
+            v
++-----------------------+
+|      Task Ready       |
++-----------------------+
+            |
+            v
++-----------------------+
+| Task Scheduled Again  |
++-----------------------+</code></pre>
+
+        <h3>FreeRTOS Example</h3>
+        <pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        Read_Sensor();
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}</code></pre>
+
+        <p>The task requests a delay of approximately 100 milliseconds. It becomes eligible to run after the delay expires, but actual execution depends on scheduler state and task priority.</p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>8. Tick Resolution</h2>
+        <p><strong>Tick resolution</strong> is the smallest time interval represented by one tick in a tick-based timing mechanism.</p>
+
+        <p>For example, a 1000 Hz tick rate has a nominal resolution of 1 ms.</p>
+
+        <table>
+            <tr>
+                <th>Tick Rate</th>
+                <th>Nominal Resolution</th>
+            </tr>
+            <tr><td>100 Hz</td><td>10 ms</td></tr>
+            <tr><td>250 Hz</td><td>4 ms</td></tr>
+            <tr><td>500 Hz</td><td>2 ms</td></tr>
+            <tr><td>1000 Hz</td><td>1 ms</td></tr>
+        </table>
+
+        <h3>Higher Tick Rate</h3>
+        <ul>
+            <li>Provides finer tick-based timing granularity.</li>
+            <li>Can support shorter tick-based delays.</li>
+            <li>Increases the frequency of tick interrupt processing.</li>
+            <li>May increase CPU overhead and power consumption.</li>
+        </ul>
+
+        <h3>Lower Tick Rate</h3>
+        <ul>
+            <li>Reduces the number of periodic tick interrupts.</li>
+            <li>Can reduce timing-related CPU overhead.</li>
+            <li>Provides coarser tick-based timing resolution.</li>
+        </ul>
+
+        <div class="info-box">
+            Tick resolution is not the same as guaranteed application response time. Interrupt latency, scheduling, blocking, execution time, and timer accuracy also affect actual behavior.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>9. Periodic Task Execution</h2>
+        <p>Many embedded applications require operations to execute at regular intervals.</p>
+
+        <p>Examples include:</p>
+        <ul>
+            <li>Reading a temperature sensor every 100 ms.</li>
+            <li>Updating a display every 500 ms.</li>
+            <li>Monitoring communication status every 50 ms.</li>
+            <li>Executing a control algorithm at a fixed period.</li>
+        </ul>
+
+        <h3>Using vTaskDelay()</h3>
+        <pre><code>void MonitoringTask(void *pvParameters)
+{
+    for (;;)
+    {
+        Monitor_System();
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}</code></pre>
+
+        <p>This inserts a relative delay after the monitoring operation. The actual interval between task start times also includes execution time and scheduling effects.</p>
+
+        <h3>Using vTaskDelayUntil()</h3>
+        <pre><code>void PeriodicTask(void *pvParameters)
+{
+    TickType_t lastWakeTime;
+    const TickType_t period = pdMS_TO_TICKS(100);
+
+    lastWakeTime = xTaskGetTickCount();
+
+    for (;;)
+    {
+        Perform_Periodic_Work();
+
+        vTaskDelayUntil(&amp;lastWakeTime, period);
+    }
+}</code></pre>
+
+        <p><code>vTaskDelayUntil()</code> is designed for periodic execution using an absolute tick schedule. It helps avoid cumulative drift caused by adding the task execution time to a relative delay.</p>
+
+        <div class="warning-box">
+            If the task execution time exceeds its period, the task cannot maintain the intended periodic completion behavior. The design must account for execution time, blocking, preemption, and missed periods.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>10. vTaskDelay() vs vTaskDelayUntil()</h2>
+        <div class="table-wrap">
+            <table>
+                <tr>
+                    <th>Parameter</th>
+                    <th>vTaskDelay()</th>
+                    <th>vTaskDelayUntil()</th>
+                </tr>
+                <tr>
+                    <td>Delay Type</td>
+                    <td>Relative delay</td>
+                    <td>Absolute tick schedule</td>
+                </tr>
+                <tr>
+                    <td>Reference</td>
+                    <td>Current time when called</td>
+                    <td>Previous scheduled wake time</td>
+                </tr>
+                <tr>
+                    <td>Periodic Tasks</td>
+                    <td>May accumulate execution-time drift</td>
+                    <td>Designed to maintain a regular period</td>
+                </tr>
+                <tr>
+                    <td>Typical Use</td>
+                    <td>Simple delays and waits</td>
+                    <td>Periodic task execution</td>
+                </tr>
+            </table>
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>11. Tick-Based Timeouts</h2>
+        <p>RTOS timing services can also manage timeout conditions.</p>
+
+        <p>For example, a task may wait for a queue message for a maximum of 100 milliseconds.</p>
+
+        <h3>FreeRTOS Queue Timeout Example</h3>
+        <pre><code>void ReceiverTask(void *pvParameters)
+{
+    SensorMessage message;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                sensorQueue,
+                &amp;message,
+                pdMS_TO_TICKS(100)) == pdPASS)
+        {
+            Process_Message(&amp;message);
+        }
+        else
+        {
+            Handle_Receive_Timeout();
+        }
+    }
+}</code></pre>
+
+        <p>The task waits for a message or until the specified timeout expires. This example assumes that the queue and message type have been defined and initialized correctly.</p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>12. Tick Counter Overflow</h2>
+        <p>An RTOS tick counter has a finite data width. When its maximum value is reached, the counter wraps around to zero.</p>
+
+        <p>For example, an unsigned 16-bit counter has a maximum value of 65535.</p>
+
+        <pre><code>Maximum 16-bit value = 65535
+
+After incrementing:
+
+65535 + 1 = 0 (wraparound)</code></pre>
+
+        <p>FreeRTOS uses <code>TickType_t</code> for tick values. Its width depends on the port and configuration.</p>
+
+        <h3>Example: Unsigned Counter Arithmetic</h3>
+        <pre><code>#include <stdint.h>
+
+uint16_t start = 65530;
+uint16_t now   = 5;
+
+uint16_t elapsed = (uint16_t)(now - start);
+
+/* elapsed = 11 ticks */</code></pre>
+
+        <p>Unsigned subtraction can correctly measure short elapsed intervals across a single wraparound, provided the measurement interval and comparison logic are designed within the counter's range.</p>
+
+        <div class="warning-box">
+            Do not assume that a tick counter can represent unlimited elapsed time. Use the RTOS-provided time types and wraparound-safe comparison methods.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>13. Tickless Idle</h2>
+        <p><strong>Tickless idle</strong> is a power-saving technique in which the RTOS suppresses unnecessary periodic tick interrupts while the system is idle for a known interval.</p>
+
+        <h3>Normal Tick Operation</h3>
+        <ul>
+            <li>The timer generates periodic tick interrupts.</li>
+            <li>The kernel updates the tick count regularly.</li>
+            <li>The processor handles each scheduled tick event.</li>
+        </ul>
+
+        <h3>Tickless Idle Operation</h3>
+        <ul>
+            <li>The scheduler determines how long the system can remain idle.</li>
+            <li>The periodic tick can be suppressed temporarily.</li>
+            <li>A low-power timer or equivalent time source tracks the idle interval.</li>
+            <li>The system wakes when an event or timeout requires processing.</li>
+            <li>The RTOS corrects its time accounting after the idle period.</li>
+        </ul>
+
+        <h3>Conceptual Diagram</h3>
+        <pre><code>Normal Tick Mode:
+
+Tick  Tick  Tick  Tick  Tick  Tick
+ |     |     |     |     |     |
+ v     v     v     v     v     v
+
+Tickless Idle Mode:
+
+Tick                         Wake
+ |                             |
+ v                             v
+ +-----------------------------+
+ |       Idle Interval         |
+ |  Suppressed Periodic Ticks  |
+ +-----------------------------+</code></pre>
+
+        <h3>Advantages</h3>
+        <ul>
+            <li>Reduces unnecessary periodic interrupts during idle periods.</li>
+            <li>Can reduce processor wakeups.</li>
+            <li>Can improve energy efficiency.</li>
+        </ul>
+
+        <h3>Limitations</h3>
+        <ul>
+            <li>Requires suitable hardware timer support.</li>
+            <li>Needs correct time compensation after sleep.</li>
+            <li>Wake-up latency must be considered.</li>
+            <li>Not useful when the processor is continuously busy.</li>
+        </ul>
+    </section>
+
+    <section class="lesson-section">
+        <h2>14. FreeRTOS Tick Configuration</h2>
+        <p>FreeRTOS provides configuration options for controlling tick behavior.</p>
+
+        <h3>configTICK_RATE_HZ</h3>
+        <p>Defines the configured tick frequency in ticks per second.</p>
+
+        <pre><code>#define configTICK_RATE_HZ    1000</code></pre>
+
+        <p>This represents a nominal tick period of 1 millisecond.</p>
+
+        <h3>configUSE_TICKLESS_IDLE</h3>
+        <p>Controls whether tickless idle support is enabled when the selected port implements it.</p>
+
+        <pre><code>#define configUSE_TICKLESS_IDLE    1</code></pre>
+
+        <p>The actual configuration and required hardware support depend on the FreeRTOS port.</p>
+
+        <h3>pdMS_TO_TICKS()</h3>
+        <p>Converts a time expressed in milliseconds into RTOS ticks.</p>
+
+        <pre><code>TickType_t delayTicks;
+
+delayTicks = pdMS_TO_TICKS(250);</code></pre>
+
+        <p>For a 1000 Hz tick rate, 250 ms corresponds to approximately 250 ticks.</p>
+
+        <div class="warning-box">
+            Millisecond-to-tick conversion has finite resolution. A requested delay shorter than one tick may convert to zero ticks. Check the configured tick rate and conversion behavior when designing short timing intervals.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>15. Hardware Timer and RTOS Tick</h2>
+        <p>A hardware timer is commonly used to generate the RTOS tick interrupt.</p>
+
+        <p>For example, a timer may be configured to generate an interrupt every 1 millisecond for a 1000 Hz tick rate.</p>
+
+        <h3>General Timer Configuration</h3>
+        <pre><code>Timer Clock = 15 MHz
+Required Tick Frequency = 1000 Hz
+
+Timer Period = 15,000 timer counts
+
+Tick Interval = 15,000 / 15,000,000
+              = 0.001 seconds
+              = 1 ms</code></pre>
+
+        <p>This simplified calculation assumes one timer count per peripheral clock and does not include prescaler, reset, or match-register encoding details.</p>
+
+        <h3>LPC2129 Timer Example</h3>
+        <p>For your LPC2129 setup:</p>
+        <ul>
+            <li>Peripheral clock (PCLK) = 15 MHz.</li>
+            <li>Timer prescaler PR = 14999.</li>
+            <li>Timer counter increments once per 1 ms.</li>
+            <li>MR0 = 1 can be used to produce a nominal 1 ms match interval when the timer is configured to reset on MR0.</li>
+        </ul>
+
+        <pre><code>Timer Counter Clock =
+PCLK / (PR + 1)
+
+= 15,000,000 / 15,000
+= 1000 Hz
+
+Timer Counter Period = 1 ms</code></pre>
+
+        <p>This demonstrates how a hardware timer can provide a 1 ms time base. It is not by itself a complete FreeRTOS tick port.</p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>16. Tick Timing Accuracy and Limitations</h2>
+        <p>Tick-based timing is useful, but the configured tick period does not guarantee that every application operation starts or finishes at an exact instant.</p>
+
+        <h3>Factors Affecting Timing</h3>
+        <ul>
+            <li>Hardware timer clock accuracy.</li>
+            <li>Timer configuration and prescaler values.</li>
+            <li>Interrupt latency.</li>
+            <li>Interrupt masking and higher-priority interrupts.</li>
+            <li>Scheduler behavior.</li>
+            <li>Task priority and blocking.</li>
+            <li>Execution time of application code.</li>
+        </ul>
+
+        <p>For high-resolution measurement or precise waveform generation, a dedicated hardware timer or capture/compare peripheral may be more appropriate than relying only on the RTOS tick.</p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>17. Tick Rate Numerical Problems</h2>
+
+        <h3>Problem 1</h3>
+        <p>An RTOS has a tick frequency of 500 Hz. Calculate the tick period.</p>
+        <pre><code>T = 1 / 500
+  = 0.002 seconds
+  = 2 ms</code></pre>
+
+        <h3>Problem 2</h3>
+        <p>How many ticks occur in 3 seconds at 1000 Hz?</p>
+        <pre><code>Number of ticks = Frequency × Time
+
+                 = 1000 × 3
+
+                 = 3000 ticks</code></pre>
+
+        <h3>Problem 3</h3>
+        <p>A task requires a nominal delay of 200 ms. The tick rate is 250 Hz. Calculate the number of ticks.</p>
+        <pre><code>Tick Period = 1 / 250
+            = 4 ms
+
+Number of ticks = 200 / 4
+                = 50 ticks</code></pre>
+
+        <h3>Problem 4</h3>
+        <p>A system has a 100 Hz tick rate. What is the nominal time represented by 75 ticks?</p>
+        <pre><code>Elapsed Time = 75 / 100
+             = 0.75 seconds
+             = 750 ms</code></pre>
+    </section>
+
+    <section class="lesson-section">
+        <h2>18. Lesson Summary</h2>
+        <div class="lesson-summary">
+            <ul>
+                <li>The system tick provides a time reference for a tick-based RTOS.</li>
+                <li>A hardware timer commonly generates periodic tick interrupts.</li>
+                <li>The tick handler updates kernel time and processes time-dependent operations.</li>
+                <li>Tick frequency is measured in Hertz.</li>
+                <li>Tick period is the reciprocal of tick frequency.</li>
+                <li>The RTOS tick count represents elapsed tick intervals.</li>
+                <li>Task delays and timeouts can be managed using tick counts.</li>
+                <li><code>vTaskDelay()</code> provides relative delay behavior.</li>
+                <li><code>vTaskDelayUntil()</code> supports periodic task scheduling.</li>
+                <li>Tick counters can wrap around.</li>
+                <li>Tickless idle can reduce unnecessary interrupts during idle periods.</li>
+                <li>Tick resolution does not guarantee application response time.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>19. Review Questions</h2>
+        <ol>
+            <li>What is an RTOS system tick?</li>
+            <li>Why does an RTOS require a system time reference?</li>
+            <li>What is a tick interrupt?</li>
+            <li>Define tick frequency and tick period.</li>
+            <li>Calculate the tick period for a 250 Hz tick rate.</li>
+            <li>What is the purpose of the RTOS tick counter?</li>
+            <li>Explain how task delays are managed using system ticks.</li>
+            <li>Differentiate <code>vTaskDelay()</code> and <code>vTaskDelayUntil()</code>.</li>
+            <li>What is tick resolution?</li>
+            <li>What happens when a tick counter overflows?</li>
+            <li>What is tickless idle?</li>
+            <li>Explain the purpose of <code>configTICK_RATE_HZ</code>.</li>
+            <li>What does <code>pdMS_TO_TICKS()</code> do?</li>
+            <li>Why does a tick interrupt not always cause a context switch?</li>
+            <li>What factors affect actual task response time?</li>
+        </ol>
+    </section>
+
+    <section class="lesson-section">
+        <h2>20. Practical Activities</h2>
+
+        <h3>Activity 1: Tick Frequency Calculation</h3>
+        <p>Calculate tick periods for 100 Hz, 250 Hz, 500 Hz, and 1000 Hz.</p>
+
+        <h3>Activity 2: Timer Configuration</h3>
+        <p>Calculate the timer period required to generate a 1 ms interrupt using a 15 MHz peripheral clock.</p>
+
+        <h3>Activity 3: FreeRTOS Delay Programming</h3>
+        <p>Write a task that executes an operation and then delays for 100 milliseconds using <code>vTaskDelay()</code>.</p>
+
+        <h3>Activity 4: Periodic Task Programming</h3>
+        <p>Write a periodic task using <code>vTaskDelayUntil()</code> with a nominal period of 500 milliseconds.</p>
+
+        <h3>Activity 5: LPC2129 Keil Simulator</h3>
+        <p>Configure Timer 0 with a 1 ms counter interval using the known PCLK and prescaler settings. Observe timer match behavior and inspect the relevant registers in the debugger.</p>
+
+        <h3>Activity 6: Timing Comparison</h3>
+        <p>Compare relative-delay and absolute-period scheduling. Explain how execution time can affect the interval between task starts.</p>
+    </section>
+
+    <div class="lesson-navigation-bottom">
+        <a href="L07_RTOS_Memory_Management.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L09_RTOS_Latency_and_Determinism.html">Next Lesson →</a>
+    </div>
+
+</main>
+
+<footer style="text-align:center; padding:20px; color:#666;">
+    <p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+    <p>Learn • Build • Practice • Master</p>
+</footer>
+
+</body>
+</html>
