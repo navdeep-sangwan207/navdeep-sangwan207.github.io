@@ -1,1 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ISR and Semaphore Communication | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>ISR and Semaphore Communication</h1>
+<p>Chapter 09 – Semaphores and Synchronization | Lesson 08</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 09</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>In an embedded system, hardware peripherals generate interrupts when important events occur. Examples include timer expiration, UART reception, ADC conversion completion, and external pin changes.</p>
+
+<p>When an interrupt occurs, the processor executes an Interrupt Service Routine (ISR). In an RTOS-based application, the ISR often needs to notify a task that an event has occurred.</p>
+
+<p>FreeRTOS supports communication between an ISR and a task using semaphore-specific ISR APIs.</p>
+
+<div class="info-box">
+<strong>Key concept:</strong> The ISR performs minimal interrupt handling and signals a task. The task performs the longer processing operation outside interrupt context.
+</div>
+</section>
+
+<section>
+<h2>2. Why Is ISR-to-Task Communication Required?</h2>
+<p>Consider a UART receiver. Every time a byte arrives, the UART peripheral generates an interrupt.</p>
+
+<p>Performing all communication processing inside the ISR can increase interrupt latency and delay other interrupts.</p>
+
+<h3>Recommended approach</h3>
+<ol>
+<li>UART hardware receives a byte.</li>
+<li>UART generates an interrupt.</li>
+<li>ISR reads the received byte and handles the peripheral interrupt condition.</li>
+<li>ISR signals a task using an ISR-safe API.</li>
+<li>The task processes the received information.</li>
+</ol>
+
+<p>This approach keeps the ISR short and moves application-level processing into task context.</p>
+</section>
+
+<section>
+<h2>3. Basic ISR-to-Task Communication Architecture</h2>
+
+<pre><code>       +---------------------------+
+       |     Hardware Peripheral  |
+       |                           |
+       | Timer / UART / ADC / GPIO |
+       +---------------------------+
+                    |
+                    | Interrupt
+                    v
+       +---------------------------+
+       |            ISR            |
+       |                           |
+       | Acknowledge interrupt     |
+       | Capture minimal data     |
+       | Give semaphore from ISR  |
+       +---------------------------+
+                    |
+                    v
+       +---------------------------+
+       |         Semaphore         |
+       +---------------------------+
+                    |
+                    | Task unblocked
+                    v
+       +---------------------------+
+       |        RTOS Task          |
+       |                           |
+       | Process event/data        |
+       +---------------------------+</code></pre>
+</section>
+
+<section>
+<h2>4. Why Normal Semaphore APIs Must Not Be Used in an ISR</h2>
+<p>Normal semaphore APIs are designed for task context. Some operations may block or interact with scheduler mechanisms that are not valid inside an ISR.</p>
+
+<table>
+<tr><th>Task context</th><th>ISR context</th></tr>
+<tr><td><code>xSemaphoreGive()</code></td><td><code>xSemaphoreGiveFromISR()</code></td></tr>
+<tr><td><code>xSemaphoreTake()</code></td><td><code>xSemaphoreTakeFromISR()</code>, where applicable</td></tr>
+<tr><td>Can use a non-zero blocking timeout.</td><td>Must not block or wait for a timeout.</td></tr>
+<tr><td>Can use task-context APIs.</td><td>Must use documented ISR-safe APIs.</td></tr>
+</table>
+
+<div class="warning-box">
+Never call <code>xSemaphoreGive()</code> or a blocking <code>xSemaphoreTake()</code> from an ISR. Use the appropriate ISR-safe API for the operation and semaphore type.
+</div>
+</section>
+
+<section>
+<h2>5. xSemaphoreGiveFromISR()</h2>
+<p>FreeRTOS provides <code>xSemaphoreGiveFromISR()</code> to release a semaphore from interrupt context.</p>
+
+<h3>Function syntax</h3>
+<pre><code>BaseType_t xSemaphoreGiveFromISR(
+    SemaphoreHandle_t xSemaphore,
+    BaseType_t *pxHigherPriorityTaskWoken
+);</code></pre>
+
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>xSemaphore</code></td><td>Handle of the semaphore being given.</td></tr>
+<tr><td><code>pxHigherPriorityTaskWoken</code></td><td>Pointer to a variable that indicates whether a higher-priority task was unblocked by the operation.</td></tr>
+</table>
+
+<h3>Return value</h3>
+<ul>
+<li><code>pdTRUE</code>: The semaphore was successfully given.</li>
+<li><code>pdFALSE</code>: The operation failed, for example, because a binary semaphore was already available or a counting semaphore was at its maximum count.</li>
+</ul>
+
+<h3>Higher-priority task notification</h3>
+<p>If giving the semaphore unblocks a task with a priority higher than the currently interrupted task, FreeRTOS can indicate this through <code>pxHigherPriorityTaskWoken</code>.</p>
+</section>
+
+<section>
+<h2>6. portYIELD_FROM_ISR()</h2>
+<p>After giving a semaphore, the ISR may request a context switch so that an unblocked higher-priority task can run as soon as the interrupt-exit scheduling rules permit.</p>
+
+<pre><code>BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+xSemaphoreGiveFromISR(
+    xSemaphore,
+    &amp;xHigherPriorityTaskWoken
+);
+
+portYIELD_FROM_ISR(xHigherPriorityTaskWoken);</code></pre>
+
+<p>The yield macro is port-specific. Some FreeRTOS ports use a different form or provide a related macro. Follow the documentation for the selected port.</p>
+
+<div class="info-box">
+Giving a semaphore does not guarantee that the notified task executes immediately inside the ISR. The scheduler selects the next task at an appropriate scheduling point, normally after the ISR exits.
+</div>
+</section>
+
+<section>
+<h2>7. Example 1 – Binary Semaphore for Timer Interrupt</h2>
+<p>In this example, a timer interrupt signals a task whenever the timer event occurs.</p>
+
+<h3>Global semaphore handle</h3>
+<pre><code>SemaphoreHandle_t xTimerSemaphore;</code></pre>
+
+<h3>Timer ISR – illustrative FreeRTOS code</h3>
+<pre><code>void TIMER_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Acknowledge the timer interrupt here */
+
+    xSemaphoreGiveFromISR(
+        xTimerSemaphore,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}</code></pre>
+
+<h3>Task waiting for timer event</h3>
+<pre><code>void TimerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xTimerSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            ProcessTimerEvent();
+        }
+    }
+}</code></pre>
+
+<h3>Explanation</h3>
+<ol>
+<li>The timer peripheral generates an interrupt.</li>
+<li>The ISR acknowledges the interrupt source.</li>
+<li>The ISR gives the binary semaphore.</li>
+<li>The waiting task becomes Ready.</li>
+<li>The task processes the timer event when scheduled.</li>
+</ol>
+
+<div class="warning-box">
+A binary semaphore stores at most one pending token. If multiple timer events occur before the task consumes the token, repeated gives can fail or coalesce. Use a counting semaphore or queue if every event must be preserved.
+</div>
+</section>
+
+<section>
+<h2>8. Example 2 – UART Interrupt and Task Communication</h2>
+<p>In a UART-based embedded application, the ISR can capture a received byte and notify a task.</p>
+
+<h3>Illustrative structure</h3>
+<pre><code>SemaphoreHandle_t xUARTSemaphore;
+volatile uint8_t receivedByte;
+
+void UART_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Read received byte from UART register */
+    receivedByte = UART_ReadByte();
+
+    /* Acknowledge or clear the UART interrupt as required */
+
+    xSemaphoreGiveFromISR(
+        xUARTSemaphore,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void UARTTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xUARTSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            ProcessReceivedByte(receivedByte);
+        }
+    }
+}</code></pre>
+
+<div class="warning-box">
+This is an architectural illustration, not a complete UART driver. A single shared byte variable can be overwritten if multiple bytes arrive before the task processes the previous one. For reliable continuous reception, use a ring buffer or queue with a defined producer-consumer ownership protocol. <code>volatile</code> alone does not solve data races or buffer synchronization.
+</div>
+</section>
+
+<section>
+<h2>9. Counting Semaphore for Interrupt Events</h2>
+<p>When every interrupt event must be counted, a counting semaphore may be more suitable than a binary semaphore.</p>
+
+<h3>Example</h3>
+<pre><code>SemaphoreHandle_t xEventSemaphore;
+
+/* Create with maximum count 10 and initial count 0 */
+xEventSemaphore = xSemaphoreCreateCounting(10, 0);</code></pre>
+
+<p>The ISR can give one token for each event:</p>
+
+<pre><code>void EVENT_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Acknowledge the hardware event */
+
+    if (xSemaphoreGiveFromISR(
+            xEventSemaphore,
+            &amp;xHigherPriorityTaskWoken) == pdTRUE)
+    {
+        /* Event token recorded */
+    }
+    else
+    {
+        /* Semaphore full: event could not be counted */
+    }
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}</code></pre>
+
+<p>The task consumes the pending event tokens:</p>
+
+<pre><code>void EventTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xEventSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            ProcessOneEvent();
+        }
+    }
+}</code></pre>
+
+<p>The maximum count is ten. If the task cannot keep up and the count reaches ten, another give fails. The application must define how this overflow condition is handled.</p>
+</section>
+
+<section>
+<h2>10. xSemaphoreTakeFromISR()</h2>
+<p>FreeRTOS also provides <code>xSemaphoreTakeFromISR()</code> for applicable semaphore types when an ISR needs to obtain a token without blocking.</p>
+
+<h3>Function syntax</h3>
+<pre><code>BaseType_t xSemaphoreTakeFromISR(
+    SemaphoreHandle_t xSemaphore,
+    BaseType_t *pxHigherPriorityTaskWoken
+);</code></pre>
+
+<p>This operation is non-blocking. It either obtains an available token or returns failure.</p>
+
+<div class="warning-box">
+Do not use mutexes from an ISR. Mutex ownership and priority inheritance require task-context behavior. Use ISR-safe semaphore operations only for semaphore types supported by the API.
+</div>
+</section>
+
+<section>
+<h2>11. ISR-to-Task Communication Using a Queue</h2>
+<p>A semaphore communicates that an event occurred, but it does not carry the event's application data.</p>
+
+<p>If the ISR must transfer a received byte or sensor value, a queue can be more appropriate.</p>
+
+<h3>Example – Queue data from ISR</h3>
+<pre><code>QueueHandle_t xDataQueue;
+
+void ADC_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    uint16_t adcValue;
+
+    /* Read ADC conversion result */
+    adcValue = ADC_ReadResult();
+
+    /* Clear/acknowledge ADC interrupt as required */
+
+    xQueueSendFromISR(
+        xDataQueue,
+        &amp;adcValue,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void ADCProcessingTask(void *pvParameters)
+{
+    uint16_t receivedValue;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                xDataQueue,
+                &amp;receivedValue,
+                portMAX_DELAY) == pdTRUE)
+        {
+            ProcessADCValue(receivedValue);
+        }
+    }
+}</code></pre>
+
+<p>The queue copies the configured item into its storage. The task receives the value later. The application should check the return value of <code>xQueueSendFromISR()</code> and handle queue-full conditions.</p>
+</section>
+
+<section>
+<h2>12. Binary Semaphore vs Counting Semaphore vs Queue</h2>
+<table>
+<tr><th>Mechanism</th><th>What it represents</th><th>Typical application</th></tr>
+<tr><td>Binary semaphore</td><td>One pending notification token.</td><td>Notify a task that an event occurred.</td></tr>
+<tr><td>Counting semaphore</td><td>A count of pending tokens.</td><td>Count events or available resource slots.</td></tr>
+<tr><td>Queue</td><td>Ordered data items.</td><td>Transfer received bytes or ADC samples.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>13. Important ISR Programming Rules</h2>
+<ol>
+<li>Keep the ISR short and predictable.</li>
+<li>Acknowledge or clear the interrupt source correctly.</li>
+<li>Use only documented ISR-safe RTOS APIs.</li>
+<li>Never call a blocking task API from an ISR.</li>
+<li>Do not use mutexes from an ISR.</li>
+<li>Use the appropriate ISR yield mechanism for the port.</li>
+<li>Check the return value of queue and semaphore operations.</li>
+<li>Define how event overflow is handled.</li>
+<li>Protect shared buffers using an appropriate ownership and synchronization design.</li>
+<li>Perform lengthy processing in a task rather than the ISR.</li>
+</ol>
+</section>
+
+<section>
+<h2>14. LPC2129 and ARM7 Interrupt Considerations</h2>
+<p>The LPC2129 uses an ARM7TDMI-S processor and a Vectored Interrupt Controller (VIC). Its interrupt architecture differs from Cortex-M microcontrollers.</p>
+
+<ul>
+<li>ARM7TDMI-S supports IRQ and FIQ exception types.</li>
+<li>The LPC2129 VIC manages interrupt sources and vectored IRQ handling.</li>
+<li>Interrupt acknowledgment and peripheral status clearing depend on the peripheral and interrupt source.</li>
+<li>ARM7 interrupt masking uses CPSR control bits.</li>
+<li>Cortex-M NVIC and BASEPRI-specific assumptions must not be applied to this processor.</li>
+</ul>
+
+<div class="warning-box">
+The examples in this lesson explain generic FreeRTOS ISR-to-task communication. They do not establish that a compatible FreeRTOS port is available for LPC2129 with the current Keil uVision simulator setup. Verify the exact processor port before attempting to build or run these examples.
+</div>
+</section>
+
+<section>
+<h2>15. Practical Activity</h2>
+<p>Design an interrupt-to-task notification example using a binary semaphore.</p>
+
+<h3>Activity steps</h3>
+<ol>
+<li>Create a binary semaphore before starting the scheduler.</li>
+<li>Create a task that waits for the semaphore.</li>
+<li>Configure a suitable timer or interrupt source on a supported target.</li>
+<li>In the ISR, acknowledge the interrupt.</li>
+<li>Give the semaphore using <code>xSemaphoreGiveFromISR()</code>.</li>
+<li>Use the port-specific ISR yield mechanism where required.</li>
+<li>In the task, process the event after a successful take.</li>
+<li>Test repeated events and observe whether notifications are lost or coalesced.</li>
+</ol>
+
+<h3>Expected result</h3>
+<p>The task should respond to the interrupt notification outside the ISR. If events can arrive faster than the task processes them, evaluate whether a counting semaphore or queue is required.</p>
+</section>
+
+<section>
+<h2>16. Review Questions</h2>
+<ol>
+<li>Why is ISR-to-task communication required?</li>
+<li>What is the role of a semaphore in interrupt handling?</li>
+<li>Why should normal semaphore APIs not be called from an ISR?</li>
+<li>Explain <code>xSemaphoreGiveFromISR()</code>.</li>
+<li>What is the purpose of <code>pxHigherPriorityTaskWoken</code>?</li>
+<li>What is the role of <code>portYIELD_FROM_ISR()</code>?</li>
+<li>How can a timer ISR notify a task?</li>
+<li>Why can a binary semaphore lose event-count information?</li>
+<li>When should a counting semaphore be used?</li>
+<li>When is a queue more suitable than a semaphore?</li>
+<li>What is the purpose of <code>xSemaphoreTakeFromISR()</code>?</li>
+<li>Why must an ISR remain short?</li>
+<li>What should an application do if an ISR queue send fails?</li>
+<li>Why is <code>volatile</code> insufficient for general task-ISR synchronization?</li>
+<li>Which interrupt controller is used by LPC2129?</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+<ul>
+<li>Hardware interrupts are handled by ISRs.</li>
+<li>ISRs can notify RTOS tasks using ISR-safe APIs.</li>
+<li><code>xSemaphoreGiveFromISR()</code> gives a semaphore from interrupt context.</li>
+<li><code>xSemaphoreTakeFromISR()</code> can obtain an available token without blocking, for applicable semaphore types.</li>
+<li><code>portYIELD_FROM_ISR()</code> is port-specific and can request a scheduling decision at interrupt exit.</li>
+<li>Binary semaphores are suitable for simple notifications; counting semaphores track multiple tokens.</li>
+<li>Queues should be considered when actual event data must be transferred.</li>
+<li>Keep ISRs short and handle overflow, shared-buffer ownership, and interrupt acknowledgment correctly.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L07_Task_Synchronization_Using_Semaphores.html">← Previous Lesson</a>
+<a href="index.html">Chapter 09</a>
+<a href="L09_Producer_Consumer_Using_Semaphores.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
