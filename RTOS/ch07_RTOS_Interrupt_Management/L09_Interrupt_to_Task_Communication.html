@@ -1,1 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interrupt-to-Task Communication | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+.formula{background:#f3f5f7;padding:15px;border-radius:7px;text-align:center;font-weight:bold;margin:15px 0;font-family:monospace;overflow-x:auto}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Interrupt-to-Task Communication</h1>
+<p>Chapter 07 – Interrupt Management in RTOS | Lesson 09</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 07</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>In a real-time operating system, hardware interrupts and application tasks often need to exchange information.</p>
+
+<p>A hardware peripheral may generate an interrupt when data is received, a timer expires, a sensor conversion completes, or an external signal changes.</p>
+
+<p>The ISR handles the immediate event, while an RTOS task performs the remaining processing. A communication mechanism is needed to transfer event information or data from the ISR to the task.</p>
+
+<div class="info-box">
+<strong>Interrupt-to-task communication</strong> is the transfer of event notifications or data from interrupt context to task context using synchronization and communication mechanisms supported by the RTOS.
+</div>
+</section>
+
+<section>
+<h2>2. Why Is Interrupt-to-Task Communication Required?</h2>
+<p>Consider a UART peripheral receiving bytes from an external device.</p>
+
+<p>The UART interrupt handler must read the received data before the hardware receive register or FIFO overruns. However, parsing a complete communication packet may require considerably more processing.</p>
+
+<p>A communication task can perform the longer operation without extending the ISR unnecessarily.</p>
+
+<h3>Typical applications</h3>
+<ul>
+<li>UART receive interrupt to communication task.</li>
+<li>ADC conversion-complete interrupt to sensor-processing task.</li>
+<li>Timer interrupt to periodic control task.</li>
+<li>GPIO external interrupt to event-handling task.</li>
+<li>DMA completion interrupt to data-processing task.</li>
+<li>CAN receive interrupt to message-processing task.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. Basic Interrupt-to-Task Architecture</h2>
+
+<pre><code>        Hardware Peripheral
+                 |
+                 v
+          Interrupt Request
+                 |
+                 v
+          +-------------+
+          |     ISR     |
+          +-------------+
+                 |
+                 | Send data / signal event
+                 v
+       +--------------------+
+       | RTOS Communication |
+       | Mechanism          |
+       +--------------------+
+                 |
+                 v
+          +-------------+
+          | RTOS Task   |
+          +-------------+
+                 |
+                 v
+          Process Event
+                 |
+                 v
+          Update Application</code></pre>
+
+<p>The communication mechanism provides the bridge between interrupt context and task context.</p>
+</section>
+
+<section>
+<h2>4. Communication Requirements</h2>
+<p>The correct mechanism depends on what must be transferred.</p>
+
+<table>
+<tr><th>Requirement</th><th>Example</th><th>Possible Mechanism</th></tr>
+<tr><td>Signal an event</td><td>Timer interrupt occurred.</td><td>Task notification or binary semaphore.</td></tr>
+<tr><td>Count events</td><td>Several pulse events occurred.</td><td>Counting semaphore or counting notification.</td></tr>
+<tr><td>Transfer a small data item</td><td>UART received byte.</td><td>Queue.</td></tr>
+<tr><td>Transfer structured messages</td><td>CAN message descriptor.</td><td>Queue.</td></tr>
+<tr><td>Transfer large data blocks</td><td>DMA completed a packet.</td><td>Buffer or descriptor queue.</td></tr>
+<tr><td>Signal multiple conditions</td><td>Several subsystem events.</td><td>Event group, subject to ISR API restrictions.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5. Interrupt-to-Task Communication Using Binary Semaphores</h2>
+<p>A binary semaphore is useful when the ISR only needs to signal that an event has occurred.</p>
+
+<h3>Working principle</h3>
+<ol>
+<li>The task waits for the semaphore.</li>
+<li>The hardware generates an interrupt.</li>
+<li>The ISR performs essential hardware servicing.</li>
+<li>The ISR gives the semaphore using an ISR-safe API.</li>
+<li>The task becomes Ready.</li>
+<li>The scheduler runs the task when scheduling rules permit.</li>
+</ol>
+
+<h3>FreeRTOS example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xInterruptSemaphore;
+
+void ProcessingTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xInterruptSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            Process_Interrupt_Event();
+        }
+    }
+}
+
+void Hardware_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Acknowledge the peripheral interrupt here. */
+
+    xSemaphoreGiveFromISR(
+        xInterruptSemaphore,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+int main(void)
+{
+    xInterruptSemaphore = xSemaphoreCreateBinary();
+
+    if (xInterruptSemaphore != NULL)
+    {
+        xTaskCreate(
+            ProcessingTask,
+            "Processing",
+            256,
+            NULL,
+            2,
+            NULL
+        );
+
+        /* Configure and enable the hardware interrupt here. */
+        vTaskStartScheduler();
+    }
+
+    for (;;);
+}</code></pre>
+
+<div class="warning-box">
+Create the semaphore and task before enabling the interrupt. The ISR must not run while the semaphore handle is invalid. Check the return value of the ISR-safe API if event loss matters.
+</div>
+</section>
+
+<section>
+<h2>6. Interrupt-to-Task Communication Using Counting Semaphores</h2>
+<p>A counting semaphore can represent the number of pending events, up to its configured maximum count.</p>
+
+<p>For example, a pulse counter interrupt may occur repeatedly. Each ISR gives the semaphore, and the task takes it to account for events.</p>
+
+<h3>Conceptual example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xPulseSemaphore;
+
+void Pulse_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Clear or acknowledge the pulse interrupt. */
+
+    xSemaphoreGiveFromISR(
+        xPulseSemaphore,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void PulseProcessingTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xPulseSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            Update_Pulse_Count();
+        }
+    }
+}</code></pre>
+
+<p>The semaphore count must be large enough for expected bursts. If the count reaches its maximum, additional give operations cannot increase it.</p>
+</section>
+
+<section>
+<h2>7. Interrupt-to-Task Communication Using Queues</h2>
+<p>A queue transfers data from an ISR to a task. Unlike a binary semaphore, a queue can preserve individual data items in FIFO order, provided capacity is available and the application handles overflow.</p>
+
+<h3>UART receive example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include &lt;stdint.h&gt;
+
+QueueHandle_t xUARTQueue;
+
+void UART_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    uint8_t receivedByte;
+
+    /* Read from the actual UART data register. */
+    receivedByte = UART_ReadByte();
+
+    if (xQueueSendFromISR(
+            xUARTQueue,
+            &amp;receivedByte,
+            &amp;xHigherPriorityTaskWoken) != pdPASS)
+    {
+        /* Record or handle queue overflow. */
+    }
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void UARTProcessingTask(void *pvParameters)
+{
+    uint8_t receivedByte;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                xUARTQueue,
+                &amp;receivedByte,
+                portMAX_DELAY) == pdTRUE)
+        {
+            Process_Received_Byte(receivedByte);
+        }
+    }
+}</code></pre>
+
+<h3>Advantages</h3>
+<ul>
+<li>Transfers actual data.</li>
+<li>Maintains FIFO ordering for queued items.</li>
+<li>Supports task blocking while waiting for data.</li>
+<li>Separates hardware servicing from application processing.</li>
+</ul>
+</section>
+
+<section>
+<h2>8. Interrupt-to-Task Communication Using Task Notifications</h2>
+<p>FreeRTOS direct-to-task notifications provide an efficient way to signal a specific task.</p>
+
+<p>They are especially useful when one ISR needs to notify one designated task without creating a separate queue or semaphore object.</p>
+
+<h3>Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+TaskHandle_t xSensorTaskHandle;
+
+void ADC_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Read or acknowledge ADC completion status here. */
+
+    vTaskNotifyGiveFromISR(
+        xSensorTaskHandle,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        Process_ADC_Result();
+    }
+}</code></pre>
+
+<p>With this notification pattern, the task waits until an event is signaled. The notification count can accumulate events, subject to its finite counter capacity and the selected notification operation.</p>
+</section>
+
+<section>
+<h2>9. Interrupt-to-Task Communication Using Event Groups</h2>
+<p>Event groups allow a task to wait for one or more event bits.</p>
+
+<p>They are useful when an application needs to coordinate several conditions, such as sensor-ready, communication-ready, and conversion-complete events.</p>
+
+<p>FreeRTOS provides <code>xEventGroupSetBitsFromISR()</code> for setting event bits from interrupt context on supported configurations.</p>
+
+<h3>Conceptual example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "event_groups.h"
+
+#define ADC_READY_BIT  (1U &lt;&lt; 0)
+
+EventGroupHandle_t xSystemEvents;
+
+void ADC_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Acknowledge ADC interrupt. */
+
+    xEventGroupSetBitsFromISR(
+        xSystemEvents,
+        ADC_READY_BIT,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        xEventGroupWaitBits(
+            xSystemEvents,
+            ADC_READY_BIT,
+            pdTRUE,
+            pdTRUE,
+            portMAX_DELAY
+        );
+
+        Process_ADC_Result();
+    }
+}</code></pre>
+
+<div class="warning-box">
+FreeRTOS event-group operations requested from an ISR may be deferred through the timer service task. The timer service task and queue must be configured appropriately. Check the return value of the ISR API and the selected FreeRTOS version and port documentation.
+</div>
+</section>
+
+<section>
+<h2>10. Comparison of FreeRTOS Communication Mechanisms</h2>
+
+<table>
+<tr><th>Mechanism</th><th>Transfers Data?</th><th>Counts Events?</th><th>Typical Use</th></tr>
+<tr><td>Binary semaphore</td><td>No payload</td><td>At most one pending binary state</td><td>Simple event signaling.</td></tr>
+<tr><td>Counting semaphore</td><td>No payload</td><td>Yes, up to maximum count</td><td>Repeated event counting.</td></tr>
+<tr><td>Queue</td><td>Yes</td><td>Number of queued items</td><td>Byte/message transfer.</td></tr>
+<tr><td>Task notification</td><td>Can carry a 32-bit value</td><td>Can use notification count</td><td>Efficient task signaling.</td></tr>
+<tr><td>Event group</td><td>Event bits only</td><td>Represents bit conditions</td><td>Multiple event coordination.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>11. ISR-Safe APIs in FreeRTOS</h2>
+<p>FreeRTOS provides dedicated API functions for operations that must be performed from interrupt context.</p>
+
+<table>
+<tr><th>Task-context API</th><th>ISR-safe counterpart</th></tr>
+<tr><td>xSemaphoreGive()</td><td>xSemaphoreGiveFromISR()</td></tr>
+<tr><td>xQueueSend()</td><td>xQueueSendFromISR()</td></tr>
+<tr><td>xQueueReceive()</td><td>Do not use the ordinary blocking receive API in an ISR.</td></tr>
+<tr><td>xTaskNotifyGive()</td><td>vTaskNotifyGiveFromISR()</td></tr>
+<tr><td>xTaskNotify()</td><td>xTaskNotifyFromISR()</td></tr>
+<tr><td>xEventGroupSetBits()</td><td>xEventGroupSetBitsFromISR()</td></tr>
+</table>
+
+<p>The exact set of supported APIs depends on the FreeRTOS version, configuration, and port.</p>
+
+<h3>Important rules</h3>
+<ul>
+<li>Use only APIs documented as ISR-safe.</li>
+<li>Never use a blocking wait inside an ISR.</li>
+<li>Do not use mutexes in an ISR.</li>
+<li>Use the appropriate higher-priority-task-woken parameter when provided.</li>
+<li>Use the port's documented ISR yield mechanism.</li>
+<li>Do not assume every RTOS API has an ISR-safe counterpart.</li>
+</ul>
+</section>
+
+<section>
+<h2>12. The Higher-Priority-Task-Woken Variable</h2>
+<p>Many FreeRTOS ISR-safe APIs accept a pointer to a variable named <code>xHigherPriorityTaskWoken</code>.</p>
+
+<p>The variable communicates whether the ISR operation made a higher-priority task Ready that should run as soon as interrupt handling permits.</p>
+
+<h3>Typical pattern</h3>
+<pre><code>BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+/* Call an ISR-safe API here. */
+
+portYIELD_FROM_ISR(xHigherPriorityTaskWoken);</code></pre>
+
+<p>The exact macro signature and behavior are port-dependent. Some ports use different yield macros or conventions.</p>
+
+<div class="info-box">
+A yield request does not mean that the task executes in the middle of the ISR. The context switch occurs according to the processor port's interrupt-exit and scheduling rules.
+</div>
+</section>
+
+<section>
+<h2>13. Shared Data Between ISR and Task</h2>
+<p>Sometimes the ISR and task access the same variable or buffer.</p>
+
+<p>For example, a timer ISR may increment a counter while a task reads the counter.</p>
+
+<h3>Potential problems</h3>
+<ul>
+<li>Race conditions.</li>
+<li>Partially updated data.</li>
+<li>Lost updates.</li>
+<li>Incorrect assumptions about atomic access.</li>
+<li>Buffer ownership conflicts.</li>
+</ul>
+
+<h3>Design guidelines</h3>
+<ul>
+<li>Use appropriate atomic or critical-section techniques.</li>
+<li>Keep critical sections short.</li>
+<li>Consider the processor's natural atomic access width.</li>
+<li>Use queues or notifications where they simplify synchronization.</li>
+<li>Define ownership when transferring buffer pointers.</li>
+<li>Use memory barriers where required by the architecture and compiler.</li>
+</ul>
+</section>
+
+<section>
+<h2>14. Priority and Communication Latency</h2>
+<p>When an ISR notifies a task, the task does not necessarily execute immediately.</p>
+
+<p>Its response depends on:</p>
+<ul>
+<li>Task priority.</li>
+<li>Whether a higher-priority task is executing.</li>
+<li>Interrupt and critical-section interference.</li>
+<li>Scheduler state.</li>
+<li>Blocking and resource contention.</li>
+<li>Communication mechanism overhead.</li>
+</ul>
+
+<div class="formula">Event-to-Task Response = ISR Processing + Scheduling Delay + Task Execution</div>
+
+<p>This is a simplified timing model. Any additional blocking or interference must also be included in a complete response-time analysis.</p>
+</section>
+
+<section>
+<h2>15. Worked Numerical Problem 1 – Queue Processing Capacity</h2>
+<p>A UART receives data at 500 bytes per second. The communication task may be delayed for 100 ms.</p>
+
+<h3>Solution</h3>
+<div class="formula">Required Capacity = Arrival Rate × Delay</div>
+<div class="formula">= 500 × 0.1 = 50 bytes</div>
+
+<p><strong>Answer:</strong> At least 50 bytes of buffering are needed under the stated constant-rate assumption. A practical queue should allow additional space for bursts and scheduling variation.</p>
+</section>
+
+<section>
+<h2>16. Worked Numerical Problem 2 – ISR and Task Timing</h2>
+<p>An external interrupt occurs at 200 µs. The ISR takes 5 µs. The notified task starts 7 µs after the ISR completes and requires 18 µs of execution.</p>
+
+<h3>Solution</h3>
+<div class="formula">ISR Duration = 5 µs</div>
+<div class="formula">Scheduling Delay = 7 µs</div>
+<div class="formula">Task Execution = 18 µs</div>
+<div class="formula">Total Event-to-Completion = 5 + 7 + 18 = 30 µs</div>
+
+<p><strong>Answer:</strong> The task completes 30 µs after the interrupt occurs, under the stated assumptions.</p>
+</section>
+
+<section>
+<h2>17. Worked Numerical Problem 3 – Counting Semaphore Capacity</h2>
+<p>A pulse input generates 40 interrupts per second. The processing task may be delayed for 250 ms. Assume a constant pulse rate.</p>
+
+<h3>Solution</h3>
+<div class="formula">Expected Pending Events = 40 × 0.25 = 10</div>
+
+<p><strong>Answer:</strong> A counting semaphore needs capacity for at least 10 pending events under the stated assumptions. Additional capacity should be considered for burst traffic and longer delays.</p>
+</section>
+
+<section>
+<h2>18. Common Design Mistakes</h2>
+<ul>
+<li>Using task-context APIs inside an ISR.</li>
+<li>Calling blocking functions from interrupt context.</li>
+<li>Using a binary semaphore when every individual data item must be preserved.</li>
+<li>Ignoring queue-full conditions.</li>
+<li>Using a mutex inside an ISR.</li>
+<li>Enabling an interrupt before creating its communication objects.</li>
+<li>Failing to define shared-buffer ownership.</li>
+<li>Assuming a task notification guarantees immediate execution.</li>
+<li>Ignoring the task's priority and response-time requirement.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Practical Activity – ADC Interrupt-to-Task Communication</h2>
+<p>Design an ADC monitoring application using an ADC conversion-complete interrupt and a sensor-processing task.</p>
+
+<h3>Implementation steps</h3>
+<ol>
+<li>Configure the ADC peripheral.</li>
+<li>Create a task notification or queue.</li>
+<li>Configure the ADC interrupt.</li>
+<li>In the ISR, capture the conversion result and acknowledge the interrupt.</li>
+<li>Transfer the result or signal completion to the task.</li>
+<li>In the task, convert the raw ADC count into a voltage.</li>
+<li>Apply threshold checks and update application state.</li>
+<li>Test repeated conversions and communication-buffer handling.</li>
+</ol>
+
+<h3>Example ADC conversion</h3>
+<p>For a 10-bit ADC with a 3.3 V reference:</p>
+<div class="formula">Voltage = (ADC Count / 1023) × 3.3 V</div>
+
+<p>For an ADC count of 512:</p>
+<div class="formula">Voltage = (512 / 1023) × 3.3 ≈ 1.652 V</div>
+
+<div class="warning-box">
+For LPC2129, use the actual ADC channel, pin configuration, conversion registers, and interrupt behavior. The ADC example describes the communication architecture, not a complete hardware-specific FreeRTOS port. Keil simulator results must not be treated as proof of physical ADC behavior.
+</div>
+</section>
+
+<section>
+<h2>20. Review Questions</h2>
+<ol>
+<li>What is interrupt-to-task communication?</li>
+<li>Why is communication between an ISR and task required?</li>
+<li>How does a binary semaphore signal an event?</li>
+<li>Differentiate binary and counting semaphores.</li>
+<li>Why is a queue suitable for UART data transfer?</li>
+<li>What are direct-to-task notifications?</li>
+<li>What is the purpose of event groups?</li>
+<li>What is an ISR-safe API?</li>
+<li>Explain the purpose of <code>xHigherPriorityTaskWoken</code>.</li>
+<li>Why should a mutex not be used inside an ISR?</li>
+<li>What is a race condition in shared data?</li>
+<li>What factors affect interrupt-to-task response time?</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Lesson Summary</h2>
+<ul>
+<li>Interrupt-to-task communication connects hardware event handling with application processing.</li>
+<li>Binary semaphores signal events; counting semaphores count pending events.</li>
+<li>Queues transfer individual data items or messages.</li>
+<li>Task notifications provide efficient direct signaling to a particular task.</li>
+<li>Event groups represent multiple event conditions.</li>
+<li>FreeRTOS ISR-safe APIs must be used from interrupt context.</li>
+<li>Shared data requires appropriate synchronization and ownership rules.</li>
+<li>Task priority and scheduling delay affect the overall response time.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L08_Top_Half_and_Bottom_Half_Concepts.html">← Previous Lesson</a>
+<a href="index.html">Chapter 07</a>
+<a href="L10_ISR_Programming_Best_Practices.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
