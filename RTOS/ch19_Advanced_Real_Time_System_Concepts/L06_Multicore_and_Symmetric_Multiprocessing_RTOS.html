@@ -1,1 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multicore and Symmetric Multiprocessing RTOS | RTOS &amp; FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Multicore and Symmetric Multiprocessing RTOS</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 19: Advanced Real-Time System Concepts</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 19</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Understand multicore processor architecture.</li>
+<li>Differentiate single-core and multicore systems.</li>
+<li>Explain multiprocessing and parallel execution.</li>
+<li>Differentiate AMP and SMP architectures.</li>
+<li>Understand SMP-based RTOS operation.</li>
+<li>Explain task affinity and processor scheduling.</li>
+<li>Identify shared-memory synchronization problems.</li>
+<li>Understand multicore communication and cache coherency.</li>
+<li>Recognize real-time challenges in multicore systems.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Multicore Systems</h2>
+<p>A multicore processor contains two or more processing cores within a single processor device or package. Each core can execute instructions independently.</p>
+
+<p>Multicore systems are used to improve processing capacity, support parallel workloads and separate application functions.</p>
+
+<h3>Single-Core Architecture</h3>
+<div class="diagram">
+       +----------------------+
+       |       PROCESSOR      |
+       |                      |
+       |      +---------+     |
+       |      |  CORE 0 |     |
+       |      +---------+     |
+       +----------------------+
+                  |
+             MAIN MEMORY
+</div>
+
+<h3>Multicore Architecture</h3>
+<div class="diagram">
+       +-----------------------------+
+       |       MULTICORE CPU         |
+       |                             |
+       | +---------+   +---------+   |
+       | | CORE 0  |   | CORE 1  |   |
+       | +---------+   +---------+   |
+       |                             |
+       | +---------+   +---------+   |
+       | | CORE 2  |   | CORE 3  |   |
+       | +---------+   +---------+   |
+       +-----------------------------+
+                    |
+             SHARED MEMORY
+</div>
+
+<p>Actual processor designs may include private caches, shared caches, memory controllers and interconnects.</p>
+</section>
+
+<section>
+<h2>3. Single-Core vs Multicore Processing</h2>
+
+<table>
+<tr><th>Feature</th><th>Single-Core</th><th>Multicore</th></tr>
+<tr><td>Processing cores</td><td>One</td><td>Two or more</td></tr>
+<tr><td>Parallel execution</td><td>No simultaneous execution on separate CPU cores</td><td>Possible across multiple cores</td></tr>
+<tr><td>Task execution</td><td>Tasks share one CPU through scheduling</td><td>Tasks may execute on different cores</td></tr>
+<tr><td>Synchronization</td><td>Required for shared data and concurrency</td><td>Required, including cross-core synchronization</td></tr>
+<tr><td>Scheduling</td><td>One processor scheduling context</td><td>May involve per-core or global scheduling</td></tr>
+<tr><td>Design complexity</td><td>Generally lower</td><td>Generally higher</td></tr>
+</table>
+
+<div class="note">Multicore does not automatically mean faster execution. The application must contain parallelizable work, and synchronization and communication overhead must be considered.</div>
+</section>
+
+<section>
+<h2>4. Multiprocessing and Parallel Execution</h2>
+<p>Multiprocessing uses multiple processing units to execute work. In a multicore processor, separate cores can execute different tasks at the same time.</p>
+
+<h3>Concurrency</h3>
+<p>Concurrency means multiple tasks make progress during overlapping time intervals. On a single-core processor, this is commonly achieved through task switching.</p>
+
+<h3>Parallelism</h3>
+<p>Parallelism means two or more operations execute simultaneously on separate processing resources.</p>
+
+<div class="diagram">
+SINGLE CORE – CONCURRENT EXECUTION
+
+Time  ---------------------------->
+
+Core 0: | Task A | Task B | Task A | Task C |
+
+
+MULTICORE – PARALLEL EXECUTION
+
+Time  ---------------------------->
+
+Core 0: |       Task A       | Task A |
+Core 1: |       Task B       | Task C |
+</div>
+
+<p>Concurrency can exist without parallelism. Parallelism requires multiple execution resources.</p>
+</section>
+
+<section>
+<h2>5. Types of Multiprocessing Architectures</h2>
+
+<h3>5.1 Asymmetric Multiprocessing (AMP)</h3>
+<p>In Asymmetric Multiprocessing, processor cores or processing units have different responsibilities. One processor may act as the master and coordinate other processors.</p>
+
+<div class="diagram">
+            MASTER CORE
+                 |
+        +--------+--------+
+        |                 |
+     CORE 1            CORE 2
+   Application       Application
+      Task A            Task B
+</div>
+
+<p>Possible characteristics:</p>
+<ul>
+<li>One core may control system initialization.</li>
+<li>Different cores may run separate software images or operating environments.</li>
+<li>Inter-processor communication is used to exchange information.</li>
+<li>Responsibilities can be statically assigned.</li>
+</ul>
+
+<h3>5.2 Symmetric Multiprocessing (SMP)</h3>
+<p>In Symmetric Multiprocessing, multiple processor cores operate as peers under a coordinated operating-system or RTOS kernel. Tasks can be scheduled across the available cores according to the implementation.</p>
+
+<div class="diagram">
+            SHARED RTOS KERNEL
+                    |
+             GLOBAL TASK SYSTEM
+                    |
+          +---------+---------+
+          |                   |
+       CORE 0              CORE 1
+          |                   |
+       TASK A              TASK B
+          |                   |
+          +---------+---------+
+                    |
+              SHARED MEMORY
+</div>
+
+<p>Possible characteristics:</p>
+<ul>
+<li>Multiple cores can execute tasks concurrently.</li>
+<li>Scheduling may distribute Ready tasks across cores.</li>
+<li>Shared kernel data requires synchronization.</li>
+<li>Task migration may be supported.</li>
+</ul>
+</section>
+
+<section>
+<h2>6. AMP vs SMP</h2>
+
+<table>
+<tr><th>Feature</th><th>AMP</th><th>SMP</th></tr>
+<tr><td>Core organization</td><td>Different or assigned responsibilities</td><td>Peer processing cores</td></tr>
+<tr><td>Operating environment</td><td>May run separate software images</td><td>Common coordinated OS/kernel environment</td></tr>
+<tr><td>Task allocation</td><td>Often statically assigned</td><td>Scheduled across cores by kernel policy</td></tr>
+<tr><td>Task migration</td><td>Usually limited or application-managed</td><td>May be supported</td></tr>
+<tr><td>Communication</td><td>Often explicit inter-processor communication</td><td>Shared kernel and memory structures may be used</td></tr>
+<tr><td>Typical use</td><td>Partitioned control and processing functions</td><td>General parallel task execution</td></tr>
+</table>
+
+<p>These are broad architectural models. Real systems may combine features of AMP and SMP.</p>
+</section>
+
+<section>
+<h2>7. Multicore RTOS Architecture</h2>
+<p>A multicore RTOS provides scheduling and synchronization mechanisms for applications executing across multiple cores.</p>
+
+<h3>Typical Components</h3>
+<ul>
+<li>Task management.</li>
+<li>Per-core scheduling or coordinated scheduling.</li>
+<li>Interrupt management.</li>
+<li>Inter-core communication.</li>
+<li>Shared memory management.</li>
+<li>Synchronization primitives.</li>
+<li>Timer and clock services.</li>
+<li>Memory protection, where supported.</li>
+</ul>
+
+<div class="diagram">
+              MULTICORE RTOS
+                    |
+       +------------+------------+
+       |                         |
+    CORE 0                    CORE 1
+       |                         |
+  +----+----+               +----+----+
+  | Task A  |               | Task C  |
+  | Task B  |               | Task D  |
+  +---------+               +---------+
+       |                         |
+       +-----------+-------------+
+                   |
+           SHARED RESOURCES
+                   |
+         QUEUES / LOCKS / MEMORY
+</div>
+
+<p>The exact architecture depends on the RTOS, processor and SMP port.</p>
+</section>
+
+<section>
+<h2>8. Multicore Task Scheduling</h2>
+<p>In a multicore system, the RTOS must decide which task should execute on which core.</p>
+
+<h3>Global Scheduling</h3>
+<p>A global scheduler considers tasks from a shared Ready-task set and assigns eligible tasks to available cores.</p>
+
+<h3>Partitioned Scheduling</h3>
+<p>Partitioned scheduling assigns tasks to specific cores. Each core schedules its assigned tasks independently or according to a coordinated policy.</p>
+
+<h3>Clustered Scheduling</h3>
+<p>Clustered scheduling groups cores into clusters and schedules tasks within each cluster.</p>
+
+<table>
+<tr><th>Approach</th><th>Basic Idea</th><th>Consideration</th></tr>
+<tr><td>Global</td><td>Tasks can be scheduled across a common set of cores.</td><td>Migration and shared scheduling overhead.</td></tr>
+<tr><td>Partitioned</td><td>Tasks are assigned to particular cores.</td><td>Load balancing and partition assignment.</td></tr>
+<tr><td>Clustered</td><td>Scheduling occurs within groups of cores.</td><td>Cluster boundaries and migration restrictions.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>9. Task Affinity</h2>
+<p>Task affinity specifies which processor cores are permitted or preferred for a task.</p>
+
+<h3>Core Affinity Example</h3>
+<pre><code>Task A -> Core 0 only
+Task B -> Core 1 only
+Task C -> Core 0 or Core 1</code></pre>
+
+<h3>Advantages</h3>
+<ul>
+<li>Can reduce unnecessary task migration.</li>
+<li>May improve cache locality.</li>
+<li>Supports hardware-specific task assignment.</li>
+<li>Can simplify analysis for partitioned workloads.</li>
+</ul>
+
+<h3>Disadvantages</h3>
+<ul>
+<li>May create uneven core utilization.</li>
+<li>Can leave one core overloaded while another is idle.</li>
+<li>Restricts scheduling flexibility.</li>
+</ul>
+
+<div class="note">Task affinity is an implementation-specific capability. A generic FreeRTOS application should not assume that affinity APIs exist in every FreeRTOS version or port.</div>
+</section>
+
+<section>
+<h2>10. Shared Memory in Multicore Systems</h2>
+<p>Multiple cores may access the same memory region. Shared memory provides an efficient way to exchange data, but concurrent access must be coordinated.</p>
+
+<div class="diagram">
+              SHARED MEMORY
+                   |
+          +--------+--------+
+          |                 |
+       CORE 0            CORE 1
+          |                 |
+       WRITE DATA        READ DATA
+          |                 |
+          +--------+--------+
+                   |
+          SYNCHRONIZATION NEEDED
+</div>
+
+<h3>Common Problems</h3>
+<ul>
+<li>Race conditions.</li>
+<li>Lost updates.</li>
+<li>Inconsistent data structures.</li>
+<li>Incorrect visibility of memory updates.</li>
+<li>Cache coherency problems.</li>
+</ul>
+
+<h3>Example: Lost Update</h3>
+<pre><code>Shared counter = 10
+
+Core 0 reads counter = 10
+Core 1 reads counter = 10
+
+Core 0 calculates 10 + 1 = 11
+Core 1 calculates 10 + 1 = 11
+
+Core 0 writes 11
+Core 1 writes 11
+
+Final counter = 11
+
+Expected counter = 12</code></pre>
+
+<p>Both cores performed an increment, but one update was lost because the operation was not atomic.</p>
+</section>
+
+<section>
+<h2>11. Race Conditions and Atomic Operations</h2>
+<p>A race condition occurs when the result of concurrent operations depends on their timing or interleaving.</p>
+
+<p>An atomic operation completes as one indivisible operation from the perspective of other concurrent accesses.</p>
+
+<h3>Common Synchronization Methods</h3>
+<ul>
+<li>Mutexes.</li>
+<li>Spinlocks.</li>
+<li>Semaphores.</li>
+<li>Atomic read-modify-write operations.</li>
+<li>Critical sections.</li>
+<li>Message passing.</li>
+</ul>
+
+<h3>Atomic Increment – Conceptual Example</h3>
+<pre><code>atomic_increment(&amp;sharedCounter);</code></pre>
+
+<p>This represents an atomic increment operation. Actual syntax depends on the language standard, compiler and target architecture.</p>
+
+<div class="warning">Declaring a shared variable as volatile does not make read-modify-write operations atomic and does not provide general cross-core synchronization.</div>
+</section>
+
+<section>
+<h2>12. Cache Coherency</h2>
+<p>Modern multicore processors may contain private caches for each core. If multiple cores access the same memory location, their cached copies must remain consistent according to the processor's memory system rules.</p>
+
+<div class="diagram">
+            MAIN MEMORY
+                 |
+          +------+------+
+          |             |
+       CACHE 0       CACHE 1
+          |             |
+       CORE 0         CORE 1
+</div>
+
+<h3>Cache Coherency Problem</h3>
+<p>Suppose Core 0 updates a shared variable in its cache. Core 1 may hold an older cached copy if the hardware does not maintain coherency for that memory region.</p>
+
+<h3>Common Solutions</h3>
+<ul>
+<li>Hardware cache-coherency protocols.</li>
+<li>Cache maintenance operations where required.</li>
+<li>Correct memory attributes and shareability settings.</li>
+<li>Memory barriers and synchronization primitives.</li>
+<li>Non-cacheable shared-memory regions where appropriate.</li>
+</ul>
+
+<div class="note">A cache-coherent system still requires synchronization. Cache coherency does not make multi-step application operations atomic or eliminate data races.</div>
+</section>
+
+<section>
+<h2>13. Memory Barriers and Ordering</h2>
+<p>Processors and compilers may reorder memory operations when permitted by their execution and language models.</p>
+
+<p>A memory barrier or fence constrains ordering and visibility according to the relevant architecture and programming model.</p>
+
+<h3>Conceptual Example</h3>
+<pre><code>sharedData = 100;
+
+/* Appropriate release ordering
+   may be required here. */
+
+readyFlag = 1;</code></pre>
+
+<p>A receiving core must use an appropriate acquire operation or synchronization mechanism before assuming that the data written before the flag is visible.</p>
+
+<p>In C and C++, use the language's atomic and synchronization facilities where applicable. Platform-specific device memory and DMA operations may require additional architecture-specific barriers.</p>
+
+<div class="warning">A memory barrier is not a substitute for a mutex or atomic protocol. It does not automatically make a data race safe.</div>
+</section>
+
+<section>
+<h2>14. Inter-Core Communication</h2>
+<p>Multicore processors require communication mechanisms for exchanging data and coordinating operations between cores.</p>
+
+<h3>Common Methods</h3>
+<ul>
+<li>Shared memory.</li>
+<li>Inter-processor interrupts (IPI).</li>
+<li>Message queues.</li>
+<li>Mailbox hardware.</li>
+<li>Hardware semaphores.</li>
+<li>Dedicated interconnects.</li>
+</ul>
+
+<h3>Shared-Memory Communication</h3>
+<p>One core writes data to a shared buffer, and another core reads it after suitable synchronization.</p>
+
+<h3>Inter-Processor Interrupt</h3>
+<p>An IPI allows one processor core to notify another core that an event or request needs attention.</p>
+
+<h3>Mailbox Communication</h3>
+<p>A hardware or software mailbox provides a structured mechanism for exchanging messages between processing units.</p>
+
+<div class="diagram">
+          CORE 0
+             |
+       WRITE MESSAGE
+             |
+        SHARED BUFFER
+             |
+       SEND IPI / SIGNAL
+             |
+          CORE 1
+             |
+       READ MESSAGE
+             |
+       PROCESS REQUEST
+</div>
+</section>
+
+<section>
+<h2>15. Load Balancing</h2>
+<p>Load balancing distributes work across available processor cores to avoid unnecessary overload on one core.</p>
+
+<h3>Example</h3>
+<table>
+<tr><th>Core</th><th>Initial Workload</th></tr>
+<tr><td>Core 0</td><td>80%</td></tr>
+<tr><td>Core 1</td><td>20%</td></tr>
+</table>
+
+<p>A scheduling policy may move eligible work from Core 0 to Core 1 to improve overall balance.</p>
+
+<h3>Load Balancing Considerations</h3>
+<ul>
+<li>Task migration cost.</li>
+<li>Cache locality.</li>
+<li>Task affinity restrictions.</li>
+<li>Interrupt distribution.</li>
+<li>Shared-resource contention.</li>
+<li>Real-time deadlines.</li>
+</ul>
+
+<div class="note">Equal CPU utilization across cores is not always optimal. Critical tasks may require dedicated cores, and task migration can introduce additional latency.</div>
+</section>
+
+<section>
+<h2>16. Multicore Real-Time Scheduling Challenges</h2>
+<p>Meeting deadlines on multicore systems is more complex than simply checking whether total CPU utilization is below the number of cores.</p>
+
+<h3>Important Challenges</h3>
+<ul>
+<li>Shared cache and memory-bus contention.</li>
+<li>Inter-core synchronization delays.</li>
+<li>Task migration overhead.</li>
+<li>Interrupt distribution and interference.</li>
+<li>Shared peripheral access.</li>
+<li>Priority inversion across cores.</li>
+<li>Non-deterministic memory access delays.</li>
+<li>Thermal and power-management effects.</li>
+</ul>
+
+<h3>Example: Shared Peripheral Contention</h3>
+<p>Core 0 and Core 1 may execute separate tasks but both need access to the same SPI controller. A synchronization mechanism must coordinate access to that peripheral.</p>
+
+<p>Even when CPU execution is parallel, a shared hardware resource can become a serialization bottleneck.</p>
+</section>
+
+<section>
+<h2>17. Priority Inversion in Multicore Systems</h2>
+<p>Priority inversion can occur when a high-priority task waits for a resource held by a lower-priority task.</p>
+
+<p>In multicore systems, the situation may involve tasks executing on different cores and can be more complicated because of cross-core locking and scheduling.</p>
+
+<h3>Possible Solutions</h3>
+<ul>
+<li>Shorten critical sections.</li>
+<li>Use suitable mutex protocols supported by the RTOS.</li>
+<li>Establish a consistent lock-acquisition order.</li>
+<li>Reduce shared-resource dependencies.</li>
+<li>Use dedicated owner tasks for complex peripherals.</li>
+<li>Include blocking in response-time analysis.</li>
+</ul>
+
+<p>Priority inheritance is useful in supported mutex implementations, but it does not eliminate every form of multicore blocking or guarantee a deadline.</p>
+</section>
+
+<section>
+<h2>18. FreeRTOS SMP</h2>
+<p>FreeRTOS is available in different kernel and port configurations. SMP support is not a property of every FreeRTOS build.</p>
+
+<p>An SMP-capable FreeRTOS configuration coordinates task execution across multiple cores supported by the selected SMP port.</p>
+
+<h3>General SMP Design Considerations</h3>
+<ul>
+<li>Use an SMP-capable kernel version and processor port.</li>
+<li>Check the target hardware's core architecture.</li>
+<li>Review the port's scheduling and task-affinity behavior.</li>
+<li>Use supported synchronization APIs for shared data.</li>
+<li>Verify interrupt routing and per-core interrupt behavior.</li>
+<li>Check memory protection and cache-coherency requirements.</li>
+<li>Analyze worst-case execution and blocking across cores.</li>
+</ul>
+
+<div class="warning">Do not assume that standard single-core FreeRTOS APIs or a particular MCU port provide SMP functionality. SMP support, APIs and scheduling details depend on the exact FreeRTOS release and hardware port.</div>
+</section>
+
+<section>
+<h2>19. AMP and SMP Application Examples</h2>
+
+<h3>AMP Example – Automotive Control</h3>
+<ul>
+<li>Processor A manages safety-critical control.</li>
+<li>Processor B handles infotainment.</li>
+<li>Processor C performs communication or diagnostics.</li>
+</ul>
+
+<h3>SMP Example – Industrial Processing</h3>
+<ul>
+<li>Core 0 processes sensor input.</li>
+<li>Core 1 performs signal processing.</li>
+<li>Core 2 handles communication.</li>
+<li>Core 3 performs logging and diagnostics.</li>
+</ul>
+
+<p>These are illustrative allocations. Actual designs must account for shared resources, safety partitions and timing constraints.</p>
+</section>
+
+<section>
+<h2>20. Practical Exercise 1 – Parallel Execution</h2>
+<p><strong>Problem:</strong> Task A requires 8 ms of CPU time and Task B requires 6 ms. Assume both tasks are independent and can run simultaneously on separate cores.</p>
+
+<h3>Solution</h3>
+<pre><code>Single-Core Sequential Time =
+    8 + 6
+
+    = 14 ms
+
+Ideal Two-Core Parallel Time =
+    max(8, 6)
+
+    = 8 ms</code></pre>
+
+<p><strong>Answer:</strong> Ideal completion time is 8 ms on two cores. Real systems may take longer due to scheduling, synchronization and shared-resource overhead.</p>
+</section>
+
+<section>
+<h2>21. Practical Exercise 2 – Core Utilization</h2>
+<p><strong>Problem:</strong> Core 0 executes tasks for 70% of the observation interval, while Core 1 executes tasks for 40%. Calculate average utilization across both cores.</p>
+
+<pre><code>Total Core Utilization =
+    70% + 40%
+    = 110%
+
+Average Per-Core Utilization =
+    110% / 2
+
+    = 55%</code></pre>
+
+<p><strong>Answer:</strong> Average utilization is 55% per core. This does not reveal whether individual task deadlines are met.</p>
+</section>
+
+<section>
+<h2>22. Practical Exercise 3 – Shared Counter</h2>
+<p><strong>Problem:</strong> Two cores increment the same counter 1000 times each. What should the final counter value be if every increment is completed correctly?</p>
+
+<pre><code>Core 0 increments = 1000
+Core 1 increments = 1000
+
+Expected Counter =
+    1000 + 1000
+
+    = 2000</code></pre>
+
+<p>If the increment is implemented as an unsynchronized read-modify-write operation, updates may be lost. Use an appropriate atomic operation or synchronization mechanism.</p>
+</section>
+
+<section>
+<h2>23. Practical Exercise 4 – AMP vs SMP Selection</h2>
+<p><strong>Scenario:</strong> An embedded product has one processor dedicated to motor control and another processor running a separate Linux environment for user-interface and networking tasks.</p>
+
+<p><strong>Likely architecture:</strong> AMP-style partitioning.</p>
+
+<p><strong>Reason:</strong> The processing units have separate responsibilities and may run separate software environments, communicating through an explicit inter-processor mechanism.</p>
+</section>
+
+<section>
+<h2>24. Practical Exercise 5 – Multicore Design</h2>
+<p><strong>Objective:</strong> Design a conceptual multicore embedded application with two cores.</p>
+
+<table>
+<tr><th>Core</th><th>Assigned Work</th></tr>
+<tr><td>Core 0</td><td>Sensor acquisition and real-time control.</td></tr>
+<tr><td>Core 1</td><td>Communication, logging and diagnostics.</td></tr>
+</table>
+
+<h3>Design Tasks</h3>
+<ol>
+<li>Identify data exchanged between the cores.</li>
+<li>Choose a shared-memory or message-based communication method.</li>
+<li>Define synchronization and buffer ownership.</li>
+<li>Identify shared peripheral resources.</li>
+<li>Define task priorities and deadlines.</li>
+<li>Estimate communication and synchronization delays.</li>
+<li>Check whether each core can meet its workload deadlines.</li>
+</ol>
+</section>
+
+<section>
+<h2>25. Limitations for the LPC2129 Learning Setup</h2>
+<p>The LPC2129 uses a single ARM7TDMI-S processor core. It is not a multicore processor and therefore cannot demonstrate true simultaneous multicore execution.</p>
+
+<p>Using Keil uVision in simulator-only mode, you can study:</p>
+<ul>
+<li>Task scheduling concepts on a single core, if a compatible RTOS port is available.</li>
+<li>Concurrency through task switching.</li>
+<li>Shared-variable race conditions conceptually.</li>
+<li>Mutex and semaphore behavior in a supported software environment.</li>
+<li>Timing and synchronization algorithms through host-side examples.</li>
+</ul>
+
+<p>To demonstrate actual SMP behavior, use a multicore development platform and an RTOS release with a supported SMP port.</p>
+
+<div class="tip">For an embedded RTOS portfolio project, a multicore-capable development board with verified SMP support is a more appropriate practical platform than the LPC2129 simulator.</div>
+</section>
+
+<section>
+<h2>26. Interview Questions</h2>
+<ol>
+<li>What is a multicore processor?</li>
+<li>Differentiate concurrency and parallelism.</li>
+<li>What is multiprocessing?</li>
+<li>Differentiate AMP and SMP.</li>
+<li>What is an SMP RTOS?</li>
+<li>What is task affinity?</li>
+<li>What is global scheduling?</li>
+<li>Differentiate global and partitioned scheduling.</li>
+<li>What is a race condition in a multicore system?</li>
+<li>Why are atomic operations required?</li>
+<li>What is cache coherency?</li>
+<li>Does cache coherency eliminate race conditions?</li>
+<li>What is a memory barrier?</li>
+<li>What is an inter-processor interrupt?</li>
+<li>What is load balancing?</li>
+<li>How can task migration affect performance?</li>
+<li>What causes priority inversion in multicore systems?</li>
+<li>Does standard FreeRTOS automatically support SMP on every MCU?</li>
+<li>Can the LPC2129 demonstrate true parallel execution?</li>
+<li>What additional timing factors must be considered in multicore real-time systems?</li>
+</ol>
+</section>
+
+<section>
+<h2>27. Lesson Summary</h2>
+<ul>
+<li>A multicore processor contains multiple independent processing cores.</li>
+<li>Concurrency means overlapping progress; parallelism means simultaneous execution.</li>
+<li>AMP assigns different responsibilities to processing units.</li>
+<li>SMP coordinates multiple peer cores through a shared operating-system environment.</li>
+<li>Task affinity controls which cores may execute a task.</li>
+<li>Shared memory requires appropriate synchronization.</li>
+<li>Atomic operations, mutexes and memory-ordering mechanisms help coordinate concurrent access.</li>
+<li>Cache coherency does not eliminate application-level race conditions.</li>
+<li>Multicore scheduling must consider migration, blocking and shared-resource contention.</li>
+<li>FreeRTOS SMP support depends on the selected kernel release and hardware port.</li>
+<li>The LPC2129 is single-core and cannot demonstrate true multicore parallel execution.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L05_Interrupt_Latency_and_Task_Response_Optimization.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L07_Safety_Critical_Real_Time_Systems.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 19 – Advanced Real-Time System Concepts</p>
+</footer>
+
+</body>
+</html>
