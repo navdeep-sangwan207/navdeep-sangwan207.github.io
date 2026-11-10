@@ -1,1 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shared Resource Management | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Shared Resource Management</h1>
+<p>Chapter 10 – Mutexes and Resource Management | Lesson 03</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 10</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>In an RTOS-based embedded system, multiple tasks may need to access the same hardware peripheral, memory location, communication interface, or software data structure.</p>
+
+<p>A resource accessed by more than one task is called a <strong>shared resource</strong>.</p>
+
+<p>Shared resource management ensures that concurrent tasks use these resources safely and in a controlled manner.</p>
+
+<div class="info-box">
+<strong>Key concept:</strong> A shared resource must have a clearly defined access policy. A mutex is commonly used when tasks require exclusive access to a resource.
+</div>
+</section>
+
+<section>
+<h2>2. Types of Shared Resources</h2>
+
+<table>
+<tr><th>Resource</th><th>Example</th><th>Possible conflict</th></tr>
+<tr><td>Communication peripheral</td><td>UART0, UART1</td><td>Interleaved transmissions</td></tr>
+<tr><td>Serial bus</td><td>SPI, I2C</td><td>Conflicting transactions or configuration</td></tr>
+<tr><td>Memory</td><td>Global variables and structures</td><td>Race conditions and inconsistent data</td></tr>
+<tr><td>Display</td><td>LCD or graphical display driver</td><td>Overlapping display operations</td></tr>
+<tr><td>Storage</td><td>SD card or file system</td><td>Corrupted shared file-system state</td></tr>
+<tr><td>Software object</td><td>Linked list or shared queue wrapper</td><td>Invalid data structure state</td></tr>
+</table>
+</section>
+
+<section>
+<h2>3. Problems Caused by Uncontrolled Access</h2>
+
+<h3>3.1 Race condition</h3>
+<p>A race condition occurs when the result of an operation depends on the timing or interleaving of concurrent execution.</p>
+
+<h3>Example: Shared counter</h3>
+<pre><code>sharedCounter = sharedCounter + 1;</code></pre>
+
+<p>This statement may involve multiple machine operations:</p>
+<ol>
+<li>Read the current counter value.</li>
+<li>Increment the value.</li>
+<li>Write the updated value.</li>
+</ol>
+
+<p>If two tasks perform these operations concurrently, one update may overwrite the other.</p>
+
+<h3>3.2 Data corruption</h3>
+<p>Concurrent modifications can leave a shared data structure in an inconsistent state.</p>
+
+<h3>3.3 Peripheral conflicts</h3>
+<p>Two tasks may attempt to reconfigure the same peripheral or start transactions that cannot safely overlap.</p>
+
+<h3>3.4 Inconsistent communication</h3>
+<p>Multiple tasks transmitting through a shared UART driver may interleave their messages if the driver does not provide suitable serialization.</p>
+</section>
+
+<section>
+<h2>4. Resource Protection Using a Mutex</h2>
+<p>A mutex provides exclusive ownership of a resource between tasks.</p>
+
+<pre><code>             Task A             Task B
+                |                  |
+                |                  |
+                v                  v
+          Request Mutex       Request Mutex
+                |                  |
+                v                  v
+          +--------------------------+
+          |       Shared Mutex       |
+          +--------------------------+
+                |
+                v
+          One task owns it
+                |
+                v
+          Access Resource
+                |
+                v
+          Release Mutex
+                |
+                v
+          Another waiting task
+          may acquire the mutex</code></pre>
+
+<h3>General access sequence</h3>
+<ol>
+<li>Create the mutex before starting the tasks that use it.</li>
+<li>A task requests the mutex.</li>
+<li>If available, the task acquires ownership.</li>
+<li>The task accesses the protected resource.</li>
+<li>The task releases the mutex.</li>
+<li>Another waiting task may acquire it.</li>
+</ol>
+</section>
+
+<section>
+<h2>5. Shared UART Resource Management</h2>
+<p>Consider two tasks that need to send messages using the same UART peripheral.</p>
+
+<h3>Without resource protection</h3>
+<pre><code>Task A:
+    UART_Send("HELLO");
+
+Task B:
+    UART_Send("WORLD");</code></pre>
+
+<p>If both tasks transmit concurrently, the driver may interleave their operations.</p>
+
+<h3>With a mutex</h3>
+<pre><code>Task A:
+    Take UART Mutex
+    UART_Send("HELLO")
+    Give UART Mutex
+
+Task B:
+    Take UART Mutex
+    UART_Send("WORLD")
+    Give UART Mutex</code></pre>
+
+<p>The mutex serializes the protected operations, provided all tasks use the same mutex and the UART driver follows the required transaction rules.</p>
+</section>
+
+<section>
+<h2>6. Shared I2C and SPI Bus Management</h2>
+
+<h3>6.1 I2C bus</h3>
+<p>Multiple tasks may communicate with different I2C devices using the same controller.</p>
+
+<p>A mutex can protect the complete transaction, including:</p>
+<ul>
+<li>Bus configuration where required.</li>
+<li>Device address selection.</li>
+<li>Register address transmission.</li>
+<li>Data transmission or reception.</li>
+<li>Transaction completion and cleanup.</li>
+</ul>
+
+<h3>6.2 SPI bus</h3>
+<p>Multiple SPI devices may share clock, MOSI and MISO signals while using different chip-select signals.</p>
+
+<p>Resource management may need to protect:</p>
+<ul>
+<li>SPI controller configuration.</li>
+<li>Clock polarity and phase changes.</li>
+<li>Chip-select activation.</li>
+<li>Complete transfer sequence.</li>
+<li>Chip-select deactivation.</li>
+</ul>
+
+<div class="warning-box">
+A mutex coordinates participating tasks. It does not automatically prevent an ISR, DMA controller, or independent hardware agent from accessing the peripheral. Those access paths require their own coordination and driver design.
+</div>
+</section>
+
+<section>
+<h2>7. Protecting Shared Memory</h2>
+<p>Global variables and shared structures may be accessed by multiple tasks.</p>
+
+<h3>Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xDataMutex;
+
+int temperature = 25;
+
+void UpdateTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xDataMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            temperature = temperature + 1;
+
+            xSemaphoreGive(xDataMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void ReadTask(void *pvParameters)
+{
+    int localTemperature;
+
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xDataMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            localTemperature = temperature;
+
+            xSemaphoreGive(xDataMutex);
+        }
+
+        /* Process the local copy outside the lock */
+        ProcessTemperature(localTemperature);
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+int main(void)
+{
+    xDataMutex = xSemaphoreCreateMutex();
+
+    if (xDataMutex == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(UpdateTask, "Update", 256, NULL, 2, NULL);
+    xTaskCreate(ReadTask, "Read", 256, NULL, 2, NULL);
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<h3>Explanation</h3>
+<ul>
+<li>Both tasks share the global variable <code>temperature</code>.</li>
+<li>The update task locks the resource before modifying it.</li>
+<li>The read task locks the resource before copying its value.</li>
+<li>The read task processes a local copy after releasing the mutex.</li>
+<li>The protected access prevents these two task operations from overlapping.</li>
+</ul>
+</section>
+
+<section>
+<h2>8. Resource Ownership and Access Policy</h2>
+<p>For every shared resource, the system designer should define who can access it and how access is coordinated.</p>
+
+<table>
+<tr><th>Policy</th><th>Description</th></tr>
+<tr><td>Exclusive ownership</td><td>Only one task accesses the resource at a time.</td></tr>
+<tr><td>Dedicated owner task</td><td>One task owns the peripheral and other tasks send requests to it.</td></tr>
+<tr><td>Read-only sharing</td><td>Multiple tasks may read immutable data without modifying it.</td></tr>
+<tr><td>Protected shared data</td><td>Tasks use a mutex around shared modifications and related reads.</td></tr>
+<tr><td>Producer-consumer transfer</td><td>Tasks exchange data through queues or buffers with defined ownership.</td></tr>
+</table>
+
+<h3>Dedicated owner task architecture</h3>
+<pre><code>Task A --------+
+               |
+Task B --------+----> Request Queue
+               |            |
+Task C --------+            v
+                       Peripheral
+                       Owner Task
+                            |
+                            v
+                       UART / SPI /
+                       I2C Driver</code></pre>
+
+<p>A dedicated owner task can simplify access to a peripheral because only that task directly controls it. Other tasks communicate through queues or notifications.</p>
+</section>
+
+<section>
+<h2>9. Resource Management and DMA</h2>
+<p>DMA (Direct Memory Access) transfers data between memory and peripherals with limited CPU intervention.</p>
+
+<p>A mutex alone is not sufficient to manage a resource while DMA is active. The application must define the ownership and lifetime of the DMA buffer and coordinate transfer completion.</p>
+
+<h3>Typical DMA sequence</h3>
+<ol>
+<li>A task prepares a DMA buffer.</li>
+<li>The driver configures and starts the DMA transfer.</li>
+<li>The buffer remains valid and is not modified while DMA uses it.</li>
+<li>A hardware interrupt reports transfer completion.</li>
+<li>The ISR acknowledges the interrupt and signals a task using an appropriate ISR-safe mechanism.</li>
+<li>The task processes the completed transfer and releases or reuses the buffer according to the ownership protocol.</li>
+</ol>
+
+<div class="info-box">
+Use queues, task notifications, semaphores and explicit buffer ownership to coordinate asynchronous DMA operations. The exact design depends on the DMA controller and peripheral driver.
+</div>
+</section>
+
+<section>
+<h2>10. Choosing Between Mutexes, Queues and Dedicated Tasks</h2>
+
+<table>
+<tr><th>Mechanism</th><th>Best suited for</th><th>Example</th></tr>
+<tr><td>Mutex</td><td>Exclusive task-level resource access</td><td>Protect shared SPI driver state</td></tr>
+<tr><td>Queue</td><td>Transferring data or requests</td><td>Send UART messages to an owner task</td></tr>
+<tr><td>Task notification</td><td>Lightweight task signaling</td><td>Notify a processing task that work is ready</td></tr>
+<tr><td>Binary semaphore</td><td>Event synchronization</td><td>Signal a task from an ISR</td></tr>
+<tr><td>Dedicated owner task</td><td>Centralized peripheral management</td><td>One task manages all UART transmissions</td></tr>
+</table>
+</section>
+
+<section>
+<h2>11. Common Resource Management Problems</h2>
+
+<h3>11.1 Deadlock</h3>
+<p>Two or more tasks wait indefinitely for resources held by one another.</p>
+
+<h3>11.2 Priority inversion</h3>
+<p>A high-priority task waits for a resource held by a lower-priority task, and intermediate-priority execution delays the owner.</p>
+
+<h3>11.3 Starvation</h3>
+<p>A task waits for a resource for an excessively long time because other tasks repeatedly obtain access.</p>
+
+<h3>11.4 Excessive blocking</h3>
+<p>A task holds a mutex while performing lengthy work or waiting for an unrelated event.</p>
+
+<h3>11.5 Incorrect buffer ownership</h3>
+<p>A task modifies or reuses a buffer while another task or DMA controller is still using it.</p>
+</section>
+
+<section>
+<h2>12. Resource Management Best Practices</h2>
+<ol>
+<li>Identify every resource shared between tasks.</li>
+<li>Define an access policy for each resource.</li>
+<li>Use mutexes for task-level exclusive ownership.</li>
+<li>Use queues to transfer data and peripheral requests.</li>
+<li>Consider a dedicated owner task for complex peripherals.</li>
+<li>Keep mutex hold times short.</li>
+<li>Never wait indefinitely for an unrelated event while holding a mutex.</li>
+<li>Define buffer ownership for asynchronous operations.</li>
+<li>Coordinate ISR and DMA access separately from task-level mutex ownership.</li>
+<li>Check all RTOS API return values.</li>
+<li>Use a consistent lock ordering strategy.</li>
+<li>Test contention, timeout and error conditions.</li>
+</ol>
+</section>
+
+<section>
+<h2>13. Practical Activity – Shared Peripheral Management</h2>
+<p>Design a simple system with two tasks that need to use one shared UART driver.</p>
+
+<h3>Activity steps</h3>
+<ol>
+<li>Create two FreeRTOS tasks.</li>
+<li>Create one mutex for the UART resource.</li>
+<li>Make both tasks request the mutex before calling the UART driver.</li>
+<li>Keep the protected transmission operation within the mutex-controlled section.</li>
+<li>Release the mutex after the operation.</li>
+<li>Observe task execution and blocking behavior where supported by the environment.</li>
+<li>Compare the design with a dedicated UART owner task receiving messages through a queue.</li>
+</ol>
+
+<h3>Expected result</h3>
+<p>The mutex-based design should serialize the protected task-level UART operations. In the dedicated-owner design, only the owner task directly accesses the UART driver, while other tasks submit messages through the queue.</p>
+
+<div class="warning-box">
+For the LPC2129 Keil simulator setup, these are generic FreeRTOS design exercises. Verify a compatible ARM7 FreeRTOS port and peripheral simulation support before treating the examples as executable LPC2129 projects.
+</div>
+</section>
+
+<section>
+<h2>14. Review Questions</h2>
+<ol>
+<li>What is a shared resource in an RTOS?</li>
+<li>Give five examples of shared resources in an embedded system.</li>
+<li>What problems can occur when multiple tasks access a resource without coordination?</li>
+<li>How does a mutex protect a shared resource?</li>
+<li>How can a UART peripheral be shared safely between two tasks?</li>
+<li>Why should an I2C transaction be protected as a complete operation?</li>
+<li>What is the role of a dedicated owner task?</li>
+<li>Why is a mutex alone insufficient for DMA buffer management?</li>
+<li>Differentiate resource protection and data transfer.</li>
+<li>When should a queue be preferred over a mutex?</li>
+<li>What is incorrect buffer ownership?</li>
+<li>Explain deadlock, starvation and priority inversion.</li>
+<li>Why should mutex hold time be minimized?</li>
+<li>How can a system coordinate ISR-to-task communication?</li>
+<li>What are the advantages of centralized peripheral management?</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Lesson Summary</h2>
+<ul>
+<li>Shared resources can be hardware peripherals, memory or software objects.</li>
+<li>Uncontrolled concurrent access can cause race conditions and data corruption.</li>
+<li>Mutexes provide exclusive ownership between tasks.</li>
+<li>Queues are useful for transferring data and peripheral requests.</li>
+<li>Dedicated owner tasks can simplify shared peripheral management.</li>
+<li>DMA requires explicit buffer ownership and completion coordination.</li>
+<li>ISRs and hardware agents need appropriate coordination beyond a task mutex.</li>
+<li>Good resource management improves system reliability and predictability.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L02_Mutex_vs_Binary_Semaphore.html">← Previous Lesson</a>
+<a href="index.html">Chapter 10</a>
+<a href="L04_Priority_Inversion.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
