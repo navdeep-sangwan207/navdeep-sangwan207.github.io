@@ -1,1 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Race Conditions | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+.formula{background:#f3f5f7;padding:15px;border-radius:7px;text-align:center;font-weight:bold;margin:15px 0;font-family:monospace;overflow-x:auto}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Race Conditions</h1>
+<p>Chapter 09 – Semaphores and Synchronization | Lesson 02</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 09</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>A race condition is a software defect that occurs when the result of an operation depends on the unpredictable timing or ordering of concurrent operations.</p>
+
+<p>Race conditions commonly occur when multiple tasks, threads, or interrupt handlers access shared data or resources without suitable synchronization.</p>
+
+<div class="info-box">
+<strong>Example:</strong> Two RTOS tasks increment the same shared counter. If both read the old value before either writes the updated value, one increment may be lost.
+</div>
+</section>
+
+<section>
+<h2>2. What Is Shared Data?</h2>
+<p>Shared data is information that can be accessed by more than one execution context.</p>
+
+<h3>Examples</h3>
+<ul>
+<li>Global variables.</li>
+<li>Shared structures.</li>
+<li>Common arrays and buffers.</li>
+<li>Peripheral control registers.</li>
+<li>Communication state variables.</li>
+<li>Shared resource counters.</li>
+</ul>
+
+<pre><code>int sharedCounter = 0;
+
+void TaskA(void)
+{
+    sharedCounter++;
+}
+
+void TaskB(void)
+{
+    sharedCounter++;
+}</code></pre>
+
+<p>If these functions execute concurrently without protection, the increment operations can interfere with one another.</p>
+</section>
+
+<section>
+<h2>3. How Does a Race Condition Occur?</h2>
+<p>Consider the statement:</p>
+
+<pre><code>sharedCounter = sharedCounter + 1;</code></pre>
+
+<p>This statement is a read-modify-write operation. Conceptually, it consists of three steps:</p>
+
+<ol>
+<li>Read the current counter value.</li>
+<li>Add one to the value.</li>
+<li>Write the updated value back.</li>
+</ol>
+
+<p>These steps are not necessarily one indivisible operation.</p>
+
+<h3>Example: Initial counter = 10</h3>
+<table>
+<tr><th>Execution Step</th><th>Task A</th><th>Task B</th><th>Counter</th></tr>
+<tr><td>1</td><td>Reads 10</td><td>—</td><td>10</td></tr>
+<tr><td>2</td><td>—</td><td>Reads 10</td><td>10</td></tr>
+<tr><td>3</td><td>Calculates 11</td><td>—</td><td>10</td></tr>
+<tr><td>4</td><td>—</td><td>Calculates 11</td><td>10</td></tr>
+<tr><td>5</td><td>Writes 11</td><td>—</td><td>11</td></tr>
+<tr><td>6</td><td>—</td><td>Writes 11</td><td>11</td></tr>
+</table>
+
+<div class="warning-box">
+<strong>Expected result:</strong> 12, because two increments should occur.
+
+<strong>Actual result:</strong> 11, because one update overwrites the other.
+</div>
+</section>
+
+<section>
+<h2>4. Race Condition vs Data Race</h2>
+<p>These terms are related but are not identical.</p>
+
+<table>
+<tr><th>Term</th><th>Meaning</th></tr>
+<tr><td>Race condition</td><td>Program correctness depends on the timing or ordering of operations.</td></tr>
+<tr><td>Data race</td><td>In C/C++, conflicting accesses to the same memory location occur concurrently, at least one access is a write, and the accesses are not properly synchronized or atomic.</td></tr>
+</table>
+
+<p>A data race in a multithreaded C or C++ program results in undefined behavior under the language memory model. Race conditions can also occur at a higher logical level even when individual memory accesses are protected.</p>
+</section>
+
+<section>
+<h2>5. Types of Race Conditions</h2>
+
+<h3>5.1 Read-Write Race</h3>
+<p>One task reads shared data while another task modifies it. The reader may obtain an inconsistent or outdated value.</p>
+
+<h3>5.2 Write-Write Race</h3>
+<p>Two tasks attempt to update the same shared location. One update may overwrite the other.</p>
+
+<h3>5.3 Check-Then-Act Race</h3>
+<p>A task checks a condition and then performs an operation, but another task changes the condition between those two steps.</p>
+
+<h3>5.4 Buffer Race</h3>
+<p>A producer modifies a buffer while a consumer is reading the same data.</p>
+
+<h3>5.5 Peripheral Access Race</h3>
+<p>Two tasks configure or use the same peripheral without coordinated access.</p>
+</section>
+
+<section>
+<h2>6. Race Condition in a Producer-Consumer System</h2>
+<p>Consider a shared buffer used by a producer task and a consumer task.</p>
+
+<pre><code>       +-------------------+
+       |   Producer Task   |
+       |                   |
+       | Writes New Data   |
+       +-------------------+
+                 |
+                 v
+       +-------------------+
+       |   Shared Buffer   |
+       +-------------------+
+                 ^
+                 |
+       +-------------------+
+       |   Consumer Task   |
+       |                   |
+       | Reads Data        |
+       +-------------------+</code></pre>
+
+<p>If the producer overwrites a buffer location while the consumer is reading it, the consumer may receive corrupted or inconsistent information.</p>
+
+<h3>Possible consequences</h3>
+<ul>
+<li>Incorrect sensor measurements.</li>
+<li>Lost data samples.</li>
+<li>Corrupted messages.</li>
+<li>Incorrect calculations.</li>
+<li>Unexpected application behavior.</li>
+</ul>
+</section>
+
+<section>
+<h2>7. Race Condition in Embedded Systems</h2>
+
+<h3>Example 1: Sensor data</h3>
+<p>A sensor task updates a temperature variable while a monitoring task reads it. The monitoring task may read an outdated value or a combination of fields from different measurement cycles.</p>
+
+<h3>Example 2: UART communication</h3>
+<p>Two tasks transmit messages through the same UART peripheral. Their characters may become interleaved if transmission is not coordinated.</p>
+
+<h3>Example 3: Shared GPIO register</h3>
+<p>Two execution contexts perform read-modify-write operations on different bits of the same GPIO register. One update may unintentionally overwrite the other.</p>
+
+<h3>Example 4: Interrupt and task interaction</h3>
+<p>An ISR updates a shared event counter while a task reads and resets it. Without an appropriate atomic or synchronization design, events may be lost.</p>
+</section>
+
+<section>
+<h2>8. Preventing Race Conditions Using a Mutex</h2>
+<p>A mutex provides mutual exclusion. Only the task that owns the mutex can enter the protected section.</p>
+
+<h3>FreeRTOS example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xCounterMutex;
+int sharedCounter = 0;
+
+void TaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xCounterMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            sharedCounter++;
+
+            xSemaphoreGive(xCounterMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void TaskB(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xCounterMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            sharedCounter++;
+
+            xSemaphoreGive(xCounterMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(150));
+    }
+}
+
+int main(void)
+{
+    xCounterMutex = xSemaphoreCreateMutex();
+
+    if (xCounterMutex == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(TaskA, "TaskA", 256, NULL, 2, NULL);
+    xTaskCreate(TaskB, "TaskB", 256, NULL, 2, NULL);
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<p><strong>Explanation:</strong></p>
+<ol>
+<li>The mutex is created before the scheduler starts.</li>
+<li>Task A and Task B request the same mutex.</li>
+<li>Only the mutex owner accesses the counter.</li>
+<li>The owner releases the mutex after the update.</li>
+<li>The other task can then acquire the mutex.</li>
+</ol>
+
+<div class="info-box">
+A FreeRTOS mutex provides priority inheritance in supported configurations. A binary semaphore does not provide the same mutex ownership and priority-inheritance behavior.
+</div>
+</section>
+
+<section>
+<h2>9. Preventing Race Conditions Using a Critical Section</h2>
+<p>A critical section can protect a short operation against specified forms of concurrent execution.</p>
+
+<h3>Conceptual example</h3>
+<pre><code>Enter_Critical_Section();
+
+sharedCounter++;
+
+Exit_Critical_Section();</code></pre>
+
+<p>In FreeRTOS, task-context critical sections are commonly expressed using the port's critical-section macros.</p>
+
+<pre><code>taskENTER_CRITICAL();
+
+sharedCounter++;
+
+taskEXIT_CRITICAL();</code></pre>
+
+<p>The exact interrupt-masking behavior depends on the processor port. Critical sections should be kept very short.</p>
+</section>
+
+<section>
+<h2>10. Preventing Race Conditions Using Atomic Operations</h2>
+<p>An atomic operation performs a supported operation indivisibly with respect to other accesses governed by the same atomic mechanism.</p>
+
+<h3>Conceptual C++ example</h3>
+<pre><code>#include <atomic>
+
+std::atomic<int> sharedCounter(0);
+
+void TaskA()
+{
+    sharedCounter.fetch_add(1);
+}
+
+void TaskB()
+{
+    sharedCounter.fetch_add(1);
+}</code></pre>
+
+<p>In a C++ environment that supports the required atomic operation, both increments are atomic.</p>
+
+<p>In embedded C or C++, verify that the compiler and target support the selected atomic operation. Some operations may use library routines or locks rather than a native instruction.</p>
+</section>
+
+<section>
+<h2>11. Preventing Race Conditions Using Queues</h2>
+<p>Instead of allowing multiple tasks to modify the same variable, a task can send data through a queue.</p>
+
+<pre><code>Producer Task
+      |
+      | xQueueSend()
+      v
+   FreeRTOS Queue
+      |
+      | xQueueReceive()
+      v
+Consumer Task</code></pre>
+
+<p>Queue operations manage access to the queue's internal storage. The receiving task obtains a copy of the configured queue item.</p>
+
+<p>This design can reduce the need for application-level locking around the transferred data, provided the application does not separately access the same data through an unsafe shared path.</p>
+</section>
+
+<section>
+<h2>12. The Volatile Keyword and Race Conditions</h2>
+<p>The C <code>volatile</code> keyword tells the compiler that accesses to the qualified object are observable side effects and should not be treated like ordinary removable or freely cached accesses.</p>
+
+<h3>Example</h3>
+<pre><code>volatile int sharedCounter = 0;
+
+void TaskA(void)
+{
+    sharedCounter++;
+}
+
+void TaskB(void)
+{
+    sharedCounter++;
+}</code></pre>
+
+<p>Declaring the variable volatile does not make the increment operation atomic. It does not provide mutual exclusion or a general inter-task synchronization guarantee.</p>
+
+<div class="warning-box">
+<strong>Important:</strong> Volatile is useful for certain hardware registers and asynchronously changing objects, but it is not a replacement for mutexes, atomic operations, or appropriate critical sections.
+</div>
+</section>
+
+<section>
+<h2>13. Race Conditions Involving Hardware Registers</h2>
+<p>Embedded applications often access memory-mapped peripheral registers.</p>
+
+<p>Suppose two tasks need to control separate output pins represented by different bits of the same GPIO register.</p>
+
+<h3>Illustrative read-modify-write operation</h3>
+<pre><code>IO0SET = (1U << 5);</code></pre>
+
+<p>For LPC2129, the GPIO set register provides a bit-set operation. Using a dedicated hardware set/clear register can avoid some read-modify-write conflicts that would occur with a shared read/write register.</p>
+
+<p>However, peripheral access rules must always be checked in the device reference manual. Not every register supports the same operation semantics.</p>
+
+<div class="info-box">
+For LPC2129 GPIO, use the appropriate <code>IO0SET</code> and <code>IO0CLR</code> registers for bit-level set and clear operations rather than assuming every GPIO operation should use a read-modify-write of <code>IO0PIN</code>.
+</div>
+</section>
+
+<section>
+<h2>14. Race Condition vs Deadlock</h2>
+<table>
+<tr><th>Feature</th><th>Race Condition</th><th>Deadlock</th></tr>
+<tr><td>Meaning</td><td>Result depends on timing or ordering.</td><td>Tasks wait indefinitely for resources.</td></tr>
+<tr><td>Main cause</td><td>Unsynchronized conflicting operations.</td><td>Circular resource dependency or other deadlock conditions.</td></tr>
+<tr><td>Typical result</td><td>Incorrect or inconsistent data.</td><td>No useful progress by deadlocked tasks.</td></tr>
+<tr><td>Prevention</td><td>Synchronization and atomic operations.</td><td>Lock ordering, resource design and deadlock avoidance.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>15. Debugging Race Conditions</h2>
+<p>Race conditions are often difficult to reproduce because they depend on timing.</p>
+
+<h3>Useful debugging techniques</h3>
+<ul>
+<li>Inspect shared variables during execution.</li>
+<li>Record task execution and event timestamps.</li>
+<li>Use sequence numbers to identify missing or reordered messages.</li>
+<li>Monitor queue occupancy and failed send operations.</li>
+<li>Check all mutex acquisition and release paths.</li>
+<li>Review ISR and task access to shared variables.</li>
+<li>Use stress testing with different task delays and priorities.</li>
+<li>Use an appropriate trace tool when supported.</li>
+<li>Reduce shared mutable state where possible.</li>
+</ul>
+</section>
+
+<section>
+<h2>16. Worked Numerical Example</h2>
+<p>Two tasks each increment a shared counter 100 times.</p>
+
+<div class="formula">Expected Final Value = 100 + 100 = 200</div>
+
+<p>Suppose unsynchronized read-modify-write operations cause 15 updates to be lost.</p>
+
+<div class="formula">Actual Final Value = 200 − 15 = 185</div>
+
+<p><strong>Answer:</strong> The counter ends at 185 instead of 200. This demonstrates how concurrent updates can be lost.</p>
+
+<p>The number of lost updates is illustrative; actual behavior depends on the execution interleaving and implementation.</p>
+</section>
+
+<section>
+<h2>17. Practical Activity – Race Condition Demonstration</h2>
+<p>Design two versions of a shared-counter application.</p>
+
+<h3>Version A: Without synchronization</h3>
+<ol>
+<li>Declare a shared counter.</li>
+<li>Create two tasks.</li>
+<li>Increment the counter repeatedly from both tasks.</li>
+<li>Observe the final counter value.</li>
+</ol>
+
+<h3>Version B: With synchronization</h3>
+<ol>
+<li>Create a mutex.</li>
+<li>Protect each increment operation.</li>
+<li>Run both tasks again.</li>
+<li>Compare the final counter value with the expected result.</li>
+</ol>
+
+<h3>Expected result</h3>
+<p>The protected version should preserve the increments when all accesses to the counter follow the same mutex protocol and no other unprotected writer exists.</p>
+
+<div class="warning-box">
+The unprotected version may appear to work in a particular test run. That does not prove it is correct. A race condition is often timing-dependent.
+</div>
+</section>
+
+<section>
+<h2>18. Review Questions</h2>
+<ol>
+<li>Define a race condition.</li>
+<li>What is shared data?</li>
+<li>Explain the read-modify-write problem.</li>
+<li>How can two tasks lose an increment?</li>
+<li>Differentiate a race condition and a data race.</li>
+<li>Explain read-write and write-write races.</li>
+<li>How can a producer-consumer buffer experience a race?</li>
+<li>How does a mutex prevent conflicting task access?</li>
+<li>How can a critical section protect shared data?</li>
+<li>What is an atomic operation?</li>
+<li>Why is volatile insufficient for synchronization?</li>
+<li>How can FreeRTOS queues reduce shared-data problems?</li>
+<li>How can hardware register access produce race conditions?</li>
+<li>Differentiate race conditions and deadlocks.</li>
+<li>List useful debugging techniques for race conditions.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Lesson Summary</h2>
+<ul>
+<li>A race condition occurs when correctness depends on the timing or ordering of concurrent operations.</li>
+<li>Shared variables, buffers, and peripheral registers can be affected.</li>
+<li>Read-modify-write operations are a common source of lost updates.</li>
+<li>Mutexes, critical sections, atomic operations, and queues help prevent race conditions when used correctly.</li>
+<li>Volatile does not provide mutual exclusion or atomicity.</li>
+<li>ISR and task interactions require appropriate synchronization.</li>
+<li>Debugging should include timing analysis, stress testing, and shared-resource inspection.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L01_Introduction_to_Synchronization.html">← Previous Lesson</a>
+<a href="index.html">Chapter 09</a>
+<a href="L03_Critical_Sections.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
