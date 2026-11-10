@@ -1,1 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nested Interrupts and Priority | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+.formula{background:#f3f5f7;padding:15px;border-radius:7px;text-align:center;font-weight:bold;margin:15px 0;font-family:monospace;overflow-x:auto}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Nested Interrupts and Priority</h1>
+<p>Chapter 07 – Interrupt Management in RTOS | Lesson 05</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 07</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>In an embedded system, multiple hardware devices may generate interrupt requests at the same time or while another interrupt handler is executing.</p>
+
+<p>Interrupt priority determines which interrupt should receive service first. Nested interrupt handling allows an eligible higher-priority interrupt to interrupt the execution of a lower-priority ISR.</p>
+
+<div class="info-box">
+<strong>Nested interrupt:</strong> An interrupt that is accepted while another interrupt handler is already executing, causing the processor to temporarily suspend the current handler and execute the newly accepted handler.
+</div>
+
+<p>Nested interrupts are useful in real-time systems where urgent events must be serviced without waiting for a lower-priority ISR to finish.</p>
+</section>
+
+<section>
+<h2>2. Why Are Nested Interrupts Required?</h2>
+<p>Consider an embedded controller with the following interrupt sources:</p>
+
+<table>
+<tr><th>Interrupt Source</th><th>Priority</th><th>Purpose</th></tr>
+<tr><td>Emergency fault</td><td>Very high</td><td>Detect an urgent fault condition.</td></tr>
+<tr><td>Timer</td><td>High</td><td>Maintain time-sensitive control operations.</td></tr>
+<tr><td>UART</td><td>Medium</td><td>Receive serial communication data.</td></tr>
+<tr><td>Background status event</td><td>Low</td><td>Record non-urgent status information.</td></tr>
+</table>
+
+<p>If the UART ISR is executing when an emergency fault occurs, the system may need to interrupt the UART handler and execute the emergency handler immediately.</p>
+
+<p>Without suitable preemption, the emergency interrupt may have to wait until the current ISR completes or interrupts are unmasked.</p>
+</section>
+
+<section>
+<h2>3. Interrupt Priority</h2>
+<p>Interrupt priority represents the relative urgency assigned to an interrupt source.</p>
+
+<p>The interrupt controller or processor uses priority and masking rules to decide which pending interrupt can be serviced.</p>
+
+<h3>Example priority assignment</h3>
+<table>
+<tr><th>Priority Level</th><th>Interrupt</th><th>Typical Purpose</th></tr>
+<tr><td>1 – Highest</td><td>Emergency fault</td><td>Immediate fault response.</td></tr>
+<tr><td>2</td><td>Timer</td><td>Time-critical event.</td></tr>
+<tr><td>3</td><td>UART</td><td>Communication event.</td></tr>
+<tr><td>4 – Lowest</td><td>Background event</td><td>Non-urgent operation.</td></tr>
+</table>
+
+<div class="warning-box">
+Priority numbering is architecture- and controller-dependent. In this table, 1 means highest priority only for illustration. Some controllers use larger numerical values for higher priority, while others use smaller values.
+</div>
+</section>
+
+<section>
+<h2>4. What Is Interrupt Nesting?</h2>
+<p>Interrupt nesting occurs when a new eligible interrupt is accepted during execution of an existing ISR.</p>
+
+<h3>Example</h3>
+<ol>
+<li>UART interrupt occurs.</li>
+<li>Processor begins executing UART ISR.</li>
+<li>An emergency interrupt occurs.</li>
+<li>The processor accepts the higher-priority interrupt if nesting is enabled and masking rules permit it.</li>
+<li>The current UART handler is suspended.</li>
+<li>The emergency ISR executes.</li>
+<li>The processor returns to the suspended UART handler.</li>
+<li>The UART ISR completes.</li>
+</ol>
+
+<div class="info-box">
+Nesting is not automatic on every processor or in every interrupt-controller configuration. The current handler must permit the higher-priority interrupt to be accepted.
+</div>
+</section>
+
+<section>
+<h2>5. Nested Interrupt Execution Timeline</h2>
+<p>Consider the following simplified timeline:</p>
+
+<table>
+<tr><th>Time</th><th>Processor Activity</th></tr>
+<tr><td>0 µs</td><td>UART interrupt occurs.</td></tr>
+<tr><td>2 µs</td><td>UART ISR begins.</td></tr>
+<tr><td>5 µs</td><td>Emergency interrupt occurs.</td></tr>
+<tr><td>6 µs</td><td>Emergency ISR begins.</td></tr>
+<tr><td>10 µs</td><td>Emergency ISR completes.</td></tr>
+<tr><td>11 µs</td><td>UART ISR resumes.</td></tr>
+<tr><td>16 µs</td><td>UART ISR completes.</td></tr>
+</table>
+
+<p>In this example, the emergency interrupt preempts the UART ISR.</p>
+
+<p>The UART handler is delayed, but the higher-priority event receives service earlier.</p>
+</section>
+
+<section>
+<h2>6. Nested Interrupt vs Non-Nested Interrupt</h2>
+
+<table>
+<tr><th>Parameter</th><th>Nested Interrupts</th><th>Non-Nested Interrupts</th></tr>
+<tr><td>Preemption</td><td>Eligible higher-priority interrupts can preempt an active ISR.</td><td>Active ISR normally runs without another interrupt handler preempting it.</td></tr>
+<tr><td>Response to urgent event</td><td>Can be faster.</td><td>May wait for the current ISR.</td></tr>
+<tr><td>Stack usage</td><td>Can increase with nesting depth.</td><td>Generally lower.</td></tr>
+<tr><td>Complexity</td><td>Higher.</td><td>Lower.</td></tr>
+<tr><td>Shared-data handling</td><td>Requires careful protection.</td><td>Still requires protection against task and other interrupt access.</td></tr>
+<tr><td>Debugging</td><td>More complex.</td><td>Usually simpler.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>7. Conditions Required for Nested Interrupts</h2>
+<p>For a higher-priority interrupt to preempt an active ISR, the system generally requires:</p>
+
+<ol>
+<li>The new interrupt source must be enabled.</li>
+<li>The interrupt request must be pending or asserted.</li>
+<li>The interrupt controller must recognize the request as eligible.</li>
+<li>The processor must not have the relevant interrupt class masked.</li>
+<li>The active handler must permit nesting.</li>
+<li>The new interrupt must have sufficient priority to preempt the active interrupt.</li>
+<li>The exception-entry and return mechanisms must preserve the required execution state.</li>
+</ol>
+
+<p>The exact conditions depend on the processor architecture and interrupt-controller implementation.</p>
+</section>
+
+<section>
+<h2>8. Interrupt Priority and Preemption</h2>
+<p>Preemption means temporarily stopping the execution of a lower-priority handler so that a higher-priority handler can execute.</p>
+
+<h3>Example</h3>
+<table>
+<tr><th>Interrupt</th><th>Priority</th><th>Execution Time</th></tr>
+<tr><td>INT-A</td><td>High</td><td>4 µs</td></tr>
+<tr><td>INT-B</td><td>Medium</td><td>8 µs</td></tr>
+<tr><td>INT-C</td><td>Low</td><td>10 µs</td></tr>
+</table>
+
+<p>Suppose INT-C starts first. INT-B arrives while INT-C is executing, and INT-A arrives while INT-B is executing.</p>
+
+<p>With suitable nesting enabled, the execution order can be:</p>
+<ol>
+<li>INT-C starts.</li>
+<li>INT-B preempts INT-C.</li>
+<li>INT-A preempts INT-B.</li>
+<li>INT-A completes.</li>
+<li>INT-B resumes and completes.</li>
+<li>INT-C resumes and completes.</li>
+</ol>
+
+<div class="warning-box">
+This execution order assumes that each higher-priority request is accepted and that the processor, controller, and handler configuration permit the described nesting.
+</div>
+</section>
+
+<section>
+<h2>9. Maximum Nesting Depth</h2>
+<p>Maximum nesting depth is the largest number of simultaneously active interrupt handlers, including the original handler, that the system permits.</p>
+
+<p>For example, if a system permits three interrupt handlers to be active simultaneously, its maximum nesting depth is three.</p>
+
+<p>Nested interrupts consume stack space because each active handler may need to preserve additional execution context.</p>
+
+<div class="formula">Total Stack Requirement ≈ Base Context + Σ Nested Handler Contexts</div>
+
+<p>This is a conceptual estimate. A real stack calculation must include compiler-generated register saves, local variables, called functions, exception frames, alignment, and possible re-entrant execution.</p>
+
+<h3>Potential problems</h3>
+<ul>
+<li>Stack overflow.</li>
+<li>Excessive interrupt latency for lower-priority sources.</li>
+<li>Data corruption due to shared variables.</li>
+<li>Unexpected recursive interrupt behavior.</li>
+<li>Difficulty analyzing worst-case execution time.</li>
+</ul>
+</section>
+
+<section>
+<h2>10. Interrupt Masking During ISR Execution</h2>
+<p>An ISR may execute with some interrupt classes masked. Whether nesting is possible depends on the masking state.</p>
+
+<p>For example, if all IRQ requests remain masked throughout an IRQ handler, another IRQ request cannot normally preempt that handler.</p>
+
+<p>If the handler deliberately permits higher-priority interrupts, nested handling may be possible.</p>
+
+<div class="info-box">
+Enabling nesting requires more than simply enabling interrupts globally. The design must define which interrupt classes can preempt which handlers and how processor state is preserved.
+</div>
+</section>
+
+<section>
+<h2>11. IRQ and FIQ in ARM7TDMI-S</h2>
+<p>The LPC2129 uses the ARM7TDMI-S processor. It supports two important interrupt exception types:</p>
+
+<table>
+<tr><th>Feature</th><th>IRQ</th><th>FIQ</th></tr>
+<tr><td>Meaning</td><td>Interrupt Request</td><td>Fast Interrupt Request</td></tr>
+<tr><td>Purpose</td><td>General interrupt handling.</td><td>Fast, high-priority interrupt handling.</td></tr>
+<tr><td>Banked registers</td><td>Banked SP and LR.</td><td>Banked SP, LR, and additional registers R8–R12.</td></tr>
+<tr><td>Exception mode</td><td>IRQ mode.</td><td>FIQ mode.</td></tr>
+<tr><td>Masking</td><td>Controlled by IRQ mask bit in CPSR.</td><td>Controlled by FIQ mask bit in CPSR.</td></tr>
+<tr><td>Typical use</td><td>UART, timer, and general peripheral events.</td><td>Selected time-critical interrupt sources.</td></tr>
+</table>
+
+<p>FIQ is designed to support fast handling through additional banked registers and its exception vector. It is not simply an ordinary IRQ with a higher numerical priority.</p>
+
+<div class="warning-box">
+> ARM7TDMI-S does not have the Cortex-M NVIC priority model. Do not use Cortex-M priority grouping, preemption priority, subpriority, or BASEPRI terminology as if it applied directly to LPC2129.
+</div>
+</section>
+
+<section>
+<h2>12. ARM7 Interrupt Mask Bits</h2>
+<p>The ARM7 CPSR contains interrupt mask bits:</p>
+
+<table>
+<tr><th>Bit</th><th>Name</th><th>Function</th></tr>
+<tr><td>I</td><td>IRQ mask bit</td><td>When set, IRQ exceptions are masked.</td></tr>
+<tr><td>F</td><td>FIQ mask bit</td><td>When set, FIQ exceptions are masked.</td></tr>
+</table>
+
+<p>During exception entry, the processor updates the relevant mode and mask state according to the ARM architecture.</p>
+
+<p>For an IRQ exception, the processor enters IRQ mode and sets the IRQ mask bit. For an FIQ exception, it enters FIQ mode and sets the FIQ mask bit and IRQ mask bit.</p>
+
+<div class="info-box">
+The FIQ exception-entry behavior helps prevent ordinary IRQ handling from disrupting the initial FIQ service. Detailed nesting behavior depends on software changes to CPSR and the system's exception-handler design.
+</div>
+</section>
+
+<section>
+<h2>13. Vectored Interrupt Controller (VIC) in LPC2129</h2>
+<p>The LPC2129 includes a Vectored Interrupt Controller that supports IRQ and FIQ routing and vectored IRQ handling.</p>
+
+<h3>Important registers</h3>
+<table>
+<tr><th>Register</th><th>Purpose</th></tr>
+<tr><td>VICIntSelect</td><td>Selects whether enabled interrupt sources are routed as IRQ or FIQ.</td></tr>
+<tr><td>VICIntEnable</td><td>Enables selected interrupt sources.</td></tr>
+<tr><td>VICIntEnClr</td><td>Disables selected interrupt sources.</td></tr>
+<tr><td>VICVectAddr</td><td>Provides the active vectored IRQ handler address and supports IRQ service completion.</td></tr>
+<tr><td>VICVectCntl0–15</td><td>Configures the vectored IRQ slots and associated source selection.</td></tr>
+<tr><td>VICIRQStatus</td><td>Shows enabled pending IRQ sources.</td></tr>
+<tr><td>VICFIQStatus</td><td>Shows enabled pending FIQ sources.</td></tr>
+</table>
+
+<p>The VIC's vectored IRQ slots provide a way to dispatch selected IRQ sources to their handlers. FIQ sources are handled through the FIQ exception mechanism rather than the normal vectored IRQ slot mechanism.</p>
+
+<div class="warning-box">
+The VIC's vectored IRQ slot assignment should not be confused with a general-purpose programmable nested-priority controller. IRQ/FIQ routing and software exception handling determine the actual behavior.
+</div>
+</section>
+
+<section>
+<h2>14. Nested Interrupts in RTOS</h2>
+<p>In an RTOS-based embedded system, interrupt nesting and task scheduling are separate mechanisms.</p>
+
+<ul>
+<li>Interrupt priority determines which eligible ISR executes first.</li>
+<li>Task priority determines which ready task the scheduler selects.</li>
+<li>A nested ISR may notify a task.</li>
+<li>The task may become ready while another ISR is still executing.</li>
+<li>Task execution normally resumes only after interrupt handling reaches a permitted scheduling point.</li>
+</ul>
+
+<p>A high-priority interrupt does not automatically mean that the task it notifies has the highest task priority.</p>
+
+<div class="info-box">
+Interrupt priority and RTOS task priority belong to different scheduling domains. They must be designed together, but they are not interchangeable.
+</div>
+</section>
+
+<section>
+<h2>15. FreeRTOS Interrupt Priority Considerations</h2>
+<p>FreeRTOS requires interrupt handlers to follow the rules of the selected processor port.</p>
+
+<p>Important considerations include:</p>
+<ul>
+<li>Use only APIs documented as safe from ISR context.</li>
+<li>Follow port-specific interrupt-priority restrictions.</li>
+<li>Use the appropriate ISR yield mechanism.</li>
+<li>Keep ISR execution time bounded.</li>
+<li>Do not call blocking task APIs from an ISR.</li>
+<li>Consider nested interrupt stack requirements.</li>
+</ul>
+
+<div class="warning-box">
+The Cortex-M FreeRTOS settings such as <code>configMAX_SYSCALL_INTERRUPT_PRIORITY</code> are specific to Cortex-M ports. Do not apply them to the ARM7TDMI-S LPC2129 as if they were universal FreeRTOS settings.
+</div>
+</section>
+
+<section>
+<h2>16. Worked Numerical Problem 1 – Nested ISR Execution</h2>
+<p>Three interrupt handlers have the following execution times:</p>
+
+<table>
+<tr><th>ISR</th><th>Priority</th><th>Execution Time</th></tr>
+<tr><td>ISR-A</td><td>High</td><td>3 µs</td></tr>
+<tr><td>ISR-B</td><td>Medium</td><td>5 µs</td></tr>
+<tr><td>ISR-C</td><td>Low</td><td>8 µs</td></tr>
+</table>
+
+<p>ISR-C begins at 0 µs. ISR-B arrives at 2 µs. ISR-A arrives at 4 µs. Assume each higher-priority ISR can preempt the lower-priority handler.</p>
+
+<h3>Solution</h3>
+<table>
+<tr><th>Time Interval</th><th>Execution</th></tr>
+<tr><td>0–2 µs</td><td>ISR-C executes for 2 µs.</td></tr>
+<tr><td>2–4 µs</td><td>ISR-B executes for 2 µs.</td></tr>
+<tr><td>4–7 µs</td><td>ISR-A executes for 3 µs.</td></tr>
+<tr><td>7–10 µs</td><td>ISR-B resumes for its remaining 3 µs.</td></tr>
+<tr><td>10–16 µs</td><td>ISR-C resumes for its remaining 6 µs.</td></tr>
+</table>
+
+<p><strong>Answer:</strong> All three handlers complete by 16 µs, excluding entry, exit, and context-saving overhead.</p>
+</section>
+
+<section>
+<h2>17. Worked Numerical Problem 2 – Stack Requirement</h2>
+<p>A system has three possible simultaneously active interrupt handlers. Their estimated stack usage is:</p>
+
+<table>
+<tr><th>Handler</th><th>Stack Usage</th></tr>
+<tr><td>Base interrupted context</td><td>40 bytes</td></tr>
+<tr><td>ISR-A</td><td>32 bytes</td></tr>
+<tr><td>ISR-B</td><td>48 bytes</td></tr>
+<tr><td>ISR-C</td><td>24 bytes</td></tr>
+</table>
+
+<h3>Solution</h3>
+<div class="formula">Total = 40 + 32 + 48 + 24</div>
+<div class="formula">Total = 144 bytes</div>
+
+<p><strong>Answer:</strong> The simplified estimate is 144 bytes.</p>
+
+<p>Actual stack allocation must include additional safety margin, exception context, compiler-generated saves, alignment, and any functions called by the handlers.</p>
+</section>
+
+<section>
+<h2>18. Advantages and Disadvantages of Nested Interrupts</h2>
+
+<h3>Advantages</h3>
+<ul>
+<li>Faster service for urgent interrupt sources.</li>
+<li>Improved response to high-priority events.</li>
+<li>Better support for systems with different interrupt deadlines.</li>
+<li>Reduced waiting time for eligible high-priority interrupts.</li>
+</ul>
+
+<h3>Disadvantages</h3>
+<ul>
+<li>More complicated interrupt-handler design.</li>
+<li>Increased stack consumption.</li>
+<li>Potential shared-data race conditions.</li>
+<li>More difficult worst-case timing analysis.</li>
+<li>Possibility of starvation for lower-priority interrupt sources.</li>
+<li>More complicated debugging and testing.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Practical Activity – Study Interrupt Priority</h2>
+<p>Use the Keil uVision simulator to study interrupt-related processor state on an ARM7 project.</p>
+
+<h3>Suggested procedure</h3>
+<ol>
+<li>Open an ARM7TDMI-S assembly or C project.</li>
+<li>Inspect the CPSR register.</li>
+<li>Identify the IRQ and FIQ mask bits.</li>
+<li>Study the IRQ and FIQ exception vectors.</li>
+<li>Inspect the banked IRQ and FIQ registers where supported by the debugger.</li>
+<li>Review the LPC2129 VIC configuration in a register-level project.</li>
+<li>Trace the interrupt handler and exception-return sequence.</li>
+</ol>
+
+<p>Record the differences between IRQ mode and FIQ mode, including the banked registers.</p>
+
+<div class="warning-box">
+The simulator may not reproduce real peripheral interrupt timing or every nested interrupt scenario. Treat register inspection and software-flow verification separately from physical timing validation.
+</div>
+</section>
+
+<section>
+<h2>20. Review Questions</h2>
+<ol>
+<li>What is a nested interrupt?</li>
+<li>Why is interrupt priority required?</li>
+<li>Differentiate nested and non-nested interrupts.</li>
+<li>What is interrupt preemption?</li>
+<li>What is maximum nesting depth?</li>
+<li>Why does nested interrupt handling increase stack usage?</li>
+<li>What is the difference between IRQ and FIQ in ARM7?</li>
+<li>Which additional banked registers are available in FIQ mode?</li>
+<li>What do the I and F bits in CPSR control?</li>
+<li>What is the role of VICIntSelect?</li>
+<li>How is interrupt priority different from task priority?</li>
+<li>Why should Cortex-M interrupt-priority configuration not be copied directly to LPC2129?</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Lesson Summary</h2>
+<ul>
+<li>Nested interrupts allow eligible higher-priority interrupts to preempt active lower-priority handlers.</li>
+<li>Interrupt priority determines the relative urgency of interrupt sources.</li>
+<li>Nesting requires suitable processor, controller, and software configuration.</li>
+<li>Nested handlers increase stack and timing-analysis requirements.</li>
+<li>ARM7TDMI-S provides separate IRQ and FIQ exception mechanisms.</li>
+<li>FIQ uses additional banked registers to support fast handling.</li>
+<li>The LPC2129 VIC supports IRQ/FIQ routing and vectored IRQ handling.</li>
+<li>Interrupt priority and RTOS task priority are separate concepts.</li>
+<li>FreeRTOS interrupt rules depend on the actual processor port.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L04_Interrupt_Latency_and_Response_Time.html">← Previous Lesson</a>
+<a href="index.html">Chapter 07</a>
+<a href="L06_Interrupt_Nesting_and_Masking.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
