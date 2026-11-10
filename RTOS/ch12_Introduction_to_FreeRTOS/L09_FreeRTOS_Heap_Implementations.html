@@ -1,1 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Heap Implementations | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f4f7fc;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 15px;
+}
+header h1 { margin: 0 0 8px; font-size: 29px; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 13px;
+}
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+section {
+    background: white;
+    margin-bottom: 22px;
+    padding: 24px;
+    border-radius: 10px;
+    box-shadow: 0 2px 9px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8fa;
+    padding-bottom: 8px;
+    margin-top: 0;
+}
+h3 { color: #2165b5; margin-top: 22px; }
+p { text-align: justify; }
+ul, ol { padding-left: 25px; }
+li { margin-bottom: 7px; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+th, td {
+    border: 1px solid #d5deeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #eaf2ff; color: #174ea6; }
+pre {
+    background: #172334;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+.note {
+    background: #edf5ff;
+    border-left: 4px solid #2878d7;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.warning {
+    background: #fff6e5;
+    border-left: 4px solid #e5a000;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media(max-width:650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 8px; }
+    section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+}
+</style>
+</head>
+<body>
 
+<header>
+    <h1>FreeRTOS Heap Implementations</h1>
+    <p>heap_1, heap_2, heap_3, heap_4 and heap_5</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../rtos.html">RTOS Course</a>
+    <a href="index.html">Chapter 12</a>
+</nav>
+
+<div class="container">
+
+<section>
+    <h2>1. Learning Objectives</h2>
+    <p>
+        FreeRTOS provides different heap implementations
+        to support dynamic memory allocation. Each
+        implementation has different characteristics
+        related to freeing memory, fragmentation,
+        configuration and memory-region management.
+    </p>
+    <ul>
+        <li>Understand the purpose of FreeRTOS heap files.</li>
+        <li>Learn how dynamic memory allocation works.</li>
+        <li>Compare heap_1, heap_2, heap_3, heap_4 and heap_5.</li>
+        <li>Understand allocation and deallocation APIs.</li>
+        <li>Learn about memory fragmentation and coalescing.</li>
+        <li>Choose a suitable heap implementation for an application.</li>
+        <li>Understand heap monitoring and allocation failure handling.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>2. Introduction to FreeRTOS Heap</h2>
+    <p>
+        A heap is a memory area used for dynamic
+        allocation. In FreeRTOS, the selected heap
+        implementation provides the memory-management
+        mechanism used by kernel allocation APIs.
+    </p>
+
+    <h3>Why Does FreeRTOS Need a Heap?</h3>
+    <ul>
+        <li>Creating tasks dynamically.</li>
+        <li>Creating queues dynamically.</li>
+        <li>Creating semaphores and mutexes dynamically.</li>
+        <li>Creating event groups dynamically.</li>
+        <li>Creating software timers dynamically.</li>
+        <li>Allocating application memory through FreeRTOS allocation APIs.</li>
+    </ul>
+
+    <h3>Important Heap APIs</h3>
+    <pre><code>void *pvPortMalloc(size_t xSize);
+
+void vPortFree(void *pv);
+
+size_t xPortGetFreeHeapSize(void);
+
+size_t xPortGetMinimumEverFreeHeapSize(void);</code></pre>
+
+    <p>
+        <code>pvPortMalloc()</code> requests memory from
+        the configured FreeRTOS allocator.
+        <code>vPortFree()</code> releases memory where
+        the selected implementation supports freeing.
+    </p>
+
+    <div class="note">
+        These functions belong to the FreeRTOS memory
+        management layer. They are distinct from the
+        standard C functions malloc() and free(), although
+        heap_3 uses those C library functions internally.
+    </div>
+</section>
+
+<section>
+    <h2>3. Overview of the Five Heap Implementations</h2>
+
+    <table>
+        <tr>
+            <th>Heap</th>
+            <th>Allocation</th>
+            <th>Freeing</th>
+            <th>Main Characteristic</th>
+        </tr>
+        <tr>
+            <td><code>heap_1</code></td>
+            <td>Yes</td>
+            <td>No</td>
+            <td>Simple allocation-only approach.</td>
+        </tr>
+        <tr>
+            <td><code>heap_2</code></td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td>Does not coalesce adjacent free blocks.</td>
+        </tr>
+        <tr>
+            <td><code>heap_3</code></td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td>Wraps standard C malloc() and free().</td>
+        </tr>
+        <tr>
+            <td><code>heap_4</code></td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td>Coalesces adjacent free blocks.</td>
+        </tr>
+        <tr>
+            <td><code>heap_5</code></td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td>Supports multiple non-contiguous memory regions.</td>
+        </tr>
+    </table>
+
+    <p>
+        The five implementations are alternative
+        allocator designs. A project normally selects
+        one appropriate heap implementation rather
+        than compiling all five together.
+    </p>
+</section>
+
+<section>
+    <h2>4. heap_1 – Allocation Only</h2>
+    <p>
+        <code>heap_1.c</code> is the simplest FreeRTOS
+        heap implementation. It allocates memory but
+        does not support freeing previously allocated
+        blocks.
+    </p>
+
+    <h3>Characteristics</h3>
+    <ul>
+        <li>Supports dynamic memory allocation.</li>
+        <li>Does not support memory deallocation.</li>
+        <li>Simple allocation strategy.</li>
+        <li>No fragmentation caused by repeated freeing and reallocation.</li>
+        <li>Suitable when dynamically created objects remain allocated for the application's lifetime.</li>
+    </ul>
+
+    <h3>Conceptual Example</h3>
+    <pre><code>void *buffer1;
+void *buffer2;
+
+buffer1 = pvPortMalloc(100);
+buffer2 = pvPortMalloc(200);
+
+if (buffer1 == NULL || buffer2 == NULL)
+{
+    /* Handle allocation failure */
+}
+
+/* heap_1 does not provide normal freeing
+   of these allocated blocks. */</code></pre>
+
+    <h3>Memory Behavior</h3>
+    <pre><code>Initial Heap:
+
++----------------------------------+
+|             Free                 |
++----------------------------------+
+
+After two allocations:
+
++----------+-------------+---------+
+| Buffer 1 |  Buffer 2   |  Free   |
++----------+-------------+---------+
+
+Allocated memory remains reserved.</code></pre>
+
+    <div class="note">
+        heap_1 is useful for systems where objects are
+        created during initialization and remain allocated
+        until the system stops or resets.
+    </div>
+</section>
+
+<section>
+    <h2>5. heap_2 – Allocation and Freeing Without Coalescing</h2>
+    <p>
+        <code>heap_2.c</code> supports both memory
+        allocation and freeing. However, it does not
+        combine adjacent free blocks into larger blocks.
+    </p>
+
+    <h3>Characteristics</h3>
+    <ul>
+        <li>Supports <code>pvPortMalloc()</code>.</li>
+        <li>Supports <code>vPortFree()</code>.</li>
+        <li>Can reuse freed blocks that are suitable for a request.</li>
+        <li>Does not coalesce adjacent free blocks.</li>
+        <li>Can suffer from external fragmentation.</li>
+    </ul>
+
+    <h3>Conceptual Example</h3>
+    <pre><code>void *a;
+void *b;
+void *c;
+
+a = pvPortMalloc(100);
+b = pvPortMalloc(200);
+c = pvPortMalloc(100);
+
+if (a != NULL && b != NULL && c != NULL)
+{
+    vPortFree(b);
+}
+
+/* The freed block can be reused if a
+   suitable later request is made. */</code></pre>
+
+    <h3>Fragmentation Example</h3>
+    <pre><code>Before Freeing:
+
++--------+--------+--------+--------+
+|   A    |   B    |   C    |  Free  |
++--------+--------+--------+--------+
+
+After Freeing B:
+
++--------+--------+--------+--------+
+|   A    |  Free  |   C    |  Free  |
++--------+--------+--------+--------+
+
+Two free blocks remain separate.</code></pre>
+
+    <p>
+        Even though the total free memory may be large
+        enough, a request for one large contiguous block
+        can fail if no individual free block is large
+        enough.
+    </p>
+</section>
+
+<section>
+    <h2>6. heap_3 – Wrapper Around C Library Allocation</h2>
+    <p>
+        <code>heap_3.c</code> provides FreeRTOS allocation
+        functions by wrapping the standard C library's
+        <code>malloc()</code> and <code>free()</code>.
+    </p>
+
+    <h3>Conceptual Relationship</h3>
+    <pre><code>FreeRTOS Application
+        |
+        v
+pvPortMalloc() / vPortFree()
+        |
+        v
+FreeRTOS heap_3 wrapper
+        |
+        v
+C Library malloc() / free()
+        |
+        v
+C Runtime Memory Manager</code></pre>
+
+    <h3>Characteristics</h3>
+    <ul>
+        <li>Uses the C library memory allocator.</li>
+        <li>Supports allocation and freeing.</li>
+        <li>Heap size is managed by the C runtime environment.</li>
+        <li>Behavior depends on the C library implementation.</li>
+        <li>Thread safety and timing behavior must be checked for the target toolchain.</li>
+    </ul>
+
+    <div class="warning">
+        Do not assume that configTOTAL_HEAP_SIZE controls
+        the memory available to heap_3. Its memory comes
+        from the C library allocator, whose configuration
+        is toolchain- and platform-dependent.
+    </div>
+</section>
+
+<section>
+    <h2>7. heap_4 – Allocation with Coalescing</h2>
+    <p>
+        <code>heap_4.c</code> supports allocation and
+        freeing and combines adjacent free blocks.
+        This process is called coalescing.
+    </p>
+
+    <h3>Characteristics</h3>
+    <ul>
+        <li>Supports allocation and deallocation.</li>
+        <li>Coalesces adjacent free blocks.</li>
+        <li>Helps reduce external fragmentation.</li>
+        <li>Uses a FreeRTOS-managed heap area.</li>
+        <li>Commonly suitable for applications requiring repeated allocation and freeing.</li>
+    </ul>
+
+    <h3>Coalescing Example</h3>
+    <pre><code>Before Freeing:
+
++--------+--------+--------+--------+
+|   A    |   B    |   C    |  Free  |
++--------+--------+--------+--------+
+
+After Freeing B and C:
+
++--------+-----------------+--------+
+|   A    |       Free      |  Free  |
++--------+-----------------+--------+
+
+Adjacent free blocks can be combined
+into a larger free block.</code></pre>
+
+    <p>
+        Coalescing makes larger allocations more likely
+        to succeed than with an allocator that leaves
+        adjacent free blocks separate. It does not
+        eliminate every possible fragmentation pattern.
+    </p>
+
+    <h3>Example</h3>
+    <pre><code>void *buffer1;
+void *buffer2;
+
+buffer1 = pvPortMalloc(128);
+buffer2 = pvPortMalloc(256);
+
+if (buffer1 != NULL && buffer2 != NULL)
+{
+    vPortFree(buffer1);
+    vPortFree(buffer2);
+}
+
+/* heap_4 can coalesce adjacent free blocks. */</code></pre>
+
+    <div class="note">
+        heap_4 is a common choice when an application
+        needs dynamic allocation and freeing from a
+        single FreeRTOS-managed heap region.
+    </div>
+</section>
+
+<section>
+    <h2>8. heap_5 – Multiple Memory Regions</h2>
+    <p>
+        <code>heap_5.c</code> extends the heap_4-style
+        allocation approach to support multiple
+        non-contiguous memory regions.
+    </p>
+
+    <h3>Why Multiple Regions?</h3>
+    <p>
+        Some embedded systems have more than one usable
+        RAM region. These regions may be separated in
+        the processor's address space.
+    </p>
+
+    <pre><code>Microcontroller Memory Map
+
++-----------------------+
+|       RAM Region 1    |
++-----------------------+
+
+       Address Gap
+
++-----------------------+
+|       RAM Region 2    |
++-----------------------+
+
+       Address Gap
+
++-----------------------+
+|       RAM Region 3    |
++-----------------------+</code></pre>
+
+    <h3>Characteristics</h3>
+    <ul>
+        <li>Supports multiple memory regions.</li>
+        <li>Supports allocation and freeing.</li>
+        <li>Can coalesce adjacent free blocks within a region.</li>
+        <li>Requires explicit region configuration before allocation.</li>
+        <li>Useful when a target has several suitable RAM areas.</li>
+    </ul>
+
+    <h3>Region Configuration Concept</h3>
+    <pre><code>HeapRegion_t regions[] =
+{
+    { region1Start, region1Size },
+    { region2Start, region2Size },
+    { NULL, 0 }
+};
+
+vPortDefineHeapRegions(regions);</code></pre>
+
+    <p>
+        The region addresses and sizes must be valid
+        for the target's memory map. The regions must
+        be supplied in the order and format required
+        by the selected FreeRTOS version.
+    </p>
+
+    <div class="warning">
+        Configure heap_5 regions before any API that
+        performs dynamic allocation. Do not include
+        memory that is reserved, inaccessible or used
+        by another subsystem.
+    </div>
+</section>
+
+<section>
+    <h2>9. Comparison of heap_1 to heap_5</h2>
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>heap_1</th>
+            <th>heap_2</th>
+            <th>heap_3</th>
+            <th>heap_4</th>
+            <th>heap_5</th>
+        </tr>
+        <tr>
+            <td>Allocation</td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td>Yes</td>
+        </tr>
+        <tr>
+            <td>Freeing</td>
+            <td>No</td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td>Yes</td>
+        </tr>
+        <tr>
+            <td>Coalescing</td>
+            <td>Not applicable</td>
+            <td>No</td>
+            <td>C library dependent</td>
+            <td>Yes</td>
+            <td>Yes, within regions</td>
+        </tr>
+        <tr>
+            <td>Multiple regions</td>
+            <td>No</td>
+            <td>No</td>
+            <td>C library dependent</td>
+            <td>No</td>
+            <td>Yes</td>
+        </tr>
+        <tr>
+            <td>Heap source</td>
+            <td>FreeRTOS-managed</td>
+            <td>FreeRTOS-managed</td>
+            <td>C library</td>
+            <td>FreeRTOS-managed</td>
+            <td>Configured regions</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>10. FreeRTOS Heap Configuration</h2>
+    <p>
+        The selected heap implementation must be included
+        in the project build. The application's
+        FreeRTOSConfig.h must also contain suitable
+        allocation settings.
+    </p>
+
+    <h3>Example Configuration</h3>
+    <pre><code>#define configSUPPORT_DYNAMIC_ALLOCATION    1
+#define configSUPPORT_STATIC_ALLOCATION     1
+
+#define configTOTAL_HEAP_SIZE               (10 * 1024)
+
+#define configUSE_MALLOC_FAILED_HOOK        1</code></pre>
+
+    <p>
+        This is an illustrative configuration fragment,
+        not a complete FreeRTOSConfig.h file.
+    </p>
+
+    <h3>Configuration Considerations</h3>
+    <ul>
+        <li><code>configSUPPORT_DYNAMIC_ALLOCATION</code> controls availability of dynamic allocation APIs.</li>
+        <li><code>configSUPPORT_STATIC_ALLOCATION</code> controls availability of static creation APIs.</li>
+        <li><code>configTOTAL_HEAP_SIZE</code> is used by heap implementations that define their heap using this setting.</li>
+        <li><code>configUSE_MALLOC_FAILED_HOOK</code> enables the allocation-failure hook when supported by the selected configuration.</li>
+    </ul>
+
+    <div class="note">
+        A project using heap_5 needs explicit memory-region
+        setup. A project using heap_3 relies on the C
+        runtime allocator. Do not copy heap settings
+        blindly between projects.
+    </div>
+</section>
+
+<section>
+    <h2>11. Heap Monitoring</h2>
+    <p>
+        Heap monitoring helps identify memory pressure
+        and unexpected allocation behavior.
+    </p>
+
+    <h3>Free Heap Size</h3>
+    <pre><code>size_t freeHeap;
+
+freeHeap = xPortGetFreeHeapSize();</code></pre>
+
+    <p>
+        This reports the currently free heap memory
+        where the selected heap implementation provides
+        the API.
+    </p>
+
+    <h3>Minimum Ever Free Heap</h3>
+    <pre><code>size_t minimumFreeHeap;
+
+minimumFreeHeap =
+    xPortGetMinimumEverFreeHeapSize();</code></pre>
+
+    <p>
+        This reports the lowest free-heap value recorded
+        since the heap began operating, where supported.
+        It helps identify the worst observed heap usage
+        during testing.
+    </p>
+
+    <h3>Allocation Failure Check</h3>
+    <pre><code>void *buffer;
+
+buffer = pvPortMalloc(256);
+
+if (buffer == NULL)
+{
+    /* Handle allocation failure */
+}
+else
+{
+    /* Use the allocated memory */
+
+    vPortFree(buffer);
+}</code></pre>
+
+    <div class="warning">
+        Do not assume that a successful allocation
+        guarantees enough memory for all future requests.
+        Test under representative worst-case workloads.
+    </div>
+</section>
+
+<section>
+    <h2>12. Selecting the Appropriate Heap</h2>
+    <table>
+        <tr>
+            <th>Application Requirement</th>
+            <th>Possible Choice</th>
+            <th>Reason</th>
+        </tr>
+        <tr>
+            <td>Objects allocated once and retained</td>
+            <td>heap_1</td>
+            <td>Simple allocation-only behavior.</td>
+        </tr>
+        <tr>
+            <td>Legacy application using the C allocator</td>
+            <td>heap_3</td>
+            <td>Wraps C malloc() and free().</td>
+        </tr>
+        <tr>
+            <td>Repeated allocation and freeing in one region</td>
+            <td>heap_4</td>
+            <td>Coalesces adjacent free blocks.</td>
+        </tr>
+        <tr>
+            <td>Memory spread across multiple RAM regions</td>
+            <td>heap_5</td>
+            <td>Supports multiple configured regions.</td>
+        </tr>
+    </table>
+
+    <p>
+        heap_2 is mainly relevant for understanding
+        earlier FreeRTOS allocator designs and systems
+        that have a specific reason to use it. For new
+        designs, evaluate the coalescing behavior of
+        heap_4 or heap_5 when repeated freeing is needed.
+    </p>
+</section>
+
+<section>
+    <h2>13. Practical Activity – Compare Heap Behavior</h2>
+    <p><strong>Objective:</strong> Understand how different heap implementations manage allocated and freed memory.</p>
+
+    <h3>Procedure</h3>
+    <ol>
+        <li>Review the source code for each heap implementation.</li>
+        <li>Identify how the allocator obtains its memory region.</li>
+        <li>Locate the implementation of pvPortMalloc().</li>
+        <li>Locate the implementation of vPortFree(), where available.</li>
+        <li>Compare how heap_2 and heap_4 handle adjacent freed blocks.</li>
+        <li>Identify how heap_5 receives its memory regions.</li>
+        <li>Review the allocation-failure handling mechanism.</li>
+        <li>Record the advantages and limitations of each implementation.</li>
+    </ol>
+
+    <h3>Expected Result</h3>
+    <p>
+        A comparison table explaining allocation,
+        deallocation, coalescing, fragmentation behavior
+        and suitable application scenarios for each
+        FreeRTOS heap implementation.
+    </p>
+</section>
+
+<section>
+    <h2>14. Important Design Considerations</h2>
+    <ul>
+        <li>Use a heap implementation that matches the target memory architecture.</li>
+        <li>Check the return value of every dynamic allocation operation.</li>
+        <li>Do not free memory while another task or peripheral still uses it.</li>
+        <li>Do not access an object after its storage has been released.</li>
+        <li>Consider static allocation for critical long-lived objects.</li>
+        <li>Measure allocation timing if it affects real-time behavior.</li>
+        <li>Keep heap monitoring and failure diagnostics in the test plan.</li>
+        <li>Validate memory regions against the linker map and hardware memory map.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>15. Review Questions</h2>
+
+    <h3>Short Answer Questions</h3>
+    <ol>
+        <li>What is a heap in FreeRTOS?</li>
+        <li>What are pvPortMalloc() and vPortFree()?</li>
+        <li>Why does heap_1 not support freeing?</li>
+        <li>What is the main limitation of heap_2?</li>
+        <li>How does heap_3 obtain memory?</li>
+        <li>What is coalescing in heap_4?</li>
+        <li>Why is heap_5 useful in some embedded systems?</li>
+        <li>What is the purpose of xPortGetFreeHeapSize()?</li>
+        <li>Does configTOTAL_HEAP_SIZE control heap_3?</li>
+        <li>Why should allocation failures be checked?</li>
+    </ol>
+
+    <h3>Long Answer Questions</h3>
+    <ol>
+        <li>Explain the operation and characteristics of heap_1 through heap_5.</li>
+        <li>Compare heap_2 and heap_4 with a memory fragmentation example.</li>
+        <li>Explain how heap_3 interacts with the C runtime library.</li>
+        <li>Describe the memory-region configuration concept used by heap_5.</li>
+        <li>Discuss the factors involved in selecting a FreeRTOS heap implementation.</li>
+    </ol>
+</section>
+
+<section>
+    <h2>16. Lesson Summary</h2>
+    <ul>
+        <li>FreeRTOS provides five commonly discussed heap implementations.</li>
+        <li>heap_1 supports allocation without freeing.</li>
+        <li>heap_2 supports freeing but does not coalesce adjacent free blocks.</li>
+        <li>heap_3 wraps the C library allocator.</li>
+        <li>heap_4 supports coalescing of adjacent free blocks.</li>
+        <li>heap_5 supports multiple non-contiguous memory regions.</li>
+        <li>Heap selection depends on application and hardware requirements.</li>
+        <li>Heap monitoring and allocation-failure handling improve reliability.</li>
+    </ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L08_FreeRTOS_Memory_Management_Overview.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 12 Index</a>
+    <a href="L10_FreeRTOS_Project_Setup_and_Build_Process.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+    <p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
