@@ -1,1 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Queue Peek and Reset | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:28px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Queue Peek and Reset</h1>
+<p>Inspecting Queue Data Without Removing It and Clearing Queue Contents</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 15</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+FreeRTOS provides queue operations that
+allow an application to inspect the next
+item without removing it and to reset a
+queue to an empty state. These operations
+are useful in monitoring, control and
+communication applications.
+</p>
+<ul>
+<li>Understand queue peek operations.</li>
+<li>Study xQueuePeek().</li>
+<li>Understand the difference between peek and receive.</li>
+<li>Study xQueuePeekFromISR().</li>
+<li>Understand xQueueReset().</li>
+<li>Learn the limitations of queue reset.</li>
+<li>Apply peek and reset operations in programs.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Is Queue Peek?</h2>
+<p>
+Queue peek allows a task to inspect the
+item at the front of a queue without
+removing that item.
+The queue contents remain unchanged after
+a successful peek operation.
+</p>
+<pre><code>Queue:
++----+----+----+
+| 10 | 20 | 30 |
++----+----+----+
+  ^
+  |
+Front Item
+
+Peek:
+Read 10
+Queue remains:
++----+----+----+
+| 10 | 20 | 30 |
++----+----+----+</code></pre>
+<p>
+A later receive operation can still retrieve
+the same front item, provided another
+operation has not changed the queue.
+</p>
+</section>
+
+<section>
+<h2>3. xQueuePeek() Function</h2>
+<p>
+The <code>xQueuePeek()</code> function
+copies the item at the front of a queue
+into an application buffer without removing
+the item from the queue.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xQueuePeek(
+    QueueHandle_t xQueue,
+    void *pvBuffer,
+    TickType_t xTicksToWait
+);</code></pre>
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>xQueue</td><td>Handle of the queue to inspect.</td></tr>
+<tr><td>pvBuffer</td><td>Pointer to memory where the copied item is stored.</td></tr>
+<tr><td>xTicksToWait</td><td>Maximum time to wait if the queue is empty.</td></tr>
+</table>
+<h3>Return Value</h3>
+<table>
+<tr><th>Return Value</th><th>Meaning</th></tr>
+<tr><td>pdPASS</td><td>An item was successfully copied into the buffer.</td></tr>
+<tr><td>errQUEUE_EMPTY</td><td>No item became available within the allowed wait time.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. xQueuePeek() Example</h2>
+<pre><code>#include "FreeRTOS.h"
+#include "queue.h"
+
+QueueHandle_t dataQueue;
+
+void PeekQueueExample(void)
+{
+    int receivedValue;
+
+    if (xQueuePeek(
+            dataQueue,
+            &receivedValue,
+            0
+        ) == pdPASS)
+    {
+        /* Inspect receivedValue */
+    }
+    else
+    {
+        /* Queue is empty */
+    }
+}</code></pre>
+<p>
+The example checks the front item without
+removing it. The queue handle must refer
+to a valid queue.
+</p>
+</section>
+
+<section>
+<h2>5. Difference Between Peek and Receive</h2>
+<table>
+<tr><th>Feature</th><th>xQueuePeek()</th><th>xQueueReceive()</th></tr>
+<tr><td>Copies item to buffer</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Removes item from queue</td><td>No</td><td>Yes</td></tr>
+<tr><td>Queue item count after success</td><td>Unchanged</td><td>Decreases by one</td></tr>
+<tr><td>Can wait for data</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Task context</td><td>Yes</td><td>Yes</td></tr>
+</table>
+<h3>Example</h3>
+<pre><code>Initial Queue:
++----+----+----+
+| 10 | 20 | 30 |
++----+----+----+
+
+After xQueuePeek():
++----+----+----+
+| 10 | 20 | 30 |
++----+----+----+
+Copied value = 10
+
+After xQueueReceive():
++----+----+----+
+| 20 | 30 |    |
++----+----+----+
+Received value = 10</code></pre>
+</section>
+
+<section>
+<h2>6. xQueuePeek() with Blocking Time</h2>
+<p>
+Like queue receive, queue peek can wait
+for an item to become available.
+</p>
+<pre><code>int nextValue;
+
+if (xQueuePeek(
+        dataQueue,
+        &nextValue,
+        pdMS_TO_TICKS(500)
+    ) == pdPASS)
+{
+    /* Front item inspected */
+}
+else
+{
+    /* Timeout occurred */
+}</code></pre>
+<p>
+If the queue is empty, the calling task
+can enter the Blocked state for up to the
+specified waiting period. If an item becomes
+available, it is copied without removal.
+</p>
+<div class="note">
+The peek operation does not reserve the
+item for the calling task. Another task
+may receive or change the queue contents
+after the peek completes.
+</div>
+</section>
+
+<section>
+<h2>7. xQueuePeekFromISR() Function</h2>
+<p>
+FreeRTOS provides <code>xQueuePeekFromISR()</code>
+for inspecting the front item from an
+Interrupt Service Routine.
+It does not block.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xQueuePeekFromISR(
+    QueueHandle_t xQueue,
+    void *pvBuffer
+);</code></pre>
+<h3>Example</h3>
+<pre><code>void MyISR(void)
+{
+    int nextValue;
+
+    if (xQueuePeekFromISR(
+            dataQueue,
+            &nextValue
+        ) == pdPASS)
+    {
+        /* Inspect copied value */
+    }
+    else
+    {
+        /* Queue is empty */
+    }
+}</code></pre>
+<div class="warning">
+This is an illustrative API example.
+Use only the ISR-safe functions supported
+by the selected FreeRTOS version and port.
+The ISR must also obey the processor's
+interrupt-priority and kernel-calling rules.
+</div>
+</section>
+
+<section>
+<h2>8. What Is Queue Reset?</h2>
+<p>
+Queue reset returns a queue to an empty
+state by discarding its currently queued
+items.
+It does not delete the queue object.
+The queue can be used again after reset.
+</p>
+<pre><code>Before Reset:
++----+----+----+----+
+| 10 | 20 | 30 | 40 |
++----+----+----+----+
+Queue contains 4 items
+
+After xQueueReset():
++----+----+----+----+
+|    |    |    |    |
++----+----+----+----+
+Queue is empty</code></pre>
+<p>
+Reset is useful when previously queued data
+is no longer relevant and the application
+needs to start a new data-collection phase.
+</p>
+</section>
+
+<section>
+<h2>9. xQueueReset() Function</h2>
+<p>
+The <code>xQueueReset()</code> function
+resets an existing queue to its empty state.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xQueueReset(
+    QueueHandle_t xQueue
+);</code></pre>
+<h3>Return Value</h3>
+<table>
+<tr><th>Return Value</th><th>Meaning</th></tr>
+<tr><td>pdPASS</td><td>Queue reset successfully.</td></tr>
+<tr><td>Other result</td><td>Reset did not complete successfully.</td></tr>
+</table>
+<h3>Example</h3>
+<pre><code>if (xQueueReset(dataQueue) == pdPASS)
+{
+    /* Queue is now empty */
+}
+else
+{
+    /* Handle reset failure */
+}</code></pre>
+<p>
+The queue must already exist. Resetting
+does not allocate a new queue or change
+its configured length and item size.
+</p>
+</section>
+
+<section>
+<h2>10. Queue Reset vs Queue Delete</h2>
+<table>
+<tr><th>Feature</th><th>xQueueReset()</th><th>vQueueDelete()</th></tr>
+<tr><td>Purpose</td><td>Clear queued items.</td><td>Delete the queue object.</td></tr>
+<tr><td>Queue object</td><td>Remains available.</td><td>No longer valid.</td></tr>
+<tr><td>Queue capacity</td><td>Unchanged.</td><td>Object ceases to exist.</td></tr>
+<tr><td>Further operations</td><td>Allowed after successful reset.</td><td>Not allowed using the deleted handle.</td></tr>
+<tr><td>Typical use</td><td>Discard old data and continue.</td><td>End the queue's lifecycle.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>11. Important Considerations When Resetting a Queue</h2>
+<ul>
+<li>All currently queued items are discarded.</li>
+<li>Reset does not process or return discarded items to the application.</li>
+<li>Reset does not delete the queue object.</li>
+<li>Queue length and item size remain unchanged.</li>
+<li>Coordinate reset with producers and consumers.</li>
+<li>Do not assume a peeked item remains available after another task changes the queue.</li>
+<li>Define how waiting tasks and new data are handled during a reset operation.</li>
+</ul>
+<div class="warning">
+Resetting a queue while other tasks are using
+it can change what those tasks observe.
+Use an application-level synchronization or
+shutdown protocol when a coordinated reset
+is required.
+</div>
+</section>
+
+<section>
+<h2>12. Practical Program – Peek and Receive</h2>
+<pre><code>#include "FreeRTOS.h"
+#include "queue.h"
+
+QueueHandle_t dataQueue;
+
+void QueuePeekDemo(void)
+{
+    int value;
+    int peekedValue;
+    int receivedValue;
+
+    dataQueue = xQueueCreate(
+        5,
+        sizeof(int)
+    );
+
+    if (dataQueue == NULL)
+    {
+        return;
+    }
+
+    value = 100;
+
+    xQueueSend(
+        dataQueue,
+        &value,
+        0
+    );
+
+    value = 200;
+
+    xQueueSend(
+        dataQueue,
+        &value,
+        0
+    );
+
+    /* Inspect front item */
+    if (xQueuePeek(
+            dataQueue,
+            &peekedValue,
+            0
+        ) == pdPASS)
+    {
+        /* peekedValue is 100 */
+    }
+
+    /* Retrieve front item */
+    if (xQueueReceive(
+            dataQueue,
+            &receivedValue,
+            0
+        ) == pdPASS)
+    {
+        /* receivedValue is 100 */
+    }
+
+    vQueueDelete(dataQueue);
+    dataQueue = NULL;
+}</code></pre>
+<h3>Expected Result</h3>
+<p>
+The first peek copies 100 without removing
+it. The subsequent receive retrieves 100
+and removes it from the queue.
+</p>
+</section>
+
+<section>
+<h2>13. Practical Program – Queue Reset</h2>
+<pre><code>#include "FreeRTOS.h"
+#include "queue.h"
+
+QueueHandle_t dataQueue;
+
+void QueueResetDemo(void)
+{
+    int value;
+    UBaseType_t count;
+
+    dataQueue = xQueueCreate(
+        5,
+        sizeof(int)
+    );
+
+    if (dataQueue == NULL)
+    {
+        return;
+    }
+
+    value = 10;
+    xQueueSend(dataQueue, &value, 0);
+
+    value = 20;
+    xQueueSend(dataQueue, &value, 0);
+
+    value = 30;
+    xQueueSend(dataQueue, &value, 0);
+
+    count = uxQueueMessagesWaiting(dataQueue);
+    /* Expected count: 3 */
+
+    if (xQueueReset(dataQueue) == pdPASS)
+    {
+        count = uxQueueMessagesWaiting(dataQueue);
+        /* Expected count: 0 */
+    }
+
+    vQueueDelete(dataQueue);
+    dataQueue = NULL;
+}</code></pre>
+<h3>Expected Result</h3>
+<p>
+Three items are initially stored. After a
+successful reset, the queue contains zero
+items but remains available for future
+send and receive operations.
+</p>
+</section>
+
+<section>
+<h2>14. Applications of Peek and Reset</h2>
+<table>
+<tr><th>Application</th><th>Use</th></tr>
+<tr><td>Command monitoring</td><td>Inspect the next command without consuming it.</td></tr>
+<tr><td>Sensor processing</td><td>Inspect the next queued measurement.</td></tr>
+<tr><td>Communication buffers</td><td>Examine pending data before processing.</td></tr>
+<tr><td>New acquisition cycle</td><td>Discard outdated queued samples when required.</td></tr>
+<tr><td>System reinitialization</td><td>Clear pending queue data while keeping the queue object.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>15. Common Programming Mistakes</h2>
+<table>
+<tr><th>Mistake</th><th>Correction</th></tr>
+<tr><td>Assuming peek removes an item</td><td>Use xQueueReceive() when removal is required.</td></tr>
+<tr><td>Peeking an empty queue with zero wait</td><td>Check the return value.</td></tr>
+<tr><td>Using task-context peek in an ISR</td><td>Use xQueuePeekFromISR() where supported.</td></tr>
+<tr><td>Assuming reset deletes the queue</td><td>Use vQueueDelete() to delete it.</td></tr>
+<tr><td>Resetting without coordinating queue users</td><td>Define a safe synchronization protocol.</td></tr>
+<tr><td>Using a queue handle after deletion</td><td>Invalidate the application handle and stop all users.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>16. Practical Experiment</h2>
+<p><strong>Objective:</strong> Demonstrate queue peek and reset operations.</p>
+<h3>Procedure</h3>
+<ol>
+<li>Create a queue for five integer values.</li>
+<li>Insert three different values.</li>
+<li>Use xQueuePeek() to inspect the front item.</li>
+<li>Check the queue item count.</li>
+<li>Use xQueueReceive() to remove the front item.</li>
+<li>Insert additional values if required.</li>
+<li>Use xQueueReset() to clear the queue.</li>
+<li>Check that the item count becomes zero.</li>
+<li>Send another value to confirm the queue remains usable.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+Peek copies the front item without changing
+the queue contents. Receive removes the front
+item. Reset clears all queued items while
+keeping the queue object available.
+</p>
+</section>
+
+<section>
+<h2>17. LPC2129 and Keil Simulator Considerations</h2>
+<ul>
+<li>Verify the selected FreeRTOS ARM7 port and compiler integration.</li>
+<li>Check the API declarations in the selected queue.h header.</li>
+<li>Use debugger variables to inspect copied values and queue counts where supported.</li>
+<li>Do not assume complete ISR or peripheral simulation.</li>
+<li>Test task synchronization and concurrent queue access in a verified environment.</li>
+</ul>
+<div class="warning">
+The examples are generic FreeRTOS code,
+not verified LPC2129 Keil simulator projects.
+</div>
+</section>
+
+<section>
+<h2>18. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is queue peek?</li>
+<li>What is the purpose of xQueuePeek()?</li>
+<li>Does peek remove an item from the queue?</li>
+<li>What is the difference between peek and receive?</li>
+<li>What is xQueuePeekFromISR()?</li>
+<li>What is queue reset?</li>
+<li>What is the purpose of xQueueReset()?</li>
+<li>Does queue reset delete the queue object?</li>
+<li>What happens to the queued items after reset?</li>
+<li>Differentiate queue reset and queue deletion.</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain xQueuePeek() with syntax and example.</li>
+<li>Explain the difference between peek and receive with diagrams.</li>
+<li>Describe xQueuePeekFromISR().</li>
+<li>Explain xQueueReset() with an example.</li>
+<li>Compare queue reset and queue deletion.</li>
+<li>Discuss precautions when resetting a queue used by multiple tasks.</li>
+<li>Write programs demonstrating peek and reset operations.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Lesson Summary</h2>
+<ul>
+<li>xQueuePeek() copies the front item without removing it.</li>
+<li>xQueueReceive() copies and removes the front item.</li>
+<li>xQueuePeekFromISR() provides a non-blocking ISR-context peek operation where supported.</li>
+<li>xQueueReset() clears all currently queued items.</li>
+<li>Reset does not delete the queue object.</li>
+<li>Queue capacity and item size remain unchanged after reset.</li>
+<li>Queue users must be coordinated during reset and deletion.</li>
+<li>Always check the return values of queue operations.</li>
+</ul>
+</section>
+
+<section>
+<h2>20. Practice Assignment</h2>
+<ol>
+<li>Write the syntax of xQueuePeek().</li>
+<li>Explain all parameters of xQueuePeek().</li>
+<li>Differentiate xQueuePeek() and xQueueReceive().</li>
+<li>Explain the purpose of xQueuePeekFromISR().</li>
+<li>Write the syntax of xQueueReset().</li>
+<li>Create a queue and insert four integer values.</li>
+<li>Peek at the first item without removing it.</li>
+<li>Receive the first item and explain the queue contents.</li>
+<li>Reset the queue and verify that it is empty.</li>
+<li>Explain the precautions required when resetting a queue used by multiple tasks.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L05_Blocking_Time_and_Queue_Timeout.html">← Previous Lesson</a>
+<a href="index.html">Chapter 15 Index</a>
+<a href="L07_Queue_Sets.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
