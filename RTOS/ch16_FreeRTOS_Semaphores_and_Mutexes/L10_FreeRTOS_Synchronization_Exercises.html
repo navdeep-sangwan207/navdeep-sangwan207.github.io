@@ -1,1 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Synchronization Exercises</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 15px}
+header h1{font-size:28px;margin-bottom:8px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 7px rgba(0,0,0,.08)}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h2{color:#174ea6;font-size:22px;border-bottom:2px solid #d8e6fa;padding-bottom:8px;margin-bottom:15px}
+h3{color:#1765b1;margin:17px 0 9px;font-size:18px}
+p{margin:9px 0}
+ul,ol{padding-left:25px;margin:10px 0}
+li{margin:6px 0}
+pre{background:#172338;color:#e6edf7;padding:17px;border-radius:8px;overflow-x:auto;margin:13px 0;font-size:13px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0;display:block;overflow-x:auto}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;min-width:135px}
+th{background:#eaf2ff;color:#174ea6}
+.note{background:#eaf3ff;border-left:4px solid #2878d7;padding:13px;margin:14px 0;border-radius:5px}
+.warning{background:#fff5e6;border-left:4px solid #e69a24;padding:13px;margin:14px 0;border-radius:5px}
+.example{background:#effaf2;border-left:4px solid #269653;padding:13px;margin:14px 0;border-radius:5px}
+.objectives{background:#eef5ff;padding:17px 22px;border-radius:8px}
+.exercise{border:1px solid #d5e2f3;border-radius:8px;padding:16px;margin:15px 0}
+.navigation{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:600px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 16: FreeRTOS Semaphores and Mutexes</h1>
+<p>Lesson 10 – FreeRTOS Synchronization Exercises</p>
+</header>
+
+<nav>
+<a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+<a href="index.html">Chapter Index</a>
+<a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>Lesson Overview</h2>
+<p>
+This lesson provides programming exercises, API questions,
+scheduling scenarios, debugging problems, and interview preparation
+covering FreeRTOS semaphores and mutexes.
+</p>
+<p>
+The exercises reinforce the use of binary semaphores, counting
+semaphores, mutexes, priority inheritance, ISR communication,
+and resource synchronization.
+</p>
+<div class="objectives">
+<h3>Learning Objectives</h3>
+<ul>
+<li>Select the correct synchronization object for a problem.</li>
+<li>Write programs using FreeRTOS semaphore and mutex APIs.</li>
+<li>Analyze task blocking and unblocking.</li>
+<li>Understand priority inversion and priority inheritance.</li>
+<li>Identify synchronization errors and deadlocks.</li>
+<li>Analyze producer-consumer systems.</li>
+<li>Apply ISR-safe synchronization APIs.</li>
+<li>Prepare for RTOS programming interviews.</li>
+</ul>
+</div>
+</section>
+
+<section>
+<h2>1. Quick Revision of Synchronization Objects</h2>
+<table>
+<tr><th>Object</th><th>Purpose</th><th>Important API</th></tr>
+<tr><td>Binary semaphore</td><td>Event signaling and synchronization</td><td><code>xSemaphoreCreateBinary()</code></td></tr>
+<tr><td>Counting semaphore</td><td>Count available tokens</td><td><code>xSemaphoreCreateCounting()</code></td></tr>
+<tr><td>Mutex</td><td>Protect shared resources</td><td><code>xSemaphoreCreateMutex()</code></td></tr>
+<tr><td>Recursive mutex</td><td>Allow the owner to take the same mutex recursively</td><td><code>xSemaphoreCreateRecursiveMutex()</code></td></tr>
+<tr><td>Queue</td><td>Transfer data between tasks</td><td><code>xQueueCreate()</code></td></tr>
+</table>
+
+<h3>Important API Reference</h3>
+<pre><code>xSemaphoreTake(xSemaphore, xTicksToWait);
+xSemaphoreGive(xSemaphore);
+
+xSemaphoreGiveFromISR(
+    xSemaphore,
+    &amp;xHigherPriorityTaskWoken
+);
+
+xSemaphoreTakeFromISR(
+    xSemaphore,
+    &amp;xHigherPriorityTaskWoken
+);
+
+xSemaphoreCreateBinary();
+xSemaphoreCreateCounting(maxCount, initialCount);
+xSemaphoreCreateMutex();
+xSemaphoreCreateRecursiveMutex();
+
+xSemaphoreTakeRecursive(
+    xRecursiveMutex,
+    xTicksToWait
+);
+
+xSemaphoreGiveRecursive(xRecursiveMutex);</code></pre>
+</section>
+
+<section>
+<h2>2. Conceptual Exercises</h2>
+
+<div class="exercise">
+<h3>Exercise 1 – Select the Correct Object</h3>
+<p>A task must notify another task whenever a button interrupt occurs.
+Which synchronization object is appropriate?</p>
+<p><strong>Answer:</strong> A binary semaphore can be used for simple event notification. The ISR uses <code>xSemaphoreGiveFromISR()</code>, and the receiving task uses <code>xSemaphoreTake()</code>.</p>
+</div>
+
+<div class="exercise">
+<h3>Exercise 2 – Protect a Shared UART</h3>
+<p>Two tasks transmit messages through the same UART. Their output must not interleave. Which object should be used?</p>
+<p><strong>Answer:</strong> A mutex, because the UART is a shared resource requiring exclusive task ownership.</p>
+</div>
+
+<div class="exercise">
+<h3>Exercise 3 – Manage Five Resources</h3>
+<p>An application has five identical resources. A maximum of five tasks may use them simultaneously. Which object can represent the available resource count?</p>
+<p><strong>Answer:</strong> A counting semaphore with maximum count 5 and initial count 5, combined with a resource allocation mechanism that identifies the actual resource assigned to each task.</p>
+</div>
+
+<div class="exercise">
+<h3>Exercise 4 – Transfer Sensor Data</h3>
+<p>An ADC interrupt produces sensor readings that must be processed by a task. Which mechanism is more suitable for transferring each reading?</p>
+<p><strong>Answer:</strong> A queue using an ISR-safe send operation such as <code>xQueueSendFromISR()</code>. A semaphore alone does not transfer the reading.</p>
+</div>
+
+<div class="exercise">
+<h3>Exercise 5 – Recursive Function Calls</h3>
+<p>A task calls Function A, which takes a mutex. Function A then calls Function B, which also needs to take the same mutex. What synchronization object may be suitable?</p>
+<p><strong>Answer:</strong> A recursive mutex, using <code>xSemaphoreTakeRecursive()</code> and <code>xSemaphoreGiveRecursive()</code> with matching take and give operations.</p>
+</div>
+</section>
+
+<section>
+<h2>3. Programming Exercise 1 – Binary Semaphore</h2>
+<div class="exercise">
+<h3>Problem Statement</h3>
+<p>Create two tasks:</p>
+<ul>
+<li>Producer Task gives a binary semaphore every second.</li>
+<li>Consumer Task waits for the semaphore and processes the notification.</li>
+</ul>
+<p><strong>Required APIs:</strong> <code>xSemaphoreCreateBinary()</code>, <code>xSemaphoreGive()</code>, <code>xSemaphoreTake()</code>.</p>
+<p><strong>Expected Result:</strong> The consumer blocks while no token is available and processes a notification after a successful give.</p>
+</div>
+
+<h2>4. Programming Exercise 2 – Counting Semaphore</h2>
+<div class="exercise">
+<h3>Problem Statement</h3>
+<p>Create a counting semaphore with a maximum count of four and an initial count of four. Create five tasks that request a resource token.</p>
+<p><strong>Required APIs:</strong> <code>xSemaphoreCreateCounting()</code>, <code>xSemaphoreTake()</code>, <code>xSemaphoreGive()</code>.</p>
+<p><strong>Expected Result:</strong> No more than four tasks can hold tokens simultaneously. The fifth task waits until a token becomes available.</p>
+</div>
+
+<h2>5. Programming Exercise 3 – Mutex Protection</h2>
+<div class="exercise">
+<h3>Problem Statement</h3>
+<p>Create two tasks that access a shared counter. Protect the counter using a mutex.</p>
+<p><strong>Required APIs:</strong> <code>xSemaphoreCreateMutex()</code>, <code>xSemaphoreTake()</code>, <code>xSemaphoreGive()</code>.</p>
+<p><strong>Expected Result:</strong> Only one task at a time enters the protected section.</p>
+</div>
+
+<h2>6. Programming Exercise 4 – ISR Notification</h2>
+<div class="exercise">
+<h3>Problem Statement</h3>
+<p>Design an interrupt handler that gives a binary semaphore to a processing task.</p>
+<p><strong>Required APIs:</strong> <code>xSemaphoreGiveFromISR()</code>, <code>xSemaphoreTake()</code>.</p>
+<p><strong>Expected Result:</strong> The ISR notifies the task without blocking. The task performs the longer processing operation.</p>
+</div>
+
+<h2>7. Programming Exercise 5 – Producer-Consumer Buffer</h2>
+<div class="exercise">
+<h3>Problem Statement</h3>
+<p>Implement a circular buffer with five slots using two counting semaphores and one mutex.</p>
+<ul>
+<li><code>empty</code> starts at 5.</li>
+<li><code>full</code> starts at 0.</li>
+<li><code>mutex</code> protects buffer data and indexes.</li>
+</ul>
+<p><strong>Expected Result:</strong> The producer waits when the buffer is full, and the consumer waits when it is empty.</p>
+</div>
+</section>
+
+<section>
+<h2>8. Scheduling and Synchronization Problems</h2>
+
+<h3>Problem 1 – Priority Inversion</h3>
+<p>Three tasks have the following priorities:</p>
+<table>
+<tr><th>Task</th><th>Priority</th></tr>
+<tr><td>Task H</td><td>3</td></tr>
+<tr><td>Task M</td><td>2</td></tr>
+<tr><td>Task L</td><td>1</td></tr>
+</table>
+<p>Task L owns a mutex. Task H requests the same mutex and becomes Blocked. Task M becomes Ready.</p>
+<p><strong>Question:</strong> Explain how Task M can delay Task H.</p>
+<p><strong>Answer:</strong> Task H is blocked because Task L owns the mutex. Task M has a higher priority than Task L and can preempt it. This delays Task L from releasing the mutex and indirectly delays Task H.</p>
+
+<h3>Problem 2 – Priority Inheritance</h3>
+<p>Using the previous task priorities, explain what happens when Task L inherits Task H's priority.</p>
+<p><strong>Answer:</strong> Task L temporarily executes at effective priority 3. Task M at priority 2 cannot preempt Task L while it is Ready at that inherited priority. Task L can complete its critical section and release the mutex, allowing Task H to proceed.</p>
+
+<h3>Problem 3 – Binary Semaphore Overflow</h3>
+<p>A binary semaphore is already full. An ISR gives it again.</p>
+<p><strong>Question:</strong> What happens?</p>
+<p><strong>Answer:</strong> The give operation fails because a binary semaphore can hold only one token. The additional event is not accumulated.</p>
+
+<h3>Problem 4 – Counting Semaphore</h3>
+<p>A counting semaphore has a maximum count of 5 and current count of 2. Three successful give operations occur.</p>
+<p><strong>Answer:</strong> The count changes from 2 to 3, then 4, then 5. A further give would fail while the semaphore remains full.</p>
+
+<h3>Problem 5 – Mutex Ownership</h3>
+<p>Task A takes a mutex. Task B tries to give the same mutex.</p>
+<p><strong>Answer:</strong> This is invalid mutex ownership behavior. The task that owns a mutex must release it.</p>
+</section>
+
+<section>
+<h2>9. Debugging Exercises</h2>
+
+<div class="exercise">
+<h3>Debugging Exercise 1</h3>
+<p><strong>Incorrect code:</strong></p>
+<pre><code>if (xSemaphoreTake(xMutex, portMAX_DELAY))
+{
+    SharedData++;
+}
+
+/* Mutex is never released */</code></pre>
+<p><strong>Problem:</strong> The task does not give the mutex after taking it. Other tasks may remain blocked.</p>
+<p><strong>Correction:</strong></p>
+<pre><code>if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
+{
+    SharedData++;
+
+    xSemaphoreGive(xMutex);
+}</code></pre>
+</div>
+
+<div class="exercise">
+<h3>Debugging Exercise 2</h3>
+<p><strong>Incorrect code:</strong></p>
+<pre><code>void UART_IRQHandler(void)
+{
+    xSemaphoreTake(xMutex, portMAX_DELAY);
+}</code></pre>
+<p><strong>Problem:</strong> A blocking task-context API is being called from an ISR. A mutex must not be used from an ISR.</p>
+<p><strong>Correction:</strong> Use an ISR-safe notification mechanism, such as <code>xSemaphoreGiveFromISR()</code> for an applicable semaphore, and defer processing to a task.</p>
+</div>
+
+<div class="exercise">
+<h3>Debugging Exercise 3</h3>
+<p><strong>Incorrect code:</strong></p>
+<pre><code>xSemaphoreCreateBinary();
+
+xSemaphoreTake(xSemaphore, portMAX_DELAY);</code></pre>
+<p><strong>Problem:</strong> The created semaphore handle is not assigned to <code>xSemaphore</code>. The variable may be invalid or uninitialized.</p>
+<p><strong>Correction:</strong></p>
+<pre><code>SemaphoreHandle_t xSemaphore;
+
+xSemaphore = xSemaphoreCreateBinary();
+
+if (xSemaphore == NULL)
+{
+    /* Handle creation failure */
+}</code></pre>
+</div>
+
+<div class="exercise">
+<h3>Debugging Exercise 4</h3>
+<p><strong>Incorrect code:</strong></p>
+<pre><code>if (xSemaphoreTake(xSemaphore, 0) == pdTRUE)
+{
+    ProcessData();
+}
+else
+{
+    ProcessData();
+}</code></pre>
+<p><strong>Problem:</strong> The program processes data even when it has not obtained the semaphore token.</p>
+<p><strong>Correction:</strong> Process the operation that requires the token only after a successful take, or handle the unavailable case separately.</p>
+</div>
+
+<div class="exercise">
+<h3>Debugging Exercise 5</h3>
+<p><strong>Incorrect code:</strong></p>
+<pre><code>if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
+{
+    vTaskDelay(pdMS_TO_TICKS(500));
+    xSemaphoreGive(xMutex);
+}</code></pre>
+<p><strong>Problem:</strong> The task holds the mutex during a long delay, increasing the blocking time of other tasks.</p>
+<p><strong>Correction:</strong> Move the delay outside the protected section when the application logic permits it.</p>
+</div>
+</section>
+
+<section>
+<h2>10. Multiple-Choice Questions</h2>
+
+<h3>Q1. Which FreeRTOS object supports priority inheritance?</h3>
+<ol type="A">
+<li>Binary semaphore</li>
+<li>Counting semaphore</li>
+<li>Mutex</li>
+<li>Queue</li>
+</ol>
+<p><strong>Answer:</strong> C – Mutex.</p>
+
+<h3>Q2. Which function gives a semaphore from an ISR?</h3>
+<ol type="A">
+<li><code>xSemaphoreGive()</code></li>
+<li><code>xSemaphoreGiveFromISR()</code></li>
+<li><code>vTaskDelay()</code></li>
+<li><code>xSemaphoreCreateMutex()</code></li>
+</ol>
+<p><strong>Answer:</strong> B – <code>xSemaphoreGiveFromISR()</code>.</p>
+
+<h3>Q3. What is the maximum token count of a binary semaphore?</h3>
+<ol type="A">
+<li>0</li>
+<li>1</li>
+<li>2</li>
+<li>Unlimited</li>
+</ol>
+<p><strong>Answer:</strong> B – 1.</p>
+
+<h3>Q4. Which object is most appropriate for transferring structured data between tasks?</h3>
+<ol type="A">
+<li>Mutex</li>
+<li>Binary semaphore</li>
+<li>Queue</li>
+<li>Recursive mutex</li>
+</ol>
+<p><strong>Answer:</strong> C – Queue.</p>
+
+<h3>Q5. Which API is used to take a recursive mutex?</h3>
+<ol type="A">
+<li><code>xSemaphoreTake()</code></li>
+<li><code>xSemaphoreTakeRecursive()</code></li>
+<li><code>xSemaphoreGiveFromISR()</code></li>
+<li><code>xQueueReceive()</code></li>
+</ol>
+<p><strong>Answer:</strong> B – <code>xSemaphoreTakeRecursive()</code>.</p>
+
+<h3>Q6. What happens if a task blocks while waiting for a mutex?</h3>
+<ol type="A">
+<li>It continues executing</li>
+<li>It enters the Blocked state</li>
+<li>It deletes the mutex</li>
+<li>It disables all interrupts</li>
+</ol>
+<p><strong>Answer:</strong> B – It enters the Blocked state.</p>
+
+<h3>Q7. What does a successful semaphore take return?</h3>
+<ol type="A">
+<li><code>pdFALSE</code></li>
+<li><code>NULL</code></li>
+<li><code>pdTRUE</code></li>
+<li><code>portMAX_DELAY</code></li>
+</ol>
+<p><strong>Answer:</strong> C – <code>pdTRUE</code>.</p>
+
+<h3>Q8. Which synchronization object can count multiple pending tokens?</h3>
+<ol type="A">
+<li>Counting semaphore</li>
+<li>Mutex</li>
+<li>Recursive mutex</li>
+<li>Task handle</li>
+</ol>
+<p><strong>Answer:</strong> A – Counting semaphore.</p>
+</section>
+
+<section>
+<h2>11. Interview Questions and Answers</h2>
+
+<h3>Q1. What is a semaphore?</h3>
+<p>A semaphore is a synchronization object used to coordinate tasks, signal events, or count available tokens.</p>
+
+<h3>Q2. What is a mutex?</h3>
+<p>A mutex is a mutual-exclusion synchronization object that provides ownership-based access to a shared resource.</p>
+
+<h3>Q3. What is the difference between a mutex and a binary semaphore?</h3>
+<p>A mutex has ownership and supports priority inheritance in FreeRTOS. A binary semaphore does not have mutex ownership and is suitable for event signaling.</p>
+
+<h3>Q4. What is priority inversion?</h3>
+<p>Priority inversion occurs when a high-priority task is indirectly delayed by a lower-priority task holding a required resource, potentially with medium-priority tasks extending the delay.</p>
+
+<h3>Q5. What is priority inheritance?</h3>
+<p>It is a protocol in which a mutex owner temporarily inherits a higher priority when a higher-priority task blocks on that mutex.</p>
+
+<h3>Q6. Can a mutex be used inside an ISR?</h3>
+<p>No. Mutex APIs are intended for task context and must not be used from an ISR.</p>
+
+<h3>Q7. Why are ISR-specific APIs required?</h3>
+<p>An ISR cannot block. ISR-specific APIs perform permitted non-blocking kernel operations and follow the selected port's interrupt rules.</p>
+
+<h3>Q8. What is a counting semaphore?</h3>
+<p>A counting semaphore maintains a count between zero and a configured maximum. It can represent available tokens or pending event counts.</p>
+
+<h3>Q9. What is a recursive mutex?</h3>
+<p>A recursive mutex allows its owning task to take the same mutex multiple times, provided each successful recursive take is matched by a recursive give.</p>
+
+<h3>Q10. What is a race condition?</h3>
+<p>A race condition occurs when the result of concurrent operations depends on their timing or interleaving.</p>
+
+<h3>Q11. What is a deadlock?</h3>
+<p>A deadlock occurs when tasks are permanently unable to proceed because each is waiting for a resource or condition that cannot become available.</p>
+
+<h3>Q12. How can deadlock be reduced?</h3>
+<p>Use a consistent resource acquisition order, avoid unnecessary nested locks, keep protected sections short, and design explicit timeout or recovery policies where appropriate.</p>
+
+<h3>Q13. Why is a queue sometimes better than a semaphore?</h3>
+<p>A queue transfers actual data items. A semaphore communicates availability or an event but does not carry the associated payload.</p>
+
+<h3>Q14. What is the purpose of <code>portMAX_DELAY</code>?</h3>
+<p>It requests the longest supported wait. Whether it represents an indefinite wait depends on the FreeRTOS configuration.</p>
+
+<h3>Q15. Does priority inheritance guarantee deadline satisfaction?</h3>
+<p>No. It reduces certain forms of priority inversion but does not remove all blocking or replace schedulability analysis.</p>
+</section>
+
+<section>
+<h2>12. Mini Project – RTOS Resource Management System</h2>
+<h3>Project Objective</h3>
+<p>
+Design a small multitasking system that coordinates sensor
+notifications, shared UART access, and a limited resource pool.
+</p>
+
+<h3>System Requirements</h3>
+<ul>
+<li>Sensor interrupt notifies a processing task using a binary semaphore or queue.</li>
+<li>Sensor values are transferred through a queue.</li>
+<li>Two application tasks share a UART protected by a mutex.</li>
+<li>A counting semaphore represents the number of available resource tokens.</li>
+<li>Tasks use appropriate priorities and bounded critical sections.</li>
+<li>Error handling is implemented for failed API operations.</li>
+</ul>
+
+<h3>Suggested Architecture</h3>
+<pre><code>        Sensor Hardware
+              |
+              v
+         Sensor ISR
+              |
+        Queue Send From ISR
+              |
+              v
+        Sensor Task
+              |
+       Process Sensor Data
+              |
+              v
+         UART Mutex
+              |
+        Shared UART Driver
+          /         \
+         v           v
+      Task A       Task B
+
+      Resource Pool
+            |
+            v
+    Counting Semaphore
+            |
+      Resource Users</code></pre>
+
+<h3>Project Deliverables</h3>
+<ol>
+<li>System block diagram.</li>
+<li>Task list and task priorities.</li>
+<li>Synchronization object selection table.</li>
+<li>Complete source code.</li>
+<li>Test cases and expected results.</li>
+<li>Deadlock and priority inversion analysis.</li>
+<li>Debugging observations.</li>
+</ol>
+
+<div class="warning">
+For LPC2129 simulator-only work, use this as a design and code
+exercise unless a compatible ARM7 FreeRTOS port has been verified.
+Peripheral behavior and interrupt execution must not be assumed
+to work merely because the code compiles.
+</div>
+</section>
+
+<section>
+<h2>13. Final Chapter Assessment</h2>
+<table>
+<tr><th>Assessment Area</th><th>Questions / Tasks</th><th>Suggested Marks</th></tr>
+<tr><td>Concepts</td><td>Semaphore, mutex, ownership, priority inheritance</td><td>20</td></tr>
+<tr><td>API Knowledge</td><td>Creation, take, give, ISR APIs</td><td>20</td></tr>
+<tr><td>Programming</td><td>Mutex, binary semaphore, counting semaphore</td><td>25</td></tr>
+<tr><td>Scheduling Analysis</td><td>Priority inversion and task blocking</td><td>15</td></tr>
+<tr><td>Debugging</td><td>Identify and correct synchronization errors</td><td>10</td></tr>
+<tr><td>Mini Project</td><td>Design and explain resource management system</td><td>10</td></tr>
+<tr><th>Total</th><th></th><th>100</th></tr>
+</table>
+</section>
+
+<section>
+<h2>14. Chapter 16 Completion Checklist</h2>
+<ul>
+<li>Understand binary semaphores.</li>
+<li>Understand counting semaphores.</li>
+<li>Understand mutexes and recursive mutexes.</li>
+<li>Understand semaphore creation and deletion.</li>
+<li>Use take and give operations correctly.</li>
+<li>Understand ISR-to-task semaphore communication.</li>
+<li>Understand priority inheritance.</li>
+<li>Protect shared resources using mutexes.</li>
+<li>Implement producer-consumer synchronization.</li>
+<li>Recognize deadlock, starvation, and race conditions.</li>
+<li>Complete programming and debugging exercises.</li>
+<li>Complete the mini project and chapter assessment.</li>
+</ul>
+</section>
+
+<section>
+<h2>15. Chapter Summary</h2>
+<p>
+Semaphores and mutexes are essential RTOS synchronization
+mechanisms. Binary semaphores provide event signaling, counting
+semaphores manage token counts, and mutexes protect shared
+resources through ownership. FreeRTOS also provides ISR-specific
+communication APIs and basic mutex priority inheritance.
+</p>
+<p>
+Correct synchronization requires more than selecting an API.
+Developers must also consider task priorities, blocking times,
+resource ownership, interrupt restrictions, buffer lifetime,
+and failure recovery.
+</p>
+</section>
+
+<div class="navigation">
+<a href="L09_Mutex_and_Semaphore_Programming.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="../ch17_FreeRTOS_Event_Groups_and_Software_Timers/index.html">Next Chapter →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 16 – FreeRTOS Semaphores and Mutexes</p>
+</footer>
+
+</body>
+</html>
