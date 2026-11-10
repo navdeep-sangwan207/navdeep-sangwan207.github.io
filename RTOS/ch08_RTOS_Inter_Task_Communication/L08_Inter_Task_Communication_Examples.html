@@ -1,1 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inter-Task Communication Examples | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+.formula{background:#f3f5f7;padding:15px;border-radius:7px;text-align:center;font-weight:bold;margin:15px 0;font-family:monospace;overflow-x:auto}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Inter-Task Communication Examples</h1>
+<p>Chapter 08 – Inter-Task Communication | Lesson 08</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 08</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>Inter-Task Communication (ITC) allows independent RTOS tasks to exchange information and coordinate their operations.</p>
+
+<p>In practical embedded applications, tasks are divided according to their responsibilities. For example, one task may acquire sensor data, another may process it, and a third may transmit the result through UART.</p>
+
+<div class="info-box">
+<strong>Objective:</strong> Understand how queues, shared memory, task notifications, event groups, and buffers are applied in practical RTOS communication designs.
+</div>
+</section>
+
+<section>
+<h2>2. Example 1 – Sensor Data Transfer Using a Queue</h2>
+<p><strong>Application:</strong> Temperature monitoring system.</p>
+
+<h3>Task organization</h3>
+<ul>
+<li>Sensor Task: Reads temperature.</li>
+<li>Processing Task: Checks the temperature limit.</li>
+<li>Display Task: Receives the processed status.</li>
+</ul>
+
+<pre><code>     +------------------+
+     |   Sensor Task    |
+     +------------------+
+              |
+              | Sensor Structure
+              v
+     +------------------+
+     |   Sensor Queue   |
+     +------------------+
+              |
+              v
+     +------------------+
+     | Processing Task  |
+     +------------------+
+              |
+              | Status Message
+              v
+     +------------------+
+     |   Status Queue   |
+     +------------------+
+              |
+              v
+     +------------------+
+     |   Display Task   |
+     +------------------+</code></pre>
+
+<h3>Code example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+typedef struct
+{
+    int temperature;
+    int voltage;
+} SensorData;
+
+typedef struct
+{
+    int alarm;
+    int temperature;
+} SystemStatus;
+
+QueueHandle_t xSensorQueue;
+QueueHandle_t xStatusQueue;
+
+void SensorTask(void *pvParameters)
+{
+    SensorData data;
+
+    for (;;)
+    {
+        data.temperature = Read_Temperature();
+        data.voltage = Read_Voltage();
+
+        if (xQueueSend(xSensorQueue, &data,
+                       pdMS_TO_TICKS(100)) != pdPASS)
+        {
+            /* Handle queue full condition. */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void ProcessingTask(void *pvParameters)
+{
+    SensorData input;
+    SystemStatus output;
+
+    for (;;)
+    {
+        if (xQueueReceive(xSensorQueue, &input,
+                          portMAX_DELAY) == pdPASS)
+        {
+            output.temperature = input.temperature;
+            output.alarm =
+                (input.temperature > 60) ? 1 : 0;
+
+            if (xQueueSend(xStatusQueue, &output,
+                           pdMS_TO_TICKS(100)) != pdPASS)
+            {
+                /* Handle status queue failure. */
+            }
+        }
+    }
+}
+
+void DisplayTask(void *pvParameters)
+{
+    SystemStatus status;
+
+    for (;;)
+    {
+        if (xQueueReceive(xStatusQueue, &status,
+                          portMAX_DELAY) == pdPASS)
+        {
+            Display_Status(status.temperature,
+                           status.alarm);
+        }
+    }
+}</code></pre>
+
+<p><strong>Explanation:</strong> Each queue transfers a complete structure. The processing task receives a copy of the sensor data, evaluates it, and sends a separate status structure to the display task.</p>
+
+<div class="warning-box">
+The example shows communication logic, not a complete buildable project. Implement the hardware-specific functions, create both queues, create all three tasks, check allocation failures, and start the scheduler. An RTOS alarm task must not be the only protection against a potentially dangerous electrical or mechanical condition.
+</div>
+</section>
+
+<section>
+<h2>3. Example 2 – Task Notification for Event Signaling</h2>
+<p><strong>Application:</strong> A processing task waits until a communication task has received a complete command.</p>
+
+<h3>Working principle</h3>
+<ol>
+<li>Communication task receives a complete command.</li>
+<li>It stores the command in a valid shared data location or queue.</li>
+<li>It notifies the processing task.</li>
+<li>The processing task wakes and handles the command.</li>
+</ol>
+
+<h3>Code example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+TaskHandle_t xProcessingHandle;
+
+void CommunicationTask(void *pvParameters)
+{
+    uint32_t commandCode;
+
+    for (;;)
+    {
+        commandCode = Receive_Command();
+
+        xTaskNotify(
+            xProcessingHandle,
+            commandCode,
+            eSetValueWithOverwrite
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void ProcessingTask(void *pvParameters)
+{
+    uint32_t receivedCommand;
+
+    for (;;)
+    {
+        if (xTaskNotifyWait(
+                0,
+                0,
+                &receivedCommand,
+                portMAX_DELAY) == pdTRUE)
+        {
+            Process_Command(receivedCommand);
+        }
+    }
+}</code></pre>
+
+<p><strong>Explanation:</strong> The notification carries a 32-bit command value to a specific receiving task. With <code>eSetValueWithOverwrite</code>, a newer notification value can overwrite an earlier pending value.</p>
+
+<div class="info-box">
+Use a queue instead when every command must be preserved. A notification with overwrite semantics is appropriate when the latest value is sufficient.
+</div>
+</section>
+
+<section>
+<h2>4. Example 3 – Binary Semaphore for Task Synchronization</h2>
+<p><strong>Application:</strong> A task waits for an event indicating that a measurement is ready.</p>
+
+<h3>Working principle</h3>
+<ul>
+<li>A measurement operation completes.</li>
+<li>An event is signaled using a binary semaphore.</li>
+<li>The waiting task becomes Ready.</li>
+<li>The task reads and processes the available measurement.</li>
+</ul>
+
+<h3>Code example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xDataReadySemaphore;
+
+void AcquisitionTask(void *pvParameters)
+{
+    for (;;)
+    {
+        Perform_Measurement();
+
+        xSemaphoreGive(xDataReadySemaphore);
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void ProcessingTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xDataReadySemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            Process_Measurement();
+        }
+    }
+}</code></pre>
+
+<p><strong>Explanation:</strong> The semaphore signals that a measurement event has occurred. The actual measurement data must be stored and transferred safely using a suitable buffer, queue, or shared-data protocol.</p>
+
+<div class="warning-box">
+This example gives the semaphore from task context. If an ISR signals a task, use the appropriate ISR-safe semaphore API, such as <code>xSemaphoreGiveFromISR()</code>, and follow the port-specific yield requirements.
+</div>
+</section>
+
+<section>
+<h2>5. Example 4 – Shared Memory with a Mutex</h2>
+<p><strong>Application:</strong> Two tasks access common system measurements.</p>
+
+<h3>Code example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+typedef struct
+{
+    int temperature;
+    int voltage;
+} SystemData;
+
+SystemData sharedData;
+SemaphoreHandle_t xDataMutex;
+
+void UpdateTask(void *pvParameters)
+{
+    SystemData newData;
+
+    for (;;)
+    {
+        newData.temperature = Read_Temperature();
+        newData.voltage = Read_Voltage();
+
+        if (xSemaphoreTake(
+                xDataMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            sharedData = newData;
+
+            xSemaphoreGive(xDataMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void MonitorTask(void *pvParameters)
+{
+    SystemData localData;
+
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xDataMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            localData = sharedData;
+
+            xSemaphoreGive(xDataMutex);
+        }
+
+        Check_System_Status(&localData);
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}</code></pre>
+
+<p><strong>Explanation:</strong> The mutex protects the shared structure while one task updates it or another task reads it. The monitor task copies the structure into local storage and performs its processing after releasing the mutex.</p>
+</section>
+
+<section>
+<h2>6. Example 5 – Event Groups for Multiple Conditions</h2>
+<p><strong>Application:</strong> A controller waits until sensor initialization and communication initialization are both complete.</p>
+
+<h3>Event bit definitions</h3>
+<pre><code>#define SENSOR_READY_BIT  (1U << 0)
+#define UART_READY_BIT    (1U << 1)</code></pre>
+
+<h3>Code example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "event_groups.h"
+
+EventGroupHandle_t xSystemEvents;
+
+void SensorInitTask(void *pvParameters)
+{
+    Initialize_Sensor();
+
+    xEventGroupSetBits(
+        xSystemEvents,
+        SENSOR_READY_BIT
+    );
+
+    vTaskDelete(NULL);
+}
+
+void UARTInitTask(void *pvParameters)
+{
+    Initialize_UART();
+
+    xEventGroupSetBits(
+        xSystemEvents,
+        UART_READY_BIT
+    );
+
+    vTaskDelete(NULL);
+}
+
+void MainControlTask(void *pvParameters)
+{
+    const EventBits_t requiredBits =
+        SENSOR_READY_BIT | UART_READY_BIT;
+
+    for (;;)
+    {
+        EventBits_t result = xEventGroupWaitBits(
+            xSystemEvents,
+            requiredBits,
+            pdFALSE,
+            pdTRUE,
+            portMAX_DELAY
+        );
+
+        if ((result & requiredBits) == requiredBits)
+        {
+            Start_Main_Application();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}</code></pre>
+
+<p><strong>Explanation:</strong> The controller waits until both event bits are set. The <code>pdTRUE</code> argument requests wait-for-all behavior, while <code>pdFALSE</code> leaves the bits set when the wait completes.</p>
+
+<div class="info-box">
+Event groups communicate conditions, not complete data records. Use a queue or buffer to transfer actual sensor measurements or communication payloads.
+</div>
+</section>
+
+<section>
+<h2>7. Example 6 – UART Data Exchange Using a Queue</h2>
+<p><strong>Application:</strong> A UART receive interrupt transfers received bytes to a communication task.</p>
+
+<h3>Architecture</h3>
+<pre><code>       UART0 Hardware
+              |
+              v
+          UART0 ISR
+              |
+              | FromISR Queue API
+              v
+        Character Queue
+              |
+              v
+      UART Receive Task
+              |
+              v
+       Message Processing</code></pre>
+
+<h3>Code example – Conceptual ISR-to-task transfer</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "queue.h"
+#include "task.h"
+
+QueueHandle_t xUARTQueue;
+
+void UART0_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    unsigned char receivedByte;
+
+    /*
+       Read received byte from the UART hardware.
+       The actual register access and interrupt
+       acknowledgement depend on the MCU.
+    */
+    receivedByte = UART0_Read_Byte();
+
+    xQueueSendFromISR(
+        xUARTQueue,
+        &receivedByte,
+        &xHigherPriorityTaskWoken
+    );
+
+    /*
+       Use the yield mechanism required by
+       the selected FreeRTOS port.
+    */
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void UARTReceiveTask(void *pvParameters)
+{
+    unsigned char byte;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                xUARTQueue,
+                &byte,
+                portMAX_DELAY) == pdPASS)
+        {
+            Process_Received_Byte(byte);
+        }
+    }
+}</code></pre>
+
+<div class="warning-box">
+This is a generic FreeRTOS illustration. The UART register access, interrupt vector, interrupt acknowledgement, ISR API availability, and yield macro must match the actual MCU and FreeRTOS port. The code is not a verified LPC2129 FreeRTOS implementation.
+</div>
+</section>
+
+<section>
+<h2>8. Example 7 – Stream Buffer for Byte-Stream Communication</h2>
+<p><strong>Application:</strong> Transferring UART data as a continuous byte stream.</p>
+
+<p>A stream buffer is suitable when the application exchanges a sequence of bytes rather than fixed-size queue items.</p>
+
+<h3>Code example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "stream_buffer.h"
+#include <stdint.h>
+
+StreamBufferHandle_t xUARTStream;
+
+void UARTProducerTask(void *pvParameters)
+{
+    uint8_t data[16];
+    size_t bytesReceived;
+
+    for (;;)
+    {
+        bytesReceived = Read_UART_Bytes(data, sizeof(data));
+
+        if (bytesReceived > 0U)
+        {
+            size_t sent = xStreamBufferSend(
+                xUARTStream,
+                data,
+                bytesReceived,
+                pdMS_TO_TICKS(100)
+            );
+
+            if (sent != bytesReceived)
+            {
+                /* Handle partial transfer. */
+            }
+        }
+    }
+}
+
+void UARTConsumerTask(void *pvParameters)
+{
+    uint8_t buffer[32];
+    size_t received;
+
+    for (;;)
+    {
+        received = xStreamBufferReceive(
+            xUARTStream,
+            buffer,
+            sizeof(buffer),
+            portMAX_DELAY
+        );
+
+        if (received > 0U)
+        {
+            Process_UART_Stream(buffer, received);
+        }
+    }
+}</code></pre>
+
+<p><strong>Explanation:</strong> The consumer receives a variable number of bytes. The application must implement protocol framing, such as delimiters, length fields, or another message-boundary method.</p>
+</section>
+
+<section>
+<h2>9. Example 8 – Message Buffer for Variable-Length Messages</h2>
+<p><strong>Application:</strong> Transferring complete command messages with different lengths.</p>
+
+<h3>Code example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "message_buffer.h"
+#include <stdint.h>
+#include <string.h>
+
+MessageBufferHandle_t xMessageBuffer;
+
+void CommandProducerTask(void *pvParameters)
+{
+    const char message[] = "START";
+
+    for (;;)
+    {
+        size_t sent = xMessageBufferSend(
+            xMessageBuffer,
+            message,
+            sizeof(message),
+            pdMS_TO_TICKS(100)
+        );
+
+        if (sent == 0U)
+        {
+            /* Message could not be sent. */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void CommandConsumerTask(void *pvParameters)
+{
+    char received[32];
+    size_t length;
+
+    for (;;)
+    {
+        length = xMessageBufferReceive(
+            xMessageBuffer,
+            received,
+            sizeof(received),
+            portMAX_DELAY
+        );
+
+        if (length > 0U)
+        {
+            Process_Command_Message(received, length);
+        }
+    }
+}</code></pre>
+
+<p><strong>Explanation:</strong> A message buffer preserves message boundaries. The receiving task obtains one complete message per successful receive operation, provided the receive buffer is large enough for that message.</p>
+</section>
+
+<section>
+<h2>10. Queue vs Stream Buffer vs Message Buffer</h2>
+<table>
+<tr><th>Feature</th><th>Queue</th><th>Stream Buffer</th><th>Message Buffer</th></tr>
+<tr><td>Data format</td><td>Fixed-size items</td><td>Byte stream</td><td>Variable-length messages</td></tr>
+<tr><td>Message boundaries</td><td>Preserved</td><td>Not inherent</td><td>Preserved</td></tr>
+<tr><td>Typical use</td><td>Sensor structures and commands</td><td>UART byte streams</td><td>Variable-length frames</td></tr>
+<tr><td>Typical access model</td><td>Multiple writers/readers supported</td><td>One writer and one reader assumed</td><td>One writer and one reader assumed</td></tr>
+<tr><td>Transfer API</td><td>xQueueSend / xQueueReceive</td><td>xStreamBufferSend / Receive</td><td>xMessageBufferSend / Receive</td></tr>
+</table>
+
+<div class="info-box">
+FreeRTOS stream and message buffers assume one writer and one reader. Multiple writers or readers require external serialization. These facilities also depend on the relevant FreeRTOS configuration and version.
+</div>
+</section>
+
+<section>
+<h2>11. Choosing the Correct Communication Mechanism</h2>
+<table>
+<tr><th>Requirement</th><th>Recommended Mechanism</th></tr>
+<tr><td>Transfer fixed-size sensor structures</td><td>Queue</td></tr>
+<tr><td>Transfer continuous UART bytes</td><td>Stream buffer</td></tr>
+<tr><td>Transfer variable-length frames</td><td>Message buffer</td></tr>
+<tr><td>Notify one specific task</td><td>Task notification</td></tr>
+<tr><td>Wait for multiple system conditions</td><td>Event group</td></tr>
+<tr><td>Protect shared task-accessed data</td><td>Mutex</td></tr>
+<tr><td>Signal a simple event</td><td>Binary semaphore</td></tr>
+<tr><td>Transfer large data blocks efficiently</td><td>Pointer or buffer ownership transfer</td></tr>
+</table>
+</section>
+
+<section>
+<h2>12. Important FreeRTOS API Reference</h2>
+<table>
+<tr><th>API</th><th>Purpose</th></tr>
+<tr><td><code>xQueueCreate()</code></td><td>Create a queue.</td></tr>
+<tr><td><code>xQueueSend()</code></td><td>Send an item to a queue.</td></tr>
+<tr><td><code>xQueueReceive()</code></td><td>Receive an item from a queue.</td></tr>
+<tr><td><code>xSemaphoreTake()</code></td><td>Take a semaphore or mutex.</td></tr>
+<tr><td><code>xSemaphoreGive()</code></td><td>Give a semaphore or mutex.</td></tr>
+<tr><td><code>xTaskNotify()</code></td><td>Send a notification to a task.</td></tr>
+<tr><td><code>xTaskNotifyWait()</code></td><td>Wait for a task notification.</td></tr>
+<tr><td><code>xEventGroupSetBits()</code></td><td>Set event bits.</td></tr>
+<tr><td><code>xEventGroupWaitBits()</code></td><td>Wait for event bits.</td></tr>
+<tr><td><code>xStreamBufferSend()</code></td><td>Send bytes to a stream buffer.</td></tr>
+<tr><td><code>xStreamBufferReceive()</code></td><td>Receive bytes from a stream buffer.</td></tr>
+<tr><td><code>xMessageBufferSend()</code></td><td>Send a discrete message.</td></tr>
+<tr><td><code>xMessageBufferReceive()</code></td><td>Receive a discrete message.</td></tr>
+</table>
+<p>Queue, semaphore, task notification, event group, stream buffer, and message buffer APIs have different semantics. Select APIs according to the communication requirement, not merely because they are available.</p>
+</section>
+
+<section>
+<h2>13. Common Programming Errors</h2>
+<ul>
+<li>Sending a pointer to memory that becomes invalid before the receiver uses it.</li>
+<li>Ignoring queue-send failure and silently losing data.</li>
+<li>Using a mutex inside an ISR.</li>
+<li>Calling a blocking API from interrupt context.</li>
+<li>Using a task notification when every message must be retained.</li>
+<li>Using an event group as if it were a data queue.</li>
+<li>Assuming a stream buffer preserves application message boundaries.</li>
+<li>Using stream or message buffers with multiple writers/readers without serialization.</li>
+<li>Holding a mutex for too long while performing unrelated processing.</li>
+<li>Assuming volatile alone solves race conditions.</li>
+</ul>
+</section>
+
+<section>
+<h2>14. Practical Activity – Multi-Task Monitoring System</h2>
+<p>Design a conceptual monitoring system with four tasks.</p>
+
+<table>
+<tr><th>Task</th><th>Responsibility</th><th>Communication</th></tr>
+<tr><td>Sensor Task</td><td>Acquire temperature and voltage.</td><td>Sensor queue</td></tr>
+<tr><td>Processing Task</td><td>Validate and calculate status.</td><td>Status queue</td></tr>
+<tr><td>Communication Task</td><td>Transmit status through UART.</td><td>Message or stream buffer</td></tr>
+<tr><td>Display Task</td><td>Update displayed information.</td><td>Task notification or status queue</td></tr>
+</table>
+
+<h3>Implementation tasks</h3>
+<ol>
+<li>Define the sensor and status structures.</li>
+<li>Create communication objects.</li>
+<li>Write the producer and consumer task functions.</li>
+<li>Implement data validation and error handling.</li>
+<li>Choose queue lengths based on the expected data rate.</li>
+<li>Check all API return values.</li>
+<li>Define buffer ownership and synchronization rules.</li>
+<li>Test normal operation and overload conditions.</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Keil Simulator and LPC2129 Learning Notes</h2>
+<p>The LPC2129 uses an ARM7TDMI-S processor. The examples in this lesson explain generic FreeRTOS communication patterns and should not be interpreted as proof that a compatible FreeRTOS port is available for the user's LPC2129/Keil setup.</p>
+
+<p>With the Keil simulator, you can practise the underlying C concepts, inspect variables, follow function calls, and observe memory changes in standalone programs. Actual RTOS scheduling and communication API behavior require a compatible RTOS port and execution environment.</p>
+
+<ul>
+<li>Practise structures and pointers using standalone C programs.</li>
+<li>Implement a simple producer-consumer ring buffer.</li>
+<li>Use UART0 register-level examples separately for LPC2129.</li>
+<li>Study queue and semaphore behavior using a verified FreeRTOS-supported target or host environment.</li>
+<li>Do not assume simulator variable inspection proves real-time timing behavior.</li>
+</ul>
+</section>
+
+<section>
+<h2>16. Review Questions</h2>
+<ol>
+<li>What is inter-task communication?</li>
+<li>Explain sensor data transfer using a queue.</li>
+<li>How can a task notification transfer a 32-bit value?</li>
+<li>What is the role of a binary semaphore?</li>
+<li>How does a mutex protect shared memory?</li>
+<li>How can event groups coordinate system initialization?</li>
+<li>How can an ISR transfer UART data to a task?</li>
+<li>Differentiate queue, stream buffer, and message buffer.</li>
+<li>Why does a stream buffer require protocol framing for messages?</li>
+<li>What is the difference between a task notification and an event group?</li>
+<li>Why should a blocking API not be called from an ISR?</li>
+<li>What are the common errors in inter-task communication?</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+<ul>
+<li>Queues transfer fixed-size data items between tasks.</li>
+<li>Task notifications provide lightweight signaling to a particular task.</li>
+<li>Semaphores coordinate task activity and event handling.</li>
+<li>Mutexes protect shared resources accessed by tasks.</li>
+<li>Event groups synchronize tasks using event bits.</li>
+<li>Stream buffers transfer byte streams, while message buffers preserve variable-length message boundaries.</li>
+<li>ISR communication requires interrupt-safe APIs.</li>
+<li>Communication design must account for data ownership, buffer capacity, synchronization, and failure handling.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L07_Producer_Consumer_Problem.html">← Previous Lesson</a>
+<a href="index.html">Chapter 08</a>
+<a href="../ch09_RTOS_Semaphores_and_Synchronization/index.html">Next Chapter →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
