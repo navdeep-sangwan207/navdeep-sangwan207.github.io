@@ -1,1 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipes and Event Communication | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+.formula{background:#f3f5f7;padding:15px;border-radius:7px;text-align:center;font-weight:bold;margin:15px 0;font-family:monospace;overflow-x:auto}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Pipes and Event Communication</h1>
+<p>Chapter 08 – Inter-Task Communication | Lesson 05</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 08</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>Operating systems and real-time operating systems provide different mechanisms for transferring data and notifying tasks about important occurrences.</p>
+
+<p>Two useful concepts are:</p>
+<ul>
+<li><strong>Pipes:</strong> Communication channels through which one software component writes a stream of data and another reads it.</li>
+<li><strong>Event communication:</strong> A mechanism through which tasks are notified that a particular event or condition has occurred.</li>
+</ul>
+
+<div class="info-box">
+<strong>Example:</strong> A communication task writes received bytes into a pipe-like buffer. A processing task reads the data. Separately, an event notification informs a monitoring task that a communication error has occurred.
+</div>
+</section>
+
+<section>
+<h2>2. What Is a Pipe?</h2>
+<p>A pipe is a unidirectional communication channel that transfers a stream of bytes between a writer and a reader.</p>
+
+<p>The writer places data into the pipe, and the reader retrieves data from it. The operating system manages the pipe's internal buffering and synchronization.</p>
+
+<h3>Basic pipe architecture</h3>
+<pre><code>       +----------------+
+       |  Writer Task   |
+       +----------------+
+               |
+               | Write Data
+               v
+       +----------------+
+       |      PIPE      |
+       |  Byte Buffer   |
+       +----------------+
+               |
+               | Read Data
+               v
+       +----------------+
+       |  Reader Task   |
+       +----------------+</code></pre>
+
+<p>Unlike a message queue, a traditional byte-stream pipe does not necessarily preserve application message boundaries. The reader may receive fewer or more bytes than the writer submitted in one operation.</p>
+</section>
+
+<section>
+<h2>3. Characteristics of Pipes</h2>
+<ul>
+<li>Usually transfer data in one direction.</li>
+<li>Use an internal buffer.</li>
+<li>Allow a writer and reader to operate independently.</li>
+<li>May support blocking and non-blocking operations.</li>
+<li>Can connect related processes or tasks, depending on the OS.</li>
+<li>Are suitable for byte-stream communication.</li>
+</ul>
+
+<h3>Important characteristics</h3>
+<table>
+<tr><th>Characteristic</th><th>Description</th></tr>
+<tr><td>Direction</td><td>Traditional pipe is unidirectional.</td></tr>
+<tr><td>Data format</td><td>Byte stream.</td></tr>
+<tr><td>Buffering</td><td>Uses finite storage.</td></tr>
+<tr><td>Synchronization</td><td>Operating system coordinates read/write access.</td></tr>
+<tr><td>Blocking</td><td>May wait when empty or full, depending on configuration.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. Types of Pipes</h2>
+
+<h3>4.1 Anonymous Pipes</h3>
+<p>An anonymous pipe is commonly used for communication between related processes, such as a parent process and a child process in Unix-like systems.</p>
+
+<pre><code>Parent Process
+      |
+      | Write
+      v
+ Anonymous Pipe
+      |
+      | Read
+      v
+Child Process</code></pre>
+
+<h3>4.2 Named Pipes (FIFOs)</h3>
+<p>A named pipe, also called a FIFO, has a name in the filesystem namespace and can be used by processes that do not necessarily have a parent-child relationship.</p>
+
+<pre><code>Process A
+    |
+    | Write
+    v
+Named FIFO
+    |
+    | Read
+    v
+Process B</code></pre>
+
+<div class="info-box">
+Anonymous pipes and named FIFOs are common Unix/Linux IPC mechanisms. They are not automatically equivalent to a dedicated RTOS kernel pipe service.
+</div>
+</section>
+
+<section>
+<h2>5. Pipe vs Message Queue</h2>
+<table>
+<tr><th>Feature</th><th>Pipe</th><th>Message Queue</th></tr>
+<tr><td>Data model</td><td>Usually byte stream.</td><td>Discrete message items.</td></tr>
+<tr><td>Message boundaries</td><td>Not generally preserved.</td><td>Preserved as queue items.</td></tr>
+<tr><td>Data transfer</td><td>Sequential bytes.</td><td>Individual messages.</td></tr>
+<tr><td>Typical use</td><td>Stream transfer and process pipelines.</td><td>Commands, events, structured data.</td></tr>
+<tr><td>Buffering</td><td>Finite byte buffer.</td><td>Configured number of items.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>6. What Is Event Communication?</h2>
+<p>Event communication is a mechanism used to notify a task that a particular condition or occurrence has taken place.</p>
+
+<p>An event may indicate:</p>
+<ul>
+<li>Sensor data is ready.</li>
+<li>A UART byte or message has arrived.</li>
+<li>A timer has expired.</li>
+<li>A motor has reached a limit.</li>
+<li>A communication error has occurred.</li>
+<li>A system operation has completed.</li>
+</ul>
+
+<h3>Basic event communication architecture</h3>
+<pre><code>       +----------------+
+       | Event Source   |
+       +----------------+
+               |
+               | Event Occurs
+               v
+       +----------------+
+       | Event Object   |
+       +----------------+
+               |
+               | Notify
+               v
+       +----------------+
+       | Waiting Task   |
+       +----------------+
+               |
+               v
+       Perform Action</code></pre>
+</section>
+
+<section>
+<h2>7. Types of Events</h2>
+<table>
+<tr><th>Event</th><th>Example</th></tr>
+<tr><td>Hardware Event</td><td>External interrupt or peripheral completion.</td></tr>
+<tr><td>Timer Event</td><td>Periodic timer expiry.</td></tr>
+<tr><td>Communication Event</td><td>UART receive completion.</td></tr>
+<tr><td>Sensor Event</td><td>Temperature threshold exceeded.</td></tr>
+<tr><td>System Event</td><td>Task or system initialization completed.</td></tr>
+<tr><td>Error Event</td><td>Communication timeout or sensor fault.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>8. Event Flags and Event Bits</h2>
+<p>An event flag is a Boolean indication that a particular event has occurred. Several event flags can be grouped into an event bit field.</p>
+
+<p>Each bit can represent an independent condition.</p>
+
+<h3>Example</h3>
+<pre><code>#define EVENT_UART_RX       (1U << 0)
+#define EVENT_ADC_READY     (1U << 1)
+#define EVENT_TIMER_EXPIRED (1U << 2)
+#define EVENT_SENSOR_FAULT  (1U << 3)</code></pre>
+
+<table>
+<tr><th>Bit</th><th>Event</th></tr>
+<tr><td>Bit 0</td><td>UART data received.</td></tr>
+<tr><td>Bit 1</td><td>ADC conversion completed.</td></tr>
+<tr><td>Bit 2</td><td>Timer expired.</td></tr>
+<tr><td>Bit 3</td><td>Sensor fault detected.</td></tr>
+</table>
+
+<p>A task can examine the relevant bits and determine which conditions have occurred.</p>
+</section>
+
+<section>
+<h2>9. Event Groups in FreeRTOS</h2>
+<p>FreeRTOS provides event groups for synchronizing tasks using a collection of event bits.</p>
+
+<p>Each bit represents an event or condition. Tasks can set, clear, and wait for combinations of bits.</p>
+
+<h3>Important FreeRTOS event-group APIs</h3>
+<table>
+<tr><th>API</th><th>Purpose</th></tr>
+<tr><td><code>xEventGroupCreate()</code></td><td>Create an event group.</td></tr>
+<tr><td><code>xEventGroupSetBits()</code></td><td>Set event bits from task context.</td></tr>
+<tr><td><code>xEventGroupClearBits()</code></td><td>Clear selected event bits.</td></tr>
+<tr><td><code>xEventGroupWaitBits()</code></td><td>Wait for one or more event conditions.</td></tr>
+<tr><td><code>xEventGroupGetBits()</code></td><td>Read the current event bit value.</td></tr>
+<tr><td><code>xEventGroupSetBitsFromISR()</code></td><td>Request event-bit setting from ISR context through the timer service mechanism.</td></tr>
+</table>
+
+<p>Availability and behavior depend on FreeRTOS configuration. Event-group operations requested from an ISR may require the timer service task and a successful daemon queue submission.</p>
+</section>
+
+<section>
+<h2>10. Event Group Example</h2>
+<p>Consider an embedded system that waits for both ADC conversion completion and UART initialization before starting a monitoring operation.</p>
+
+<h3>Event definitions</h3>
+<pre><code>#define EVENT_ADC_READY  (1U << 0)
+#define EVENT_UART_READY (1U << 1)
+
+EventGroupHandle_t xSystemEvents;</code></pre>
+
+<h3>Creating the event group</h3>
+<pre><code>xSystemEvents = xEventGroupCreate();
+
+if (xSystemEvents == NULL)
+{
+    /* Handle allocation failure. */
+}</code></pre>
+
+<h3>Setting event bits</h3>
+<pre><code>/* Called from task context after ADC setup. */
+xEventGroupSetBits(xSystemEvents, EVENT_ADC_READY);
+
+/* Called from task context after UART setup. */
+xEventGroupSetBits(xSystemEvents, EVENT_UART_READY);</code></pre>
+
+<h3>Waiting for both events</h3>
+<pre><code>EventBits_t receivedEvents;
+
+receivedEvents = xEventGroupWaitBits(
+    xSystemEvents,
+    EVENT_ADC_READY | EVENT_UART_READY,
+    pdFALSE,
+    pdTRUE,
+    portMAX_DELAY
+);
+
+if ((receivedEvents &
+     (EVENT_ADC_READY | EVENT_UART_READY)) ==
+     (EVENT_ADC_READY | EVENT_UART_READY))
+{
+    /* Both initialization events have occurred. */
+}</code></pre>
+
+<p><strong>Explanation:</strong></p>
+<ul>
+<li><code>xEventGroupCreate()</code> creates the event group.</li>
+<li><code>xEventGroupSetBits()</code> sets the specified bits.</li>
+<li><code>xEventGroupWaitBits()</code> waits for the selected conditions.</li>
+<li><code>pdTRUE</code> for the wait-for-all parameter means all requested bits must be set.</li>
+<li><code>pdFALSE</code> for the clear-on-exit parameter leaves the bits set after the wait completes.</li>
+</ul>
+</section>
+
+<section>
+<h2>11. Wait for Any Event vs Wait for All Events</h2>
+
+<h3>Wait for Any</h3>
+<p>A task continues when at least one selected event bit becomes set.</p>
+
+<pre><code>xEventGroupWaitBits(
+    xSystemEvents,
+    EVENT_ADC_READY | EVENT_UART_READY,
+    pdFALSE,
+    pdFALSE,
+    portMAX_DELAY
+);</code></pre>
+
+<h3>Wait for All</h3>
+<p>A task continues only after all selected event bits become set.</p>
+
+<pre><code>xEventGroupWaitBits(
+    xSystemEvents,
+    EVENT_ADC_READY | EVENT_UART_READY,
+    pdFALSE,
+    pdTRUE,
+    portMAX_DELAY
+);</code></pre>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>xClearOnExit</code></td><td>Whether the selected bits are cleared when the wait condition is satisfied.</td></tr>
+<tr><td><code>xWaitForAllBits</code></td><td><code>pdTRUE</code> waits for all selected bits; <code>pdFALSE</code> waits for any selected bit.</td></tr>
+<tr><td><code>xTicksToWait</code></td><td>Maximum wait time in ticks.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>12. Event Communication Using Task Notifications</h2>
+<p>FreeRTOS task notifications provide a lightweight mechanism for signaling a particular task.</p>
+
+<p>They can be used to:</p>
+<ul>
+<li>Notify a task that data is available.</li>
+<li>Set or clear notification bits.</li>
+<li>Increment a notification value.</li>
+<li>Transfer a 32-bit value using suitable notification actions.</li>
+</ul>
+
+<h3>Example</h3>
+<pre><code>TaskHandle_t xProcessingTaskHandle;
+
+void ProcessingTask(void *pvParameters)
+{
+    uint32_t notificationValue;
+
+    for (;;)
+    {
+        if (xTaskNotifyWait(
+                0,
+                0xFFFFFFFFUL,
+                &notificationValue,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Process notificationValue. */
+        }
+    }
+}</code></pre>
+
+<p>A sender task can notify the processing task:</p>
+<pre><code>xTaskNotify(
+    xProcessingTaskHandle,
+    1U,
+    eSetBits
+);</code></pre>
+
+<p>Task notifications are associated with a particular task and can be more lightweight than a separate queue or event group for simple one-task notification patterns.</p>
+</section>
+
+<section>
+<h2>13. Pipes and Events in Linux</h2>
+<p>Linux provides several mechanisms for inter-process and event communication.</p>
+
+<table>
+<tr><th>Mechanism</th><th>Purpose</th></tr>
+<tr><td>Anonymous Pipe</td><td>Byte-stream communication between related processes.</td></tr>
+<tr><td>Named Pipe (FIFO)</td><td>Byte-stream communication through a filesystem name.</td></tr>
+<tr><td>Signals</td><td>Notify a process that an asynchronous event occurred.</td></tr>
+<tr><td>Eventfd</td><td>File-descriptor-based event notification and counter signaling.</td></tr>
+<tr><td>Message Queue</td><td>Transfer discrete messages.</td></tr>
+<tr><td>Shared Memory</td><td>Allow processes to access common memory.</td></tr>
+</table>
+
+<p>Linux IPC mechanisms and FreeRTOS communication APIs are different interfaces, even when they solve similar application problems.</p>
+</section>
+
+<section>
+<h2>14. Pipes vs Events</h2>
+<table>
+<tr><th>Feature</th><th>Pipes</th><th>Events</th></tr>
+<tr><td>Primary purpose</td><td>Transfer data.</td><td>Notify that a condition occurred.</td></tr>
+<tr><td>Payload</td><td>Usually a byte stream.</td><td>Often a flag, bit, or notification value.</td></tr>
+<tr><td>Buffering</td><td>Stores data in a buffer.</td><td>May store event state rather than a data stream.</td></tr>
+<tr><td>Typical use</td><td>UART stream processing or process pipelines.</td><td>Peripheral completion or system-state synchronization.</td></tr>
+<tr><td>Data preservation</td><td>Preserves bytes until read, subject to buffer capacity.</td><td>Repeated occurrences may coalesce into one set flag.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>15. Important Design Considerations</h2>
+
+<h3>15.1 Buffer Capacity</h3>
+<p>Pipe capacity must be sufficient for the expected data arrival rate and reader delays.</p>
+
+<h3>15.2 Event Coalescing</h3>
+<p>Event flags represent conditions, not necessarily individual occurrences. If the same bit is set repeatedly before being cleared, the application may not know how many times the event occurred.</p>
+
+<h3>15.3 Data vs Notification</h3>
+<p>If every data item must be preserved, use a queue or buffer. An event can notify a task that data is available, but the event bit alone may not contain the data.</p>
+
+<h3>15.4 ISR Restrictions</h3>
+<p>Interrupt handlers must remain short and use only appropriate interrupt-safe communication APIs.</p>
+
+<h3>15.5 Timeouts</h3>
+<p>Choose timeouts based on system timing requirements. An indefinite wait is not appropriate for every real-time task.</p>
+</section>
+
+<section>
+<h2>16. Real-World Example – ADC Data Ready Event</h2>
+<p>Consider an embedded system that uses an ADC to measure an analog sensor.</p>
+
+<h3>Operation sequence</h3>
+<ol>
+<li>The ADC conversion starts.</li>
+<li>The ADC peripheral completes the conversion.</li>
+<li>An interrupt indicates conversion completion.</li>
+<li>The ISR reads or records the conversion result as appropriate.</li>
+<li>The ISR notifies the processing task using a supported ISR-safe mechanism.</li>
+<li>The processing task calculates the sensor value.</li>
+<li>The display or communication task receives the processed result.</li>
+</ol>
+
+<pre><code>        ADC Peripheral
+              |
+              | Conversion Complete
+              v
+           ADC ISR
+              |
+              | Notify
+              v
+       Processing Task
+              |
+              | Process Result
+              v
+        Display Task</code></pre>
+
+<div class="warning-box">
+An event notification does not automatically transfer an ADC sample. The design must also provide a safe way to transfer the actual result, such as a queue, notification value, or protected buffer.
+</div>
+</section>
+
+<section>
+<h2>17. Worked Numerical Problem 1 – Pipe Buffer</h2>
+<p>A pipe has a capacity of 1024 bytes. A writer sends data at 256 bytes per second. Assume the reader does not consume any data.</p>
+
+<div class="formula">Time to Fill = Buffer Capacity / Data Rate</div>
+<div class="formula">= 1024 / 256 = 4 seconds</div>
+
+<p><strong>Answer:</strong> The pipe buffer fills in approximately 4 seconds if no data is read.</p>
+</section>
+
+<section>
+<h2>18. Worked Numerical Problem 2 – Event Bits</h2>
+<p>A system uses four event bits to represent four independent conditions.</p>
+
+<div class="formula">Number of Bit Combinations = 2⁴ = 16</div>
+
+<p><strong>Answer:</strong> Four bits can represent 16 possible bit patterns, including the pattern in which no events are set. This is not the same as having 16 independent event types that are all individually represented by one bit.</p>
+</section>
+
+<section>
+<h2>19. Worked Numerical Problem 3 – Event Response</h2>
+<p>A task waits for a timer event. The event occurs at 100 ms, and the task begins processing at 103 ms.</p>
+
+<div class="formula">Event-to-Task Start Delay = 103 − 100</div>
+<div class="formula">= 3 ms</div>
+
+<p><strong>Answer:</strong> The observed event-to-task start delay is 3 ms. This measurement is not automatically a guaranteed worst-case response time.</p>
+</section>
+
+<section>
+<h2>20. Practical Activity – Event-Based Monitoring</h2>
+<p>Design a conceptual FreeRTOS application with three event sources:</p>
+<ul>
+<li>ADC conversion completed.</li>
+<li>UART data received.</li>
+<li>Timer interval expired.</li>
+</ul>
+
+<h3>Requirements</h3>
+<ol>
+<li>Create an event group.</li>
+<li>Define one bit for each event source.</li>
+<li>Set the corresponding bit when each event occurs.</li>
+<li>Create a monitoring task that waits for any selected event.</li>
+<li>Read the returned event bits.</li>
+<li>Process the required condition.</li>
+<li>Clear event bits according to the application's design.</li>
+<li>Handle event notification failures where applicable.</li>
+</ol>
+
+<h3>Testing checklist</h3>
+<ul>
+<li>Verify each event bit independently.</li>
+<li>Test waiting for any event.</li>
+<li>Test waiting for all events.</li>
+<li>Test event timeout behavior.</li>
+<li>Check whether repeated events can coalesce.</li>
+<li>Verify that actual data is transferred separately when required.</li>
+</ul>
+</section>
+
+<section>
+<h2>21. Review Questions</h2>
+<ol>
+<li>What is a pipe?</li>
+<li>What is the difference between an anonymous pipe and a named pipe?</li>
+<li>Why is a traditional pipe described as a byte stream?</li>
+<li>What is event communication?</li>
+<li>What are event flags?</li>
+<li>How are event bits used in FreeRTOS?</li>
+<li>What is an event group?</li>
+<li>Differentiate waiting for any event and waiting for all events.</li>
+<li>What is the purpose of <code>xEventGroupWaitBits()</code>?</li>
+<li>What is a task notification?</li>
+<li>Differentiate data transfer and event notification.</li>
+<li>What is event coalescing?</li>
+<li>Why may an event bit be insufficient for counting every occurrence?</li>
+<li>How can an ADC completion event notify a processing task?</li>
+<li>Which IPC mechanisms are available in Linux for event and stream communication?</li>
+</ol>
+</section>
+
+<section>
+<h2>22. Lesson Summary</h2>
+<ul>
+<li>Pipes transfer byte streams between software components or processes.</li>
+<li>Anonymous pipes and named FIFOs are common Linux IPC mechanisms.</li>
+<li>Event communication notifies tasks about important conditions.</li>
+<li>Event flags and event groups can represent multiple conditions.</li>
+<li>FreeRTOS event groups support wait-for-any and wait-for-all behavior.</li>
+<li>Task notifications provide lightweight task-specific signaling.</li>
+<li>Events do not necessarily preserve every occurrence or transfer the associated data.</li>
+<li>Queues and buffers should be used when individual data items must be preserved.</li>
+<li>ISR communication must follow the selected RTOS port's rules.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L04_Mailboxes_and_Message_Queues.html">← Previous Lesson</a>
+<a href="index.html">Chapter 08</a>
+<a href="L06_Data_Exchange_Between_Tasks.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
