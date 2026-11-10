@@ -1,1 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Run-Time Statistics | RTOS &amp; FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>FreeRTOS Run-Time Statistics</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 18: Memory Management and RTOS Debugging</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 18</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Explain FreeRTOS run-time statistics.</li>
+<li>Understand task execution-time measurement.</li>
+<li>Configure a run-time statistics timer.</li>
+<li>Use <code>uxTaskGetSystemState()</code>.</li>
+<li>Understand <code>vTaskGetRunTimeStats()</code>.</li>
+<li>Calculate task CPU utilization.</li>
+<li>Interpret run-time statistics output.</li>
+<li>Identify limitations of CPU utilization measurements.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Are Run-Time Statistics?</h2>
+<p>Run-time statistics provide information about how much processor time individual tasks have consumed while the FreeRTOS scheduler is running.</p>
+
+<p>They help developers understand:</p>
+<ul>
+<li>Which task consumes the most CPU time.</li>
+<li>How processor time is distributed among tasks.</li>
+<li>Whether a task is consuming unexpectedly high CPU time.</li>
+<li>How application workload changes over time.</li>
+<li>Whether CPU capacity is being used efficiently.</li>
+</ul>
+
+<div class="diagram">
+              PROCESSOR TIME
+                    |
+        +-----------+-----------+
+        |           |           |
+      Task A      Task B      Task C
+        |           |           |
+      40%         35%         25%
+
+       Illustrative CPU distribution
+</div>
+
+<div class="note">Run-time statistics measure observed execution time. They do not, by themselves, prove that all real-time deadlines will be met.</div>
+</section>
+
+<section>
+<h2>3. Task Execution-Time Measurement</h2>
+<p>FreeRTOS can accumulate the amount of time each task spends in the Running state.</p>
+
+<p>The measurement mechanism uses a dedicated run-time counter that should have a higher resolution than the normal RTOS tick counter.</p>
+
+<h3>3.1 RTOS Tick Counter vs Run-Time Counter</h3>
+<table>
+<tr><th>RTOS Tick Counter</th><th>Run-Time Counter</th></tr>
+<tr><td>Used for task delays and scheduling time.</td><td>Used to measure task execution time.</td></tr>
+<tr><td>Usually driven by a periodic tick interrupt.</td><td>Can be driven by a faster hardware timer or another suitable counter.</td></tr>
+<tr><td>Resolution depends on tick frequency.</td><td>Resolution depends on the configured run-time counter.</td></tr>
+<tr><td>Used by APIs such as <code>vTaskDelay()</code>.</td><td>Used for performance measurement and CPU-time statistics.</td></tr>
+</table>
+
+<h3>3.2 Example</h3>
+<p>Assume a run-time counter increments once every microsecond.</p>
+<pre><code>Start Counter = 1000
+End Counter   = 7500
+
+Execution Time = 7500 - 1000
+               = 6500 microseconds
+               = 6.5 milliseconds</code></pre>
+</section>
+
+<section>
+<h2>4. Configuring Run-Time Statistics</h2>
+<p>Run-time statistics require configuration in <code>FreeRTOSConfig.h</code> and application-specific counter functions.</p>
+
+<h3>4.1 Enable Run-Time Statistics</h3>
+<pre><code>#define configGENERATE_RUN_TIME_STATS  1</code></pre>
+
+<h3>4.2 Provide a Run-Time Counter</h3>
+<p>The application must provide a counter that FreeRTOS can read. A hardware timer, free-running counter or another suitable source may be used.</p>
+
+<pre><code>/* Example configuration in FreeRTOSConfig.h */
+
+#define configGENERATE_RUN_TIME_STATS  1
+
+#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() \
+        ConfigureRunTimeCounter()
+
+#define portGET_RUN_TIME_COUNTER_VALUE() \
+        ReadRunTimeCounter()</code></pre>
+
+<p>The application must implement the functions used by these macros:</p>
+
+<pre><code>void ConfigureRunTimeCounter(void)
+{
+    /* Configure a suitable free-running
+       hardware timer or counter. */
+}
+
+uint32_t ReadRunTimeCounter(void)
+{
+    /* Return the current counter value. */
+
+    return 0;
+}</code></pre>
+
+<div class="warning">The functions above are placeholders, not a working hardware driver. Replace them with code for the selected processor, timer peripheral and compiler. The counter must have suitable resolution and a defined overflow-handling strategy.</div>
+
+<h3>4.3 Required Considerations</h3>
+<ul>
+<li>The counter should advance independently of task execution.</li>
+<li>Its resolution should be sufficiently fine for the application.</li>
+<li>Reading the counter should be safe and efficient.</li>
+<li>Counter wraparound must be considered.</li>
+<li>Timer configuration must not conflict with the RTOS tick source or other peripherals.</li>
+</ul>
+</section>
+
+<section>
+<h2>5. How FreeRTOS Collects Run-Time Statistics</h2>
+<p>When the scheduler changes the Running task, FreeRTOS can read the run-time counter and account for the elapsed time against the task that was running.</p>
+
+<div class="diagram">
+       TASK A IS RUNNING
+              |
+       Read run-time counter
+              |
+       Scheduler switches task
+              |
+       Calculate elapsed time
+              |
+       Add time to Task A
+              |
+       TASK B STARTS RUNNING
+              |
+       Repeat measurement
+</div>
+
+<p>The accumulated value is associated with each task's run-time statistics information.</p>
+
+<p>For example:</p>
+<table>
+<tr><th>Task</th><th>Accumulated Run Time</th></tr>
+<tr><td>Task A</td><td>4000 units</td></tr>
+<tr><td>Task B</td><td>3000 units</td></tr>
+<tr><td>Task C</td><td>3000 units</td></tr>
+<tr><td><strong>Total</strong></td><td><strong>10000 units</strong></td></tr>
+</table>
+</section>
+
+<section>
+<h2>6. CPU Utilization Calculation</h2>
+<p>CPU utilization represents the proportion of measured processor time consumed by a task or group of tasks during a measurement interval.</p>
+
+<h3>6.1 Formula</h3>
+<pre><code>Task CPU Utilization (%) =
+    (Task Run Time / Total Measured Run Time) × 100</code></pre>
+
+<h3>6.2 Numerical Example</h3>
+<p>Assume the measured run-time statistics are:</p>
+<table>
+<tr><th>Task</th><th>Run Time</th></tr>
+<tr><td>Task A</td><td>4000 units</td></tr>
+<tr><td>Task B</td><td>3000 units</td></tr>
+<tr><td>Task C</td><td>2000 units</td></tr>
+<tr><td>Idle Task</td><td>1000 units</td></tr>
+<tr><td><strong>Total</strong></td><td><strong>10000 units</strong></td></tr>
+</table>
+
+<pre><code>Task A = (4000 / 10000) × 100 = 40%
+
+Task B = (3000 / 10000) × 100 = 30%
+
+Task C = (2000 / 10000) × 100 = 20%
+
+Idle   = (1000 / 10000) × 100 = 10%</code></pre>
+
+<p>Total measured time is distributed as follows:</p>
+<ul>
+<li>Task A: 40%</li>
+<li>Task B: 30%</li>
+<li>Task C: 20%</li>
+<li>Idle task: 10%</li>
+</ul>
+</section>
+
+<section>
+<h2>7. Idle Task and CPU Usage</h2>
+<p>The FreeRTOS Idle task runs when no application task is Ready to execute at the currently available priority levels.</p>
+
+<p>Its run-time percentage can provide an estimate of how much measured processor time was spent idle.</p>
+
+<pre><code>Estimated Busy CPU (%) =
+    100 - Idle Task Percentage</code></pre>
+
+<p>Example:</p>
+<pre><code>Idle Task = 15%
+
+Estimated Busy CPU = 100 - 15
+                   = 85%</code></pre>
+
+<div class="note">This interpretation assumes the measured task times account for the relevant processor execution intervals. Interrupt execution and measurement overhead may not be attributed to application tasks in the same way, depending on the port and counter implementation.</div>
+</section>
+
+<section>
+<h2>8. uxTaskGetSystemState()</h2>
+<p><code>uxTaskGetSystemState()</code> obtains task status information, including accumulated run-time counters when run-time statistics are enabled.</p>
+
+<h3>8.1 Function Prototype</h3>
+<pre><code>UBaseType_t uxTaskGetSystemState(
+    TaskStatus_t * const pxTaskStatusArray,
+    UBaseType_t uxArraySize,
+    configRUN_TIME_COUNTER_TYPE * const pulTotalRunTime
+);</code></pre>
+
+<h3>8.2 Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>pxTaskStatusArray</code></td><td>Array where task status information is stored.</td></tr>
+<tr><td><code>uxArraySize</code></td><td>Number of entries available in the array.</td></tr>
+<tr><td><code>pulTotalRunTime</code></td><td>Pointer to receive the total run-time counter value.</td></tr>
+</table>
+
+<h3>8.3 Return Value</h3>
+<p>The function returns the number of task-status entries written to the supplied array.</p>
+
+<h3>8.4 Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+#define MAX_TASKS 10
+
+static TaskStatus_t taskStatus[MAX_TASKS];
+
+void CollectTaskStatistics(void)
+{
+    UBaseType_t taskCount;
+    configRUN_TIME_COUNTER_TYPE totalRunTime = 0;
+
+    taskCount = uxTaskGetSystemState(
+        taskStatus,
+        MAX_TASKS,
+        &amp;totalRunTime
+    );
+
+    /* Inspect taskStatus entries and
+       totalRunTime in the debugger. */
+}</code></pre>
+
+<div class="warning">This API requires the relevant task-status and run-time-statistics configuration. The array must be large enough for the task population. Check the return count and do not assume that every task was captured if the array is too small.</div>
+</section>
+
+<section>
+<h2>9. TaskStatus_t Structure</h2>
+<p>Each task entry contains information about a task at the time the status information is collected.</p>
+
+<p>Common fields include:</p>
+<table>
+<tr><th>Field</th><th>Description</th></tr>
+<tr><td><code>xHandle</code></td><td>Task handle.</td></tr>
+<tr><td><code>pcTaskName</code></td><td>Task name.</td></tr>
+<tr><td><code>xTaskNumber</code></td><td>Task identification number.</td></tr>
+<tr><td><code>eCurrentState</code></td><td>Current task state.</td></tr>
+<tr><td><code>uxCurrentPriority</code></td><td>Current task priority.</td></tr>
+<tr><td><code>usStackHighWaterMark</code></td><td>Minimum unused stack observed, in stack elements.</td></tr>
+<tr><td><code>ulRunTimeCounter</code></td><td>Accumulated run-time counter value.</td></tr>
+</table>
+
+<p>Structure members and their exact types can vary with FreeRTOS version and configuration.</p>
+</section>
+
+<section>
+<h2>10. vTaskGetRunTimeStats()</h2>
+<p><code>vTaskGetRunTimeStats()</code> formats task run-time statistics into a text buffer.</p>
+
+<h3>10.1 Function Prototype</h3>
+<pre><code>void vTaskGetRunTimeStats(
+    char *pcWriteBuffer
+);</code></pre>
+
+<h3>10.2 Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+#define STATS_BUFFER_SIZE 512
+
+static char statsBuffer[STATS_BUFFER_SIZE];
+
+void GenerateRunTimeReport(void)
+{
+    vTaskGetRunTimeStats(statsBuffer);
+
+    /* Send statsBuffer to a suitable
+       diagnostic output interface. */
+}</code></pre>
+
+<p>A typical formatted report may look like this:</p>
+
+<pre><code>Task          Abs Time       %
+--------------------------------
+SensorTask    4000           40%
+CommTask      3000           30%
+ControlTask   2000           20%
+IDLE          1000           10%</code></pre>
+
+<div class="warning">The output format is intended for diagnostics, not as a guaranteed machine-readable interface. Ensure the buffer is large enough. Formatting support and configuration requirements depend on the FreeRTOS release and port.</div>
+</section>
+
+<section>
+<h2>11. Run-Time Statistics Configuration Options</h2>
+<p>Some configuration options commonly associated with task statistics include:</p>
+
+<table>
+<tr><th>Configuration</th><th>Purpose</th></tr>
+<tr><td><code>configGENERATE_RUN_TIME_STATS</code></td><td>Enables run-time statistics support.</td></tr>
+<tr><td><code>configUSE_TRACE_FACILITY</code></td><td>Enables additional task-status and trace-related facilities.</td></tr>
+<tr><td><code>configUSE_STATS_FORMATTING_FUNCTIONS</code></td><td>Enables formatted statistics functions in versions that provide this option.</td></tr>
+</table>
+
+<p>Example configuration:</p>
+<pre><code>#define configGENERATE_RUN_TIME_STATS       1
+#define configUSE_TRACE_FACILITY            1
+#define configUSE_STATS_FORMATTING_FUNCTIONS 1</code></pre>
+
+<div class="note">Configuration names and dependencies can vary between FreeRTOS versions. Check the configuration template and documentation for the exact kernel release being used.</div>
+</section>
+
+<section>
+<h2>12. Run-Time Statistics and Task Scheduling</h2>
+<p>Run-time statistics can help analyze scheduling behavior.</p>
+
+<h3>Example Scenario</h3>
+<p>Consider three application tasks:</p>
+<table>
+<tr><th>Task</th><th>Function</th><th>Priority</th></tr>
+<tr><td>SensorTask</td><td>Reads sensor values</td><td>2</td></tr>
+<tr><td>ControlTask</td><td>Processes control logic</td><td>4</td></tr>
+<tr><td>CommTask</td><td>Transmits data</td><td>1</td></tr>
+</table>
+
+<p>Suppose the report shows:</p>
+<ul>
+<li>SensorTask: 20%</li>
+<li>ControlTask: 65%</li>
+<li>CommTask: 10%</li>
+<li>Idle: 5%</li>
+</ul>
+
+<p>The ControlTask consumes the largest share of measured task execution time. The developer should investigate whether its workload is expected and whether its execution time affects lower-priority tasks.</p>
+
+<div class="tip">High CPU usage is not automatically a software defect. A control task may legitimately require substantial processor time. Compare measured behavior with the system's timing requirements.</div>
+</section>
+
+<section>
+<h2>13. Limitations of Run-Time Statistics</h2>
+<ul>
+<li>Run-time measurement adds some instrumentation overhead.</li>
+<li>A low-resolution counter may produce inaccurate short-task measurements.</li>
+<li>Counter overflow must be handled correctly.</li>
+<li>Interrupt execution may not be attributed to application tasks.</li>
+<li>Formatted output consumes RAM and processing time.</li>
+<li>Statistics represent observed execution, not necessarily worst-case execution time.</li>
+<li>CPU percentages do not directly prove schedulability.</li>
+<li>Measurement intervals and system workload affect interpretation.</li>
+</ul>
+</section>
+
+<section>
+<h2>14. Practical Example: Task CPU-Time Analysis</h2>
+<p>Assume a diagnostic report provides the following values:</p>
+
+<table>
+<tr><th>Task</th><th>Run Time (units)</th></tr>
+<tr><td>SensorTask</td><td>2500</td></tr>
+<tr><td>ControlTask</td><td>5000</td></tr>
+<tr><td>CommTask</td><td>1500</td></tr>
+<tr><td>Idle</td><td>1000</td></tr>
+</table>
+
+<h3>Exercise Calculation</h3>
+<pre><code>Total = 2500 + 5000 + 1500 + 1000
+      = 10000 units
+
+SensorTask = (2500 / 10000) × 100
+           = 25%
+
+ControlTask = (5000 / 10000) × 100
+            = 50%
+
+CommTask = (1500 / 10000) × 100
+         = 15%
+
+Idle = (1000 / 10000) × 100
+     = 10%</code></pre>
+
+<p>Interpretation:</p>
+<ul>
+<li>ControlTask consumes 50% of measured task time.</li>
+<li>SensorTask consumes 25%.</li>
+<li>CommTask consumes 15%.</li>
+<li>Idle task consumes 10%.</li>
+</ul>
+</section>
+
+<section>
+<h2>15. Best Practices</h2>
+<ol>
+<li>Use a suitable high-resolution run-time counter.</li>
+<li>Keep the counter-reading function efficient.</li>
+<li>Check counter overflow and wraparound behavior.</li>
+<li>Collect statistics over meaningful intervals.</li>
+<li>Use sufficient storage for task-status arrays and formatted output.</li>
+<li>Compare results with actual task timing requirements.</li>
+<li>Do not use run-time percentages as a replacement for WCET analysis.</li>
+<li>Consider interrupt and instrumentation overhead.</li>
+<li>Use a trace tool when more detailed execution timelines are required.</li>
+<li>Disable unnecessary diagnostic instrumentation in production builds if its overhead is unacceptable.</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Practical Exercises</h2>
+<ol>
+<li>Explain the purpose of FreeRTOS run-time statistics.</li>
+<li>Differentiate the RTOS tick counter from the run-time counter.</li>
+<li>Calculate task CPU utilization when a task consumes 2500 units out of 10000.</li>
+<li>Explain the purpose of <code>uxTaskGetSystemState()</code>.</li>
+<li>Describe the information stored in <code>TaskStatus_t</code>.</li>
+<li>Write a program that collects task-status information.</li>
+<li>Explain how the Idle task percentage can help estimate processor idle time.</li>
+<li>List the limitations of run-time statistics.</li>
+<li>Explain why a high-resolution counter is useful.</li>
+<li>Describe why run-time statistics cannot independently prove deadline compliance.</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Interview Questions</h2>
+<ol>
+<li>What are FreeRTOS run-time statistics?</li>
+<li>How does FreeRTOS measure task execution time?</li>
+<li>What is <code>configGENERATE_RUN_TIME_STATS</code>?</li>
+<li>What is the purpose of <code>portGET_RUN_TIME_COUNTER_VALUE()</code>?</li>
+<li>What is the difference between a tick counter and a run-time counter?</li>
+<li>How do you calculate CPU utilization for a task?</li>
+<li>What is the purpose of <code>uxTaskGetSystemState()</code>?</li>
+<li>What information does <code>TaskStatus_t</code> contain?</li>
+<li>What is the purpose of <code>vTaskGetRunTimeStats()</code>?</li>
+<li>Why is the Idle task useful in CPU utilization analysis?</li>
+<li>Can run-time statistics determine worst-case execution time?</li>
+<li>Why should measurement overhead be considered?</li>
+</ol>
+</section>
+
+<section>
+<h2>18. Lesson Summary</h2>
+<ul>
+<li>Run-time statistics measure accumulated task execution time.</li>
+<li>A dedicated counter provides timing information at task switches.</li>
+<li><code>configGENERATE_RUN_TIME_STATS</code> enables the relevant feature.</li>
+<li><code>uxTaskGetSystemState()</code> collects task-status information.</li>
+<li><code>vTaskGetRunTimeStats()</code> formats a diagnostic report.</li>
+<li>CPU utilization is calculated using task run time divided by total measured run time.</li>
+<li>Idle task statistics can help estimate idle processor time.</li>
+<li>Run-time statistics are useful for profiling but do not replace real-time schedulability analysis.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L06_Heap_Usage_and_Memory_Fragmentation.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L08_Trace_Facility_and_System_Visualization.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 18 – Memory Management and RTOS Debugging</p>
+</footer>
+
+</body>
+</html>
