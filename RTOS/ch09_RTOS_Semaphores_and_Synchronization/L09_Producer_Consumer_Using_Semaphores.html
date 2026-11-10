@@ -1,1 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Producer-Consumer Using Semaphores | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Producer-Consumer Using Semaphores</h1>
+<p>Chapter 09 – Semaphores and Synchronization | Lesson 09</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 09</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>The Producer-Consumer problem is a classical synchronization problem in operating systems and real-time systems. It describes how one or more producer tasks generate data and one or more consumer tasks process that data using a shared buffer.</p>
+
+<ul>
+<li><strong>Producer:</strong> Generates data and places it into a buffer.</li>
+<li><strong>Consumer:</strong> Removes data from the buffer and processes it.</li>
+<li><strong>Buffer:</strong> Temporarily stores data between production and consumption.</li>
+</ul>
+
+<div class="info-box">
+<strong>Key objective:</strong> Prevent buffer overflow, prevent buffer underflow, and protect shared buffer operations from race conditions.
+</div>
+</section>
+
+<section>
+<h2>2. Producer-Consumer System Architecture</h2>
+
+<pre><code>       +----------------------+
+       |    Producer Task     |
+       |                      |
+       | Generate Data        |
+       +----------------------+
+                  |
+                  | Insert Data
+                  v
+       +----------------------+
+       |     Shared Buffer    |
+       |                      |
+       |   [D1] [D2] [D3]     |
+       +----------------------+
+                  |
+                  | Remove Data
+                  v
+       +----------------------+
+       |    Consumer Task     |
+       |                      |
+       | Process Data         |
+       +----------------------+</code></pre>
+
+<p>The producer and consumer may execute at different rates. Synchronization is required to coordinate access to the shared buffer.</p>
+</section>
+
+<section>
+<h2>3. Why Is Synchronization Required?</h2>
+
+<h3>3.1 Buffer Overflow</h3>
+<p>Buffer overflow occurs when the producer attempts to insert data into a full buffer.</p>
+
+<h3>3.2 Buffer Underflow</h3>
+<p>Buffer underflow occurs when the consumer attempts to remove data from an empty buffer.</p>
+
+<h3>3.3 Race Condition</h3>
+<p>A race condition can occur when producer and consumer tasks update shared buffer indexes or counters without proper synchronization.</p>
+
+<table>
+<tr><th>Problem</th><th>Cause</th><th>Solution</th></tr>
+<tr><td>Buffer overflow</td><td>Producer inserts data when no free slot remains.</td><td>Track available slots.</td></tr>
+<tr><td>Buffer underflow</td><td>Consumer removes data when no item is available.</td><td>Track occupied slots.</td></tr>
+<tr><td>Race condition</td><td>Concurrent access to shared buffer state.</td><td>Protect critical operations.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. Semaphores Used in Producer-Consumer Synchronization</h2>
+<p>The classical bounded-buffer solution uses three synchronization objects:</p>
+
+<table>
+<tr><th>Synchronization object</th><th>Initial value</th><th>Purpose</th></tr>
+<tr><td>Mutex</td><td>Available</td><td>Protects shared buffer operations.</td></tr>
+<tr><td>Empty semaphore</td><td>Buffer capacity N</td><td>Counts available buffer slots.</td></tr>
+<tr><td>Full semaphore</td><td>0</td><td>Counts occupied buffer slots.</td></tr>
+</table>
+
+<h3>Semaphore operations</h3>
+<ul>
+<li>Producer takes <code>empty</code> before inserting data.</li>
+<li>Producer takes the mutex before accessing shared buffer state.</li>
+<li>Producer gives <code>full</code> after inserting data.</li>
+<li>Consumer takes <code>full</code> before removing data.</li>
+<li>Consumer takes the mutex before accessing shared buffer state.</li>
+<li>Consumer gives <code>empty</code> after removing data.</li>
+</ul>
+
+<div class="info-box">
+The empty and full semaphores count buffer slots. The mutex protects the actual shared buffer and its indexes.
+</div>
+</section>
+
+<section>
+<h2>5. Classical Producer-Consumer Algorithm</h2>
+
+<h3>Producer algorithm</h3>
+<pre><code>while (true)
+{
+    item = ProduceItem();
+
+    wait(empty);
+
+    wait(mutex);
+
+    InsertItem(item);
+
+    signal(mutex);
+
+    signal(full);
+}</code></pre>
+
+<h3>Consumer algorithm</h3>
+<pre><code>while (true)
+{
+    wait(full);
+
+    wait(mutex);
+
+    item = RemoveItem();
+
+    signal(mutex);
+
+    signal(empty);
+
+    ConsumeItem(item);
+}</code></pre>
+
+<p>The producer cannot insert when the buffer is full. The consumer cannot remove when the buffer is empty.</p>
+</section>
+
+<section>
+<h2>6. FreeRTOS Implementation Using Semaphores</h2>
+<p>The following example demonstrates a bounded circular buffer with one producer task and one consumer task.</p>
+
+<h3>Shared resources</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+#include <stdint.h>
+
+#define BUFFER_SIZE 5
+
+static uint32_t buffer[BUFFER_SIZE];
+
+static uint32_t writeIndex = 0;
+static uint32_t readIndex = 0;
+
+static SemaphoreHandle_t xEmptySemaphore;
+static SemaphoreHandle_t xFullSemaphore;
+static SemaphoreHandle_t xBufferMutex;</code></pre>
+
+<h3>Producer task</h3>
+<pre><code>void ProducerTask(void *pvParameters)
+{
+    uint32_t item = 0;
+
+    for (;;)
+    {
+        /* Generate an item */
+        item++;
+
+        /* Wait until a buffer slot is available */
+        if (xSemaphoreTake(
+                xEmptySemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Protect shared buffer */
+            if (xSemaphoreTake(
+                    xBufferMutex,
+                    portMAX_DELAY) == pdTRUE)
+            {
+                buffer[writeIndex] = item;
+
+                writeIndex =
+                    (writeIndex + 1) % BUFFER_SIZE;
+
+                xSemaphoreGive(xBufferMutex);
+
+                /* One more item is available */
+                xSemaphoreGive(xFullSemaphore);
+            }
+            else
+            {
+                /* Restore reserved empty slot */
+                xSemaphoreGive(xEmptySemaphore);
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}</code></pre>
+
+<h3>Consumer task</h3>
+<pre><code>void ConsumerTask(void *pvParameters)
+{
+    uint32_t receivedItem;
+
+    for (;;)
+    {
+        /* Wait until an item is available */
+        if (xSemaphoreTake(
+                xFullSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Protect shared buffer */
+            if (xSemaphoreTake(
+                    xBufferMutex,
+                    portMAX_DELAY) == pdTRUE)
+            {
+                receivedItem = buffer[readIndex];
+
+                readIndex =
+                    (readIndex + 1) % BUFFER_SIZE;
+
+                xSemaphoreGive(xBufferMutex);
+
+                /* One more slot is available */
+                xSemaphoreGive(xEmptySemaphore);
+
+                ProcessItem(receivedItem);
+            }
+            else
+            {
+                /* Restore reserved full-item count */
+                xSemaphoreGive(xFullSemaphore);
+            }
+        }
+    }
+}</code></pre>
+
+<h3>Application initialization</h3>
+<pre><code>int main(void)
+{
+    xEmptySemaphore =
+        xSemaphoreCreateCounting(
+            BUFFER_SIZE,
+            BUFFER_SIZE
+        );
+
+    xFullSemaphore =
+        xSemaphoreCreateCounting(
+            BUFFER_SIZE,
+            0
+        );
+
+    xBufferMutex = xSemaphoreCreateMutex();
+
+    if ((xEmptySemaphore == NULL) ||
+        (xFullSemaphore == NULL) ||
+        (xBufferMutex == NULL))
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(
+        ProducerTask,
+        "Producer",
+        256,
+        NULL,
+        2,
+        NULL
+    );
+
+    xTaskCreate(
+        ConsumerTask,
+        "Consumer",
+        256,
+        NULL,
+        2,
+        NULL
+    );
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<div class="warning-box">
+This is an educational single-producer, single-consumer example. Production code should define recovery for every failure path, ensure resource counts remain consistent, and consider using a FreeRTOS queue instead. The mutex and semaphore handles must be successfully created before tasks start.
+</div>
+</section>
+
+<section>
+<h2>7. Circular Buffer Operation</h2>
+<p>A circular buffer uses two indexes:</p>
+
+<ul>
+<li><code>writeIndex</code> identifies the next insertion position.</li>
+<li><code>readIndex</code> identifies the next removal position.</li>
+</ul>
+
+<p>After accessing an element, each index advances using modulo arithmetic.</p>
+
+<pre><code>writeIndex = (writeIndex + 1) % BUFFER_SIZE;
+readIndex  = (readIndex + 1) % BUFFER_SIZE;</code></pre>
+
+<p>For a buffer size of five, the index sequence is:</p>
+
+<table>
+<tr><th>Current index</th><th>Next index</th></tr>
+<tr><td>0</td><td>1</td></tr>
+<tr><td>1</td><td>2</td></tr>
+<tr><td>2</td><td>3</td></tr>
+<tr><td>3</td><td>4</td></tr>
+<tr><td>4</td><td>0</td></tr>
+</table>
+
+<p>The empty and full semaphore counts prevent the producer and consumer from confusing a full buffer with an empty buffer.</p>
+</section>
+
+<section>
+<h2>8. Step-by-Step Execution Example</h2>
+<p>Assume a circular buffer has five slots.</p>
+
+<table>
+<tr><th>Operation</th><th>Empty count</th><th>Full count</th><th>Explanation</th></tr>
+<tr><td>Initial state</td><td>5</td><td>0</td><td>All slots are empty.</td></tr>
+<tr><td>Producer inserts item 1</td><td>4</td><td>1</td><td>One occupied slot.</td></tr>
+<tr><td>Producer inserts item 2</td><td>3</td><td>2</td><td>Two occupied slots.</td></tr>
+<tr><td>Consumer removes item 1</td><td>4</td><td>1</td><td>One slot becomes free.</td></tr>
+<tr><td>Producer inserts item 3</td><td>3</td><td>2</td><td>Two occupied slots.</td></tr>
+<tr><td>Consumer removes item 2</td><td>4</td><td>1</td><td>One slot becomes free.</td></tr>
+</table>
+
+<p>The total number of available and occupied slots remains equal to the buffer capacity:</p>
+
+<pre><code>Empty Count + Full Count = BUFFER_SIZE</code></pre>
+</section>
+
+<section>
+<h2>9. Producer-Consumer Using a FreeRTOS Queue</h2>
+<p>FreeRTOS queues provide a simpler solution for many producer-consumer applications. A queue manages data storage and task synchronization internally.</p>
+
+<h3>Queue creation</h3>
+<pre><code>QueueHandle_t xDataQueue;
+
+xDataQueue = xQueueCreate(
+    5,
+    sizeof(uint32_t)
+);</code></pre>
+
+<h3>Producer task</h3>
+<pre><code>void ProducerTask(void *pvParameters)
+{
+    uint32_t item = 0;
+
+    for (;;)
+    {
+        item++;
+
+        if (xQueueSend(
+                xDataQueue,
+                &amp;item,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Item successfully inserted */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}</code></pre>
+
+<h3>Consumer task</h3>
+<pre><code>void ConsumerTask(void *pvParameters)
+{
+    uint32_t item;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                xDataQueue,
+                &amp;item,
+                portMAX_DELAY) == pdTRUE)
+        {
+            ProcessItem(item);
+        }
+    }
+}</code></pre>
+
+<p>A queue copies each item into its own storage. The producer can reuse its local variable after a successful send because the queue stores a copy of the item.</p>
+
+<div class="info-box">
+For many ordinary producer-consumer applications, a FreeRTOS queue is preferable to manually combining a circular buffer, two counting semaphores, and a mutex.
+</div>
+</section>
+
+<section>
+<h2>10. Semaphores vs Queues in Producer-Consumer Systems</h2>
+
+<table>
+<tr><th>Feature</th><th>Manual buffer with semaphores</th><th>FreeRTOS queue</th></tr>
+<tr><td>Data storage</td><td>Application implements buffer.</td><td>Queue manages item storage.</td></tr>
+<tr><td>Synchronization</td><td>Application manages counts and mutex.</td><td>Built into queue operations.</td></tr>
+<tr><td>Buffer indexes</td><td>Application manages indexes.</td><td>Managed by queue implementation.</td></tr>
+<tr><td>Data transfer</td><td>Application copies data into/out of buffer.</td><td>Queue copies configured items.</td></tr>
+<tr><td>Flexibility</td><td>Allows custom buffer and ownership designs.</td><td>Convenient for fixed-size queued items.</td></tr>
+<tr><td>Complexity</td><td>Higher; more synchronization rules.</td><td>Usually lower.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>11. Common Problems and Their Solutions</h2>
+
+<h3>11.1 Buffer Overflow</h3>
+<p><strong>Problem:</strong> Producer attempts to insert data when the buffer is full.</p>
+<p><strong>Solution:</strong> Wait for an empty-slot token before inserting.</p>
+
+<h3>11.2 Buffer Underflow</h3>
+<p><strong>Problem:</strong> Consumer attempts to remove data from an empty buffer.</p>
+<p><strong>Solution:</strong> Wait for a full-slot token before removing.</p>
+
+<h3>11.3 Race Condition</h3>
+<p><strong>Problem:</strong> Producer and consumer modify shared indexes or buffer state without protection.</p>
+<p><strong>Solution:</strong> Use a mutex or a correctly designed lock-free single-producer/single-consumer structure.</p>
+
+<h3>11.4 Deadlock</h3>
+<p><strong>Problem:</strong> Tasks acquire synchronization objects in an inconsistent order or fail to release resources.</p>
+<p><strong>Solution:</strong> Establish a consistent acquisition order and ensure every successful acquisition has a corresponding release.</p>
+
+<h3>11.5 Slow Consumer</h3>
+<p><strong>Problem:</strong> The producer generates data faster than the consumer can process it.</p>
+<p><strong>Solution:</strong> Increase buffer capacity where appropriate, optimize processing, apply backpressure, or define an explicit data-drop policy.</p>
+</section>
+
+<section>
+<h2>12. Embedded Applications</h2>
+<table>
+<tr><th>Application</th><th>Producer</th><th>Consumer</th></tr>
+<tr><td>UART reception</td><td>UART ISR or receive task</td><td>Protocol-processing task</td></tr>
+<tr><td>ADC acquisition</td><td>ADC ISR or acquisition task</td><td>Signal-processing task</td></tr>
+<tr><td>Sensor monitoring</td><td>Sensor acquisition task</td><td>Monitoring task</td></tr>
+<tr><td>Data logging</td><td>Application tasks</td><td>Storage task</td></tr>
+<tr><td>Network communication</td><td>Receive task</td><td>Protocol-processing task</td></tr>
+</table>
+</section>
+
+<section>
+<h2>13. Best Practices</h2>
+<ol>
+<li>Choose the buffer capacity based on expected data bursts and consumer response time.</li>
+<li>Use empty and full counts consistently in a manual bounded-buffer design.</li>
+<li>Protect shared buffer state against concurrent modification.</li>
+<li>Keep mutex ownership and release rules clear.</li>
+<li>Do not hold a mutex while waiting for an event that may depend on another task acquiring that mutex.</li>
+<li>Define queue-full and buffer-overflow behavior.</li>
+<li>Use a queue when data transfer is the main requirement.</li>
+<li>Use a counting semaphore when the application must count pending events or available resource tokens.</li>
+<li>Use ISR-safe queue or semaphore APIs when communicating from an interrupt.</li>
+<li>Test producer and consumer operation under different execution rates.</li>
+</ol>
+</section>
+
+<section>
+<h2>14. Practical Activity</h2>
+<p>Implement a producer-consumer application using a bounded buffer.</p>
+
+<h3>Activity steps</h3>
+<ol>
+<li>Create a circular buffer with five elements.</li>
+<li>Create an empty counting semaphore with initial count five.</li>
+<li>Create a full counting semaphore with initial count zero.</li>
+<li>Create a mutex for shared buffer access.</li>
+<li>Implement the producer task.</li>
+<li>Implement the consumer task.</li>
+<li>Test the system with a faster producer and a slower consumer.</li>
+<li>Observe how the producer blocks when the buffer becomes full.</li>
+<li>Observe how the consumer blocks when the buffer becomes empty.</li>
+<li>Repeat the activity using a FreeRTOS queue and compare complexity.</li>
+</ol>
+
+<h3>Expected result</h3>
+<p>The producer should not overwrite unread data, and the consumer should not read an empty buffer. Synchronization should maintain the correct buffer state.</p>
+
+<div class="warning-box">
+For the LPC2129 Keil simulator setup, treat this as an RTOS programming exercise unless a compatible FreeRTOS port is independently verified. The example does not establish actual FreeRTOS execution on the current simulator configuration.
+</div>
+</section>
+
+<section>
+<h2>15. Review Questions</h2>
+<ol>
+<li>What is the Producer-Consumer problem?</li>
+<li>What are the responsibilities of a producer and a consumer?</li>
+<li>What is a bounded buffer?</li>
+<li>Explain buffer overflow and buffer underflow.</li>
+<li>Why are empty and full semaphores required?</li>
+<li>Why is a mutex used in the classical solution?</li>
+<li>What are the initial values of empty and full semaphores?</li>
+<li>Explain the producer algorithm.</li>
+<li>Explain the consumer algorithm.</li>
+<li>How does a circular buffer work?</li>
+<li>What is the relationship between empty count, full count, and buffer capacity?</li>
+<li>How does a FreeRTOS queue simplify producer-consumer synchronization?</li>
+<li>Differentiate a queue from a counting semaphore.</li>
+<li>What happens when the producer is faster than the consumer?</li>
+<li>Which synchronization objects are suitable for UART data reception?</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Lesson Summary</h2>
+<ul>
+<li>The Producer-Consumer problem involves exchanging data through a shared buffer.</li>
+<li>Empty and full counting semaphores track available and occupied slots.</li>
+<li>A mutex protects shared buffer operations in the classical solution.</li>
+<li>A circular buffer uses read and write indexes to reuse storage.</li>
+<li>FreeRTOS queues provide built-in storage and synchronization for many producer-consumer applications.</li>
+<li>Buffer capacity, data ownership, overflow handling, and task execution rates must be considered during design.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L08_ISR_and_Semaphore_Communication.html">← Previous Lesson</a>
+<a href="index.html">Chapter 09</a>
+<a href="L10_Synchronization_Programming_Examples.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
