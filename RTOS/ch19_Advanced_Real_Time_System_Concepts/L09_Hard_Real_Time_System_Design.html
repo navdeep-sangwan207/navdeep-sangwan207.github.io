@@ -1,1 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hard Real-Time System Design | RTOS &amp; FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Hard Real-Time System Design</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 19: Advanced Real-Time System Concepts</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 19</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Understand hard real-time system design requirements.</li>
+<li>Differentiate hard, firm and soft real-time constraints.</li>
+<li>Identify task timing parameters.</li>
+<li>Understand WCET, response time and deadlines.</li>
+<li>Perform basic CPU utilization and schedulability analysis.</li>
+<li>Understand fixed-priority and deadline-based scheduling.</li>
+<li>Analyze priority inversion and resource blocking.</li>
+<li>Design task architecture for predictable execution.</li>
+<li>Understand overload handling and fault recovery.</li>
+<li>Apply a systematic design process to an embedded controller.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Hard Real-Time Systems</h2>
+<p>A hard real-time system is a system in which specified timing constraints are mandatory. Missing a critical deadline constitutes a system failure according to the system requirements.</p>
+
+<p>The system must produce the required result within its specified time limit, not merely produce the correct result eventually.</p>
+
+<h3>Examples</h3>
+<ul>
+<li>Aircraft flight-control functions.</li>
+<li>Emergency shutdown systems.</li>
+<li>Automotive airbag deployment functions.</li>
+<li>Industrial machine protection.</li>
+<li>Time-critical medical device functions.</li>
+<li>High-speed motion-control systems.</li>
+</ul>
+
+<div class="diagram">
+        INPUT / EVENT
+              |
+        RELEASE TASK
+              |
+        EXECUTE CONTROL
+              |
+        PRODUCE OUTPUT
+              |
+        CHECK DEADLINE
+              |
+        +-----+-----+
+        |           |
+    ON TIME      TOO LATE
+        |           |
+    VALID RESULT  DEADLINE MISS
+                    |
+              FAILURE HANDLING
+</div>
+
+<p>Correctness includes both logical correctness and timing correctness.</p>
+</section>
+
+<section>
+<h2>3. Hard, Firm and Soft Real-Time Systems</h2>
+<table>
+<tr><th>Type</th><th>Deadline Behavior</th><th>Late Result</th><th>Example</th></tr>
+<tr><td>Hard real-time</td><td>Specified deadline is mandatory.</td><td>Constitutes failure of the required function.</td><td>Airbag deployment timing requirement.</td></tr>
+<tr><td>Firm real-time</td><td>Deadline has strict usefulness requirements.</td><td>Result after deadline has no value; occasional misses may be tolerated at system level.</td><td>Time-sensitive inspection result.</td></tr>
+<tr><td>Soft real-time</td><td>Timeliness affects quality of service.</td><td>Late result may still be useful.</td><td>Audio/video streaming.</td></tr>
+</table>
+
+<div class="note">The classification applies to a function and its requirements. A product may contain hard, firm and soft real-time functions together.</div>
+</section>
+
+<section>
+<h2>4. Timing Parameters of Real-Time Tasks</h2>
+<p>Real-time task design requires a precise definition of release time, execution time, period and deadline.</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td>Release time (r)</td><td>Time at which a task becomes eligible to execute.</td></tr>
+<tr><td>Execution time (C)</td><td>Processor time required by the task under specified assumptions.</td></tr>
+<tr><td>Period (T)</td><td>Time between releases of a periodic task.</td></tr>
+<tr><td>Deadline (D)</td><td>Required completion time relative to release or another defined reference.</td></tr>
+<tr><td>Response time (R)</td><td>Time from release to completion.</td></tr>
+<tr><td>Blocking time (B)</td><td>Time a task may be delayed by lower-priority resource ownership or other modeled blocking.</td></tr>
+<tr><td>Jitter</td><td>Variation in release, start or completion timing.</td></tr>
+<tr><td>WCET</td><td>Worst-case execution-time upper bound under stated assumptions.</td></tr>
+</table>
+
+<h3>Task Timing Diagram</h3>
+<div class="diagram">
+Release          Start             Completion
+   |                |                    |
+   v                v                    v
+   +----------------+====================+
+   |  Waiting Time  |  Execution Time    |
+   +----------------+====================+
+   |<------------- Response Time ------->|
+
+   |<---------------- Deadline ---------->|
+</div>
+
+<p>For a simple task with no suspension or preemption, response time may equal waiting time plus execution time. In a preemptive RTOS, interference and blocking must also be considered.</p>
+</section>
+
+<section>
+<h2>5. Execution Time and Worst-Case Execution Time</h2>
+<p>Execution time is the processor time required for a task to complete. It can vary with input data, branches, cache behavior, memory wait states and hardware conditions.</p>
+
+<h3>Best-Case Execution Time (BCET)</h3>
+<p>The minimum execution time under defined conditions.</p>
+
+<h3>Average Execution Time (AET)</h3>
+<p>The average observed or estimated execution time for a workload distribution.</p>
+
+<h3>Worst-Case Execution Time (WCET)</h3>
+<p>A safe upper bound on execution time under explicitly stated hardware, software and operating assumptions.</p>
+
+<div class="diagram">
+             TASK EXECUTION TIME
+                     |
+       +-------------+-------------+
+       |             |             |
+      BCET          AET           WCET
+       |             |             |
+    Minimum       Average      Safe Upper
+    Observed      Behavior       Bound
+</div>
+
+<div class="warning">The largest execution time measured during testing is not automatically WCET. Testing may not exercise every worst-case path or hardware condition.</div>
+
+<h3>Methods for WCET Estimation</h3>
+<ul>
+<li>Static program analysis.</li>
+<li>Measurement-based analysis.</li>
+<li>Processor timing analysis.</li>
+<li>Control-flow analysis.</li>
+<li>Memory and peripheral wait-state analysis.</li>
+<li>Conservative safety margins supported by engineering evidence.</li>
+</ul>
+</section>
+
+<section>
+<h2>6. Deadline Types</h2>
+<table>
+<tr><th>Deadline Type</th><th>Meaning</th></tr>
+<tr><td>Implicit deadline</td><td>Deadline equals task period: D = T.</td></tr>
+<tr><td>Constrained deadline</td><td>Deadline is no greater than period: D ≤ T.</td></tr>
+<tr><td>Arbitrary deadline</td><td>Deadline may be greater than period: D can exceed T.</td></tr>
+</table>
+
+<h3>Example</h3>
+<p>A periodic sensor task has period T = 10 ms.</p>
+<ul>
+<li>D = 10 ms: implicit deadline.</li>
+<li>D = 8 ms: constrained deadline.</li>
+<li>D = 15 ms: arbitrary deadline.</li>
+</ul>
+
+<p>Scheduling analysis must use the actual deadline model rather than assuming every task has D = T.</p>
+</section>
+
+<section>
+<h2>7. CPU Utilization</h2>
+<p>CPU utilization estimates the fraction of processor capacity required by periodic tasks.</p>
+
+<p>For a set of independent periodic tasks on a single processor:</p>
+<pre><code>U = Σ (Ci / Ti)</code></pre>
+
+<p>Where:</p>
+<ul>
+<li>Ci = execution time of task i.</li>
+<li>Ti = period of task i.</li>
+<li>U = total utilization.</li>
+</ul>
+
+<h3>Example</h3>
+<table>
+<tr><th>Task</th><th>Execution Time (C)</th><th>Period (T)</th><th>Utilization</th></tr>
+<tr><td>T1</td><td>1 ms</td><td>5 ms</td><td>0.20</td></tr>
+<tr><td>T2</td><td>2 ms</td><td>10 ms</td><td>0.20</td></tr>
+<tr><td>T3</td><td>3 ms</td><td>20 ms</td><td>0.15</td></tr>
+<tr><td>Total</td><td></td><td></td><td>0.55</td></tr>
+</table>
+
+<p>Total CPU utilization = 0.55 × 100 = 55%.</p>
+
+<div class="note">A utilization below 100% does not by itself prove schedulability. Deadlines, task release patterns, blocking, interrupts and scheduling policy also matter.</div>
+</section>
+
+<section>
+<h2>8. Rate Monotonic Scheduling (RMS)</h2>
+<p>Rate Monotonic Scheduling is a fixed-priority scheduling algorithm for periodic tasks. Under the standard RMS assignment, shorter-period tasks receive higher priority.</p>
+
+<h3>Priority Assignment</h3>
+<table>
+<tr><th>Task</th><th>Period</th><th>Assigned Priority</th></tr>
+<tr><td>T1</td><td>5 ms</td><td>Highest</td></tr>
+<tr><td>T2</td><td>10 ms</td><td>Medium</td></tr>
+<tr><td>T3</td><td>20 ms</td><td>Lowest</td></tr>
+</table>
+
+<h3>Liu-Layland Utilization Bound</h3>
+<pre><code>U ≤ n(2^(1/n) - 1)</code></pre>
+
+<p>Where n is the number of independent periodic tasks.</p>
+
+<p>For n = 3:</p>
+<pre><code>U ≤ 3(2^(1/3) - 1)
+U ≤ approximately 0.7798
+
+U ≤ 77.98%</code></pre>
+
+<p>This is a sufficient utilization bound for the classical RMS assumptions. A task set exceeding the bound may still be schedulable.</p>
+</section>
+
+<section>
+<h2>9. Earliest Deadline First (EDF)</h2>
+<p>EDF is a dynamic-priority scheduling algorithm. The task with the earliest absolute deadline among ready tasks receives the highest scheduling priority.</p>
+
+<h3>Example</h3>
+<table>
+<tr><th>Task</th><th>Absolute Deadline</th><th>Scheduling Priority</th></tr>
+<tr><td>T1</td><td>12 ms</td><td>Highest</td></tr>
+<tr><td>T2</td><td>8 ms</td><td>Highest at this instant</td></tr>
+<tr><td>T3</td><td>15 ms</td><td>Lowest at this instant</td></tr>
+</table>
+
+<p>T2 executes first because it has the earliest absolute deadline.</p>
+
+<p>For an ideal single processor with independent, preemptible periodic tasks and implicit deadlines, EDF is schedulable if total utilization does not exceed 100%:</p>
+<pre><code>U = Σ (Ci / Ti) ≤ 1</code></pre>
+
+<div class="warning">This EDF condition is not a universal guarantee for arbitrary deadlines, blocking, non-preemptive sections, release jitter or resource dependencies.</div>
+</section>
+
+<section>
+<h2>10. Fixed-Priority vs Dynamic-Priority Scheduling</h2>
+<table>
+<tr><th>Feature</th><th>Fixed Priority</th><th>Dynamic Priority</th></tr>
+<tr><td>Priority</td><td>Assigned according to a fixed rule or configuration.</td><td>Can change during execution.</td></tr>
+<tr><td>Example</td><td>Rate Monotonic Scheduling.</td><td>Earliest Deadline First.</td></tr>
+<tr><td>Analysis</td><td>Response-time analysis is commonly used.</td><td>Demand-bound and processor-demand analysis are used for appropriate task models.</td></tr>
+<tr><td>Implementation</td><td>Often simpler in conventional RTOS kernels.</td><td>Requires deadline-based priority management.</td></tr>
+</table>
+
+<p>Standard FreeRTOS scheduling is fixed-priority. Changing a task priority with <code>vTaskPrioritySet()</code> does not implement EDF automatically.</p>
+</section>
+
+<section>
+<h2>11. Response-Time Analysis</h2>
+<p>Response-time analysis estimates the maximum time between task release and completion, considering execution, blocking and higher-priority interference.</p>
+
+<p>For a fixed-priority preemptive task i, a common recurrence under suitable assumptions is:</p>
+
+<pre><code>Ri = Ci + Bi
+     + Σ ceil(Ri / Tj) × Cj</code></pre>
+
+<p>The summation covers higher-priority tasks j.</p>
+
+<h3>Where:</h3>
+<ul>
+<li>Ri = worst-case response time of task i.</li>
+<li>Ci = WCET of task i.</li>
+<li>Bi = modeled blocking time.</li>
+<li>Cj = WCET of higher-priority task j.</li>
+<li>Tj = period or minimum inter-arrival time of higher-priority task j.</li>
+</ul>
+
+<p>The recurrence is evaluated iteratively until it converges or exceeds the deadline.</p>
+
+<div class="note">This is a simplified fixed-priority response-time equation. Real systems may need to account for release jitter, interrupt interference, non-preemptive sections, self-suspension and other platform-specific effects.</div>
+</section>
+
+<section>
+<h2>12. Response-Time Analysis – Worked Example</h2>
+<p>Consider three independent periodic tasks on a single processor.</p>
+
+<table>
+<tr><th>Task</th><th>WCET (C)</th><th>Period (T)</th><th>Deadline (D)</th><th>Priority</th></tr>
+<tr><td>T1</td><td>1 ms</td><td>4 ms</td><td>4 ms</td><td>Highest</td></tr>
+<tr><td>T2</td><td>1 ms</td><td>5 ms</td><td>5 ms</td><td>Medium</td></tr>
+<tr><td>T3</td><td>2 ms</td><td>10 ms</td><td>10 ms</td><td>Lowest</td></tr>
+</table>
+
+<p>Assume preemptive fixed-priority scheduling, zero blocking, no release jitter and no additional interrupt interference.</p>
+
+<h3>Task T1</h3>
+<pre><code>R1 = C1
+R1 = 1 ms
+
+R1 ≤ D1
+1 ≤ 4
+
+T1 passes.</code></pre>
+
+<h3>Task T2</h3>
+<pre><code>R2 = C2 + ceil(R2 / T1) × C1
+
+Initial:
+R2(0) = 1
+
+Iteration 1:
+R2(1) = 1 + ceil(1/4) × 1
+      = 2 ms
+
+Iteration 2:
+R2(2) = 1 + ceil(2/4) × 1
+      = 2 ms
+
+R2 = 2 ms
+
+R2 ≤ D2
+2 ≤ 5
+
+T2 passes.</code></pre>
+
+<h3>Task T3</h3>
+<pre><code>R3 = C3
+   + ceil(R3/T1) × C1
+   + ceil(R3/T2) × C2
+
+Initial:
+R3(0) = 2
+
+Iteration 1:
+R3(1) = 2 + ceil(2/4) × 1
+         + ceil(2/5) × 1
+       = 4 ms
+
+Iteration 2:
+R3(2) = 2 + ceil(4/4) × 1
+         + ceil(4/5) × 1
+       = 4 ms
+
+R3 = 4 ms
+
+R3 ≤ D3
+4 ≤ 10
+
+T3 passes.</code></pre>
+
+<badge color="success">All three tasks pass this analysis</badge>
+<p>Under the stated assumptions, all three tasks meet their deadlines.</p>
+</section>
+
+<section>
+<h2>13. Priority Inversion and Blocking</h2>
+<p>Priority inversion occurs when a high-priority task is indirectly delayed because a lower-priority task holds a resource that it needs.</p>
+
+<h3>Example</h3>
+<ol>
+<li>Low-priority Task L acquires a shared mutex.</li>
+<li>High-priority Task H becomes ready and requests the same mutex.</li>
+<li>Task H blocks because Task L owns the mutex.</li>
+<li>Medium-priority Task M preempts Task L.</li>
+<li>Task H remains blocked until Task L runs and releases the mutex.</li>
+</ol>
+
+<h3>Mitigation</h3>
+<ul>
+<li>Use mutexes with priority inheritance where supported.</li>
+<li>Keep critical sections short.</li>
+<li>Avoid unnecessary nested locks.</li>
+<li>Define a consistent lock-acquisition order.</li>
+<li>Include worst-case blocking in schedulability analysis.</li>
+</ul>
+
+<div class="warning">Priority inheritance reduces some forms of priority inversion but does not eliminate all blocking or guarantee that a task meets its deadline.</div>
+</section>
+
+<section>
+<h2>14. Interrupt Latency and Task Response</h2>
+<p>Interrupt latency and task response time are different timing measurements.</p>
+
+<table>
+<tr><th>Metric</th><th>Meaning</th></tr>
+<tr><td>Interrupt latency</td><td>Time from interrupt assertion to the start of the ISR.</td></tr>
+<tr><td>ISR execution time</td><td>Time spent executing the interrupt service routine.</td></tr>
+<tr><td>Task release latency</td><td>Delay before a released task begins execution.</td></tr>
+<tr><td>Task response time</td><td>Time from task release to task completion.</td></tr>
+</table>
+
+<h3>Design Recommendations</h3>
+<ul>
+<li>Keep ISRs short and bounded.</li>
+<li>Defer non-urgent processing to tasks.</li>
+<li>Use appropriate interrupt priorities.</li>
+<li>Analyze interrupt masking and critical sections.</li>
+<li>Include interrupt interference in timing analysis.</li>
+<li>Measure and verify worst-case behavior on target hardware.</li>
+</ul>
+</section>
+
+<section>
+<h2>15. Task Architecture for Hard Real-Time Systems</h2>
+<p>A well-designed task architecture separates functions according to timing requirements, execution cost and dependencies.</p>
+
+<h3>Example: Industrial Motor Controller</h3>
+<div class="diagram">
+           SENSOR INPUT
+                |
+          ADC / CAPTURE ISR
+                |
+          NOTIFY CONTROL TASK
+                |
+         HIGH-PRIORITY TASK
+          MOTOR CONTROL
+                |
+          CONTROL OUTPUT
+                |
+        +-------+-------+
+        |               |
+  MEDIUM-PRIORITY   LOW-PRIORITY
+  COMMUNICATION     LOGGING TASK
+        |               |
+   STATUS UPDATE   DIAGNOSTIC LOG
+</div>
+
+<h3>Task Design Principles</h3>
+<ul>
+<li>Separate periodic control tasks from background tasks.</li>
+<li>Assign priorities based on timing requirements and analysis.</li>
+<li>Use bounded communication and synchronization.</li>
+<li>Avoid long blocking operations in critical tasks.</li>
+<li>Define task periods and deadlines explicitly.</li>
+<li>Monitor missed releases and deadline violations.</li>
+</ul>
+</section>
+
+<section>
+<h2>16. FreeRTOS Implementation Considerations</h2>
+<p>FreeRTOS can implement many task-management and synchronization mechanisms used in real-time systems. Application timing still requires separate analysis.</p>
+
+<h3>Useful APIs</h3>
+<table>
+<tr><th>API</th><th>Purpose</th></tr>
+<tr><td><code>xTaskCreate()</code></td><td>Create a task dynamically.</td></tr>
+<tr><td><code>vTaskPrioritySet()</code></td><td>Change a task priority.</td></tr>
+<tr><td><code>vTaskDelayUntil()</code></td><td>Maintain a periodic task schedule.</td></tr>
+<tr><td><code>xTaskGetTickCount()</code></td><td>Read the RTOS tick count.</td></tr>
+<tr><td><code>xQueueSend()</code></td><td>Send data to a queue.</td></tr>
+<tr><td><code>xSemaphoreTake()</code></td><td>Acquire a semaphore or mutex.</td></tr>
+<tr><td><code>uxTaskGetStackHighWaterMark()</code></td><td>Inspect the minimum remaining task stack observed.</td></tr>
+</table>
+
+<h3>Periodic Task Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+static void ControlTask(void *pvParameters)
+{
+    TickType_t lastWakeTime;
+    const TickType_t period = pdMS_TO_TICKS(10);
+
+    (void) pvParameters;
+
+    lastWakeTime = xTaskGetTickCount();
+
+    for (;;)
+    {
+        /* Read inputs and execute control logic. */
+
+        /* Maintain a nominal 10 ms period. */
+        vTaskDelayUntil(&amp;lastWakeTime, period);
+    }
+}
+
+int main(void)
+{
+    BaseType_t result;
+
+    result = xTaskCreate(
+        ControlTask,
+        "Control",
+        256,
+        NULL,
+        3,
+        NULL
+    );
+
+    if (result == pdPASS)
+    {
+        vTaskStartScheduler();
+    }
+
+    for (;;)
+    {
+        /* Scheduler startup failed or returned. */
+    }
+}</code></pre>
+
+<div class="note">This is a generic FreeRTOS example. Stack depth is specified in StackType_t elements, not bytes. The 10 ms delay establishes a periodic release pattern but does not prove that the control task meets a 10 ms deadline.</div>
+</section>
+
+<section>
+<h2>17. Overload Management</h2>
+<p>Overload occurs when the processor or another resource cannot complete all released work within the required timing constraints.</p>
+
+<h3>Possible Causes</h3>
+<ul>
+<li>Unexpected interrupt frequency.</li>
+<li>Excessive communication traffic.</li>
+<li>Long execution paths.</li>
+<li>Unexpected sensor-event bursts.</li>
+<li>Blocking or deadlock conditions.</li>
+<li>Insufficient processor capacity.</li>
+</ul>
+
+<h3>Overload Management Strategies</h3>
+<ul>
+<li>Bound incoming workload.</li>
+<li>Prioritize safety-related functions.</li>
+<li>Reject or defer non-critical work according to policy.</li>
+<li>Use admission control where applicable.</li>
+<li>Monitor deadline misses and queue saturation.</li>
+<li>Define a controlled degraded operating mode.</li>
+<li>Provide an appropriate protective response if required.</li>
+</ul>
+
+<div class="warning">Never silently discard a safety-critical event as an overload-management shortcut. The response to overload must be specified and validated.</div>
+</section>
+
+<section>
+<h2>18. Fault Handling and Recovery</h2>
+<p>Hard real-time systems must define how the system responds to detected faults and timing violations.</p>
+
+<h3>Fault Handling Sequence</h3>
+<div class="diagram">
+          FAULT DETECTED
+                 |
+          IDENTIFY FAULT
+                 |
+         DETERMINE SEVERITY
+                 |
+         +-------+-------+
+         |               |
+      RECOVERABLE      CRITICAL
+         |               |
+    CONTROLLED        PROTECTIVE
+    RECOVERY           RESPONSE
+         |               |
+    VERIFY STATE     SAFE STATE
+         |               |
+         +-------+-------+
+                 |
+          RECORD DIAGNOSTICS
+</div>
+
+<h3>Possible Recovery Mechanisms</h3>
+<ul>
+<li>Task restart when safe and permitted.</li>
+<li>Peripheral reset.</li>
+<li>Communication reconnection.</li>
+<li>Watchdog-triggered system reset.</li>
+<li>Switch to redundant hardware.</li>
+<li>Controlled shutdown.</li>
+<li>Transition to a defined safe state.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Hard Real-Time Design Workflow</h2>
+<ol>
+<li><strong>Define requirements:</strong> Identify functional and timing requirements.</li>
+<li><strong>Identify hazards:</strong> Determine possible unsafe operating conditions.</li>
+<li><strong>Decompose functions:</strong> Separate the application into tasks and interrupt handlers.</li>
+<li><strong>Define timing parameters:</strong> Specify periods, deadlines and WCET bounds.</li>
+<li><strong>Select scheduling policy:</strong> Choose a suitable fixed-priority or deadline-based approach.</li>
+<li><strong>Analyze schedulability:</strong> Evaluate CPU utilization, response time and blocking.</li>
+<li><strong>Design synchronization:</strong> Bound resource access and blocking.</li>
+<li><strong>Design fault handling:</strong> Specify overload, fault and recovery behavior.</li>
+<li><strong>Implement:</strong> Develop the RTOS application and hardware interfaces.</li>
+<li><strong>Verify and validate:</strong> Test functional behavior and timing on the target platform.</li>
+<li><strong>Maintain evidence:</strong> Record assumptions, test results and design changes.</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Practical Exercise 1 – CPU Utilization</h2>
+<p><strong>Problem:</strong> Three periodic tasks have the following parameters.</p>
+
+<table>
+<tr><th>Task</th><th>Execution Time</th><th>Period</th></tr>
+<tr><td>T1</td><td>2 ms</td><td>10 ms</td></tr>
+<tr><td>T2</td><td>3 ms</td><td>15 ms</td></tr>
+<tr><td>T3</td><td>2 ms</td><td>20 ms</td></tr>
+</table>
+
+<pre><code>U = (2/10) + (3/15) + (2/20)
+
+U = 0.20 + 0.20 + 0.10
+
+U = 0.50
+
+CPU Utilization = 50%</code></pre>
+
+<p><strong>Expected result:</strong> The periodic tasks require an estimated 50% of processor capacity under the stated model. Further schedulability analysis is still required.</p>
+</section>
+
+<section>
+<h2>21. Practical Exercise 2 – RMS Priority Assignment</h2>
+<p><strong>Problem:</strong> Assign Rate Monotonic priorities to these tasks.</p>
+
+<table>
+<tr><th>Task</th><th>Period</th></tr>
+<tr><td>T1</td><td>20 ms</td></tr>
+<tr><td>T2</td><td>5 ms</td></tr>
+<tr><td>T3</td><td>10 ms</td></tr>
+</table>
+
+<p><strong>Solution:</strong></p>
+<ol>
+<li>T2 has the shortest period, so it receives the highest priority.</li>
+<li>T3 has the next shortest period, so it receives medium priority.</li>
+<li>T1 has the longest period, so it receives the lowest priority.</li>
+</ol>
+</section>
+
+<section>
+<h2>22. Practical Exercise 3 – Deadline Analysis</h2>
+<p><strong>Problem:</strong> A task has a release time of 100 ms, completes at 106 ms and has a relative deadline of 10 ms.</p>
+
+<pre><code>Absolute Deadline = Release Time + Relative Deadline
+
+Absolute Deadline = 100 + 10
+                  = 110 ms
+
+Completion Time = 106 ms
+
+Deadline Margin = 110 - 106
+                = 4 ms</code></pre>
+
+<p><strong>Expected result:</strong> The task completes 4 ms before its absolute deadline.</p>
+</section>
+
+<section>
+<h2>23. Practical Exercise 4 – WCET Budget</h2>
+<p><strong>Problem:</strong> A control task has a 5 ms deadline. Its estimated WCET is 3 ms, and the analyzed maximum interference and blocking total 1 ms.</p>
+
+<pre><code>Response-Time Budget = WCET + Interference + Blocking
+
+                    = 3 + 1
+
+                    = 4 ms
+
+Deadline = 5 ms
+
+Remaining Margin = 5 - 4
+                 = 1 ms</code></pre>
+
+<p><strong>Expected result:</strong> The estimated response-time budget is 4 ms, leaving 1 ms of margin. This is only valid if the interference and blocking estimates are safe upper bounds and all other timing effects are included.</p>
+</section>
+
+<section>
+<h2>24. Practical Exercise 5 – Design a Motor Control Task Set</h2>
+<p><strong>Objective:</strong> Create a task architecture for a periodic motor controller.</p>
+
+<table>
+<tr><th>Task</th><th>Function</th><th>Example Period</th><th>Priority</th></tr>
+<tr><td>Control task</td><td>Read feedback and calculate control output.</td><td>10 ms</td><td>High</td></tr>
+<tr><td>Communication task</td><td>Process commands and send status.</td><td>50 ms</td><td>Medium</td></tr>
+<tr><td>Logging task</td><td>Store diagnostic information.</td><td>100 ms</td><td>Low</td></tr>
+</table>
+
+<h3>Design Activities</h3>
+<ul>
+<li>Define WCET and deadline for each task.</li>
+<li>Identify interrupt sources.</li>
+<li>Choose communication mechanisms.</li>
+<li>Identify shared resources.</li>
+<li>Estimate blocking time.</li>
+<li>Perform response-time analysis.</li>
+<li>Define motor behavior after a missed critical deadline.</li>
+<li>Validate the design under maximum expected workload.</li>
+</ul>
+</section>
+
+<section>
+<h2>25. Practical Exercise 6 – Keil Simulator Study</h2>
+<p><strong>Objective:</strong> Study task timing and execution behavior using a simulator where a compatible RTOS port is available.</p>
+
+<h3>Activities</h3>
+<ol>
+<li>Build a periodic task example.</li>
+<li>Observe task execution and state transitions.</li>
+<li>Inspect the RTOS tick count.</li>
+<li>Measure execution time using an available simulator timing mechanism.</li>
+<li>Introduce additional workload.</li>
+<li>Observe changes in task response and scheduling.</li>
+<li>Compare measured results with analytical assumptions.</li>
+</ol>
+
+<div class="warning">The LPC2129 uses an ARM7TDMI-S core. Confirm that a compatible FreeRTOS ARM7 port and Keil toolchain integration are available before attempting this exercise. Keil simulation does not establish real hardware timing or physical peripheral behavior.</div>
+</section>
+
+<section>
+<h2>26. Interview Questions</h2>
+<ol>
+<li>What is a hard real-time system?</li>
+<li>Differentiate hard, firm and soft real-time systems.</li>
+<li>What are the timing parameters of a real-time task?</li>
+<li>What is WCET?</li>
+<li>Why is maximum measured execution time not necessarily WCET?</li>
+<li>Differentiate implicit, constrained and arbitrary deadlines.</li>
+<li>How is CPU utilization calculated?</li>
+<li>Explain Rate Monotonic Scheduling.</li>
+<li>What is the Liu-Layland utilization bound?</li>
+<li>Explain Earliest Deadline First scheduling.</li>
+<li>Differentiate fixed-priority and dynamic-priority scheduling.</li>
+<li>What is response-time analysis?</li>
+<li>What is priority inversion?</li>
+<li>How does priority inheritance help?</li>
+<li>Differentiate interrupt latency and task response time.</li>
+<li>What is blocking time?</li>
+<li>How can an RTOS application handle overload?</li>
+<li>Why should critical tasks avoid unbounded blocking?</li>
+<li>Does a low CPU utilization prove that every deadline will be met?</li>
+<li>Does using FreeRTOS guarantee hard real-time behavior?</li>
+</ol>
+</section>
+
+<section>
+<h2>27. Lesson Summary</h2>
+<ul>
+<li>Hard real-time correctness requires both functional and timing correctness.</li>
+<li>Task timing parameters include release time, execution time, period and deadline.</li>
+<li>WCET must be a defensible upper bound under stated assumptions.</li>
+<li>CPU utilization is useful but insufficient as a standalone schedulability test.</li>
+<li>RMS assigns higher fixed priority to shorter-period tasks.</li>
+<li>EDF selects the ready task with the earliest absolute deadline.</li>
+<li>Response-time analysis considers execution, blocking and higher-priority interference.</li>
+<li>Priority inversion can delay high-priority tasks.</li>
+<li>Interrupt processing and synchronization must have bounded timing.</li>
+<li>Overload and fault recovery require explicit system-level policies.</li>
+<li>FreeRTOS provides scheduling mechanisms, but the application must be analyzed and validated on its target platform.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L08_RTOS_Security_and_Protection.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L10_Real_Time_System_Performance_Optimization.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 19 – Advanced Real-Time System Concepts</p>
+</footer>
+
+</body>
+</html>
