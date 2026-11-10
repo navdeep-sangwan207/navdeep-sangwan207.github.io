@@ -1,1 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scheduler Suspension and Resumption | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:28px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Scheduler Suspension and Resumption</h1>
+<p>vTaskSuspendAll() and xTaskResumeAll() in FreeRTOS</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 14</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+Scheduler suspension is a FreeRTOS kernel feature
+that temporarily prevents normal task context
+switching. It is useful in specific situations
+where an application needs a short sequence of
+operations to execute without another task
+being scheduled.
+</p>
+<ul>
+<li>Understand scheduler suspension.</li>
+<li>Study vTaskSuspendAll().</li>
+<li>Study xTaskResumeAll().</li>
+<li>Understand deferred context switching.</li>
+<li>Differentiate scheduler suspension from interrupt disabling.</li>
+<li>Compare scheduler suspension with critical sections.</li>
+<li>Learn safe programming practices.</li>
+<li>Understand limitations of scheduler suspension.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Is Scheduler Suspension?</h2>
+<p>
+In normal FreeRTOS operation, the scheduler
+selects the highest-priority Ready task whenever
+a scheduling decision is required.
+</p>
+<p>
+Scheduler suspension temporarily prevents the
+kernel from performing normal task context
+switches. The currently running task continues
+executing until the scheduler is resumed or
+another independent processor-level event
+changes execution.
+</p>
+<p>
+FreeRTOS provides two functions:
+</p>
+<ul>
+<li><code>vTaskSuspendAll()</code> – suspends the scheduler.</li>
+<li><code>xTaskResumeAll()</code> – resumes the scheduler.</li>
+</ul>
+<div class="note">
+Scheduler suspension is not the same as
+suspending an individual task using
+<code>vTaskSuspend()</code>.
+</div>
+</section>
+
+<section>
+<h2>3. vTaskSuspendAll() Function</h2>
+<p>
+The function <code>vTaskSuspendAll()</code>
+suspends normal task scheduling.
+</p>
+<h3>Syntax</h3>
+<pre><code>void vTaskSuspendAll(void);</code></pre>
+<h3>Purpose</h3>
+<ul>
+<li>Prevents normal task context switches while suspended.</li>
+<li>Allows the current task to execute a short sequence without another task being scheduled.</li>
+<li>Allows certain kernel operations to record tasks that become Ready for later scheduling.</li>
+<li>Does not disable interrupts.</li>
+<li>Does not stop hardware timer interrupts.</li>
+</ul>
+<h3>Example</h3>
+<pre><code>vTaskSuspendAll();
+
+/* Perform a short operation */
+
+xTaskResumeAll();</code></pre>
+<p>
+The current task enters a scheduler-suspended
+region and then resumes normal scheduling.
+</p>
+</section>
+
+<section>
+<h2>4. xTaskResumeAll() Function</h2>
+<p>
+The function <code>xTaskResumeAll()</code>
+resumes task scheduling after a previous
+scheduler suspension.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xTaskResumeAll(void);</code></pre>
+<h3>Return Value</h3>
+<table>
+<tr><th>Return Value</th><th>Meaning</th></tr>
+<tr><td>pdTRUE</td><td>A context switch occurred as part of resuming the scheduler.</td></tr>
+<tr><td>pdFALSE</td><td>No context switch was required at that point.</td></tr>
+</table>
+<p>
+The function processes scheduling work that
+was deferred while the scheduler was suspended.
+A higher-priority task that became Ready during
+suspension may be selected when scheduling resumes.
+</p>
+<div class="note">
+The return value indicates whether a context
+switch occurred; it is not a general success
+or failure status.
+</div>
+</section>
+
+<section>
+<h2>5. How Scheduler Suspension Works</h2>
+<ol>
+<li>A task calls <code>vTaskSuspendAll()</code>.</li>
+<li>The scheduler enters its suspended state.</li>
+<li>The current task continues executing.</li>
+<li>Interrupts can still occur.</li>
+<li>Some tasks may become Ready because of kernel or interrupt-related events.</li>
+<li>Normal task switching is deferred.</li>
+<li>The task calls <code>xTaskResumeAll()</code>.</li>
+<li>The kernel processes pending scheduling work and performs a context switch if required.</li>
+</ol>
+<h3>Conceptual Execution Flow</h3>
+<pre><code>Normal task scheduling
+        |
+        v
+vTaskSuspendAll()
+        |
+        v
+Scheduler suspended
+        |
+        v
+Current task continues
+        |
+        v
+Interrupts may still occur
+        |
+        v
+Pending scheduling work recorded
+        |
+        v
+xTaskResumeAll()
+        |
+        v
+Scheduler resumes
+        |
+        v
+Required context switch
+        |
+        v
+Normal task scheduling</code></pre>
+</section>
+
+<section>
+<h2>6. Scheduler Suspension Does Not Disable Interrupts</h2>
+<p>
+One of the most important concepts is that
+scheduler suspension does not globally disable
+hardware interrupts.
+</p>
+<p>
+An interrupt can still occur while the scheduler
+is suspended. Its ISR can execute according to
+the processor and interrupt-controller rules.
+The ISR may signal a task using an appropriate
+FreeRTOS FromISR API, subject to the selected
+port's rules.
+</p>
+<table>
+<tr><th>Operation</th><th>Scheduler Suspended?</th></tr>
+<tr><td>Normal task context switch</td><td>Deferred.</td></tr>
+<tr><td>Hardware interrupt occurrence</td><td>Still possible.</td></tr>
+<tr><td>ISR execution</td><td>Still possible.</td></tr>
+<tr><td>Hardware timer operation</td><td>Still possible.</td></tr>
+<tr><td>Current task execution</td><td>Continues.</td></tr>
+</table>
+<div class="warning">
+Scheduler suspension does not make shared data
+safe against every interrupt or DMA access.
+Use an appropriate synchronization mechanism
+for each concurrent access.
+</div>
+</section>
+
+<section>
+<h2>7. Scheduler Suspension vs Task Suspension</h2>
+<p>
+FreeRTOS provides different mechanisms for
+suspending an individual task and suspending
+the scheduler.
+</p>
+<table>
+<tr><th>Feature</th><th>vTaskSuspend()</th><th>vTaskSuspendAll()</th></tr>
+<tr><td>Target</td><td>An individual task.</td><td>The scheduler.</td></tr>
+<tr><td>Effect</td><td>Moves the specified task to Suspended state.</td><td>Prevents normal task context switches.</td></tr>
+<tr><td>Current task</td><td>Can suspend itself.</td><td>Continues running.</td></tr>
+<tr><td>Other Ready tasks</td><td>Can execute normally.</td><td>Wait for scheduler resumption before normal task switching.</td></tr>
+<tr><td>Resume mechanism</td><td>vTaskResume() or applicable API.</td><td>xTaskResumeAll().</td></tr>
+</table>
+</section>
+
+<section>
+<h2>8. Scheduler Suspension vs Critical Sections</h2>
+<p>
+Scheduler suspension and critical sections are
+not interchangeable.
+</p>
+<h3>Scheduler Suspension</h3>
+<pre><code>vTaskSuspendAll();
+
+/* Short task-level operation */
+
+xTaskResumeAll();</code></pre>
+<h3>Critical Section</h3>
+<pre><code>taskENTER_CRITICAL();
+
+/* Very short protected operation */
+
+taskEXIT_CRITICAL();</code></pre>
+<table>
+<tr><th>Feature</th><th>Scheduler Suspension</th><th>Critical Section</th></tr>
+<tr><td>Main purpose</td><td>Defer task context switches.</td><td>Protect a short operation from relevant interrupt/preemption interference.</td></tr>
+<tr><td>Interrupts</td><td>Not globally disabled by scheduler suspension.</td><td>Interrupt masking is port-specific.</td></tr>
+<tr><td>Task switching</td><td>Deferred.</td><td>Normally prevented while the critical section is active.</td></tr>
+<tr><td>Typical use</td><td>Short task-level operations.</td><td>Very short access to shared state requiring protection from relevant interrupts.</td></tr>
+</table>
+<div class="warning">
+Critical-section macros have port-specific
+semantics. They do not necessarily mask every
+interrupt source. Never assume that scheduler
+suspension or a critical section automatically
+protects data accessed by DMA or every ISR.
+</div>
+</section>
+
+<section>
+<h2>9. Example – Basic Scheduler Suspension</h2>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+volatile unsigned long sharedCounter = 0;
+
+void CounterTask(void *pvParameters)
+{
+    for (;;)
+    {
+        vTaskSuspendAll();
+
+        sharedCounter++;
+        sharedCounter++;
+        sharedCounter++;
+
+        xTaskResumeAll();
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+int main(void)
+{
+    BaseType_t result;
+
+    result = xTaskCreate(
+        CounterTask,
+        "Counter",
+        256,
+        NULL,
+        2,
+        NULL
+    );
+
+    if (result == pdPASS)
+    {
+        vTaskStartScheduler();
+    }
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<p>
+The example demonstrates the API sequence.
+It does not require scheduler suspension for
+this simple counter in a real application.
+A suitable synchronization method should be
+chosen based on all tasks and interrupts that
+access the shared variable.
+</p>
+</section>
+
+<section>
+<h2>10. Nested Scheduler Suspension</h2>
+<p>
+FreeRTOS maintains scheduler-suspension state
+so that nested calls can be handled.
+A task may enter more than one scheduler
+suspension level before fully resuming scheduling.
+</p>
+<pre><code>vTaskSuspendAll();
+
+/* First protected task-level region */
+
+vTaskSuspendAll();
+
+/* Nested task-level region */
+
+xTaskResumeAll();
+
+/* Still within the outer suspension */
+
+xTaskResumeAll();
+
+/* Scheduler fully resumed */</code></pre>
+<div class="warning">
+Every successful scheduler-suspension call
+must be matched by a corresponding resume call.
+Unbalanced calls can leave the scheduler
+suspended and prevent normal task switching.
+</div>
+</section>
+
+<section>
+<h2>11. Deferred Context Switching</h2>
+<p>
+Suppose a low-priority task is executing while
+the scheduler is suspended. An interrupt occurs
+and makes a high-priority task Ready.
+</p>
+<p>
+The ISR can execute, but the normal task
+context switch is deferred while scheduler
+suspension remains active.
+When the running task calls
+<code>xTaskResumeAll()</code>, the kernel
+processes the pending scheduling work.
+The high-priority task may then run.
+</p>
+<h3>Conceptual Example</h3>
+<table>
+<tr><th>Step</th><th>Event</th><th>Result</th></tr>
+<tr><td>1</td><td>Low-priority task runs.</td><td>Low task is Running.</td></tr>
+<tr><td>2</td><td>Scheduler is suspended.</td><td>Normal task switches are deferred.</td></tr>
+<tr><td>3</td><td>Interrupt makes high-priority task Ready.</td><td>High task becomes Ready.</td></tr>
+<tr><td>4</td><td>ISR completes.</td><td>Pending task switch remains deferred.</td></tr>
+<tr><td>5</td><td>Scheduler resumes.</td><td>Kernel evaluates Ready tasks.</td></tr>
+<tr><td>6</td><td>High-priority task is selected.</td><td>High task executes if it is the highest-priority Ready task.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>12. Important Restrictions and Best Practices</h2>
+<ul>
+<li>Keep scheduler-suspended regions very short.</li>
+<li>Always pair vTaskSuspendAll() with xTaskResumeAll().</li>
+<li>Do not use scheduler suspension as a replacement for mutexes.</li>
+<li>Do not assume interrupts are disabled.</li>
+<li>Do not perform long blocking operations while the scheduler is suspended.</li>
+<li>Avoid lengthy calculations and polling loops inside the suspended region.</li>
+<li>Do not call APIs that can block the current task while the scheduler is suspended.</li>
+<li>Check the selected FreeRTOS version and API restrictions.</li>
+<li>Consider the effect of deferred task scheduling on response time.</li>
+<li>Use queues, semaphores, mutexes or critical sections when they better match the synchronization requirement.</li>
+</ul>
+</section>
+
+<section>
+<h2>13. Effect on Real-Time Performance</h2>
+<p>
+Scheduler suspension delays normal task
+switching. If a high-priority task becomes
+Ready during this period, it cannot receive
+normal task-level execution until scheduling
+resumes.
+</p>
+<p>
+Therefore, long scheduler-suspended intervals
+can increase task response time and cause
+deadline misses.
+</p>
+<h3>Example</h3>
+<p>
+If a task suspends the scheduler for 20 ms,
+a higher-priority task that becomes Ready
+during that interval may have to wait for
+scheduler resumption before it can execute.
+The actual delay depends on the timing of
+events and the port implementation.
+</p>
+</section>
+
+<section>
+<h2>14. Practical Experiment – Observe Deferred Scheduling</h2>
+<p><strong>Objective:</strong> Understand how scheduler suspension affects task switching.</p>
+<h3>Experiment Setup</h3>
+<ul>
+<li>Create a low-priority task.</li>
+<li>Create a higher-priority task that becomes Ready after a controlled event.</li>
+<li>Temporarily suspend the scheduler in the low-priority task.</li>
+<li>Generate the event that makes the higher-priority task Ready.</li>
+<li>Resume the scheduler.</li>
+<li>Observe which task executes next.</li>
+</ul>
+<h3>Procedure</h3>
+<ol>
+<li>Build the test using a verified FreeRTOS port.</li>
+<li>Observe task states before scheduler suspension.</li>
+<li>Call vTaskSuspendAll().</li>
+<li>Make the higher-priority task Ready using a suitable event or test mechanism.</li>
+<li>Observe that normal task switching is deferred.</li>
+<li>Call xTaskResumeAll().</li>
+<li>Observe the scheduler's next selection.</li>
+<li>Record the execution order.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+The higher-priority task can become Ready while
+the scheduler is suspended. Normal task
+execution switching is deferred until the
+scheduler resumes.
+</p>
+</section>
+
+<section>
+<h2>15. LPC2129 and Keil Simulator Considerations</h2>
+<p>
+The LPC2129 uses the ARM7TDMI-S processor.
+To run these examples, the project needs a
+compatible FreeRTOS ARM7 port and correct
+interrupt and context-switch integration.
+</p>
+<ul>
+<li>Verify the ARM7 port for the exact kernel release.</li>
+<li>Verify compiler compatibility.</li>
+<li>Verify the tick interrupt implementation.</li>
+<li>Verify context-switch and interrupt-exit behavior.</li>
+<li>Check whether the Keil simulator supports the required port behavior.</li>
+<li>Do not assume Cortex-M NVIC or BASEPRI behavior on LPC2129.</li>
+</ul>
+<div class="warning">
+This lesson provides generic FreeRTOS concepts
+and code. It does not confirm that FreeRTOS
+runs on the user's current LPC2129 Keil
+simulator configuration.
+</div>
+</section>
+
+<section>
+<h2>16. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is scheduler suspension?</li>
+<li>What is the purpose of vTaskSuspendAll()?</li>
+<li>What is the purpose of xTaskResumeAll()?</li>
+<li>What does the return value of xTaskResumeAll() indicate?</li>
+<li>Does scheduler suspension disable hardware interrupts?</li>
+<li>What is deferred context switching?</li>
+<li>How is scheduler suspension different from task suspension?</li>
+<li>How is scheduler suspension different from a critical section?</li>
+<li>Why should scheduler-suspended regions be short?</li>
+<li>What can happen if resume calls are unbalanced?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain scheduler suspension with a flow diagram.</li>
+<li>Explain vTaskSuspendAll() and xTaskResumeAll().</li>
+<li>Compare scheduler suspension and critical sections.</li>
+<li>Explain deferred context switching with an example.</li>
+<li>Discuss the effect of scheduler suspension on real-time response.</li>
+<li>Describe safe programming practices for scheduler suspension.</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+<ul>
+<li>Scheduler suspension temporarily defers normal task context switching.</li>
+<li>vTaskSuspendAll() suspends the scheduler.</li>
+<li>xTaskResumeAll() resumes scheduling and processes pending work.</li>
+<li>Interrupts can still occur during scheduler suspension.</li>
+<li>Task switches are deferred until the scheduler resumes.</li>
+<li>Scheduler suspension is different from task suspension and critical sections.</li>
+<li>Long suspension periods can increase task response time.</li>
+<li>Always balance suspension and resumption calls.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Practice Assignment</h2>
+<ol>
+<li>Write the syntax of vTaskSuspendAll().</li>
+<li>Write the syntax of xTaskResumeAll().</li>
+<li>Explain the return value of xTaskResumeAll().</li>
+<li>Draw a scheduler-suspension flow diagram.</li>
+<li>Compare scheduler suspension with vTaskSuspend().</li>
+<li>Compare scheduler suspension with critical sections.</li>
+<li>Explain why interrupts can still execute.</li>
+<li>Describe a deferred context-switch scenario.</li>
+<li>List five best practices for scheduler suspension.</li>
+<li>Explain why long scheduler-suspended intervals are unsuitable for real-time applications.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L08_ConfigUSE_PREEMPTION_and_ConfigUSE_TIME_SLICING.html">← Previous Lesson</a>
+<a href="index.html">Chapter 14 Index</a>
+<a href="L10_FreeRTOS_Scheduling_Examples.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
