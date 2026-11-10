@@ -1,1 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Priority Inheritance in FreeRTOS</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 15px}
+header h1{font-size:28px;margin-bottom:8px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 7px rgba(0,0,0,.08)}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h2{color:#174ea6;font-size:22px;border-bottom:2px solid #d8e6fa;padding-bottom:8px;margin-bottom:15px}
+h3{color:#1765b1;margin:17px 0 9px;font-size:18px}
+p{margin:9px 0}
+ul,ol{padding-left:25px;margin:10px 0}
+li{margin:6px 0}
+pre{background:#172338;color:#e6edf7;padding:17px;border-radius:8px;overflow-x:auto;margin:13px 0;font-size:13px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0;display:block;overflow-x:auto}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;min-width:135px}
+th{background:#eaf2ff;color:#174ea6}
+.note{background:#eaf3ff;border-left:4px solid #2878d7;padding:13px;margin:14px 0;border-radius:5px}
+.warning{background:#fff5e6;border-left:4px solid #e69a24;padding:13px;margin:14px 0;border-radius:5px}
+.example{background:#effaf2;border-left:4px solid #269653;padding:13px;margin:14px 0;border-radius:5px}
+.objectives{background:#eef5ff;padding:17px 22px;border-radius:8px}
+.navigation{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:600px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 16: FreeRTOS Semaphores and Mutexes</h1>
+<p>Lesson 08 – Priority Inheritance in FreeRTOS</p>
+</header>
+
+<nav>
+<a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+<a href="index.html">Chapter Index</a>
+<a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>Lesson Overview</h2>
+<p>
+Priority inheritance is a synchronization technique used to reduce
+the effects of priority inversion. FreeRTOS mutexes support priority
+inheritance so that a lower-priority task holding a mutex can
+temporarily execute at an elevated priority when a higher-priority
+task is waiting for that mutex.
+</p>
+<p>
+This mechanism helps the mutex owner finish its critical section
+sooner and release the shared resource. It does not eliminate all
+blocking or guarantee that every task will meet its deadline.
+</p>
+<div class="objectives">
+<h3>Learning Objectives</h3>
+<ul>
+<li>Understand priority inversion.</li>
+<li>Understand the purpose of priority inheritance.</li>
+<li>Learn how FreeRTOS mutexes implement priority inheritance.</li>
+<li>Understand task priority before, during, and after inheritance.</li>
+<li>Study a numerical scheduling example.</li>
+<li>Learn the limitations of priority inheritance.</li>
+<li>Differentiate mutexes and binary semaphores in this context.</li>
+<li>Apply safe resource-sharing practices.</li>
+</ul>
+</div>
+</section>
+
+<section>
+<h2>1. What Is Priority Inversion?</h2>
+<p>
+Priority inversion occurs when a high-priority task is indirectly
+delayed by a lower-priority task. A common cause is a shared
+resource protected by a mutex.
+</p>
+<h3>Example Tasks</h3>
+<table>
+<tr><th>Task</th><th>Priority</th><th>Purpose</th></tr>
+<tr><td>Task H</td><td>3 – High</td><td>Needs shared resource</td></tr>
+<tr><td>Task M</td><td>2 – Medium</td><td>Performs unrelated processing</td></tr>
+<tr><td>Task L</td><td>1 – Low</td><td>Currently owns shared resource</td></tr>
+</table>
+
+<h3>Priority Inversion Sequence</h3>
+<ol>
+<li>Task L takes a mutex and starts using a shared resource.</li>
+<li>Task H becomes Ready and preempts Task L.</li>
+<li>Task H attempts to take the same mutex.</li>
+<li>The mutex is already owned by Task L, so Task H blocks.</li>
+<li>Task M becomes Ready and preempts Task L.</li>
+<li>Task M executes while Task H remains blocked.</li>
+<li>Task L cannot release the mutex until it gets CPU time again.</li>
+<li>Task H is indirectly delayed by Task M.</li>
+</ol>
+
+<pre><code>Task H: High Priority
+       |
+       | Requests mutex
+       v
+     BLOCKED
+       |
+       | Waiting for Task L
+       |
+Task M: Medium Priority
+       |
+       | Preempts Task L
+       v
+     RUNNING
+       |
+Task L: Low Priority
+       |
+       | Owns mutex but cannot execute
+       v
+     DELAYED</code></pre>
+
+<div class="warning">
+Priority inversion is not simply a low-priority task executing
+before a high-priority task. The important condition is that the
+high-priority task is blocked by a resource held by a lower-priority
+task, and medium-priority activity can extend that blocking.
+</div>
+</section>
+
+<section>
+<h2>2. What Is Priority Inheritance?</h2>
+<p>
+Priority inheritance is a protocol in which a task holding a mutex
+temporarily inherits a higher priority when a higher-priority task
+blocks while trying to obtain that mutex.
+</p>
+<p>
+The mutex owner receives an elevated effective priority so that
+medium-priority tasks are less likely to preempt it. Once the owner
+releases the mutex, its priority can be reduced according to the
+kernel's inheritance rules.
+</p>
+
+<h3>Basic Operation</h3>
+<ol>
+<li>Task L takes a mutex.</li>
+<li>Task H attempts to take the same mutex and blocks.</li>
+<li>Task L inherits Task H's priority.</li>
+<li>Task L executes at the inherited priority and finishes its critical section.</li>
+<li>Task L gives the mutex.</li>
+<li>Task H becomes Ready and can execute according to scheduling rules.</li>
+<li>Task L's priority is adjusted by the kernel.</li>
+</ol>
+
+<pre><code>Task H requests mutex
+          |
+          v
+Task H becomes Blocked
+          |
+          v
+Task L owns the mutex
+          |
+          v
+Task L inherits higher priority
+          |
+          v
+Task L completes critical section
+          |
+          v
+Task L releases mutex
+          |
+          v
+Task H becomes Ready</code></pre>
+
+<div class="note">
+Priority inheritance changes the effective priority of the mutex
+owner. It does not transfer mutex ownership to the higher-priority
+task.
+</div>
+</section>
+
+<section>
+<h2>3. Priority Inheritance in FreeRTOS</h2>
+<p>
+FreeRTOS mutexes implement a basic priority inheritance mechanism.
+When a higher-priority task blocks on a mutex held by a lower-priority
+task, the owner can inherit the priority of the highest-priority
+task waiting for that mutex.
+</p>
+
+<h3>Mutex Creation</h3>
+<pre><code>SemaphoreHandle_t xMutex;
+
+xMutex = xSemaphoreCreateMutex();
+
+if (xMutex == NULL)
+{
+    /* Mutex creation failed */
+}</code></pre>
+
+<h3>Mutex Acquisition and Release</h3>
+<pre><code>if (xSemaphoreTake(
+        xMutex,
+        portMAX_DELAY) == pdTRUE)
+{
+    /* Access shared resource */
+
+    xSemaphoreGive(xMutex);
+}</code></pre>
+
+<p>
+The priority inheritance behavior is associated with FreeRTOS
+mutexes. A binary semaphore does not provide the same mutex
+ownership and priority inheritance behavior.
+</p>
+
+<div class="note">
+Use <code>xSemaphoreCreateMutex()</code> for a resource that
+requires mutual exclusion between tasks. Do not substitute a
+binary semaphore when mutex ownership and priority inheritance
+are required.
+</div>
+</section>
+
+<section>
+<h2>4. Numerical Example of Priority Inheritance</h2>
+<p>
+Assume three tasks with the following priorities:
+</p>
+<table>
+<tr><th>Task</th><th>Base Priority</th><th>Function</th></tr>
+<tr><td>Task H</td><td>3</td><td>High-priority control task</td></tr>
+<tr><td>Task M</td><td>2</td><td>Medium-priority processing</td></tr>
+<tr><td>Task L</td><td>1</td><td>Low-priority resource owner</td></tr>
+</table>
+
+<h3>Without Priority Inheritance</h3>
+<ul>
+<li>Task L takes the mutex.</li>
+<li>Task H becomes Ready and preempts Task L.</li>
+<li>Task H blocks while waiting for the mutex.</li>
+<li>Task M preempts Task L.</li>
+<li>Task L waits longer before it can release the mutex.</li>
+</ul>
+
+<h3>With Priority Inheritance</h3>
+<ul>
+<li>Task L takes the mutex.</li>
+<li>Task H blocks while waiting for the mutex.</li>
+<li>Task L inherits priority 3.</li>
+<li>Task M at priority 2 cannot preempt Task L while it remains at inherited priority 3 and Ready.</li>
+<li>Task L releases the mutex after completing the critical section.</li>
+<li>Task H becomes Ready and is selected according to the scheduler.</li>
+</ul>
+
+<table>
+<tr><th>Task</th><th>Original Priority</th><th>Effective Priority During Inheritance</th></tr>
+<tr><td>Task H</td><td>3</td><td>3</td></tr>
+<tr><td>Task M</td><td>2</td><td>2</td></tr>
+<tr><td>Task L</td><td>1</td><td>3</td></tr>
+</table>
+
+<div class="example">
+<strong>Important observation:</strong> Task L temporarily executes
+with effective priority 3, allowing it to complete the mutex-protected
+operation without being preempted by Task M at priority 2.
+</div>
+</section>
+
+<section>
+<h2>5. Task Priority Before and After Inheritance</h2>
+<p>
+It is useful to distinguish a task's base priority from its
+temporary effective priority.
+</p>
+<table>
+<tr><th>Stage</th><th>Task L Base Priority</th><th>Task L Effective Priority</th></tr>
+<tr><td>Before taking mutex</td><td>1</td><td>1</td></tr>
+<tr><td>After taking mutex, no higher waiter</td><td>1</td><td>1</td></tr>
+<tr><td>Higher-priority task blocks on mutex</td><td>1</td><td>May rise to 3</td></tr>
+<tr><td>After releasing relevant mutex</td><td>1</td><td>Adjusted by kernel rules</td></tr>
+</table>
+
+<p>
+The effective priority may be temporarily raised to reduce
+priority inversion. The task's configured base priority remains
+a separate concept.
+</p>
+</section>
+
+<section>
+<h2>6. Priority Inheritance with Multiple Waiting Tasks</h2>
+<p>
+Suppose several tasks with different priorities are waiting for
+a mutex owned by one task.
+</p>
+<table>
+<tr><th>Task</th><th>Priority</th><th>State</th></tr>
+<tr><td>Task H1</td><td>4</td><td>Blocked on mutex</td></tr>
+<tr><td>Task H2</td><td>3</td><td>Blocked on mutex</td></tr>
+<tr><td>Task M</td><td>2</td><td>Ready</td></tr>
+<tr><td>Task L</td><td>1</td><td>Owns mutex</td></tr>
+</table>
+<p>
+The mutex owner can inherit the highest priority among tasks
+waiting for that mutex. In this example, the relevant inherited
+priority can be 4.
+</p>
+
+<div class="note">
+Exact priority adjustment and disinheritance behavior can depend
+on the FreeRTOS kernel version and the number of mutexes held.
+Do not assume a fully general priority-ceiling or priority
+inheritance protocol.
+</div>
+</section>
+
+<section>
+<h2>7. Priority Inheritance vs Binary Semaphore</h2>
+<table>
+<tr><th>Feature</th><th>FreeRTOS Mutex</th><th>Binary Semaphore</th></tr>
+<tr><td>Mutual exclusion</td><td>Yes</td><td>Can be used for coordination, but lacks mutex ownership semantics</td></tr>
+<tr><td>Ownership</td><td>Yes</td><td>No</td></tr>
+<tr><td>Priority inheritance</td><td>Yes, basic mechanism</td><td>No</td></tr>
+<tr><td>ISR give</td><td>Not permitted</td><td>ISR give API available</td></tr>
+<tr><td>Typical use</td><td>Protect shared resources</td><td>Event notification and synchronization</td></tr>
+</table>
+
+<p>
+Choose the synchronization object according to the required
+behavior. Use a mutex to protect a resource shared by tasks.
+Use a binary semaphore for event notification, including
+notification from an ISR.
+</p>
+</section>
+
+<section>
+<h2>8. Limitations of Priority Inheritance</h2>
+<p>
+Priority inheritance reduces some forms of priority inversion,
+but it is not a complete real-time scheduling solution.
+</p>
+<ul>
+<li>It does not eliminate the time spent waiting for a mutex.</li>
+<li>It does not guarantee that all deadlines will be met.</li>
+<li>It does not prevent deadlock.</li>
+<li>It does not prevent starvation in every possible system design.</li>
+<li>It does not remove blocking caused by long critical sections.</li>
+<li>It does not automatically protect resources that are not guarded by the mutex.</li>
+<li>It is not a substitute for careful task priority assignment.</li>
+<li>FreeRTOS mutex inheritance is a basic mechanism, not a full implementation of every theoretical inheritance protocol.</li>
+</ul>
+
+<div class="warning">
+Do not hold a mutex while performing long delays, lengthy calculations,
+or slow peripheral operations unless the design explicitly requires
+it and the blocking consequences have been analyzed.
+</div>
+</section>
+
+<section>
+<h2>9. FreeRTOS Programming Example</h2>
+<h3>Objective</h3>
+<p>
+Create two tasks that share a resource protected by a mutex.
+The example demonstrates correct mutex acquisition and release.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xMutex;
+
+int sharedCounter = 0;
+
+void LowPriorityTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            sharedCounter++;
+
+            /* Simulated short resource operation. */
+
+            xSemaphoreGive(xMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void HighPriorityTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            int localValue = sharedCounter;
+
+            /* Use the protected value. */
+
+            (void)localValue;
+
+            xSemaphoreGive(xMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+int main(void)
+{
+    xMutex = xSemaphoreCreateMutex();
+
+    if (xMutex == NULL)
+    {
+        for (;;);
+    }
+
+    xTaskCreate(
+        LowPriorityTask,
+        "Low",
+        256,
+        NULL,
+        1,
+        NULL
+    );
+
+    xTaskCreate(
+        HighPriorityTask,
+        "High",
+        256,
+        NULL,
+        3,
+        NULL
+    );
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+<h3>Expected Result</h3>
+<ul>
+<li>The mutex is created successfully if sufficient memory is available.</li>
+<li>Both tasks attempt to access the shared counter.</li>
+<li>Only the task holding the mutex accesses the protected section.</li>
+<li>If a higher-priority task blocks on the mutex, the owner can inherit priority.</li>
+<li>The owner releases the mutex after completing the protected operation.</li>
+</ul>
+
+<div class="note">
+This example demonstrates mutex-protected access. It does not
+guarantee that priority inversion will occur on every run.
+To observe inheritance, create a controlled test in which a low
+priority task holds the mutex while a higher-priority task attempts
+to take it and a medium-priority task becomes Ready.
+</div>
+</section>
+
+<section>
+<h2>10. Practical Experiment</h2>
+<h3>Objective</h3>
+<p>
+Study priority inversion and the effect of mutex-based priority
+inheritance.
+</p>
+
+<h3>Procedure</h3>
+<ol>
+<li>Create three tasks with priorities 1, 2, and 3.</li>
+<li>Let the low-priority task take a mutex.</li>
+<li>Arrange for the high-priority task to request the same mutex.</li>
+<li>Make the medium-priority task Ready while the high-priority task is blocked.</li>
+<li>Observe task execution and the mutex owner's effective priority.</li>
+<li>Repeat the experiment using a binary semaphore for comparison, while carefully controlling ownership and synchronization.</li>
+<li>Compare the delay experienced by the high-priority task.</li>
+</ol>
+
+<h3>Expected Result</h3>
+<ul>
+<li>Without inheritance, medium-priority execution can delay the low-priority mutex owner.</li>
+<li>With mutex priority inheritance, the low-priority owner can temporarily execute at the inherited priority.</li>
+<li>The mutex owner releases the resource, allowing the waiting high-priority task to proceed.</li>
+</ul>
+
+<div class="warning">
+For LPC2129 and Keil uVision, this experiment requires a verified
+ARM7 FreeRTOS port. Do not use Cortex-M interrupt-priority settings
+or assume simulator support without checking the selected port.
+</div>
+</section>
+
+<section>
+<h2>11. Review Questions</h2>
+<ol>
+<li>What is priority inversion?</li>
+<li>Why can a medium-priority task extend the blocking of a high-priority task?</li>
+<li>What is priority inheritance?</li>
+<li>Which FreeRTOS synchronization object supports priority inheritance?</li>
+<li>What happens to the priority of a mutex owner when a higher-priority task blocks on its mutex?</li>
+<li>Does priority inheritance transfer mutex ownership?</li>
+<li>What is the difference between base priority and effective priority?</li>
+<li>Does a binary semaphore provide priority inheritance?</li>
+<li>Can priority inheritance prevent deadlock?</li>
+<li>Why should mutex-protected sections be kept short?</li>
+<li>Why is priority inheritance not a guarantee of deadline satisfaction?</li>
+</ol>
+</section>
+
+<section>
+<h2>12. Lesson Summary</h2>
+<ul>
+<li>Priority inversion occurs when a high-priority task is indirectly delayed by a lower-priority task.</li>
+<li>Priority inheritance temporarily raises the effective priority of a mutex owner.</li>
+<li>FreeRTOS mutexes provide a basic priority inheritance mechanism.</li>
+<li>Binary semaphores do not provide mutex priority inheritance.</li>
+<li>Priority inheritance does not transfer mutex ownership.</li>
+<li>The mutex owner must release the mutex after using the resource.</li>
+<li>Priority inheritance reduces certain delays but does not eliminate all blocking.</li>
+<li>It does not prevent deadlock or guarantee real-time deadlines.</li>
+<li>Short critical sections and appropriate task priorities remain essential.</li>
+</ul>
+</section>
+
+<section>
+<h2>13. Assignment</h2>
+<ol>
+<li>Draw a priority inversion scheduling diagram.</li>
+<li>Explain priority inheritance with three tasks.</li>
+<li>Write a FreeRTOS program that protects a shared variable using a mutex.</li>
+<li>Compare mutexes and binary semaphores.</li>
+<li>Explain base priority and effective priority.</li>
+<li>Describe the limitations of priority inheritance.</li>
+<li>Explain why a mutex cannot be used from an ISR.</li>
+<li>Suggest three methods to reduce resource-related blocking in an RTOS.</li>
+</ol>
+</section>
+
+<div class="navigation">
+<a href="L07_Semaphore_Communication_From_ISR.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L09_Mutex_and_Semaphore_Programming.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 16 – FreeRTOS Semaphores and Mutexes</p>
+</footer>
+
+</body>
+</html>
