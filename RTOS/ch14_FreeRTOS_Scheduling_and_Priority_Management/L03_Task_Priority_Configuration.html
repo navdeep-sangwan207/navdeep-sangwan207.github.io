@@ -1,1 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task Priority Configuration | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:29px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Task Priority Configuration</h1>
+<p>Priority Levels, Assignment, Runtime Changes and Scheduling Control</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 14</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+Task priority determines the relative scheduling
+importance of a task. Correct priority assignment
+is essential for predictable behavior in an
+embedded real-time application.
+</p>
+<ul>
+<li>Understand task priority in FreeRTOS.</li>
+<li>Learn how priority levels are configured.</li>
+<li>Understand configMAX_PRIORITIES.</li>
+<li>Learn how to assign priority during task creation.</li>
+<li>Read and modify task priorities at runtime.</li>
+<li>Understand priority-based preemption.</li>
+<li>Study priority inversion and starvation.</li>
+<li>Learn practical priority-assignment guidelines.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Task Priority</h2>
+<p>
+A task priority represents its relative importance
+to the scheduler. In the standard FreeRTOS
+scheduler, a higher numerical priority represents
+a higher scheduling priority.
+</p>
+<p>
+When multiple tasks are Ready, the scheduler
+normally selects a task from the highest-priority
+Ready group.
+</p>
+<table>
+<tr><th>Priority</th><th>Example Task</th><th>Typical Responsibility</th></tr>
+<tr><td>4</td><td>ControlTask</td><td>Time-sensitive control operation.</td></tr>
+<tr><td>3</td><td>SensorTask</td><td>Periodic sensor acquisition.</td></tr>
+<tr><td>2</td><td>CommunicationTask</td><td>Data transmission and reception.</td></tr>
+<tr><td>1</td><td>LoggingTask</td><td>Background data logging.</td></tr>
+<tr><td>0</td><td>Idle Task</td><td>Kernel idle processing.</td></tr>
+</table>
+<div class="note">
+These priority values are illustrative. Actual
+priorities must be selected from the application's
+timing requirements and scheduling analysis.
+</div>
+</section>
+
+<section>
+<h2>3. Priority Levels in FreeRTOS</h2>
+<p>
+FreeRTOS provides a configurable number of
+priority levels. The number of levels is defined
+using configMAX_PRIORITIES in FreeRTOSConfig.h.
+</p>
+<h3>Configuration Example</h3>
+<pre><code>#define configMAX_PRIORITIES 5</code></pre>
+<p>
+With five configured priority levels, the
+application priority values are:
+</p>
+<pre><code>Priority 0
+Priority 1
+Priority 2
+Priority 3
+Priority 4</code></pre>
+<p>
+Priority zero is the lowest priority and is
+normally used by the automatically created
+Idle Task. Application tasks can be assigned
+higher levels.
+</p>
+<div class="warning">
+configMAX_PRIORITIES defines the number of
+priority levels, not the maximum valid priority
+number. With a value of 5, valid priority values
+are 0 through 4.
+</div>
+</section>
+
+<section>
+<h2>4. Assigning Priority During Task Creation</h2>
+<p>
+The xTaskCreate() API accepts a priority
+parameter. This parameter determines the
+initial priority of the newly created task.
+</p>
+<h3>General Syntax</h3>
+<pre><code>BaseType_t xTaskCreate(
+    TaskFunction_t pxTaskCode,
+    const char * const pcName,
+    configSTACK_DEPTH_TYPE usStackDepth,
+    void *pvParameters,
+    UBaseType_t uxPriority,
+    TaskHandle_t *pxCreatedTask
+);</code></pre>
+<h3>Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Sensor operation */
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void LoggingTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Logging operation */
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+int main(void)
+{
+    xTaskCreate(
+        SensorTask,
+        "Sensor",
+        256,
+        NULL,
+        3,
+        NULL
+    );
+
+    xTaskCreate(
+        LoggingTask,
+        "Logging",
+        256,
+        NULL,
+        1,
+        NULL
+    );
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<p>
+SensorTask is assigned priority 3, while
+LoggingTask is assigned priority 1. If both
+are Ready, SensorTask is selected first.
+</p>
+</section>
+
+<section>
+<h2>5. Reading Task Priority</h2>
+<p>
+FreeRTOS provides uxTaskPriorityGet() to read
+the priority of a task.
+</p>
+<h3>Syntax</h3>
+<pre><code>UBaseType_t uxTaskPriorityGet(
+    TaskHandle_t xTask
+);</code></pre>
+<ul>
+<li>Pass a valid task handle to read another task's priority.</li>
+<li>In APIs where NULL means the calling task, NULL can be used to query the current task.</li>
+<li>The function returns the task's current priority.</li>
+</ul>
+<h3>Example</h3>
+<pre><code>TaskHandle_t sensorHandle = NULL;
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        UBaseType_t priority;
+
+        priority = uxTaskPriorityGet(NULL);
+
+        /* Inspect priority using debugger */
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}</code></pre>
+<p>
+Here, NULL identifies the calling task, so the
+task reads its own current priority.
+</p>
+</section>
+
+<section>
+<h2>6. Changing Task Priority at Runtime</h2>
+<p>
+FreeRTOS provides vTaskPrioritySet() to change
+the priority of an existing task.
+</p>
+<h3>Syntax</h3>
+<pre><code>void vTaskPrioritySet(
+    TaskHandle_t xTask,
+    UBaseType_t uxNewPriority
+);</code></pre>
+<p>
+The new priority must be within the configured
+range. Changing a task's priority can affect
+which task the scheduler selects next.
+</p>
+<h3>Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+TaskHandle_t taskHandle = NULL;
+
+void WorkerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform worker operation */
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void ManagerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (taskHandle != NULL)
+        {
+            vTaskPrioritySet(taskHandle, 3);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+
+int main(void)
+{
+    xTaskCreate(
+        WorkerTask,
+        "Worker",
+        256,
+        NULL,
+        1,
+        &taskHandle
+    );
+
+    xTaskCreate(
+        ManagerTask,
+        "Manager",
+        256,
+        NULL,
+        2,
+        NULL
+    );
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<p>
+ManagerTask periodically changes WorkerTask's
+priority to 3. The scheduler then considers
+WorkerTask at its new priority whenever it
+is Ready.
+</p>
+<div class="note">
+A task priority change does not automatically
+make a Blocked task Ready. It changes the
+priority used when the task is eligible for
+scheduling.
+</div>
+</section>
+
+<section>
+<h2>7. Understanding Priority-Based Preemption</h2>
+<p>
+In preemptive FreeRTOS configurations, a
+higher-priority task can preempt a lower-priority
+Running task when it becomes Ready.
+</p>
+<h3>Example Scenario</h3>
+<table>
+<tr><th>Task</th><th>Priority</th><th>Initial State</th></tr>
+<tr><td>Task A</td><td>1</td><td>Running</td></tr>
+<tr><td>Task B</td><td>3</td><td>Blocked</td></tr>
+</table>
+<p>
+When an event makes Task B Ready, it becomes
+the highest-priority Ready task. Task A can be
+preempted, and Task B can execute.
+</p>
+<pre><code>Task A: Running
+Task B: Blocked
+
+Event occurs
+
+Task A: Ready
+Task B: Running
+
+Task B blocks
+
+Task A: Running again</code></pre>
+</section>
+
+<section>
+<h2>8. Same-Priority Tasks</h2>
+<p>
+Two tasks may have the same priority. When
+both are Ready, the scheduler may share
+processor time between them through time
+slicing when enabled.
+</p>
+<h3>Example</h3>
+<pre><code>xTaskCreate(
+    TaskA,
+    "TaskA",
+    256,
+    NULL,
+    2,
+    NULL
+);
+
+xTaskCreate(
+    TaskB,
+    "TaskB",
+    256,
+    NULL,
+    2,
+    NULL
+);</code></pre>
+<p>
+Both tasks have priority 2. Their execution
+depends on their Ready or Blocked states,
+time-slicing configuration and scheduling events.
+</p>
+</section>
+
+<section>
+<h2>9. Priority Inversion</h2>
+<p>
+Priority inversion occurs when a high-priority
+task is indirectly delayed by a lower-priority
+task that holds a resource the high-priority
+task needs.
+</p>
+<h3>Example</h3>
+<ol>
+<li>Low-priority Task L takes a shared mutex.</li>
+<li>High-priority Task H becomes Ready and requests the same mutex.</li>
+<li>Task H blocks because Task L owns the mutex.</li>
+<li>Medium-priority Task M becomes Ready and executes.</li>
+<li>Task L cannot run to release the mutex, delaying Task H.</li>
+</ol>
+<p>
+This can cause a lower-priority task to delay
+a higher-priority task indirectly.
+</p>
+<h3>Priority Inheritance</h3>
+<p>
+FreeRTOS mutexes support basic priority
+inheritance. A lower-priority mutex owner can
+temporarily inherit a higher priority while
+blocking a higher-priority task.
+</p>
+<div class="note">
+Priority inheritance helps reduce certain forms
+of priority inversion. It does not eliminate all
+blocking or guarantee that every deadline will
+be met.
+</div>
+</section>
+
+<section>
+<h2>10. Task Starvation</h2>
+<p>
+Starvation occurs when a task receives
+insufficient processor time because other
+tasks repeatedly take precedence.
+</p>
+<h3>Example</h3>
+<table>
+<tr><th>Task</th><th>Priority</th><th>Behavior</th></tr>
+<tr><td>HighTask</td><td>4</td><td>Remains continuously Ready.</td></tr>
+<tr><td>MediumTask</td><td>2</td><td>Rarely receives CPU time.</td></tr>
+<tr><td>LowTask</td><td>1</td><td>May be starved.</td></tr>
+</table>
+<h3>Ways to Reduce Starvation</h3>
+<ul>
+<li>Ensure tasks block when waiting for events.</li>
+<li>Avoid unnecessary high-priority busy loops.</li>
+<li>Review priority assignments.</li>
+<li>Use bounded execution periods.</li>
+<li>Measure CPU utilization and task response time.</li>
+</ul>
+</section>
+
+<section>
+<h2>11. Priority Assignment Guidelines</h2>
+<p>
+Priority assignment should be based on the
+application's timing requirements rather than
+on the apparent importance of a task alone.
+</p>
+<ul>
+<li>Identify task deadlines and periods.</li>
+<li>Estimate worst-case execution time.</li>
+<li>Consider blocking from shared resources.</li>
+<li>Consider interrupt interference.</li>
+<li>Analyze response time and schedulability.</li>
+<li>Keep background operations at lower priorities where appropriate.</li>
+<li>Avoid assigning unnecessarily high priorities.</li>
+<li>Validate the design under worst-case workload.</li>
+</ul>
+<div class="warning">
+A task that appears important is not automatically
+the task that should receive the highest priority.
+Priority assignment must follow a consistent
+scheduling analysis.
+</div>
+</section>
+
+<section>
+<h2>12. Practical Example – Dynamic Priority Management</h2>
+<p><strong>Objective:</strong> Create two tasks and change the priority of one task while the scheduler is running.</p>
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+TaskHandle_t workerHandle = NULL;
+
+volatile unsigned long workerCount = 0;
+volatile unsigned long managerCount = 0;
+
+void WorkerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        workerCount++;
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
+void ManagerTask(void *pvParameters)
+{
+    UBaseType_t currentPriority;
+
+    for (;;)
+    {
+        managerCount++;
+
+        if (workerHandle != NULL)
+        {
+            currentPriority =
+                uxTaskPriorityGet(workerHandle);
+
+            if (currentPriority == 1)
+            {
+                vTaskPrioritySet(
+                    workerHandle,
+                    3
+                );
+            }
+            else
+            {
+                vTaskPrioritySet(
+                    workerHandle,
+                    1
+                );
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+
+int main(void)
+{
+    BaseType_t result1;
+    BaseType_t result2;
+
+    result1 = xTaskCreate(
+        WorkerTask,
+        "Worker",
+        256,
+        NULL,
+        1,
+        &workerHandle
+    );
+
+    result2 = xTaskCreate(
+        ManagerTask,
+        "Manager",
+        256,
+        NULL,
+        2,
+        NULL
+    );
+
+    if ((result1 == pdPASS) &&
+        (result2 == pdPASS))
+    {
+        vTaskStartScheduler();
+    }
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Procedure</h3>
+<ol>
+<li>Create the WorkerTask and ManagerTask.</li>
+<li>Initially assign WorkerTask priority 1.</li>
+<li>Start the scheduler.</li>
+<li>ManagerTask reads WorkerTask's priority.</li>
+<li>ManagerTask changes its priority between 1 and 3.</li>
+<li>Inspect the priority and counter variables using debugger or trace facilities.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+WorkerTask's priority alternates between 1 and 3
+at approximately two-second intervals, subject
+to tick timing and task execution. Its scheduling
+position changes whenever its priority changes.
+</p>
+</section>
+
+<section>
+<h2>13. Important Configuration and API Reference</h2>
+<table>
+<tr><th>API / Configuration</th><th>Purpose</th></tr>
+<tr><td><code>configMAX_PRIORITIES</code></td><td>Defines the number of available priority levels.</td></tr>
+<tr><td><code>xTaskCreate()</code></td><td>Creates a task with an initial priority.</td></tr>
+<tr><td><code>uxTaskPriorityGet()</code></td><td>Reads a task's priority.</td></tr>
+<tr><td><code>vTaskPrioritySet()</code></td><td>Changes a task's priority.</td></tr>
+<tr><td><code>uxTaskGetPriority()</code></td><td>Not the standard public FreeRTOS task-priority API; use uxTaskPriorityGet().</td></tr>
+<tr><td><code>xTaskCreateStatic()</code></td><td>Creates a task using application-provided static memory.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>14. Important Notes for LPC2129 and Keil</h2>
+<p>
+The LPC2129 uses an ARM7TDMI-S processor.
+A working FreeRTOS project requires a compatible
+ARM7 port, compiler support and correct interrupt
+and context-switch integration.
+</p>
+<ul>
+<li>Do not use Cortex-M-specific FreeRTOS port files.</li>
+<li>Verify the selected port supports the compiler and processor.</li>
+<li>Verify the simulator can execute the port's context-switch mechanism.</li>
+<li>Check task stack and heap requirements.</li>
+<li>Use debugger or trace tools only after the RTOS port is running correctly.</li>
+</ul>
+<div class="note">
+The code examples are generic FreeRTOS examples.
+They are not guaranteed to run in an ordinary
+LPC2129 Keil project without a compatible
+FreeRTOS port.
+</div>
+</section>
+
+<section>
+<h2>15. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is task priority?</li>
+<li>Which FreeRTOS configuration defines the number of priority levels?</li>
+<li>If configMAX_PRIORITIES is 5, what are the valid priority values?</li>
+<li>Which priority is the lowest in standard FreeRTOS?</li>
+<li>How is priority assigned during task creation?</li>
+<li>What does uxTaskPriorityGet() do?</li>
+<li>What does vTaskPrioritySet() do?</li>
+<li>What is priority inversion?</li>
+<li>What is priority inheritance?</li>
+<li>What is task starvation?</li>
+<li>Can changing a task's priority unblock it?</li>
+<li>Why should priority assignment be based on timing analysis?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain priority levels and configMAX_PRIORITIES.</li>
+<li>Explain task-priority assignment using xTaskCreate().</li>
+<li>Describe how to read and modify task priority at runtime.</li>
+<li>Explain priority-based preemption with a suitable example.</li>
+<li>Discuss priority inversion and priority inheritance.</li>
+<li>Explain task starvation and methods to reduce it.</li>
+<li>Describe priority-assignment guidelines for embedded systems.</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Lesson Summary</h2>
+<ul>
+<li>FreeRTOS uses numerical task priorities for fixed-priority scheduling.</li>
+<li>Higher numerical values represent higher priorities.</li>
+<li>configMAX_PRIORITIES defines the number of priority levels.</li>
+<li>xTaskCreate() assigns an initial task priority.</li>
+<li>uxTaskPriorityGet() reads a task's priority.</li>
+<li>vTaskPrioritySet() changes a task's priority.</li>
+<li>Priority inversion can delay high-priority tasks.</li>
+<li>Mutex priority inheritance helps reduce certain priority-inversion effects.</li>
+<li>Starvation occurs when a task does not receive sufficient processor time.</li>
+<li>Priority assignment requires timing and workload analysis.</li>
+</ul>
+</section>
+
+<section>
+<h2>17. Practice Assignment</h2>
+<ol>
+<li>Configure five FreeRTOS priority levels.</li>
+<li>Create three tasks with priorities 1, 2 and 3.</li>
+<li>Read each task's priority using uxTaskPriorityGet().</li>
+<li>Change one task's priority using vTaskPrioritySet().</li>
+<li>Observe scheduling when the highest-priority task becomes Ready.</li>
+<li>Create two equal-priority tasks and observe time slicing.</li>
+<li>Explain priority inversion using a shared mutex.</li>
+<li>Describe how priority inheritance reduces priority inversion.</li>
+<li>Identify a possible starvation condition.</li>
+<li>Prepare a priority-assignment table for a sensor-monitoring system.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L02_Preemptive_and_Cooperative_Scheduling.html">← Previous Lesson</a>
+<a href="index.html">Chapter 14 Index</a>
+<a href="L04_Higher_Priority_Task_Preemption.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
