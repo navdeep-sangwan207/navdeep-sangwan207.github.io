@@ -1,1 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mutex and Semaphore Programming - FreeRTOS</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 15px}
+header h1{font-size:28px;margin-bottom:8px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 7px rgba(0,0,0,.08)}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h2{color:#174ea6;font-size:22px;border-bottom:2px solid #d8e6fa;padding-bottom:8px;margin-bottom:15px}
+h3{color:#1765b1;margin:17px 0 9px;font-size:18px}
+p{margin:9px 0}
+ul,ol{padding-left:25px;margin:10px 0}
+li{margin:6px 0}
+pre{background:#172338;color:#e6edf7;padding:17px;border-radius:8px;overflow-x:auto;margin:13px 0;font-size:13px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0;display:block;overflow-x:auto}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;min-width:135px}
+th{background:#eaf2ff;color:#174ea6}
+.note{background:#eaf3ff;border-left:4px solid #2878d7;padding:13px;margin:14px 0;border-radius:5px}
+.warning{background:#fff5e6;border-left:4px solid #e69a24;padding:13px;margin:14px 0;border-radius:5px}
+.example{background:#effaf2;border-left:4px solid #269653;padding:13px;margin:14px 0;border-radius:5px}
+.objectives{background:#eef5ff;padding:17px 22px;border-radius:8px}
+.navigation{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:600px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 16: FreeRTOS Semaphores and Mutexes</h1>
+<p>Lesson 09 – Mutex and Semaphore Programming</p>
+</header>
+
+<nav>
+<a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+<a href="index.html">Chapter Index</a>
+<a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>Lesson Overview</h2>
+<p>
+FreeRTOS applications often use multiple synchronization objects
+to coordinate task execution and protect shared resources.
+Semaphores are useful for event signaling and counting available
+tokens, while mutexes provide exclusive ownership of shared
+resources between tasks.
+</p>
+<p>
+This lesson combines these mechanisms in practical programming
+examples involving task synchronization, resource protection,
+producer-consumer systems, and interrupt notification.
+</p>
+<div class="objectives">
+<h3>Learning Objectives</h3>
+<ul>
+<li>Combine mutexes and semaphores in FreeRTOS programs.</li>
+<li>Protect shared resources using mutexes.</li>
+<li>Use binary semaphores for task synchronization.</li>
+<li>Use counting semaphores for resource counting.</li>
+<li>Understand producer-consumer synchronization.</li>
+<li>Coordinate tasks using multiple synchronization objects.</li>
+<li>Identify deadlock and resource ownership problems.</li>
+<li>Apply practical RTOS programming conventions.</li>
+</ul>
+</div>
+</section>
+
+<section>
+<h2>1. Choosing the Correct Synchronization Object</h2>
+<table>
+<tr><th>Object</th><th>Main Purpose</th><th>Typical Application</th></tr>
+<tr><td>Binary semaphore</td><td>Event notification and task synchronization</td><td>Notify a task that an event occurred</td></tr>
+<tr><td>Counting semaphore</td><td>Count available tokens or pending events</td><td>Track a limited number of available resources</td></tr>
+<tr><td>Mutex</td><td>Protect a shared resource</td><td>Prevent simultaneous task access to a shared UART</td></tr>
+<tr><td>Queue</td><td>Transfer data between tasks</td><td>Send sensor readings to a processing task</td></tr>
+</table>
+
+<div class="note">
+A semaphore does not automatically protect a shared data structure.
+Use a mutex for task-level mutual exclusion or a queue with a clear
+ownership model when transferring data.
+</div>
+</section>
+
+<section>
+<h2>2. Program 1 – Shared Resource Protection Using a Mutex</h2>
+<h3>Objective</h3>
+<p>
+Allow two tasks to access a shared variable safely using a mutex.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xMutex;
+int sharedCounter = 0;
+
+void Task1(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            sharedCounter++;
+
+            /* Protected operation */
+
+            xSemaphoreGive(xMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void Task2(void *pvParameters)
+{
+    int localValue;
+
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            localValue = sharedCounter;
+
+            /* Use protected value */
+
+            (void)localValue;
+
+            xSemaphoreGive(xMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(150));
+    }
+}
+
+int main(void)
+{
+    xMutex = xSemaphoreCreateMutex();
+
+    if (xMutex == NULL)
+    {
+        for (;;);
+    }
+
+    xTaskCreate(Task1, "Task1", 256, NULL, 2, NULL);
+    xTaskCreate(Task2, "Task2", 256, NULL, 2, NULL);
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+<h3>Expected Result</h3>
+<ul>
+<li>Both tasks share the same counter.</li>
+<li>Only one task accesses the protected section at a time.</li>
+<li>The mutex is released after each protected operation.</li>
+<li>The counter is updated without simultaneous task access.</li>
+</ul>
+
+<div class="note">
+The shared counter is protected only when every task that accesses
+it follows the same mutex protocol. An unprotected access elsewhere
+would still create a race condition.
+</div>
+</section>
+
+<section>
+<h2>3. Program 2 – Binary Semaphore for Task Synchronization</h2>
+<h3>Objective</h3>
+<p>
+Use a binary semaphore to notify a consumer task when a producer
+task has completed an operation.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xBinarySemaphore;
+
+void ProducerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform event-producing operation */
+
+        if (xSemaphoreGive(xBinarySemaphore) != pdTRUE)
+        {
+            /* A token may already be pending */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void ConsumerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xBinarySemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Process notification */
+        }
+    }
+}
+
+int main(void)
+{
+    xBinarySemaphore = xSemaphoreCreateBinary();
+
+    if (xBinarySemaphore == NULL)
+    {
+        for (;;);
+    }
+
+    xTaskCreate(ProducerTask, "Producer", 256, NULL, 2, NULL);
+    xTaskCreate(ConsumerTask, "Consumer", 256, NULL, 2, NULL);
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+<h3>Expected Result</h3>
+<ul>
+<li>The consumer initially waits for a semaphore token.</li>
+<li>The producer gives the semaphore periodically.</li>
+<li>The consumer becomes Ready and processes the notification.</li>
+<li>The consumer waits again for the next token.</li>
+</ul>
+
+<div class="warning">
+A binary semaphore stores at most one pending token. If the producer
+gives it repeatedly while it is already full, additional events
+are not accumulated. Use a counting semaphore or queue if every
+event must be retained.
+</div>
+</section>
+
+<section>
+<h2>4. Program 3 – Counting Semaphore for Resource Management</h2>
+<h3>Objective</h3>
+<p>
+Use a counting semaphore to represent a limited number of identical
+available resources.
+</p>
+
+<h3>Example Scenario</h3>
+<p>
+Assume an application has three identical communication channels.
+A task must obtain one available channel before using it and return
+the token when finished.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xResourceSemaphore;
+
+void ResourceTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xResourceSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* One availability token obtained. */
+
+            /* Use an allocated resource. */
+
+            xSemaphoreGive(xResourceSemaphore);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
+int main(void)
+{
+    xResourceSemaphore =
+        xSemaphoreCreateCounting(3, 3);
+
+    if (xResourceSemaphore == NULL)
+    {
+        for (;;);
+    }
+
+    xTaskCreate(ResourceTask, "Resource1", 256, NULL, 2, NULL);
+    xTaskCreate(ResourceTask, "Resource2", 256, NULL, 2, NULL);
+    xTaskCreate(ResourceTask, "Resource3", 256, NULL, 2, NULL);
+    xTaskCreate(ResourceTask, "Resource4", 256, NULL, 2, NULL);
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+<h3>Expected Result</h3>
+<ul>
+<li>The semaphore begins with three available tokens.</li>
+<li>At most three tasks can hold tokens simultaneously.</li>
+<li>A fourth task waits until a token is returned.</li>
+<li>When a task gives the semaphore, another waiting task may proceed.</li>
+</ul>
+
+<div class="warning">
+A counting semaphore tracks the number of available tokens. It
+does not identify which physical channel a task owns. A real resource
+pool also needs an allocation mechanism, such as a protected free-list
+or queue of resource identifiers. Only the task that successfully
+obtained a resource token should return it.
+</div>
+</section>
+
+<section>
+<h2>5. Program 4 – Producer-Consumer Using a Mutex and Counting Semaphores</h2>
+<h3>Objective</h3>
+<p>
+Implement a bounded shared buffer using:
+</p>
+<ul>
+<li>An <code>empty</code> counting semaphore to count free slots.</li>
+<li>A <code>full</code> counting semaphore to count occupied slots.</li>
+<li>A mutex to protect buffer operations.</li>
+</ul>
+
+<h3>Initial Configuration</h3>
+<table>
+<tr><th>Object</th><th>Initial Value</th><th>Purpose</th></tr>
+<tr><td>empty</td><td>5</td><td>Five free buffer slots</td></tr>
+<tr><td>full</td><td>0</td><td>No occupied slots</td></tr>
+<tr><td>mutex</td><td>Available</td><td>Protect buffer indexes and data</td></tr>
+</table>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+#define BUFFER_SIZE 5
+
+int buffer[BUFFER_SIZE];
+int writeIndex = 0;
+int readIndex = 0;
+
+SemaphoreHandle_t xEmpty;
+SemaphoreHandle_t xFull;
+SemaphoreHandle_t xBufferMutex;
+
+void ProducerTask(void *pvParameters)
+{
+    int item = 0;
+
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xEmpty,
+                portMAX_DELAY) == pdTRUE)
+        {
+            if (xSemaphoreTake(
+                    xBufferMutex,
+                    portMAX_DELAY) == pdTRUE)
+            {
+                buffer[writeIndex] = item;
+                writeIndex = (writeIndex + 1) % BUFFER_SIZE;
+                item++;
+
+                xSemaphoreGive(xBufferMutex);
+
+                xSemaphoreGive(xFull);
+            }
+            else
+            {
+                /* Recover the reserved empty-slot token. */
+                xSemaphoreGive(xEmpty);
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
+void ConsumerTask(void *pvParameters)
+{
+    int item;
+
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xFull,
+                portMAX_DELAY) == pdTRUE)
+        {
+            if (xSemaphoreTake(
+                    xBufferMutex,
+                    portMAX_DELAY) == pdTRUE)
+            {
+                item = buffer[readIndex];
+                readIndex = (readIndex + 1) % BUFFER_SIZE;
+
+                xSemaphoreGive(xBufferMutex);
+
+                xSemaphoreGive(xEmpty);
+
+                /* Process item outside the critical section. */
+                (void)item;
+            }
+            else
+            {
+                /* Restore the reserved full-slot token. */
+                xSemaphoreGive(xFull);
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(300));
+    }
+}
+
+int main(void)
+{
+    xEmpty = xSemaphoreCreateCounting(
+        BUFFER_SIZE, BUFFER_SIZE);
+
+    xFull = xSemaphoreCreateCounting(
+        BUFFER_SIZE, 0);
+
+    xBufferMutex = xSemaphoreCreateMutex();
+
+    if (xEmpty == NULL ||
+        xFull == NULL ||
+        xBufferMutex == NULL)
+    {
+        for (;;);
+    }
+
+    xTaskCreate(ProducerTask, "Producer", 256, NULL, 2, NULL);
+    xTaskCreate(ConsumerTask, "Consumer", 256, NULL, 2, NULL);
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+<h3>Expected Result</h3>
+<ul>
+<li>The producer waits when the buffer has no free slots.</li>
+<li>The consumer waits when the buffer has no stored items.</li>
+<li>The mutex protects the buffer indexes and data operations.</li>
+<li>The producer gives <code>full</code> after inserting an item.</li>
+<li>The consumer gives <code>empty</code> after removing an item.</li>
+<li>The circular indexes wrap around the buffer.</li>
+</ul>
+
+<div class="note">
+The producer and consumer acquire the counting semaphore before
+the mutex. Both release the mutex before updating the opposite
+counting semaphore. This keeps the protected buffer operation short
+and avoids holding the mutex while notifying the other task.
+</div>
+</section>
+
+<section>
+<h2>6. Program 5 – Protecting a Shared UART Using a Mutex</h2>
+<h3>Objective</h3>
+<p>
+Prevent two tasks from interleaving output through the same UART
+transmit interface.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xUARTMutex;
+
+/* Replace with the actual UART driver function. */
+void UART_WriteString(const char *message);
+
+void TaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xUARTMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            UART_WriteString("Task A message\r\n");
+
+            xSemaphoreGive(xUARTMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void TaskB(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xUARTMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            UART_WriteString("Task B message\r\n");
+
+            xSemaphoreGive(xUARTMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(700));
+    }
+}
+
+int main(void)
+{
+    xUARTMutex = xSemaphoreCreateMutex();
+
+    if (xUARTMutex == NULL)
+    {
+        for (;;);
+    }
+
+    /* Initialize the UART driver before task execution. */
+
+    xTaskCreate(TaskA, "UART_A", 256, NULL, 2, NULL);
+    xTaskCreate(TaskB, "UART_B", 256, NULL, 2, NULL);
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+<h3>Expected Result</h3>
+<ul>
+<li>Task A and Task B share the UART transmitter.</li>
+<li>The mutex allows only one task to own the UART resource at a time.</li>
+<li>Each message is transmitted within one protected operation.</li>
+<li>Messages from the two tasks do not interleave at the task level.</li>
+</ul>
+
+<div class="warning">
+The example assumes the UART driver operation is safe to call in
+task context and completes according to its documented behavior.
+For asynchronous DMA or interrupt-driven transmission, the mutex
+alone does not protect the lifetime of transmit buffers or indicate
+when hardware transmission has completed. Use a driver ownership
+protocol, queue, or completion notification as appropriate.
+</div>
+</section>
+
+<section>
+<h2>7. Program 6 – ISR Notification with a Binary Semaphore</h2>
+<h3>Objective</h3>
+<p>
+Notify a task when a hardware interrupt occurs.
+</p>
+
+<h3>Generic ISR Structure</h3>
+<pre><code>SemaphoreHandle_t xEventSemaphore;
+
+void Peripheral_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Acknowledge the peripheral interrupt. */
+
+    xSemaphoreGiveFromISR(
+        xEventSemaphore,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    /* Use the ISR-yield mechanism required by
+       the selected FreeRTOS port. */
+}
+
+void EventTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xEventSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Process the event in task context. */
+        }
+    }
+}</code></pre>
+
+<h3>Expected Result</h3>
+<ul>
+<li>The task waits for an interrupt notification.</li>
+<li>The ISR gives the semaphore without blocking.</li>
+<li>The task becomes Ready when notified.</li>
+<li>Longer processing occurs in task context.</li>
+</ul>
+
+<div class="warning">
+The ISR-yield mechanism and interrupt priority restrictions are
+port-specific. Do not use Cortex-M NVIC or BASEPRI assumptions for
+the LPC2129 ARM7TDMI-S architecture.
+</div>
+</section>
+
+<section>
+<h2>8. Important Resource Management Rules</h2>
+<ol>
+<li>Always check whether semaphore and mutex creation succeeded.</li>
+<li>Check the return value of take and give operations.</li>
+<li>Release a mutex after completing the protected operation.</li>
+<li>Do not give a mutex from a task that does not own it.</li>
+<li>Never use mutex APIs from an ISR.</li>
+<li>Keep mutex-protected sections short.</li>
+<li>Use a consistent resource acquisition order.</li>
+<li>Do not assume a counting semaphore identifies a particular resource.</li>
+<li>Use a queue when the application needs to transfer data.</li>
+<li>Define a recovery strategy for resource allocation failures.</li>
+<li>Do not delete synchronization objects while tasks are using or waiting on them.</li>
+</ol>
+</section>
+
+<section>
+<h2>9. Common Programming Mistakes</h2>
+<table>
+<tr><th>Mistake</th><th>Possible Consequence</th><th>Correct Approach</th></tr>
+<tr><td>Using a binary semaphore to protect a shared resource without ownership</td><td>Incorrect release or synchronization</td><td>Use a mutex for task-level mutual exclusion</td></tr>
+<tr><td>Forgetting to give a mutex</td><td>Other tasks remain blocked</td><td>Ensure every successful take has a matching give</td></tr>
+<tr><td>Using a mutex in an ISR</td><td>Invalid API use</td><td>Use an ISR-safe notification mechanism</td></tr>
+<tr><td>Holding a mutex during long processing</td><td>Increased blocking time</td><td>Keep the critical section short</td></tr>
+<tr><td>Returning a resource token incorrectly</td><td>Resource count becomes inconsistent</td><td>Track ownership and allocation</td></tr>
+<tr><td>Using a semaphore to transfer sensor values</td><td>Data is not transferred</td><td>Use a queue or protected buffer</td></tr>
+</table>
+</section>
+
+<section>
+<h2>10. Practical Experiment</h2>
+<h3>Objective</h3>
+<p>
+Compare the behavior of mutexes, binary semaphores, and counting
+semaphores in a multitasking application.
+</p>
+
+<h3>Procedure</h3>
+<ol>
+<li>Create two tasks sharing one variable.</li>
+<li>Protect the variable using a mutex.</li>
+<li>Modify the program to use a binary semaphore for event signaling.</li>
+<li>Create a counting semaphore with an initial count of three.</li>
+<li>Run four resource-requesting tasks.</li>
+<li>Observe which tasks block when no tokens are available.</li>
+<li>Implement a bounded producer-consumer buffer.</li>
+<li>Observe the behavior when the buffer becomes full or empty.</li>
+</ol>
+
+<h3>Expected Result</h3>
+<ul>
+<li>The mutex provides exclusive access to the shared variable.</li>
+<li>The binary semaphore signals an event.</li>
+<li>The counting semaphore limits the number of simultaneous resource tokens.</li>
+<li>The producer waits when the buffer is full.</li>
+<li>The consumer waits when the buffer is empty.</li>
+</ul>
+
+<div class="warning">
+For Keil uVision simulator-only work, verify that a compatible
+FreeRTOS ARM7 port is available before running these programs.
+The examples are generic FreeRTOS code, not proof of LPC2129
+simulator compatibility.
+</div>
+</section>
+
+<section>
+<h2>11. Review Questions</h2>
+<ol>
+<li>What is the difference between a mutex and a binary semaphore?</li>
+<li>Why does a mutex have ownership?</li>
+<li>How does priority inheritance help reduce priority inversion?</li>
+<li>What is the purpose of a counting semaphore?</li>
+<li>How can a counting semaphore be used to manage a resource pool?</li>
+<li>Why does a resource pool require more than just a token count?</li>
+<li>Explain the producer-consumer problem.</li>
+<li>What are the roles of the empty and full semaphores?</li>
+<li>Why is a mutex needed in the bounded-buffer example?</li>
+<li>Why should a mutex be released before a task performs lengthy processing?</li>
+<li>When should a queue be used instead of a semaphore?</li>
+<li>Why must an ISR use ISR-specific FreeRTOS APIs?</li>
+</ol>
+</section>
+
+<section>
+<h2>12. Lesson Summary</h2>
+<ul>
+<li>Mutexes protect shared resources between tasks.</li>
+<li>Binary semaphores provide event notification and synchronization.</li>
+<li>Counting semaphores represent available tokens or pending event counts.</li>
+<li>Queues transfer data between tasks.</li>
+<li>Producer-consumer systems can use empty and full counting semaphores with a mutex.</li>
+<li>Mutex ownership must be maintained correctly.</li>
+<li>Priority inheritance is associated with FreeRTOS mutexes.</li>
+<li>ISRs must use ISR-specific APIs and must never block.</li>
+<li>Resource ownership, buffer lifetime, and error handling are essential in practical systems.</li>
+</ul>
+</section>
+
+<section>
+<h2>13. Assignment</h2>
+<ol>
+<li>Write a FreeRTOS program to protect a shared counter using a mutex.</li>
+<li>Develop a producer-consumer program using a binary semaphore.</li>
+<li>Implement a counting semaphore with a maximum count of four.</li>
+<li>Design a bounded buffer with five slots.</li>
+<li>Explain the role of the empty and full semaphores.</li>
+<li>Write a shared UART access example using a mutex.</li>
+<li>Explain why an ISR cannot use a mutex.</li>
+<li>Compare mutexes, binary semaphores, counting semaphores, and queues.</li>
+<li>Describe three possible causes of deadlock or resource starvation.</li>
+</ol>
+</section>
+
+<div class="navigation">
+<a href="L08_Priority_Inheritance_in_FreeRTOS.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L10_FreeRTOS_Synchronization_Exercises.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 16 – FreeRTOS Semaphores and Mutexes</p>
+</footer>
+
+</body>
+</html>
