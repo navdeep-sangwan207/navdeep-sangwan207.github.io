@@ -1,1 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Timer Callback Functions</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 15px}
+header h1{font-size:28px;margin-bottom:8px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 7px rgba(0,0,0,.08)}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h2{color:#174ea6;font-size:22px;border-bottom:2px solid #d8e6fa;padding-bottom:8px;margin-bottom:15px}
+h3{color:#1765b1;margin:17px 0 9px;font-size:18px}
+p{margin:9px 0}
+ul,ol{padding-left:25px;margin:10px 0}
+li{margin:6px 0}
+pre{background:#172338;color:#e6edf7;padding:17px;border-radius:8px;overflow-x:auto;margin:13px 0;font-size:13px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0;display:block;overflow-x:auto}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;min-width:135px}
+th{background:#eaf2ff;color:#174ea6}
+.note{background:#eaf3ff;border-left:4px solid #2878d7;padding:13px;margin:14px 0;border-radius:5px}
+.warning{background:#fff5e6;border-left:4px solid #e69a24;padding:13px;margin:14px 0;border-radius:5px}
+.example{background:#effaf2;border-left:4px solid #269653;padding:13px;margin:14px 0;border-radius:5px}
+.objectives{background:#eef5ff;padding:17px 22px;border-radius:8px}
+.navigation{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:600px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 17: FreeRTOS Event Groups and Software Timers</h1>
+<p>Lesson 08 – FreeRTOS Timer Callback Functions</p>
+</header>
+
+<nav>
+<a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+<a href="index.html">Chapter Index</a>
+<a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>Lesson Overview</h2>
+<p>
+A timer callback function is an application-defined function
+executed when a FreeRTOS software timer expires. It allows the
+application to respond to a timer event without creating a
+separate task for every timer.
+</p>
+<p>
+All software timer callbacks are processed by the timer service
+task. Therefore, callback execution context and execution time
+must be considered carefully.
+</p>
+<div class="objectives">
+<h3>Learning Objectives</h3>
+<ul>
+<li>Understand timer callback functions.</li>
+<li>Learn the callback function prototype.</li>
+<li>Understand callback execution context.</li>
+<li>Identify the timer that triggered a callback.</li>
+<li>Understand timer ID usage.</li>
+<li>Learn safe callback programming practices.</li>
+<li>Communicate callback events to application tasks.</li>
+</ul>
+</div>
+</section>
+
+<section>
+<h2>1. What Is a Timer Callback Function?</h2>
+<p>
+A timer callback function is called by the FreeRTOS timer
+service task when a software timer reaches its expiry time.
+The callback contains the application-specific action to be
+performed when the timer expires.
+</p>
+
+<h3>Basic Callback Prototype</h3>
+<pre><code>void TimerCallback(TimerHandle_t xTimer);</code></pre>
+
+<p>
+The callback receives the handle of the timer that expired.
+This handle can be used to identify the timer or retrieve its
+application-defined timer ID.
+</p>
+
+<h3>Basic Operation</h3>
+<pre><code>Software Timer Expires
+          |
+          v
+Timer Service Task
+          |
+          v
+Timer Callback Function
+          |
+          v
+Application-Specific Action</code></pre>
+</section>
+
+<section>
+<h2>2. Callback Execution Context</h2>
+<p>
+A FreeRTOS software timer callback does not execute in the
+hardware interrupt service routine. It executes in the context
+of the timer service task.
+</p>
+
+<table>
+<tr><th>Execution Context</th><th>Timer Callback</th></tr>
+<tr><td>Hardware ISR</td><td>No</td></tr>
+<tr><td>Timer service task</td><td>Yes</td></tr>
+<tr><td>Application task</td><td>Not directly; application work can be delegated to one.</td></tr>
+</table>
+
+<p>
+The timer service task is a normal FreeRTOS task created when
+software timer support is enabled and the scheduler starts.
+It processes timer commands and executes callbacks.
+</p>
+
+<div class="note">
+A callback can use suitable task-context FreeRTOS APIs, but it
+must not use APIs that block waiting for time or resources.
+The timer service task must remain available to process other
+timer events and commands.
+</div>
+</section>
+
+<section>
+<h2>3. Callback Function Parameters</h2>
+<p>
+The callback receives one parameter:
+</p>
+
+<pre><code>void TimerCallback(TimerHandle_t xTimer);</code></pre>
+
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>xTimer</code></td><td>Handle of the software timer whose callback is being executed.</td></tr>
+</table>
+
+<h3>Example</h3>
+<pre><code>void SensorTimerCallback(TimerHandle_t xTimer)
+{
+    /* Timer-specific application action */
+}</code></pre>
+
+<p>
+The timer handle can be passed to timer APIs and used to retrieve
+the timer ID.
+</p>
+</section>
+
+<section>
+<h2>4. Identifying Timers Using Timer IDs</h2>
+<p>
+A single callback function can be shared by multiple software
+timers. The application can identify the timer by retrieving
+its timer ID using <code>pvTimerGetTimerID()</code>.
+</p>
+
+<h3>Function Prototype</h3>
+<pre><code>void *pvTimerGetTimerID(
+    TimerHandle_t xTimer
+);</code></pre>
+
+<h3>Example</h3>
+<pre><code>static int sensorID;
+static int communicationID;
+
+void CommonTimerCallback(TimerHandle_t xTimer)
+{
+    void *timerID;
+
+    timerID = pvTimerGetTimerID(xTimer);
+
+    if (timerID == &amp;sensorID)
+    {
+        /* Sensor timer expired */
+    }
+    else if (timerID == &amp;communicationID)
+    {
+        /* Communication timer expired */
+    }
+}</code></pre>
+
+<p>
+The application supplies the timer ID when creating the timer
+and retrieves it inside the callback.
+</p>
+
+<div class="note">
+Timer IDs are application-defined pointer values. The application
+must ensure that any referenced object remains valid while the
+timer may use it.
+</div>
+</section>
+
+<section>
+<h2>5. Callback Execution Time</h2>
+<p>
+Timer callbacks share the execution time of one timer service
+task. If a callback takes too long, other expired timers and
+pending timer commands may be delayed.
+</p>
+
+<h3>Example of an Unsafe Callback</h3>
+<pre><code>void UnsafeCallback(TimerHandle_t xTimer)
+{
+    /* Do not perform long blocking operations here */
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+}</code></pre>
+
+<p>
+The callback must not block the timer service task using
+<code>vTaskDelay()</code>.
+</p>
+
+<h3>Better Approach</h3>
+<pre><code>void SafeCallback(TimerHandle_t xTimer)
+{
+    /* Send a short notification to an application task */
+    xTaskNotifyGive(xApplicationTaskHandle);
+}</code></pre>
+
+<p>
+The application task receives the notification and performs
+the lengthy operation independently.
+</p>
+
+<div class="warning">
+A long-running callback can delay every other timer callback
+handled by the same timer service task. Keep callback execution
+short and avoid blocking operations.
+</div>
+</section>
+
+<section>
+<h2>6. Communicating with Application Tasks</h2>
+<p>
+Timer callbacks often need to request work from another task.
+FreeRTOS provides several communication mechanisms suitable
+for this purpose.
+</p>
+
+<table>
+<tr><th>Mechanism</th><th>Typical Use</th></tr>
+<tr><td>Task notification</td><td>Notify one task that a timer event occurred.</td></tr>
+<tr><td>Queue</td><td>Send structured data or timer-event information.</td></tr>
+<tr><td>Event group</td><td>Set a condition bit for one or more waiting tasks.</td></tr>
+</table>
+
+<h3>Example – Task Notification</h3>
+<pre><code>static TaskHandle_t xWorkerTaskHandle;
+
+void TimerCallback(TimerHandle_t xTimer)
+{
+    xTaskNotifyGive(xWorkerTaskHandle);
+}
+
+void WorkerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        ulTaskNotifyTake(
+            pdTRUE,
+            portMAX_DELAY
+        );
+
+        /* Perform the requested application work */
+    }
+}</code></pre>
+
+<p>
+The callback gives a notification. The worker task waits for
+that notification and performs the longer operation.
+</p>
+
+<div class="note">
+This example uses a task notification as a lightweight signal.
+If every timer event must be preserved as a separate event,
+consider whether notification counting or a queue is more
+appropriate. A notification used as a bit flag can coalesce
+repeated events.
+</div>
+</section>
+
+<section>
+<h2>7. Using a Queue from a Timer Callback</h2>
+<p>
+Because a timer callback executes in task context, it can use
+task-context queue APIs. The callback should use a zero block
+time so that it does not block the timer service task.
+</p>
+
+<h3>Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "timers.h"
+
+static QueueHandle_t xTimerEventQueue;
+
+typedef struct
+{
+    unsigned int eventCode;
+} TimerEvent_t;
+
+void TimerCallback(TimerHandle_t xTimer)
+{
+    TimerEvent_t event;
+
+    event.eventCode = 1;
+
+    /* Never wait for queue space in a timer callback */
+    xQueueSend(
+        xTimerEventQueue,
+        &amp;event,
+        0
+    );
+}</code></pre>
+
+<p>
+The queue send operation returns immediately if the queue is
+full because the block time is zero. The callback should check
+the return value in production code and define how queue-full
+conditions are handled.
+</p>
+</section>
+
+<section>
+<h2>8. Callback Behavior for One-Shot and Auto-Reload Timers</h2>
+<table>
+<tr><th>Feature</th><th>One-Shot Timer</th><th>Auto-Reload Timer</th></tr>
+<tr><td>Expiry</td><td>Once</td><td>Repeatedly while active</td></tr>
+<tr><td>Callback</td><td>Executed at expiry</td><td>Executed at each expiry</td></tr>
+<tr><td>After expiry</td><td>Timer becomes inactive</td><td>Timer is scheduled for another period</td></tr>
+<tr><td>Common use</td><td>Timeout handling</td><td>Periodic notifications</td></tr>
+</table>
+
+<p>
+The callback function can be the same for both timer types.
+The timer's configuration determines whether it expires once
+or repeatedly.
+</p>
+</section>
+
+<section>
+<h2>9. Complete Program – Timer Callback and Worker Task</h2>
+
+<h3>Objective</h3>
+<p>
+Create an auto-reload timer that notifies a worker task every
+two seconds. The worker task performs the application operation.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "timers.h"
+
+static TimerHandle_t xPeriodicTimer;
+static TaskHandle_t xWorkerTaskHandle;
+
+void PeriodicTimerCallback(TimerHandle_t xTimer)
+{
+    /* Notify the worker task */
+    xTaskNotifyGive(xWorkerTaskHandle);
+}
+
+void WorkerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        ulTaskNotifyTake(
+            pdTRUE,
+            portMAX_DELAY
+        );
+
+        /* Perform application processing here */
+    }
+}
+
+int main(void)
+{
+    if (xTaskCreate(
+        WorkerTask,
+        "Worker",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        &amp;xWorkerTaskHandle
+    ) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xPeriodicTimer = xTimerCreate(
+        "PeriodicTimer",
+        pdMS_TO_TICKS(2000),
+        pdTRUE,
+        NULL,
+        PeriodicTimerCallback
+    );
+
+    if (xPeriodicTimer == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTimerStart(xPeriodicTimer, 0) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<h3>Program Explanation</h3>
+<ol>
+<li>Create the worker task and obtain its task handle.</li>
+<li>Create a two-second auto-reload timer.</li>
+<li>Define the timer callback.</li>
+<li>Start the timer.</li>
+<li>When the timer expires, the callback notifies the worker task.</li>
+<li>The worker task wakes and performs the application processing.</li>
+<li>The timer continues generating periodic notifications.</li>
+</ol>
+
+<h3>Expected Behavior</h3>
+<table>
+<tr><th>Approximate Time</th><th>Operation</th></tr>
+<tr><td>0 seconds</td><td>Scheduler starts and timer is activated.</td></tr>
+<tr><td>2 seconds</td><td>First timer callback notifies the worker task.</td></tr>
+<tr><td>4 seconds</td><td>Next timer callback notifies the worker task.</td></tr>
+<tr><td>6 seconds</td><td>Next timer callback notifies the worker task.</td></tr>
+</table>
+
+<div class="warning">
+The example assumes the timer service task is configured and
+the notification APIs are available in the selected FreeRTOS
+version. Check the return values of task creation, timer creation,
+timer start, and queue operations in a production application.
+</div>
+</section>
+
+<section>
+<h2>10. Important Callback Programming Rules</h2>
+<ol>
+<li>Keep callback execution short.</li>
+<li>Do not call <code>vTaskDelay()</code> inside a callback.</li>
+<li>Do not wait indefinitely for queue space or a semaphore.</li>
+<li>Do not perform lengthy file, network, or hardware operations.</li>
+<li>Use a task notification or queue to delegate longer work.</li>
+<li>Use timer IDs to identify timers when sharing callbacks.</li>
+<li>Check queue-send results and define overflow handling.</li>
+<li>Do not treat a timer callback as an interrupt service routine.</li>
+<li>Consider the timer service task priority and stack requirements.</li>
+<li>Remember that one long callback delays other timer processing.</li>
+</ol>
+</section>
+
+<section>
+<h2>11. Common Programming Errors</h2>
+<table>
+<tr><th>Error</th><th>Correction</th></tr>
+<tr><td>Using ISR APIs in a timer callback without reason</td><td>Use suitable task-context APIs.</td></tr>
+<tr><td>Blocking inside the callback</td><td>Use non-blocking operations and delegate work.</td></tr>
+<tr><td>Performing lengthy processing</td><td>Move processing to an application task.</td></tr>
+<tr><td>Ignoring timer identification</td><td>Use timer handles or timer IDs.</td></tr>
+<tr><td>Ignoring queue-full conditions</td><td>Check the return value and define an overflow policy.</td></tr>
+<tr><td>Assuming callbacks execute in ISR context</td><td>Remember they execute in timer service task context.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>12. Review Questions</h2>
+<ol>
+<li>What is a timer callback function?</li>
+<li>Write the callback function prototype.</li>
+<li>Which task executes software timer callbacks?</li>
+<li>Does a timer callback execute in hardware ISR context?</li>
+<li>How can a callback identify the timer that expired?</li>
+<li>What is the purpose of <code>pvTimerGetTimerID()</code>?</li>
+<li>Why should callbacks execute quickly?</li>
+<li>Why should <code>vTaskDelay()</code> not be used inside a callback?</li>
+<li>How can a callback notify an application task?</li>
+<li>What happens if a callback blocks the timer service task?</li>
+<li>Can multiple timers use the same callback function?</li>
+<li>Why should queue-send failures be handled?</li>
+</ol>
+</section>
+
+<section>
+<h2>13. Practical Assignment</h2>
+<ol>
+<li>Create two software timers with different timer IDs.</li>
+<li>Use a common callback function for both timers.</li>
+<li>Identify the timer using <code>pvTimerGetTimerID()</code>.</li>
+<li>Notify a worker task from the callback.</li>
+<li>Modify the example to send an event structure through a queue.</li>
+<li>Explain why callback functions should not block.</li>
+<li>Design a periodic sensor-monitoring notification system.</li>
+<li>Explain the difference between timer callback context and ISR context.</li>
+</ol>
+</section>
+
+<section>
+<h2>14. Lesson Summary</h2>
+<ul>
+<li>Timer callbacks execute when software timers expire.</li>
+<li>Callbacks execute in timer service task context.</li>
+<li>The callback receives the expired timer's handle.</li>
+<li>Timer IDs can identify different timers using a shared callback.</li>
+<li>Callbacks should be short and non-blocking.</li>
+<li>Long operations should be delegated to application tasks.</li>
+<li>Task notifications and queues are useful communication mechanisms.</li>
+<li>A blocking callback can delay other timer operations.</li>
+</ul>
+</section>
+
+<div class="navigation">
+<a href="L07_xTimerStart_Stop_Reset_Functions.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L09_Timer_Service_Task.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 17 – FreeRTOS Event Groups and Software Timers</p>
+</footer>
+
+</body>
+</html>
