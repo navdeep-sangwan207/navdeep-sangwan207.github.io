@@ -1,1 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task Stack Management | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Task Stack Management</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 18: Memory Management and RTOS Debugging</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 18</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Explain the purpose of a task stack in an RTOS.</li>
+<li>Understand how stack memory is used during task execution.</li>
+<li>Identify the relationship between a task stack and its context.</li>
+<li>Calculate task stack memory requirements.</li>
+<li>Understand stack allocation in FreeRTOS.</li>
+<li>Use stack monitoring functions.</li>
+<li>Identify common causes of task stack overflow.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Is a Task Stack?</h2>
+<p>A task stack is a dedicated memory area used by a task during execution. It stores temporary information required by function calls and execution flow.</p>
+
+<p>Typical stack contents include:</p>
+<ul>
+<li>Return addresses from function calls.</li>
+<li>Local variables and temporary data.</li>
+<li>Function parameters when required by the calling convention.</li>
+<li>Saved processor registers.</li>
+<li>Interrupt or exception context when the processor and port use the task stack for that context.</li>
+<li>Compiler-generated temporary values and alignment padding.</li>
+</ul>
+
+<p>Each FreeRTOS task normally has its own stack. This allows tasks to maintain independent execution contexts while the scheduler switches between them.</p>
+
+<div class="diagram">
+                 TASK 1
+                    |
+             +--------------+
+             | Task Stack 1 |
+             +--------------+
+
+                 TASK 2
+                    |
+             +--------------+
+             | Task Stack 2 |
+             +--------------+
+
+                 TASK 3
+                    |
+             +--------------+
+             | Task Stack 3 |
+             +--------------+
+</div>
+
+<div class="note">The exact contents of a task stack depend on the processor architecture, compiler calling convention, FreeRTOS port and interrupt-handling implementation.</div>
+</section>
+
+<section>
+<h2>3. Stack and Heap in an RTOS</h2>
+<p>Stack and heap are different memory-management areas.</p>
+
+<table>
+<tr><th>Parameter</th><th>Task Stack</th><th>Heap</th></tr>
+<tr><td>Purpose</td><td>Stores task execution data</td><td>Provides memory for dynamic allocation</td></tr>
+<tr><td>Typical contents</td><td>Local variables, call frames and saved context</td><td>Dynamic tasks, queues, buffers and other objects</td></tr>
+<tr><td>Allocation</td><td>Assigned to a task</td><td>Managed by the selected allocator</td></tr>
+<tr><td>Lifetime</td><td>Usually exists while the task exists</td><td>Depends on allocation and release operations</td></tr>
+<tr><td>Common failure</td><td>Stack overflow</td><td>Allocation failure or fragmentation</td></tr>
+</table>
+
+<div class="diagram">
+              APPLICATION RAM
++------------------------------------------+
+| Global and static variables              |
++------------------------------------------+
+| FreeRTOS heap                             |
+| Dynamic task objects, queues and buffers  |
++------------------------------------------+
+| Task 1 stack                              |
++------------------------------------------+
+| Task 2 stack                              |
++------------------------------------------+
+| Task 3 stack                              |
++------------------------------------------+
+</div>
+
+<p>This is a conceptual memory layout. Actual placement depends on the linker script, compiler, memory map and allocation strategy.</p>
+</section>
+
+<section>
+<h2>4. How a Task Uses Its Stack</h2>
+<p>Consider a task that calls multiple functions:</p>
+
+<pre><code>void Calculate(void)
+{
+    int result = 0;
+
+    result = 10 + 20;
+}
+
+void ProcessData(void)
+{
+    int value = 100;
+
+    Calculate();
+}
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        ProcessData();
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}</code></pre>
+
+<p>During execution:</p>
+<ol>
+<li><code>SensorTask()</code> begins executing.</li>
+<li>It calls <code>ProcessData()</code>.</li>
+<li>The function call creates the required execution frame according to the compiler and processor convention.</li>
+<li><code>ProcessData()</code> calls <code>Calculate()</code>.</li>
+<li>Additional stack space may be used for the nested call.</li>
+<li>When functions return, their stack frames are released according to the calling convention.</li>
+</ol>
+
+<div class="note">Compilers may keep variables in registers, optimize away unused variables or inline functions. Therefore, source-code variable sizes alone cannot accurately determine actual stack consumption.</div>
+</section>
+
+<section>
+<h2>5. Stack Pointer</h2>
+<p>The Stack Pointer (SP) is a processor register that identifies the current position of the active stack.</p>
+
+<p>During function calls, returns, interrupt handling and context switching, the processor or RTOS port updates or restores stack-related state.</p>
+
+<h3>5.1 Stack Growth Direction</h3>
+<p>Stack growth direction depends on the processor architecture and port.</p>
+
+<div class="diagram">
+          EXAMPLE: DOWNWARD-GROWING STACK
+
+        Higher memory address
+                 |
+          +--------------+
+          | Existing data|
+          +--------------+
+          | Local data   |
+          +--------------+
+          | Saved context|
+          +--------------+
+                 |
+                 v
+          Stack grows downward
+          toward lower addresses
+</div>
+
+<p>Some architectures or implementations use different conventions. Never assume that every RTOS task stack grows in the same direction.</p>
+
+<h3>5.2 Stack Pointer During Context Switching</h3>
+<p>When the scheduler switches from one task to another, the port saves the outgoing task's required processor context and restores the incoming task's context.</p>
+
+<div class="diagram">
+             TASK A RUNNING
+                    |
+                    v
+          Save required context
+                    |
+                    v
+          Store Task A stack state
+                    |
+                    v
+             Scheduler selects B
+                    |
+                    v
+          Restore Task B context
+                    |
+                    v
+             TASK B RUNNING
+</div>
+
+<p>The exact register set and save/restore sequence are port-specific.</p>
+</section>
+
+<section>
+<h2>6. Task Stack Allocation in FreeRTOS</h2>
+<p>FreeRTOS provides both dynamic and static task creation methods.</p>
+
+<h3>6.1 Dynamic Allocation Using xTaskCreate()</h3>
+<p>With <code>xTaskCreate()</code>, the kernel obtains memory for the task control block and stack through the configured FreeRTOS allocator.</p>
+
+<pre><code>BaseType_t result;
+
+result = xTaskCreate(
+    SensorTask,
+    "SensorTask",
+    256,
+    NULL,
+    2,
+    NULL
+);
+
+if (result != pdPASS)
+{
+    /* Handle task creation failure */
+}</code></pre>
+
+<p>The stack-depth argument specifies the number of stack elements, not bytes.</p>
+
+<h3>6.2 Static Allocation Using xTaskCreateStatic()</h3>
+<p>With <code>xTaskCreateStatic()</code>, the application supplies the stack array and task control-block storage.</p>
+
+<pre><code>#define TASK_STACK_SIZE 256
+
+static StackType_t taskStack[TASK_STACK_SIZE];
+static StaticTask_t taskControlBlock;
+
+TaskHandle_t taskHandle;
+
+taskHandle = xTaskCreateStatic(
+    SensorTask,
+    "SensorTask",
+    TASK_STACK_SIZE,
+    NULL,
+    2,
+    taskStack,
+    &amp;taskControlBlock
+);
+
+if (taskHandle == NULL)
+{
+    /* Handle task creation failure */
+}</code></pre>
+
+<p>The storage must remain valid for the lifetime of the task.</p>
+
+<div class="note">The availability of static creation APIs depends on the FreeRTOS configuration and version. See Lesson 02 for the complete static-versus-dynamic allocation comparison.</div>
+</section>
+
+<section>
+<h2>7. Stack Depth and Stack Size</h2>
+<p>One of the most important FreeRTOS stack-management concepts is the difference between stack depth and stack size in bytes.</p>
+
+<p>In FreeRTOS task-creation APIs, stack depth is expressed in elements of type <code>StackType_t</code>.</p>
+
+<p><strong>Formula:</strong></p>
+<pre><code>Stack size in bytes =
+    Stack depth × sizeof(StackType_t)</code></pre>
+
+<h3>7.1 Example: 256 Stack Elements</h3>
+<p>Assume the target defines:</p>
+<pre><code>sizeof(StackType_t) = 4 bytes</code></pre>
+
+<p>For a stack depth of 256:</p>
+<pre><code>Stack size = 256 × 4
+
+           = 1024 bytes
+
+           = 1 KB</code></pre>
+
+<h3>7.2 Example: 512 Stack Elements</h3>
+<pre><code>Stack size = 512 × 4
+
+           = 2048 bytes
+
+           = 2 KB</code></pre>
+
+<div class="warning">Do not assume that a stack depth of 256 always means 256 bytes. The byte size depends on <code>sizeof(StackType_t)</code> for the selected target.</div>
+</section>
+
+<section>
+<h2>8. Factors Affecting Stack Size</h2>
+<p>The required stack size depends on several application and compiler characteristics.</p>
+
+<table>
+<tr><th>Factor</th><th>Effect on Stack Usage</th></tr>
+<tr><td>Local variables</td><td>May consume stack space if stored in stack frames.</td></tr>
+<tr><td>Nested function calls</td><td>Increase simultaneous call-frame requirements.</td></tr>
+<tr><td>Recursive functions</td><td>Can cause repeated stack-frame allocation.</td></tr>
+<tr><td>Interrupt handling</td><td>May require additional stack space depending on the architecture and port.</td></tr>
+<tr><td>Library functions</td><td>May use significant internal stack space.</td></tr>
+<tr><td>Floating-point operations</td><td>May require additional register or software support, depending on the target.</td></tr>
+<tr><td>Compiler optimization</td><td>Can change register usage, inlining and stack-frame size.</td></tr>
+<tr><td>Function call depth</td><td>Deeper call chains generally increase peak stack usage.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>9. Calculating Total Task Stack Memory</h2>
+<p>Consider an application with four tasks.</p>
+
+<table>
+<tr><th>Task</th><th>Stack Depth</th><th>StackType_t Size</th><th>Stack Memory</th></tr>
+<tr><td>Sensor Task</td><td>256</td><td>4 bytes</td><td>1024 bytes</td></tr>
+<tr><td>Communication Task</td><td>512</td><td>4 bytes</td><td>2048 bytes</td></tr>
+<tr><td>Control Task</td><td>256</td><td>4 bytes</td><td>1024 bytes</td></tr>
+<tr><td>Display Task</td><td>128</td><td>4 bytes</td><td>512 bytes</td></tr>
+<tr><td><strong>Total</strong><td><strong>1152</strong><td>—</td><td><strong>4608 bytes</strong></td></tr>
+</table>
+
+<p>Total task stack memory:</p>
+<pre><code>1024 + 2048 + 1024 + 512
+
+= 4608 bytes
+
+= 4.5 KB</code></pre>
+
+<p>This is only the sum of the four task stacks. Additional RAM is required for task control blocks, queues, other kernel objects, application data and any heap overhead.</p>
+</section>
+
+<section>
+<h2>10. Stack Usage Monitoring in FreeRTOS</h2>
+<p>FreeRTOS provides a task stack high-water-mark function in supported configurations.</p>
+
+<h3>10.1 uxTaskGetStackHighWaterMark()</h3>
+<pre><code>UBaseType_t uxTaskGetStackHighWaterMark(
+    TaskHandle_t xTask
+);</code></pre>
+
+<p>This function reports the minimum amount of stack space that has remained unused since the task started, expressed in stack elements (words), not bytes.</p>
+
+<h3>10.2 Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+void StackMonitorTask(void *pvParameters)
+{
+    UBaseType_t remaining;
+
+    for (;;)
+    {
+        remaining =
+            uxTaskGetStackHighWaterMark(NULL);
+
+        /* Record or display remaining stack
+           in stack elements */
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}</code></pre>
+
+<p>Passing <code>NULL</code> checks the calling task's stack.</p>
+
+<h3>10.3 Convert the Result into Bytes</h3>
+<pre><code>UBaseType_t remainingWords;
+size_t remainingBytes;
+
+remainingWords =
+    uxTaskGetStackHighWaterMark(NULL);
+
+remainingBytes =
+    (size_t)remainingWords * sizeof(StackType_t);</code></pre>
+
+<p>The calculation converts the reported unused stack elements into bytes.</p>
+
+<div class="warning">A high-water mark is based on the stack usage observed so far. It does not prove that every possible execution path is safe. Exercise error handling, worst-case inputs, nested calls and exceptional paths during testing.</div>
+</section>
+
+<section>
+<h2>11. Stack Overflow Detection</h2>
+<p>Stack overflow occurs when a task uses more stack space than has been allocated to it.</p>
+
+<p>Possible consequences include:</p>
+<ul>
+<li>Corruption of adjacent memory.</li>
+<li>Incorrect local variable values.</li>
+<li>Corruption of saved context.</li>
+<li>Unexpected task behavior.</li>
+<li>System crashes or unpredictable execution.</li>
+</ul>
+
+<p>FreeRTOS provides configurable stack-overflow checking.</p>
+
+<h3>11.1 Configuration</h3>
+<pre><code>#define configCHECK_FOR_STACK_OVERFLOW    2</code></pre>
+
+<p>Common settings:</p>
+<table>
+<tr><th>Value</th><th>Meaning</th></tr>
+<tr><td>0</td><td>Stack overflow checking disabled.</td></tr>
+<tr><td>1</td><td>Basic stack pointer or boundary checking, as implemented by the port.</td></tr>
+<tr><td>2</td><td>Additional stack-pattern checking, where supported by the port.</td></tr>
+</table>
+
+<h3>11.2 Hook Function</h3>
+<pre><code>void vApplicationStackOverflowHook(
+    TaskHandle_t xTask,
+    char *pcTaskName
+)
+{
+    /* Record task name and diagnostic data */
+
+    taskDISABLE_INTERRUPTS();
+
+    for (;;)
+    {
+        /* Enter safe failure state */
+    }
+}</code></pre>
+
+<p>The hook must be provided by the application when stack-overflow checking is enabled and required by the selected FreeRTOS port.</p>
+
+<div class="note">Stack-overflow detection is a diagnostic safeguard, not a guarantee that all stack corruption will be detected before damage occurs.</div>
+</section>
+
+<section>
+<h2>12. Stack Management Best Practices</h2>
+<ol>
+<li>Estimate stack requirements before task creation.</li>
+<li>Use compiler-generated stack-usage reports when available.</li>
+<li>Measure high-water marks during realistic testing.</li>
+<li>Test worst-case execution paths and error conditions.</li>
+<li>Avoid uncontrolled recursion.</li>
+<li>Avoid unnecessarily large local arrays.</li>
+<li>Use static buffers or dedicated shared buffers where appropriate.</li>
+<li>Enable stack-overflow checking during development.</li>
+<li>Keep interrupt handlers short and understand which stack they use.</li>
+<li>Reserve an appropriate safety margin.</li>
+<li>Reassess stack sizes after compiler, library or application changes.</li>
+</ol>
+</section>
+
+<section>
+<h2>13. Common Stack Management Errors</h2>
+<table>
+<tr><th>Error</th><th>Explanation</th><th>Prevention</th></tr>
+<tr><td>Stack depth treated as bytes</td><td>FreeRTOS task APIs use stack elements.</td><td>Multiply by sizeof(StackType_t).</td></tr>
+<tr><td>Insufficient stack size</td><td>Peak execution usage exceeds allocated memory.</td><td>Measure and test worst-case paths.</td></tr>
+<tr><td>Large local arrays</td><td>Consume substantial task stack space.</td><td>Use appropriately managed persistent buffers.</td></tr>
+<tr><td>Uncontrolled recursion</td><td>Repeated calls consume additional stack frames.</td><td>Use bounded recursion or iterative algorithms.</td></tr>
+<tr><td>Ignoring library usage</td><td>Library functions may consume more stack than expected.</td><td>Measure actual call paths.</td></tr>
+<tr><td>Misreading high-water mark</td><td>Result is interpreted as bytes rather than elements.</td><td>Convert using sizeof(StackType_t).</td></tr>
+<tr><td>Short-lived static stack storage</td><td>Storage becomes invalid while the task still exists.</td><td>Use storage with sufficient lifetime.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>14. Practical Exercises</h2>
+<ol>
+<li>Calculate the byte size of a task stack with 300 elements when <code>sizeof(StackType_t)</code> is 4 bytes.</li>
+<li>Calculate the combined stack memory for five tasks, each using 256 stack elements, with 4-byte stack elements.</li>
+<li>Write a FreeRTOS task that checks its own high-water mark every second.</li>
+<li>Convert a high-water-mark result of 40 stack elements into bytes when each element is 4 bytes.</li>
+<li>Explain why nested function calls increase stack requirements.</li>
+<li>Explain the difference between task stack memory and FreeRTOS heap memory.</li>
+<li>Configure stack-overflow checking and implement the overflow hook.</li>
+<li>Prepare a stack budget for a sensor-monitoring application with four tasks.</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Interview Questions</h2>
+<ol>
+<li>What is a task stack in an RTOS?</li>
+<li>Why does every FreeRTOS task normally have its own stack?</li>
+<li>What information is stored on a task stack?</li>
+<li>What is the role of the Stack Pointer?</li>
+<li>What is the difference between stack and heap?</li>
+<li>What is stack depth in FreeRTOS?</li>
+<li>How do you calculate task stack memory in bytes?</li>
+<li>What is the purpose of <code>uxTaskGetStackHighWaterMark()</code>?</li>
+<li>What is stack overflow?</li>
+<li>What does <code>configCHECK_FOR_STACK_OVERFLOW</code> control?</li>
+<li>What is the purpose of <code>vApplicationStackOverflowHook()</code>?</li>
+<li>Why is high-water-mark testing not a complete proof of stack safety?</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Lesson Summary</h2>
+<ul>
+<li>A task stack stores execution data, function-call information and saved context.</li>
+<li>Each FreeRTOS task normally has its own stack.</li>
+<li>Stack depth is measured in <code>StackType_t</code> elements.</li>
+<li>Stack memory in bytes equals stack depth multiplied by <code>sizeof(StackType_t)</code>.</li>
+<li>Stack requirements depend on call depth, local variables, compiler behavior and interrupt handling.</li>
+<li><code>uxTaskGetStackHighWaterMark()</code> reports minimum unused stack observed in stack elements.</li>
+<li>Stack-overflow checking can help identify stack-related faults.</li>
+<li>Worst-case testing and an appropriate safety margin are essential for reliable embedded systems.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L03_FreeRTOS_Heap_1_to_Heap_5.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L05_Stack_Overflow_Detection.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 18 – Memory Management and RTOS Debugging</p>
+</footer>
+
+</body>
+</html>
