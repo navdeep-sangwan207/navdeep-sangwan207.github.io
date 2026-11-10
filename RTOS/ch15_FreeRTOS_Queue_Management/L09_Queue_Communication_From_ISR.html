@@ -1,1 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Queue Communication From ISR | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:28px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Queue Communication From ISR</h1>
+<p>Interrupt-Safe Data Transfer and ISR-to-Task Communication in FreeRTOS</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 15</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+Interrupt Service Routines (ISRs) handle
+time-sensitive hardware events. In a
+FreeRTOS application, an ISR may need to
+transfer data to a task for further
+processing. Queue FromISR APIs provide
+a mechanism for this communication.
+</p>
+<ul>
+<li>Understand ISR-to-task communication.</li>
+<li>Differentiate task-context and ISR-context queue APIs.</li>
+<li>Study xQueueSendFromISR().</li>
+<li>Study xQueueReceiveFromISR().</li>
+<li>Understand higher-priority task wake-up behavior.</li>
+<li>Learn interrupt-safe programming practices.</li>
+<li>Develop an ISR-to-task communication example.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Is ISR-to-Task Communication?</h2>
+<p>
+An interrupt occurs when a hardware or
+configured software event requires processor
+attention. The processor executes the
+corresponding Interrupt Service Routine.
+</p>
+<p>
+An ISR should generally perform only
+essential, short-duration operations.
+If more processing is required, the ISR
+can place data into a queue and allow a
+task to process it later.
+</p>
+<pre><code>       Hardware Event
+              |
+              v
+       Interrupt Occurs
+              |
+              v
+       +-------------+
+       |     ISR     |
+       +-------------+
+              |
+              | xQueueSendFromISR()
+              v
+       +-------------+
+       | FreeRTOS    |
+       | Queue       |
+       +-------------+
+              |
+              | xQueueReceive()
+              v
+       +-------------+
+       | Processing  |
+       | Task        |
+       +-------------+</code></pre>
+</section>
+
+<section>
+<h2>3. Why Should an ISR Communicate With a Task?</h2>
+<p>
+Some operations are not suitable for
+execution inside an ISR because they may
+take too much time or require blocking.
+A task provides a suitable context for
+extended processing.
+</p>
+<table>
+<tr><th>ISR Responsibility</th><th>Task Responsibility</th></tr>
+<tr><td>Acknowledge or clear the interrupt source as required.</td><td>Perform application-level processing.</td></tr>
+<tr><td>Capture essential event information.</td><td>Analyze received data.</td></tr>
+<tr><td>Place data into a queue using an ISR-safe API.</td><td>Update application state.</td></tr>
+<tr><td>Request a context switch when appropriate.</td><td>Perform longer operations and communication.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. Task APIs vs ISR APIs</h2>
+<p>
+FreeRTOS provides separate API functions
+for task context and interrupt context.
+An ISR must use the appropriate FromISR
+function where one is provided.
+</p>
+<table>
+<tr><th>Task Context API</th><th>ISR Context API</th><th>Purpose</th></tr>
+<tr><td>xQueueSend()</td><td>xQueueSendFromISR()</td><td>Send an item to a queue.</td></tr>
+<tr><td>xQueueReceive()</td><td>xQueueReceiveFromISR()</td><td>Receive an item from a queue.</td></tr>
+<tr><td>xQueuePeek()</td><td>xQueuePeekFromISR()</td><td>Inspect the front item without removing it.</td></tr>
+<tr><td>xSemaphoreGive()</td><td>xSemaphoreGiveFromISR()</td><td>Give a semaphore.</td></tr>
+</table>
+<div class="warning">
+Do not call task-context queue APIs from
+an ISR. Task APIs may block or perform
+operations that are not valid in interrupt
+context.
+</div>
+</section>
+
+<section>
+<h2>5. xQueueSendFromISR() Function</h2>
+<p>
+The <code>xQueueSendFromISR()</code>
+function sends an item to a queue from
+an Interrupt Service Routine.
+It does not block.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xQueueSendFromISR(
+    QueueHandle_t xQueue,
+    const void *pvItemToQueue,
+    BaseType_t *pxHigherPriorityTaskWoken
+);</code></pre>
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>xQueue</td><td>Handle of the destination queue.</td></tr>
+<tr><td>pvItemToQueue</td><td>Pointer to the item to copy into the queue.</td></tr>
+<tr><td>pxHigherPriorityTaskWoken</td><td>Pointer to a flag indicating whether a higher-priority task was unblocked.</td></tr>
+</table>
+<h3>Return Value</h3>
+<ul>
+<li>pdPASS: Item was successfully placed in the queue.</li>
+<li>errQUEUE_FULL: Queue had no available space.</li>
+</ul>
+</section>
+
+<section>
+<h2>6. Understanding pxHigherPriorityTaskWoken</h2>
+<p>
+When an ISR sends data to a queue, a task
+waiting for that data may become Ready.
+If the unblocked task has a higher priority
+than the task interrupted by the ISR, the
+kernel may need to switch tasks when the
+interrupt finishes.
+</p>
+<pre><code>BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+xQueueSendFromISR(
+    dataQueue,
+    &eventData,
+    &xHigherPriorityTaskWoken
+);
+
+/* Request port-specific ISR yield
+   when required. */</code></pre>
+<p>
+The variable is initialized to pdFALSE
+before the ISR operation. The API may set
+it to pdTRUE when a higher-priority task
+has been unblocked.
+</p>
+<div class="note">
+The exact ISR-yield macro or mechanism
+depends on the FreeRTOS port. A common
+macro name is portYIELD_FROM_ISR(), but
+the selected port's documentation must
+be followed.
+</div>
+</section>
+
+<section>
+<h2>7. xQueueReceiveFromISR() Function</h2>
+<p>
+The <code>xQueueReceiveFromISR()</code>
+function receives an item from a queue
+inside an ISR without blocking.
+The item is copied into the application
+buffer and removed from the queue.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xQueueReceiveFromISR(
+    QueueHandle_t xQueue,
+    void *pvBuffer,
+    BaseType_t *pxHigherPriorityTaskWoken
+);</code></pre>
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>xQueue</td><td>Queue handle.</td></tr>
+<tr><td>pvBuffer</td><td>Pointer to the destination buffer.</td></tr>
+<tr><td>pxHigherPriorityTaskWoken</td><td>Pointer to the task-woken flag.</td></tr>
+</table>
+<h3>Return Value</h3>
+<ul>
+<li>pdPASS: An item was successfully received.</li>
+<li>errQUEUE_EMPTY: The queue contained no item.</li>
+</ul>
+<div class="note">
+Receiving from a queue in an ISR is less
+common than sending data from an ISR to
+a task. Use it only when the application
+design genuinely requires interrupt-context
+queue reception.
+</div>
+</section>
+
+<section>
+<h2>8. Complete ISR-to-Task Communication Example</h2>
+<p>
+The following is a generic FreeRTOS
+illustration. A hardware interrupt captures
+an event value and sends it to a queue.
+A task receives the value and processes it.
+</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+QueueHandle_t eventQueue;
+
+void EventProcessingTask(void *pvParameters)
+{
+    unsigned int eventValue;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                eventQueue,
+                &eventValue,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Process eventValue */
+        }
+    }
+}
+
+/*
+ * Illustrative ISR body.
+ * Connect this to the actual hardware
+ * interrupt using the selected port's
+ * interrupt registration mechanism.
+ */
+void HardwareEventISR(void)
+{
+    BaseType_t xHigherPriorityTaskWoken =
+        pdFALSE;
+
+    unsigned int eventValue = 1;
+
+    xQueueSendFromISR(
+        eventQueue,
+        &eventValue,
+        &xHigherPriorityTaskWoken
+    );
+
+    /*
+     * Use the ISR-yield mechanism required
+     * by the selected FreeRTOS port.
+     */
+    portYIELD_FROM_ISR(
+        xHigherPriorityTaskWoken
+    );
+}
+
+int main(void)
+{
+    eventQueue = xQueueCreate(
+        5,
+        sizeof(unsigned int)
+    );
+
+    if (eventQueue == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTaskCreate(
+            EventProcessingTask,
+            "EventTask",
+            configMINIMAL_STACK_SIZE,
+            NULL,
+            3,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    /*
+     * Configure the actual interrupt source
+     * and enable it at the appropriate point
+     * for the selected hardware and port.
+     */
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Program Explanation</h3>
+<ol>
+<li>A queue is created to store event values.</li>
+<li>A processing task waits for queue data.</li>
+<li>The hardware ISR captures an event.</li>
+<li>The ISR sends the event using xQueueSendFromISR().</li>
+<li>The task-woken flag records whether a higher-priority task was unblocked.</li>
+<li>The port-specific yield mechanism is used when required.</li>
+<li>The processing task handles the event outside interrupt context.</li>
+</ol>
+<div class="warning">
+The example assumes that the selected
+FreeRTOS port defines the shown ISR-yield
+macro. Some ports use a different form.
+Do not copy the ISR declaration or yield
+macro into a hardware project without
+checking the port documentation.
+</div>
+</section>
+
+<section>
+<h2>9. ISR Queue Overflow Handling</h2>
+<p>
+An ISR cannot wait for queue space.
+If the queue is full, the send operation
+fails immediately.
+The application must define what happens
+when an event cannot be queued.
+</p>
+<h3>Example</h3>
+<pre><code>BaseType_t sendStatus;
+BaseType_t xHigherPriorityTaskWoken =
+    pdFALSE;
+
+sendStatus = xQueueSendFromISR(
+    eventQueue,
+    &eventValue,
+    &xHigherPriorityTaskWoken
+);
+
+if (sendStatus != pdPASS)
+{
+    /* Record or handle queue overflow */
+}</code></pre>
+<h3>Possible Strategies</h3>
+<ul>
+<li>Increase queue capacity based on event bursts.</li>
+<li>Reduce processing time in the consumer task.</li>
+<li>Use a counter to record lost events.</li>
+<li>Use a hardware FIFO or DMA where appropriate.</li>
+<li>Define whether the newest or oldest data has priority.</li>
+</ul>
+</section>
+
+<section>
+<h2>10. ISR-to-Task Communication Sequence</h2>
+<pre><code>1. Hardware event occurs
+          |
+          v
+2. Processor enters ISR
+          |
+          v
+3. ISR captures event data
+          |
+          v
+4. xQueueSendFromISR()
+          |
+          v
+5. Queue stores copied item
+          |
+          v
+6. Waiting task becomes Ready
+   if it was blocked on the queue
+          |
+          v
+7. ISR completes
+          |
+          v
+8. Port performs required scheduling
+          |
+          v
+9. Processing task executes</code></pre>
+<p>
+The task does not execute in the middle
+of the ISR. If a context switch is requested,
+the scheduler can select the task at the
+appropriate interrupt-exit point.
+</p>
+</section>
+
+<section>
+<h2>11. Interrupt Priority and FreeRTOS API Rules</h2>
+<p>
+Not every hardware interrupt is necessarily
+allowed to call FreeRTOS APIs. The processor
+and port define interrupt-priority rules
+that determine which interrupt levels may
+safely interact with the kernel.
+</p>
+<ul>
+<li>Use only interrupts permitted to call the FreeRTOS API.</li>
+<li>Follow the selected port's interrupt-priority rules.</li>
+<li>Do not assume Cortex-M NVIC or BASEPRI rules apply to ARM7.</li>
+<li>Keep ISRs short and avoid blocking operations.</li>
+<li>Use the correct FromISR API.</li>
+<li>Follow the port-specific ISR-yield convention.</li>
+</ul>
+<div class="warning">
+LPC2129 uses an ARM7TDMI-S core and a
+Vectored Interrupt Controller (VIC).
+Cortex-M interrupt-priority configuration
+and BASEPRI instructions are not applicable
+to this processor.
+</div>
+</section>
+
+<section>
+<h2>12. ISR vs Deferred Task Processing</h2>
+<table>
+<tr><th>Feature</th><th>ISR Processing</th><th>Deferred Task Processing</th></tr>
+<tr><td>Execution context</td><td>Interrupt context.</td><td>Task context.</td></tr>
+<tr><td>Blocking</td><td>Not allowed.</td><td>May block when appropriate.</td></tr>
+<tr><td>Execution duration</td><td>Keep short and bounded.</td><td>Can perform extended processing.</td></tr>
+<tr><td>Queue API</td><td>FromISR API.</td><td>Normal task API.</td></tr>
+<tr><td>Typical work</td><td>Capture event and notify task.</td><td>Analyze data and perform application work.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>13. Practical Applications</h2>
+<table>
+<tr><th>Application</th><th>ISR Activity</th><th>Task Activity</th></tr>
+<tr><td>UART reception</td><td>Capture received data or status.</td><td>Parse received message.</td></tr>
+<tr><td>Timer interrupt</td><td>Capture timing event.</td><td>Update application timing logic.</td></tr>
+<tr><td>ADC conversion complete</td><td>Capture conversion result or completion event.</td><td>Filter and process samples.</td></tr>
+<tr><td>External interrupt</td><td>Record event information.</td><td>Execute the corresponding control action.</td></tr>
+<tr><td>Communication interface</td><td>Capture received frame information.</td><td>Validate and process the frame.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>14. Best Practices for ISR Queue Communication</h2>
+<ul>
+<li>Keep interrupt handlers short.</li>
+<li>Use FromISR APIs rather than task-context APIs.</li>
+<li>Never use a blocking queue operation inside an ISR.</li>
+<li>Check the return value of every queue send.</li>
+<li>Initialize the higher-priority-task-woken variable as required.</li>
+<li>Use the correct port-specific ISR-yield mechanism.</li>
+<li>Size the queue to handle expected event bursts.</li>
+<li>Define an overflow strategy.</li>
+<li>Copy small event records rather than performing lengthy processing in the ISR.</li>
+<li>Ensure data buffers remain valid when transferring pointers.</li>
+<li>Respect interrupt-priority restrictions for kernel API calls.</li>
+</ul>
+</section>
+
+<section>
+<h2>15. Practical Experiment</h2>
+<p><strong>Objective:</strong> Demonstrate communication from an interrupt to a FreeRTOS task using a queue.</p>
+<h3>Procedure</h3>
+<ol>
+<li>Create a queue for event values.</li>
+<li>Create a task that waits for queue data.</li>
+<li>Configure a supported interrupt source in the target environment.</li>
+<li>Capture a small event value inside the ISR.</li>
+<li>Send the value using xQueueSendFromISR().</li>
+<li>Check whether the queue operation succeeds.</li>
+<li>Use the selected port's ISR-yield mechanism where required.</li>
+<li>Observe the processing task receiving the event.</li>
+<li>Test the queue-full condition and verify overflow handling.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+When the interrupt occurs, the ISR places
+an event value into the queue. The waiting
+task becomes Ready when appropriate and
+processes the event after interrupt handling
+and scheduling permit it.
+</p>
+</section>
+
+<section>
+<h2>16. Common Programming Mistakes</h2>
+<table>
+<tr><th>Mistake</th><th>Correction</th></tr>
+<tr><td>Calling xQueueSend() from an ISR</td><td>Use xQueueSendFromISR().</td></tr>
+<tr><td>Using a blocking API inside an ISR</td><td>Use non-blocking ISR-safe operations.</td></tr>
+<tr><td>Ignoring the send return value</td><td>Handle queue-full conditions.</td></tr>
+<tr><td>Ignoring interrupt-priority restrictions</td><td>Follow the selected port's rules.</td></tr>
+<tr><td>Assuming a task runs immediately after send</td><td>Understand Ready state and interrupt-exit scheduling.</td></tr>
+<tr><td>Using the wrong yield macro</td><td>Check the selected port documentation.</td></tr>
+<tr><td>Performing lengthy work inside ISR</td><td>Defer processing to a task.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>17. LPC2129 and Keil Simulator Considerations</h2>
+<ul>
+<li>LPC2129 uses ARM7TDMI-S and a VIC for interrupt management.</li>
+<li>Verify a compatible FreeRTOS ARM7 port before using kernel APIs in an ISR.</li>
+<li>Check the port-specific ISR declaration and context-saving requirements.</li>
+<li>Verify how the port requests a context switch on interrupt exit.</li>
+<li>Use simulator-supported interrupt behavior only where confirmed.</li>
+<li>Do not assume physical UART, ADC or external interrupt signals are automatically simulated.</li>
+</ul>
+<div class="warning">
+This lesson uses generic FreeRTOS API
+examples. It does not establish that a
+working LPC2129 FreeRTOS port is available
+in the user's Keil simulator setup.
+</div>
+</section>
+
+<section>
+<h2>18. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is ISR-to-task communication?</li>
+<li>Why should lengthy processing be deferred from an ISR?</li>
+<li>What is xQueueSendFromISR()?</li>
+<li>What is xQueueReceiveFromISR()?</li>
+<li>Why are separate task and ISR APIs provided?</li>
+<li>What is pxHigherPriorityTaskWoken?</li>
+<li>What happens when an ISR sends data to a full queue?</li>
+<li>Why must ISR queue operations be non-blocking?</li>
+<li>What is the purpose of an ISR-yield mechanism?</li>
+<li>Why are interrupt-priority restrictions important?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain ISR-to-task communication with a block diagram.</li>
+<li>Explain xQueueSendFromISR() with syntax and parameters.</li>
+<li>Explain xQueueReceiveFromISR().</li>
+<li>Describe the role of pxHigherPriorityTaskWoken.</li>
+<li>Develop a generic ISR-to-task communication program.</li>
+<li>Explain queue overflow handling in an ISR.</li>
+<li>Compare task-context and ISR-context queue APIs.</li>
+<li>Discuss interrupt-priority restrictions and ISR programming best practices.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Lesson Summary</h2>
+<ul>
+<li>ISRs handle interrupt events and should remain short.</li>
+<li>Queue FromISR APIs support communication from interrupt context.</li>
+<li>xQueueSendFromISR() sends an item without blocking.</li>
+<li>xQueueReceiveFromISR() receives an item without blocking.</li>
+<li>pxHigherPriorityTaskWoken indicates whether a higher-priority task was unblocked.</li>
+<li>Port-specific mechanisms handle any required scheduling at interrupt exit.</li>
+<li>Queue-full conditions must be handled explicitly.</li>
+<li>Interrupt-priority restrictions depend on the selected processor port.</li>
+<li>Extended processing should normally be performed in task context.</li>
+</ul>
+</section>
+
+<section>
+<h2>20. Practice Assignment</h2>
+<ol>
+<li>Define ISR-to-task communication.</li>
+<li>Differentiate xQueueSend() and xQueueSendFromISR().</li>
+<li>Write the syntax of xQueueSendFromISR().</li>
+<li>Explain pxHigherPriorityTaskWoken.</li>
+<li>Explain the purpose of xQueueReceiveFromISR().</li>
+<li>Write a generic program for sending an event from an ISR to a task.</li>
+<li>Explain how queue overflow can occur in an ISR.</li>
+<li>List five ISR programming best practices.</li>
+<li>Explain why interrupt-priority restrictions matter.</li>
+<li>Describe the role of the port-specific ISR-yield mechanism.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L08_Queue_Communication_Between_Tasks.html">← Previous Lesson</a>
+<a href="index.html">Chapter 15 Index</a>
+<a href="L10_FreeRTOS_Queue_Programming_Examples.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
