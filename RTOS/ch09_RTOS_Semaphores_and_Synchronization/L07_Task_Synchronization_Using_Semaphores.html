@@ -1,1 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task Synchronization Using Semaphores | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+.formula{background:#f3f5f7;padding:15px;border-radius:7px;text-align:center;font-weight:bold;margin:15px 0;font-family:monospace;overflow-x:auto}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Task Synchronization Using Semaphores</h1>
+<p>Chapter 09 – Semaphores and Synchronization | Lesson 07</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 09</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>Task synchronization is the coordination of multiple tasks so that they execute in the correct order and respond to events or shared conditions safely.</p>
+
+<p>In an RTOS, tasks operate independently from the application's perspective, but they may need to coordinate their activities. Semaphores provide a mechanism for this coordination.</p>
+
+<div class="info-box">
+<strong>Key idea:</strong> A task can wait for a semaphore before continuing. Another task can give the semaphore when a required event or operation has occurred.
+</div>
+</section>
+
+<section>
+<h2>2. Why Is Task Synchronization Required?</h2>
+<p>Consider an embedded system that performs sensor acquisition and data processing.</p>
+
+<ul>
+<li>Task A reads sensor data.</li>
+<li>Task B processes the acquired data.</li>
+<li>Task C transmits the processed result.</li>
+</ul>
+
+<p>These tasks must coordinate their execution. Processing should not begin before valid sensor data is available, and transmission should not begin before processing is complete.</p>
+
+<h3>Without synchronization</h3>
+<ul>
+<li>A task may read incomplete data.</li>
+<li>Operations may execute in an incorrect order.</li>
+<li>Events may be missed.</li>
+<li>Shared data may become inconsistent.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. Basic Task Synchronization Architecture</h2>
+
+<pre><code>       +----------------------+
+       |      Task A          |
+       |  Perform Operation   |
+       +----------------------+
+                  |
+                  | Give Semaphore
+                  v
+       +----------------------+
+       |     Semaphore        |
+       +----------------------+
+                  |
+                  | Take Semaphore
+                  v
+       +----------------------+
+       |      Task B          |
+       |  Continue Operation  |
+       +----------------------+</code></pre>
+
+<h3>Execution sequence</h3>
+<ol>
+<li>Task B waits for the semaphore.</li>
+<li>Task A performs its operation.</li>
+<li>Task A gives the semaphore.</li>
+<li>Task B becomes Ready if it was waiting.</li>
+<li>The scheduler selects a Ready task according to priority and scheduling rules.</li>
+<li>Task B continues after its successful take operation.</li>
+</ol>
+</section>
+
+<section>
+<h2>4. Synchronization Using a Binary Semaphore</h2>
+<p>A binary semaphore is commonly used when one task must notify another task that an event has occurred.</p>
+
+<h3>Example: Sensor data ready</h3>
+<p>Task A acquires sensor data. Task B waits until the data is ready.</p>
+
+<pre><code>SemaphoreHandle_t xDataReadySemaphore;
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        AcquireSensorData();
+
+        xSemaphoreGive(xDataReadySemaphore);
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void ProcessingTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xDataReadySemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            ProcessSensorData();
+        }
+    }
+}</code></pre>
+
+<p><strong>Explanation:</strong></p>
+<ul>
+<li>The sensor task obtains data.</li>
+<li>It gives the binary semaphore after acquisition.</li>
+<li>The processing task waits for the semaphore.</li>
+<li>After taking the semaphore, the processing task processes the data.</li>
+</ul>
+
+<div class="warning-box">
+The semaphore indicates that data is ready, but it does not transfer or protect the sensor data itself. If the producer can overwrite the data while the consumer is processing it, use a queue, buffer ownership protocol, or suitable mutex protection.
+</div>
+</section>
+
+<section>
+<h2>5. Synchronization Between Two Tasks</h2>
+<p>Two tasks can coordinate their operations using a binary semaphore.</p>
+
+<h3>Example: Task A signals Task B</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xSyncSemaphore;
+
+void TaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform operation A */
+        PerformOperationA();
+
+        /* Notify Task B */
+        xSemaphoreGive(xSyncSemaphore);
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void TaskB(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xSyncSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Continue after Task A signals */
+            PerformOperationB();
+        }
+    }
+}
+
+int main(void)
+{
+    xSyncSemaphore = xSemaphoreCreateBinary();
+
+    if (xSyncSemaphore == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(TaskA, "TaskA", 256, NULL, 2, NULL);
+    xTaskCreate(TaskB, "TaskB", 256, NULL, 2, NULL);
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<p>Task B cannot pass its blocking take operation until Task A provides a semaphore token.</p>
+</section>
+
+<section>
+<h2>6. Synchronization Between Multiple Tasks</h2>
+<p>A counting semaphore can coordinate multiple tasks or represent multiple available tokens.</p>
+
+<h3>Example</h3>
+<p>Suppose several worker tasks must wait until a common initialization operation is complete.</p>
+
+<pre><code>SemaphoreHandle_t xStartSemaphore;
+
+void WorkerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xStartSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            PerformWorkerOperation();
+        }
+    }
+}
+
+void InitializationTask(void *pvParameters)
+{
+    InitializeSystem();
+
+    /* Release three waiting workers */
+    xSemaphoreGive(xStartSemaphore);
+    xSemaphoreGive(xStartSemaphore);
+    xSemaphoreGive(xStartSemaphore);
+
+    vTaskDelete(NULL);
+}
+
+int main(void)
+{
+    xStartSemaphore = xSemaphoreCreateCounting(3, 0);
+
+    if (xStartSemaphore == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(WorkerTask, "Worker1", 256, NULL, 2, NULL);
+    xTaskCreate(WorkerTask, "Worker2", 256, NULL, 2, NULL);
+    xTaskCreate(WorkerTask, "Worker3", 256, NULL, 2, NULL);
+    xTaskCreate(InitializationTask, "Init", 256, NULL, 3, NULL);
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<p>Each successful take consumes one token. The three gives provide up to three tokens for the waiting workers.</p>
+
+<div class="info-box">
+This pattern releases up to three waiting tasks. It is not a permanent broadcast event: a worker that starts waiting after all tokens have been consumed will remain blocked until another token is given.
+</div>
+</section>
+
+<section>
+<h2>7. Synchronization Using a Mutex</h2>
+<p>A mutex is used when tasks need exclusive access to a shared resource.</p>
+
+<h3>Example: Shared communication peripheral</h3>
+<p>Suppose two tasks need to use the same UART transmitter. A mutex can prevent their transmissions from interfering with each other.</p>
+
+<pre><code>SemaphoreHandle_t xUARTMutex;
+
+void UARTTaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xUARTMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            UART_SendString("Message from Task A");
+
+            xSemaphoreGive(xUARTMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void UARTTaskB(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xUARTMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            UART_SendString("Message from Task B");
+
+            xSemaphoreGive(xUARTMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(150));
+    }
+}</code></pre>
+
+<p>Only one task can own the mutex at a time. The mutex is released after the protected UART operation.</p>
+
+<div class="warning-box">
+For a real UART driver, consider protecting the entire logical transmission rather than individual character writes. A queue-based UART transmit architecture may be more suitable when multiple tasks generate messages.
+</div>
+</section>
+
+<section>
+<h2>8. Synchronization Using a Counting Semaphore</h2>
+<p>A counting semaphore can represent multiple pending events or available resource slots.</p>
+
+<h3>Example: Three available buffers</h3>
+<p>Assume three buffers are available. A task must take a token before obtaining a buffer and give it back after releasing the buffer.</p>
+
+<pre><code>SemaphoreHandle_t xBufferSemaphore;
+
+void BufferWorker(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xBufferSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Obtain a specific free buffer */
+            ProcessBuffer();
+
+            /* Return the availability token */
+            xSemaphoreGive(xBufferSemaphore);
+        }
+    }
+}
+
+int main(void)
+{
+    xBufferSemaphore = xSemaphoreCreateCounting(3, 3);
+
+    if (xBufferSemaphore == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(BufferWorker, "Worker1", 256, NULL, 2, NULL);
+    xTaskCreate(BufferWorker, "Worker2", 256, NULL, 2, NULL);
+    xTaskCreate(BufferWorker, "Worker3", 256, NULL, 2, NULL);
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<p>The semaphore tracks the number of available resource slots. An actual resource pool must separately identify which buffer is free and ensure correct ownership and release.</p>
+</section>
+
+<section>
+<h2>9. Task Synchronization vs Mutual Exclusion</h2>
+<p>Synchronization and mutual exclusion are related but different concepts.</p>
+
+<table>
+<tr><th>Feature</th><th>Task Synchronization</th><th>Mutual Exclusion</th></tr>
+<tr><td>Purpose</td><td>Coordinate task execution and event ordering.</td><td>Prevent simultaneous access to a shared resource.</td></tr>
+<tr><td>Typical mechanism</td><td>Binary semaphore, counting semaphore, task notification, event group.</td><td>Mutex or suitable critical section.</td></tr>
+<tr><td>Example</td><td>Wait until sensor data is ready.</td><td>Protect a shared UART transmission.</td></tr>
+<tr><td>Ownership</td><td>Depends on the synchronization object.</td><td>Mutex ownership is associated with the task holding it.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>10. Synchronization Using Queues vs Semaphores</h2>
+<table>
+<tr><th>Feature</th><th>Semaphore</th><th>Queue</th></tr>
+<tr><td>Primary purpose</td><td>Synchronization and signaling.</td><td>Data transfer and communication.</td></tr>
+<tr><td>Stores</td><td>Tokens or counts.</td><td>Data items.</td></tr>
+<tr><td>Data transfer</td><td>Does not transfer application payload.</td><td>Transfers configured queue items.</td></tr>
+<tr><td>Typical example</td><td>Notify a task that an event occurred.</td><td>Send a sensor measurement to another task.</td></tr>
+</table>
+
+<p>If a task needs to receive both an event notification and associated data, a queue is often a better choice than a semaphore alone.</p>
+</section>
+
+<section>
+<h2>11. Common Synchronization Problems</h2>
+
+<h3>11.1 Deadlock</h3>
+<p>Two or more tasks become permanently blocked while waiting for resources held by one another.</p>
+
+<h3>11.2 Priority Inversion</h3>
+<p>A high-priority task is delayed because a lower-priority task holds a resource it needs.</p>
+
+<h3>11.3 Starvation</h3>
+<p>A task waits for an extended period because other tasks repeatedly obtain the resource or scheduling opportunity.</p>
+
+<h3>11.4 Lost Notifications</h3>
+<p>A binary semaphore can represent only one pending token. Repeated events may collapse into a single notification.</p>
+
+<h3>11.5 Incorrect Resource Release</h3>
+<p>A task may release a resource incorrectly, fail to release it, or release a token more than once.</p>
+</section>
+
+<section>
+<h2>12. Best Practices for Task Synchronization</h2>
+<ol>
+<li>Choose the synchronization mechanism according to the actual requirement.</li>
+<li>Use binary semaphores for simple event signaling.</li>
+<li>Use counting semaphores when multiple tokens must be tracked.</li>
+<li>Use mutexes for task-level shared resource protection.</li>
+<li>Use queues when application data must be transferred.</li>
+<li>Use ISR-safe APIs from interrupt context.</li>
+<li>Do not use mutexes from ISRs.</li>
+<li>Check semaphore creation and operation return values.</li>
+<li>Use appropriate timeouts where indefinite waiting is unsuitable.</li>
+<li>Keep shared-resource ownership and release rules clear.</li>
+<li>Avoid holding a mutex while performing long delays or unrelated operations.</li>
+<li>Analyze deadlock and priority-inversion risks.</li>
+</ol>
+</section>
+
+<section>
+<h2>13. Practical Embedded System Example</h2>
+<p>Consider an embedded temperature-monitoring system.</p>
+
+<h3>System tasks</h3>
+<table>
+<tr><th>Task</th><th>Responsibility</th><th>Synchronization</th></tr>
+<tr><td>Sensor Task</td><td>Acquire temperature measurements.</td><td>Give a notification after acquisition.</td></tr>
+<tr><td>Processing Task</td><td>Calculate temperature status.</td><td>Wait for sensor data availability.</td></tr>
+<tr><td>Display Task</td><td>Update display information.</td><td>Wait for processed data.</td></tr>
+<tr><td>Communication Task</td><td>Transmit measurements.</td><td>Receive data through a queue.</td></tr>
+</table>
+
+<h3>System flow</h3>
+<pre><code>       +----------------------+
+       |     Sensor Task      |
+       +----------------------+
+                  |
+                  | Data Ready
+                  v
+       +----------------------+
+       |   Binary Semaphore   |
+       +----------------------+
+                  |
+                  v
+       +----------------------+
+       |   Processing Task    |
+       +----------------------+
+                  |
+                  | Processed Data
+                  v
+       +----------------------+
+       |        Queue         |
+       +----------------------+
+                  |
+             +----+----+
+             |         |
+             v         v
+       +---------+ +-----------+
+       | Display | |   UART    |
+       |  Task   | |   Task    |
+       +---------+ +-----------+</code></pre>
+
+<p>This architecture separates sensor acquisition, processing, display, and communication. The semaphore coordinates readiness, while the queue transfers the processed data.</p>
+</section>
+
+<section>
+<h2>14. Practical Activity – Synchronize Two Tasks</h2>
+<p>Create a simple application in which one task performs an operation and another task waits for its completion.</p>
+
+<h3>Activity steps</h3>
+<ol>
+<li>Create a binary semaphore.</li>
+<li>Create Task A and Task B.</li>
+<li>Make Task B wait using <code>xSemaphoreTake()</code>.</li>
+<li>Make Task A perform a simulated operation.</li>
+<li>After completing the operation, Task A gives the semaphore.</li>
+<li>Task B continues after successfully taking the semaphore.</li>
+<li>Repeat the sequence and inspect task states in the debugger if supported.</li>
+</ol>
+
+<h3>Expected result</h3>
+<p>Task B should not pass its blocking take operation until Task A provides a semaphore token.</p>
+
+<div class="info-box">
+For Keil simulator-only learning, this is an RTOS synchronization exercise. It does not imply that a compatible FreeRTOS port is available for LPC2129 in the current Keil setup.
+</div>
+</section>
+
+<section>
+<h2>15. Review Questions</h2>
+<ol>
+<li>What is task synchronization?</li>
+<li>Why is synchronization required in an RTOS?</li>
+<li>How can a binary semaphore coordinate two tasks?</li>
+<li>How can a counting semaphore coordinate multiple tasks?</li>
+<li>Differentiate synchronization and mutual exclusion.</li>
+<li>How can a mutex protect a shared UART peripheral?</li>
+<li>What is the role of a queue in task communication?</li>
+<li>Why does a semaphore not transfer application data?</li>
+<li>What is deadlock?</li>
+<li>What is priority inversion?</li>
+<li>What is starvation?</li>
+<li>How can a binary semaphore cause notification loss?</li>
+<li>Why should mutexes not be used in ISRs?</li>
+<li>How can a sensor-monitoring system use semaphores?</li>
+<li>Which synchronization mechanism is appropriate when event data must be preserved?</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Lesson Summary</h2>
+<ul>
+<li>Task synchronization coordinates execution between RTOS tasks.</li>
+<li>Binary semaphores are useful for event notification.</li>
+<li>Counting semaphores can represent multiple tokens or resource availability.</li>
+<li>Mutexes provide task-level mutual exclusion.</li>
+<li>Queues transfer data between tasks.</li>
+<li>Synchronization mechanisms must be selected according to the application requirement.</li>
+<li>Deadlock, starvation, priority inversion, and lost notifications must be considered during design.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L06_Semaphore_Take_and_Give_Operations.html">← Previous Lesson</a>
+<a href="index.html">Chapter 09</a>
+<a href="L08_ISR_and_Semaphore_Communication.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
