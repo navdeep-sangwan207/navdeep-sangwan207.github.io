@@ -1,1 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blocking Time and Queue Timeout | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:28px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Blocking Time and Queue Timeout</h1>
+<p>Tick-Based Waiting, Finite Delays and Indefinite Blocking</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 15</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+Blocking time determines how long a task
+waits when a queue operation cannot
+immediately complete. It is an important
+parameter in real-time application design
+because waiting affects task execution,
+response time and system behavior.
+</p>
+<ul>
+<li>Understand blocking time in FreeRTOS.</li>
+<li>Study the xTicksToWait parameter.</li>
+<li>Understand tick-based time measurement.</li>
+<li>Differentiate zero, finite and indefinite waits.</li>
+<li>Study queue timeout behavior.</li>
+<li>Understand pdMS_TO_TICKS().</li>
+<li>Analyse the effect of blocking on task response time.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Is Blocking Time?</h2>
+<p>
+Blocking time is the maximum period for
+which a task is willing to wait for a
+queue operation to become possible.
+</p>
+<p>
+For example, a receiver task may request
+data from an empty queue. Instead of
+repeatedly checking the queue, it can
+block and allow another task to execute.
+</p>
+<pre><code>Receiver Task
+      |
+      v
+ Is Queue Empty?
+      |
+      +---- Yes ----+
+      |             |
+      v             v
+ Receive Data    Block Task
+ Immediately         |
+                     v
+                Wait for Data
+                     |
+              +------+------+
+              |             |
+              v             v
+          Data Arrives   Timeout
+              |             |
+              v             v
+          Receive       Return Failure</code></pre>
+</section>
+
+<section>
+<h2>3. xTicksToWait Parameter</h2>
+<p>
+The queue send and receive functions use
+the xTicksToWait parameter to specify the
+maximum time a task waits when the
+operation cannot complete immediately.
+</p>
+<h3>xQueueSend()</h3>
+<pre><code>BaseType_t xQueueSend(
+    QueueHandle_t xQueue,
+    const void *pvItemToQueue,
+    TickType_t xTicksToWait
+);</code></pre>
+<h3>xQueueReceive()</h3>
+<pre><code>BaseType_t xQueueReceive(
+    QueueHandle_t xQueue,
+    void *pvBuffer,
+    TickType_t xTicksToWait
+);</code></pre>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>xTicksToWait</td><td>Maximum number of RTOS ticks the calling task will wait for the requested queue operation.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. Types of Blocking Time</h2>
+<p>
+FreeRTOS queue operations commonly use
+three waiting strategies.
+</p>
+<table>
+<tr><th>Type</th><th>Value</th><th>Behavior</th></tr>
+<tr><td>Non-blocking</td><td>0</td><td>Return immediately if the operation cannot complete.</td></tr>
+<tr><td>Finite blocking</td><td>Positive tick count</td><td>Wait up to the specified number of ticks.</td></tr>
+<tr><td>Indefinite blocking</td><td>portMAX_DELAY</td><td>Wait indefinitely when supported by the configuration.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5. Zero Blocking Time</h2>
+<p>
+When xTicksToWait is zero, the task does
+not wait for queue space or data.
+The operation either succeeds immediately
+or returns a failure status.
+</p>
+<h3>Example</h3>
+<pre><code>int value = 100;
+
+if (xQueueSend(
+        dataQueue,
+        &value,
+        0
+    ) == pdPASS)
+{
+    /* Data inserted */
+}
+else
+{
+    /* Queue is full */
+}</code></pre>
+<h3>Characteristics</h3>
+<ul>
+<li>Does not block the calling task.</li>
+<li>Useful when the task must continue immediately.</li>
+<li>Requires explicit failure handling.</li>
+<li>May result in dropped data if the queue remains full.</li>
+</ul>
+</section>
+
+<section>
+<h2>6. Finite Blocking Time</h2>
+<p>
+A finite blocking time allows a task to
+wait for a specified number of RTOS ticks.
+If the required queue condition occurs
+before the timeout, the operation can
+complete successfully.
+Otherwise, it returns failure.
+</p>
+<h3>Example</h3>
+<pre><code>int receivedValue;
+
+if (xQueueReceive(
+        dataQueue,
+        &receivedValue,
+        pdMS_TO_TICKS(200)
+    ) == pdPASS)
+{
+    /* Data received */
+}
+else
+{
+    /* Receive timeout */
+}</code></pre>
+<p>
+In this example, the task waits for up to
+approximately 200 milliseconds, subject
+to tick resolution and scheduling behavior.
+</p>
+</section>
+
+<section>
+<h2>7. Indefinite Blocking Time</h2>
+<p>
+An indefinite wait allows a task to remain
+blocked until the requested queue operation
+becomes possible.
+</p>
+<h3>Example</h3>
+<pre><code>int receivedValue;
+
+if (xQueueReceive(
+        dataQueue,
+        &receivedValue,
+        portMAX_DELAY
+    ) == pdPASS)
+{
+    /* Process received data */
+}</code></pre>
+<p>
+The receiver remains blocked while the queue
+is empty. When data arrives, the task can
+become Ready and execute when selected by
+the scheduler.
+</p>
+<div class="warning">
+For the traditional indefinite-blocking
+behavior, check the relevant configuration,
+including INCLUDE_vTaskSuspend. Indefinite
+blocking also requires a sound queue
+lifecycle: the application must not assume
+that deleting a queue safely wakes and
+cancels every blocked user.
+</div>
+</section>
+
+<section>
+<h2>8. RTOS Tick and Time Measurement</h2>
+<p>
+FreeRTOS measures blocking intervals using
+the RTOS tick count. A periodic tick
+interrupt advances the system tick.
+</p>
+<p>
+The tick frequency is configured using
+<code>configTICK_RATE_HZ</code>.
+</p>
+<table>
+<tr><th>Tick Frequency</th><th>Nominal Tick Period</th></tr>
+<tr><td>100 Hz</td><td>10 ms</td></tr>
+<tr><td>250 Hz</td><td>4 ms</td></tr>
+<tr><td>500 Hz</td><td>2 ms</td></tr>
+<tr><td>1000 Hz</td><td>1 ms</td></tr>
+</table>
+<p>
+The nominal tick period is calculated as:
+</p>
+<p><strong>Tick period = 1 / Tick frequency</strong></p>
+<pre><code>#define configTICK_RATE_HZ 1000</code></pre>
+<p>
+At 1000 Hz, the nominal tick interval is
+1 millisecond.
+</p>
+<div class="note">
+The RTOS tick is a scheduling time base.
+It is not automatically a high-resolution
+measurement clock or a calendar clock.
+</div>
+</section>
+
+<section>
+<h2>9. Millisecond-to-Tick Conversion</h2>
+<p>
+The <code>pdMS_TO_TICKS()</code> macro
+converts a time expressed in milliseconds
+into the corresponding RTOS tick count.
+</p>
+<h3>Syntax</h3>
+<pre><code>pdMS_TO_TICKS(milliseconds)</code></pre>
+<h3>Example</h3>
+<pre><code>TickType_t waitTime;
+
+waitTime = pdMS_TO_TICKS(100);
+
+xQueueReceive(
+    dataQueue,
+    &receivedValue,
+    waitTime
+);</code></pre>
+<p>
+For a tick rate of 1000 Hz, 100 milliseconds
+corresponds to approximately 100 ticks.
+For a tick rate of 100 Hz, it corresponds
+to approximately 10 ticks.
+</p>
+<div class="warning">
+Tick conversion has finite resolution.
+A short millisecond interval may convert
+to zero ticks. Do not assume every positive
+millisecond value produces a positive wait.
+Check the selected port and macro behavior.
+</div>
+</section>
+
+<section>
+<h2>10. Queue Timeout Behavior</h2>
+<p>
+A timeout occurs when a queue operation
+cannot complete within the allowed waiting
+period.
+</p>
+<h3>Receive Timeout Example</h3>
+<pre><code>int sensorValue;
+
+if (xQueueReceive(
+        sensorQueue,
+        &sensorValue,
+        pdMS_TO_TICKS(500)
+    ) == pdPASS)
+{
+    /* Process received sensor value */
+}
+else
+{
+    /* No data received before timeout */
+}</code></pre>
+<p>
+If the queue remains empty for the entire
+waiting interval, the receive operation
+returns a failure status.
+</p>
+<h3>Send Timeout Example</h3>
+<pre><code>int command = 1;
+
+if (xQueueSend(
+        commandQueue,
+        &command,
+        pdMS_TO_TICKS(100)
+    ) == pdPASS)
+{
+    /* Command queued successfully */
+}
+else
+{
+    /* No queue space became available in time */
+}</code></pre>
+</section>
+
+<section>
+<h2>11. Blocking Time vs Execution Time</h2>
+<p>
+Blocking time is not the same as task
+execution time.
+</p>
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td>Execution time</td><td>Time during which the CPU executes the task's instructions.</td></tr>
+<tr><td>Blocking time</td><td>Time the task waits for an event or resource.</td></tr>
+<tr><td>Ready waiting time</td><td>Time a Ready task waits for CPU scheduling.</td></tr>
+<tr><td>Response time</td><td>Time from task release or triggering event to completion.</td></tr>
+</table>
+<p>
+A task may spend time executing, waiting
+for a queue, waiting in the Ready state
+and being preempted by higher-priority tasks.
+These delays all matter when analysing
+real-time response.
+</p>
+</section>
+
+<section>
+<h2>12. Blocking and Task Scheduling</h2>
+<p>
+When a task blocks on a queue, the scheduler
+can run another Ready task. This improves
+CPU utilization compared with continuous
+polling.
+</p>
+<h3>Example</h3>
+<ul>
+<li>Task A waits for sensor data using xQueueReceive().</li>
+<li>Task A enters the Blocked state while the queue is empty.</li>
+<li>Task B becomes the Running task if it is Ready and selected.</li>
+<li>Task B sends data to the queue.</li>
+<li>Task A becomes Ready.</li>
+<li>The scheduler selects Task A according to priority and scheduling rules.</li>
+</ul>
+<div class="note">
+A task becoming Ready does not guarantee
+immediate execution. A higher-priority
+task may continue running.
+</div>
+</section>
+
+<section>
+<h2>13. Choosing a Suitable Timeout</h2>
+<p>
+Timeout selection depends on application
+requirements, task priority, data arrival
+patterns and acceptable response time.
+</p>
+<table>
+<tr><th>Application</th><th>Possible Strategy</th></tr>
+<tr><td>Periodic sensor acquisition</td><td>Use a bounded wait consistent with the sampling schedule.</td></tr>
+<tr><td>Command processing</td><td>Use a finite timeout if the command has a response deadline.</td></tr>
+<tr><td>Background event receiver</td><td>Indefinite wait may be appropriate if shutdown is coordinated.</td></tr>
+<tr><td>Time-critical control task</td><td>Use a carefully analysed bounded wait and defined failure behavior.</td></tr>
+<tr><td>Best-effort data logging</td><td>Use a finite wait or non-blocking send with an explicit loss policy.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>14. Practical Program – Queue Receive with Timeout</h2>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+QueueHandle_t sensorQueue;
+
+void SensorReceiverTask(void *pvParameters)
+{
+    int sensorValue;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                sensorQueue,
+                &sensorValue,
+                pdMS_TO_TICKS(500)
+            ) == pdPASS)
+        {
+            /* Process received data */
+        }
+        else
+        {
+            /* Handle timeout */
+        }
+    }
+}
+
+int main(void)
+{
+    sensorQueue = xQueueCreate(
+        5,
+        sizeof(int)
+    );
+
+    if (sensorQueue == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(
+        SensorReceiverTask,
+        "Receiver",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        NULL
+    );
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Program Explanation</h3>
+<ol>
+<li>A queue is created for integer sensor values.</li>
+<li>A receiver task is created.</li>
+<li>The receiver waits for up to 500 milliseconds.</li>
+<li>If data arrives, the task processes it.</li>
+<li>If no data arrives before timeout, the task handles the failure case.</li>
+</ol>
+<p>
+This example demonstrates the receive-side
+timeout. A complete application also needs
+a producer task or another valid source
+of queue data.
+</p>
+</section>
+
+<section>
+<h2>15. Common Programming Mistakes</h2>
+<table>
+<tr><th>Mistake</th><th>Correction</th></tr>
+<tr><td>Using zero wait when data loss is unacceptable</td><td>Choose a suitable blocking or retry policy.</td></tr>
+<tr><td>Using indefinite waits without shutdown planning</td><td>Define a safe task and queue lifecycle.</td></tr>
+<tr><td>Assuming milliseconds equal ticks</td><td>Use pdMS_TO_TICKS().</td></tr>
+<tr><td>Ignoring timeout return values</td><td>Check pdPASS and handle failure.</td></tr>
+<tr><td>Choosing an excessive timeout</td><td>Analyse the application's response-time requirements.</td></tr>
+<tr><td>Assuming Ready means Running</td><td>Consider scheduler priority and preemption.</td></tr>
+<tr><td>Using queue APIs from an ISR with a blocking timeout</td><td>Use appropriate FromISR APIs, which do not block.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>16. Practical Experiment</h2>
+<p><strong>Objective:</strong> Demonstrate zero, finite and indefinite queue waits.</p>
+<h3>Procedure</h3>
+<ol>
+<li>Create a queue for integer values.</li>
+<li>Attempt to receive from an empty queue with zero wait.</li>
+<li>Repeat with a finite timeout.</li>
+<li>Use a separate sender task to insert an item.</li>
+<li>Test a receiver using portMAX_DELAY in a controlled experiment.</li>
+<li>Inspect the task state and operation return values.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+The zero-wait operation returns immediately
+when no data is available. The finite-wait
+operation waits for the configured interval
+or until data arrives. The indefinite-wait
+operation remains blocked until data becomes
+available, subject to configuration and
+correct queue lifecycle management.
+</p>
+</section>
+
+<section>
+<h2>17. LPC2129 and Keil Simulator Considerations</h2>
+<ul>
+<li>LPC2129 uses the ARM7TDMI-S processor.</li>
+<li>Verify the selected FreeRTOS ARM7 port and Keil compiler compatibility.</li>
+<li>Check configTICK_RATE_HZ and the tick interrupt implementation.</li>
+<li>Verify pdMS_TO_TICKS() in the selected kernel version.</li>
+<li>Use debugger or trace facilities to inspect task state and tick-related variables where supported.</li>
+<li>Do not assume simulated timing exactly represents physical hardware timing.</li>
+</ul>
+<div class="warning">
+The code examples are generic FreeRTOS examples.
+They are not verified LPC2129 Keil simulator
+projects.
+</div>
+</section>
+
+<section>
+<h2>18. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is blocking time?</li>
+<li>What is xTicksToWait?</li>
+<li>What happens when xTicksToWait is zero?</li>
+<li>What is finite blocking?</li>
+<li>What is indefinite blocking?</li>
+<li>What is configTICK_RATE_HZ?</li>
+<li>What is the purpose of pdMS_TO_TICKS()?</li>
+<li>What is a queue timeout?</li>
+<li>Differentiate blocking time and execution time.</li>
+<li>Why is timeout handling important in real-time systems?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain the three types of queue waiting behavior.</li>
+<li>Explain RTOS tick-based time measurement.</li>
+<li>Describe the operation of pdMS_TO_TICKS().</li>
+<li>Explain queue send and receive timeout behavior.</li>
+<li>Discuss the effect of blocking on task scheduling.</li>
+<li>Explain how to select a suitable queue timeout.</li>
+<li>Write a program demonstrating finite queue receive timeout.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Lesson Summary</h2>
+<ul>
+<li>Blocking time specifies how long a task waits for a queue operation.</li>
+<li>Zero wait provides non-blocking behavior.</li>
+<li>Finite wait provides a bounded waiting period.</li>
+<li>portMAX_DELAY requests indefinite waiting when supported.</li>
+<li>FreeRTOS uses RTOS ticks to measure blocking intervals.</li>
+<li>pdMS_TO_TICKS() converts milliseconds into ticks.</li>
+<li>Timeout occurs when the operation cannot complete within the allowed wait.</li>
+<li>A blocked task can allow other Ready tasks to execute.</li>
+<li>Becoming Ready does not guarantee immediate execution.</li>
+<li>Timeout selection must match system timing requirements.</li>
+</ul>
+</section>
+
+<section>
+<h2>20. Practice Assignment</h2>
+<ol>
+<li>Write the syntax of xQueueSend() and xQueueReceive().</li>
+<li>Explain the xTicksToWait parameter.</li>
+<li>Differentiate zero, finite and indefinite waits.</li>
+<li>Explain the role of configTICK_RATE_HZ.</li>
+<li>Convert 250 milliseconds into ticks for a 1000 Hz tick rate.</li>
+<li>Write a queue receive example with a 500 ms timeout.</li>
+<li>Explain how blocking affects task scheduling.</li>
+<li>Differentiate blocking time, execution time and response time.</li>
+<li>Explain why indefinite waits need a lifecycle strategy.</li>
+<li>Suggest a suitable timeout strategy for a periodic sensor-monitoring task.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L04_Queue_Full_and_Queue_Empty_Conditions.html">← Previous Lesson</a>
+<a href="index.html">Chapter 15 Index</a>
+<a href="L06_Queue_Peek_and_Reset.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
