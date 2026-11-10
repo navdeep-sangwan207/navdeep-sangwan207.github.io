@@ -1,1 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deferred Interrupt Processing | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+.formula{background:#f3f5f7;padding:15px;border-radius:7px;text-align:center;font-weight:bold;margin:15px 0;font-family:monospace;overflow-x:auto}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Deferred Interrupt Processing</h1>
+<p>Chapter 07 – Interrupt Management in RTOS | Lesson 07</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 07</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>An Interrupt Service Routine (ISR) executes in response to an interrupt request. Its primary responsibility is to acknowledge the interrupt, capture essential information, and perform the minimum processing required to safely handle the event.</p>
+
+<p>However, some interrupt-related operations may require significant processing time. Executing all such work inside an ISR can increase interrupt latency for other sources.</p>
+
+<p><strong>Deferred interrupt processing</strong> moves non-urgent processing from the ISR to a context that can execute later, such as an RTOS task.</p>
+
+<div class="info-box">
+<strong>Deferred processing:</strong> A technique in which an ISR performs immediate, time-critical work and schedules the remaining processing for execution outside interrupt context.
+</div>
+</section>
+
+<section>
+<h2>2. Why Is Deferred Processing Required?</h2>
+<p>Consider a UART receiver that receives a data packet.</p>
+
+<p>The ISR may need to:</p>
+<ul>
+<li>Read the received byte from the UART data register.</li>
+<li>Store the byte in a buffer.</li>
+<li>Clear or acknowledge the interrupt condition as required.</li>
+<li>Notify a processing task that new data is available.</li>
+</ul>
+
+<p>The remaining operations may include:</p>
+<ul>
+<li>Parsing the complete packet.</li>
+<li>Checking a checksum or CRC.</li>
+<li>Interpreting commands.</li>
+<li>Updating application data.</li>
+<li>Writing results to a log or display.</li>
+</ul>
+
+<p>These longer operations are better suited to task context rather than an ISR.</p>
+</section>
+
+<section>
+<h2>3. Top Half and Bottom Half</h2>
+<p>Operating systems often describe interrupt processing using two conceptual stages.</p>
+
+<h3>Top half</h3>
+<p>The top half is the immediate interrupt handler. It performs essential work that must happen promptly.</p>
+
+<h3>Bottom half</h3>
+<p>The bottom half performs deferred work after the immediate interrupt handling is complete or after the system schedules the relevant processing context.</p>
+
+<table>
+<tr><th>Feature</th><th>Top Half</th><th>Bottom Half</th></tr>
+<tr><td>Execution context</td><td>Interrupt context.</td><td>Deferred context, often task or kernel worker context.</td></tr>
+<tr><td>Execution time</td><td>Short and bounded.</td><td>Can perform more extensive processing.</td></tr>
+<tr><td>Blocking</td><td>Cannot block.</td><td>Task-based processing may block where permitted.</td></tr>
+<tr><td>Typical work</td><td>Read status, acknowledge event, capture data.</td><td>Parse data, process buffers, update application state.</td></tr>
+</table>
+
+<div class="info-box">
+Top half and bottom half are general operating-system concepts. Linux has specific deferred-work mechanisms such as softirqs, tasklets, and workqueues. FreeRTOS generally uses tasks and ISR-safe communication APIs instead of Linux bottom-half mechanisms.
+</div>
+</section>
+
+<section>
+<h2>4. Immediate vs Deferred Interrupt Processing</h2>
+
+<table>
+<tr><th>Parameter</th><th>Immediate Processing</th><th>Deferred Processing</th></tr>
+<tr><td>Processing location</td><td>Entire operation inside ISR.</td><td>Essential work in ISR, remaining work in another context.</td></tr>
+<tr><td>ISR duration</td><td>May become long.</td><td>Usually shorter.</td></tr>
+<tr><td>Interrupt latency</td><td>Can increase for other sources.</td><td>Can reduce interference from lengthy processing.</td></tr>
+<tr><td>Complexity</td><td>Simple for small operations.</td><td>Requires communication and synchronization.</td></tr>
+<tr><td>Suitable work</td><td>Short, urgent operations.</td><td>Longer processing and application logic.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5. Basic Deferred Processing Architecture</h2>
+
+<pre><code>       Hardware Event
+              |
+              v
+       Interrupt Request
+              |
+              v
+       +--------------+
+       |     ISR      |
+       +--------------+
+              |
+              | Capture essential data
+              | Acknowledge event
+              | Notify task
+              v
+       +--------------+
+       | RTOS Task    |
+       | (Deferred)   |
+       +--------------+
+              |
+              v
+       Process Data
+              |
+              v
+       Update Application</code></pre>
+
+<p>The ISR performs only the work necessary to safely handle the interrupt. The task performs the remaining application processing.</p>
+</section>
+
+<section>
+<h2>6. Steps in Deferred Interrupt Processing</h2>
+<ol>
+<li>A hardware peripheral generates an interrupt request.</li>
+<li>The processor accepts the interrupt according to its masking and priority rules.</li>
+<li>The ISR reads the required peripheral status or data.</li>
+<li>The ISR acknowledges or clears the interrupt condition as specified by the peripheral.</li>
+<li>The ISR stores essential information in a buffer or communicates it through an ISR-safe RTOS mechanism.</li>
+<li>The ISR notifies the appropriate task.</li>
+<li>The ISR returns.</li>
+<li>The scheduler runs the task when scheduling conditions permit.</li>
+<li>The task performs the deferred processing.</li>
+</ol>
+</section>
+
+<section>
+<h2>7. Deferred Processing Using a Semaphore</h2>
+<p>A binary semaphore can be used to notify a task that an interrupt-related event has occurred.</p>
+
+<p>The ISR gives the semaphore. A task waits for it and performs the deferred work.</p>
+
+<h3>Conceptual FreeRTOS example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xEventSemaphore;
+
+void Hardware_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Read or acknowledge the hardware event here. */
+
+    xSemaphoreGiveFromISR(
+        xEventSemaphore,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void ProcessingTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xEventSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Deferred processing */
+            Process_Hardware_Event();
+        }
+    }
+}</code></pre>
+
+<p>The semaphore must be created before the interrupt is enabled. The ISR must use the correct ISR-safe API and the yield mechanism required by the selected FreeRTOS port.</p>
+
+<div class="warning-box">
+The example is a FreeRTOS programming pattern, not a verified LPC2129/Keil project. The actual interrupt handler, vector setup, peripheral acknowledgement, and port-specific ISR yield macro must be supplied for the target platform.
+</div>
+</section>
+
+<section>
+<h2>8. Deferred Processing Using a Queue</h2>
+<p>A queue is useful when an ISR must transfer actual data or event information to a task.</p>
+
+<p>For example, a UART ISR can place received bytes into a queue. A communication task can retrieve the bytes and assemble complete messages.</p>
+
+<h3>Conceptual FreeRTOS example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+QueueHandle_t xUARTQueue;
+
+void UART_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    uint8_t receivedByte;
+
+    /* Replace with the actual UART data-register read. */
+    receivedByte = UART_ReadByte();
+
+    xQueueSendFromISR(
+        xUARTQueue,
+        &amp;receivedByte,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void UARTProcessingTask(void *pvParameters)
+{
+    uint8_t receivedByte;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                xUARTQueue,
+                &amp;receivedByte,
+                portMAX_DELAY) == pdTRUE)
+        {
+            Process_Received_Byte(receivedByte);
+        }
+    }
+}</code></pre>
+
+<p>In a real implementation, handle queue-full conditions and ensure the UART hardware is serviced quickly enough to avoid receive overruns.</p>
+</section>
+
+<section>
+<h2>9. Deferred Processing Using Task Notifications</h2>
+<p>FreeRTOS task notifications provide a lightweight way for an ISR to notify a specific task.</p>
+
+<p>They are particularly useful when the ISR only needs to signal an event rather than transfer a large amount of data.</p>
+
+<h3>Conceptual example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+TaskHandle_t xProcessingTaskHandle;
+
+void Timer_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Acknowledge the timer interrupt here. */
+
+    vTaskNotifyGiveFromISR(
+        xProcessingTaskHandle,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void ProcessingTask(void *pvParameters)
+{
+    for (;;)
+    {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        /* Perform deferred timer-related processing. */
+        Process_Timer_Event();
+    }
+}</code></pre>
+
+<p>Task notifications are efficient for signaling a particular task. They are not automatically a replacement for a queue when multiple data items must be transferred.</p>
+</section>
+
+<section>
+<h2>10. Choosing a Deferred Processing Mechanism</h2>
+
+<table>
+<tr><th>Mechanism</th><th>Best Use</th><th>Limitation</th></tr>
+<tr><td>Binary semaphore</td><td>Signal that an event occurred.</td><td>Multiple events may coalesce into one available semaphore state.</td></tr>
+<tr><td>Counting semaphore</td><td>Count repeated event occurrences.</td><td>Does not carry event payload data.</td></tr>
+<tr><td>Queue</td><td>Transfer data or structured messages.</td><td>Requires queue storage and handling of full conditions.</td></tr>
+<tr><td>Task notification</td><td>Signal a particular task efficiently.</td><td>Notification value and counting behavior depend on the selected notification action.</td></tr>
+<tr><td>Shared buffer</td><td>Transfer larger data blocks.</td><td>Requires correct ownership and synchronization.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>11. Deferred Interrupt Processing in Linux</h2>
+<p>Linux provides several mechanisms for handling work that should not be performed in the immediate hard interrupt handler.</p>
+
+<table>
+<tr><th>Mechanism</th><th>Purpose</th></tr>
+<tr><td>Softirq</td><td>Runs deferred work in softirq context.</td></tr>
+<tr><td>Tasklet</td><td>Historically provided a simpler deferred execution mechanism based on softirqs; deprecated in modern Linux in favor of alternatives.</td></tr>
+<tr><td>Workqueue</td><td>Schedules work in process context using kernel worker threads.</td></tr>
+<tr><td>Threaded IRQ</td><td>Uses a primary interrupt handler and a schedulable threaded handler for deferred work.</td></tr>
+</table>
+
+<p>Workqueues execute in process context, allowing operations that may sleep when the workqueue type and context permit it. Softirq handlers cannot sleep.</p>
+
+<div class="info-box">
+Linux kernel drivers and FreeRTOS applications use different APIs and execution models. Do not copy Linux softirq or workqueue APIs into FreeRTOS programs.
+</div>
+</section>
+
+<section>
+<h2>12. ISR Restrictions</h2>
+<p>Interrupt handlers operate under stricter rules than normal task functions.</p>
+
+<h3>Common restrictions</h3>
+<ul>
+<li>Do not call blocking functions from an ISR.</li>
+<li>Do not use task APIs that may wait indefinitely.</li>
+<li>Keep the handler short and bounded.</li>
+<li>Use documented ISR-safe RTOS APIs.</li>
+<li>Acknowledge the interrupt correctly.</li>
+<li>Avoid lengthy calculations and formatted output.</li>
+<li>Protect shared data against concurrent access.</li>
+<li>Check communication-buffer overflow conditions.</li>
+</ul>
+</section>
+
+<section>
+<h2>13. ISR-to-Task Data Handling</h2>
+<p>When an ISR transfers data to a task, the design must define how the data is stored and who owns it.</p>
+
+<p>For a small data item, a queue may copy the data into queue storage. For a large packet, a buffer or pointer-based design may be more efficient.</p>
+
+<h3>Important design considerations</h3>
+<ul>
+<li>Define buffer size and capacity.</li>
+<li>Specify whether the ISR or task owns each buffer.</li>
+<li>Prevent the task from reading partially updated data.</li>
+<li>Define what happens when the buffer becomes full.</li>
+<li>Ensure the ISR does not overwrite data still being processed.</li>
+<li>Consider memory barriers and atomicity where required by the processor and compiler.</li>
+</ul>
+</section>
+
+<section>
+<h2>14. Worked Numerical Problem 1 – ISR Execution Time Reduction</h2>
+<p>An interrupt handler originally performs the following operations:</p>
+
+<table>
+<tr><th>Operation</th><th>Execution Time</th></tr>
+<tr><td>Read peripheral status</td><td>2 µs</td></tr>
+<tr><td>Capture data</td><td>3 µs</td></tr>
+<tr><td>Parse packet</td><td>20 µs</td></tr>
+<tr><td>Update application state</td><td>10 µs</td></tr>
+</table>
+
+<h3>Original ISR duration</h3>
+<div class="formula">2 + 3 + 20 + 10 = 35 µs</div>
+
+<p>After deferring packet parsing and application updates, the ISR performs only the first two operations.</p>
+
+<h3>New ISR duration</h3>
+<div class="formula">2 + 3 = 5 µs</div>
+
+<h3>Reduction</h3>
+<div class="formula">35 − 5 = 30 µs</div>
+<div class="formula">Reduction = (30 / 35) × 100 = 85.71%</div>
+
+<p><strong>Answer:</strong> The ISR execution time is reduced by 30 µs, or approximately 85.71%, under the stated assumptions. The deferred task still has to perform the remaining 30 µs of processing.</p>
+</section>
+
+<section>
+<h2>15. Worked Numerical Problem 2 – Queue Capacity</h2>
+<p>A UART ISR receives 100 bytes per second. The processing task may be delayed for 200 ms. Assume the arrival rate remains constant and ignore additional burst traffic.</p>
+
+<h3>Solution</h3>
+<div class="formula">Required Capacity = Arrival Rate × Delay</div>
+<div class="formula">= 100 × 0.2 = 20 bytes</div>
+
+<p><strong>Answer:</strong> At least 20 bytes of buffering are required for the stated steady arrival rate and delay. A practical design should provide additional capacity for bursts and scheduling variation.</p>
+</section>
+
+<section>
+<h2>16. Worked Numerical Problem 3 – Deferred Task Response</h2>
+<p>An ISR takes 4 µs to capture data and notify a task. The task waits 6 µs before execution and requires 20 µs of CPU execution.</p>
+
+<div class="formula">Task Response = Waiting Time + Task Execution Time</div>
+<div class="formula">= 6 + 20 = 26 µs</div>
+
+<p><strong>Answer:</strong> The deferred task completes 26 µs after it becomes ready, assuming no additional blocking or interference. The initial ISR processing time is separate from this task response interval.</p>
+</section>
+
+<section>
+<h2>17. Common Design Mistakes</h2>
+<ul>
+<li>Performing complete packet processing inside the ISR.</li>
+<li>Calling blocking APIs from interrupt context.</li>
+<li>Ignoring queue-full or buffer-overflow conditions.</li>
+<li>Using task-context APIs from an ISR.</li>
+<li>Assuming a notification preserves every event automatically.</li>
+<li>Failing to acknowledge the peripheral interrupt.</li>
+<li>Allowing a deferred task to process shared data before it is ready.</li>
+<li>Assuming the task will execute immediately after notification.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Practical Activity – UART Deferred Processing Design</h2>
+<p>Design a UART communication architecture with one interrupt handler and one processing task.</p>
+
+<h3>Suggested design</h3>
+<ol>
+<li>Configure UART receive interrupt.</li>
+<li>Create a queue for received bytes.</li>
+<li>Create a UART processing task.</li>
+<li>Enable the UART interrupt only after the queue and task are ready.</li>
+<li>In the ISR, read the received byte and send it using an ISR-safe queue API.</li>
+<li>Check the return value to detect queue-full conditions.</li>
+<li>In the task, receive bytes and assemble a complete message.</li>
+<li>Validate the message and execute the requested application operation.</li>
+</ol>
+
+<h3>Expected architecture</h3>
+<pre><code>UART Hardware
+     |
+     v
+UART Interrupt
+     |
+     v
+Read Received Byte
+     |
+     v
+Send Byte to Queue
+     |
+     v
+UART Processing Task
+     |
+     v
+Assemble and Validate Packet
+     |
+     v
+Execute Application Command</code></pre>
+
+<p>For a simulator-only exercise, validate the software data flow using a suitable host test or simulated input. Do not assume the Keil simulator reproduces physical UART reception or hardware interrupt timing.</p>
+</section>
+
+<section>
+<h2>19. Review Questions</h2>
+<ol>
+<li>What is deferred interrupt processing?</li>
+<li>Why should ISR execution time be minimized?</li>
+<li>Differentiate top-half and bottom-half processing.</li>
+<li>What is the purpose of a deferred processing task?</li>
+<li>How can a binary semaphore notify a task from an ISR?</li>
+<li>When should a queue be used instead of a semaphore?</li>
+<li>What is the purpose of FreeRTOS task notifications?</li>
+<li>What are softirqs and workqueues in Linux?</li>
+<li>Why must ISR-safe APIs be used?</li>
+<li>What happens when a queue becomes full?</li>
+<li>Why is deferred task execution not guaranteed to be immediate?</li>
+<li>How does deferred processing affect interrupt latency?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Lesson Summary</h2>
+<ul>
+<li>Deferred interrupt processing moves non-urgent work out of the ISR.</li>
+<li>The ISR performs immediate hardware-related operations.</li>
+<li>A deferred task performs longer application processing.</li>
+<li>Top half and bottom half describe the two conceptual stages.</li>
+<li>FreeRTOS supports deferred processing through ISR-safe semaphores, queues, and task notifications.</li>
+<li>Linux provides softirqs, workqueues, and threaded IRQs.</li>
+<li>Correct data ownership and buffer management are essential.</li>
+<li>Deferred processing reduces lengthy ISR execution but does not eliminate task scheduling delay.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L06_Interrupt_Nesting_and_Masking.html">← Previous Lesson</a>
+<a href="index.html">Chapter 07</a>
+<a href="L08_Top_Half_and_Bottom_Half_Concepts.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
