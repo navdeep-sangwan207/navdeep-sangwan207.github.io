@@ -1,1 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interrupt Latency and Response Time | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+.formula{background:#f3f5f7;padding:15px;border-radius:7px;text-align:center;font-weight:bold;margin:15px 0;font-family:monospace;overflow-x:auto}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Interrupt Latency and Response Time</h1>
+<p>Chapter 07 – Interrupt Management in RTOS | Lesson 04</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 07</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>Interrupt latency and interrupt response time are important performance parameters in real-time embedded systems.</p>
+
+<p>When a hardware event occurs, the processor may not begin executing its ISR immediately. It may first need to complete an instruction, wait for an interrupt mask to be cleared, resolve interrupt priority, and perform exception-entry operations.</p>
+
+<p>These delays influence how quickly the system can react to external events.</p>
+
+<div class="info-box">
+<strong>Interrupt latency</strong> is the elapsed time from the defined interrupt request event to the start of execution of the corresponding ISR.
+</div>
+
+<div class="info-box">
+<strong>Interrupt response time</strong> is the elapsed time from the defined interrupt request event to a specified response point. The response point must be clearly defined, such as ISR entry, completion of a critical ISR action, or completion of the entire handler.
+</div>
+</section>
+
+<section>
+<h2>2. Interrupt Latency</h2>
+<p>Interrupt latency measures how long the processor takes to begin executing the interrupt handler after an interrupt request becomes eligible for service.</p>
+
+<div class="formula">Interrupt Latency = ISR Start Time − Interrupt Request Time</div>
+
+<h3>Example</h3>
+<p>A timer interrupt request becomes active at 100 µs. The first instruction of its ISR executes at 106 µs.</p>
+
+<div class="formula">Latency = 106 − 100 = 6 µs</div>
+
+<p><strong>Answer:</strong> Interrupt latency is 6 microseconds.</p>
+</section>
+
+<section>
+<h2>3. Components of Interrupt Latency</h2>
+<p>Interrupt latency may contain several sources of delay.</p>
+
+<table>
+<tr><th>Component</th><th>Description</th></tr>
+<tr><td>Current instruction completion</td><td>The processor may need to complete or reach an architecturally valid point before accepting the interrupt.</td></tr>
+<tr><td>Interrupt masking</td><td>The interrupt may remain pending while the relevant interrupt class is masked.</td></tr>
+<tr><td>Higher-priority interrupt interference</td><td>Another interrupt may be serviced first.</td></tr>
+<tr><td>Interrupt arbitration</td><td>The controller may need to select among pending requests.</td></tr>
+<tr><td>Exception-entry overhead</td><td>Processor state handling and exception entry consume time.</td></tr>
+<tr><td>Vector dispatch</td><td>Control must reach the appropriate handler.</td></tr>
+<tr><td>Memory and bus delays</td><td>Instruction fetches and data accesses may introduce additional delay.</td></tr>
+</table>
+
+<p>A simplified conceptual model is:</p>
+
+<div class="formula">L = I + M + A + E + V</div>
+
+<p>Where:</p>
+<ul>
+<li>L = interrupt latency.</li>
+<li>I = instruction-completion delay.</li>
+<li>M = masking delay.</li>
+<li>A = arbitration or priority-related delay.</li>
+<li>E = exception-entry overhead.</li>
+<li>V = vector dispatch delay.</li>
+</ul>
+
+<div class="warning-box">
+This is a conceptual decomposition. The terms must be defined so that no delay is counted twice. Actual processor timing may combine or overlap some operations.
+</div>
+</section>
+
+<section>
+<h2>4. Interrupt Masking and Its Effect</h2>
+<p>Interrupt masking temporarily prevents selected interrupts from being accepted by the processor.</p>
+
+<p>For example, a program may briefly mask interrupts while updating shared data.</p>
+
+<pre><code>Disable_Interrupts();
+
+Update_Shared_Data();
+
+Enable_Interrupts();</code></pre>
+
+<p>If an interrupt request occurs while it is masked, the request may remain pending until the processor permits its acceptance, provided the interrupt source and controller retain the request.</p>
+
+<h3>Example</h3>
+<p>A maskable interrupt occurs at 100 µs. The relevant interrupt remains masked until 112 µs. After unmasking, the processor requires another 2 µs to enter the ISR.</p>
+
+<div class="formula">Latency = (112 − 100) + 2</div>
+<div class="formula">Latency = 14 µs</div>
+
+<p><strong>Answer:</strong> Interrupt latency is 14 µs.</p>
+
+<div class="info-box">
+Keep critical sections short. Excessive interrupt masking can increase latency and cause missed timing requirements.
+</div>
+</section>
+
+<section>
+<h2>5. Interrupt Priority and Latency</h2>
+<p>When multiple interrupt requests are pending, the processor or interrupt controller uses priority and masking rules to determine which interrupt is serviced.</p>
+
+<p>A lower-priority interrupt may be delayed by a higher-priority interrupt.</p>
+
+<h3>Example</h3>
+<p>Consider two interrupt sources:</p>
+
+<table>
+<tr><th>Interrupt</th><th>Priority</th><th>Execution Time</th></tr>
+<tr><td>IRQ-A</td><td>Higher</td><td>5 µs</td></tr>
+<tr><td>IRQ-B</td><td>Lower</td><td>4 µs</td></tr>
+</table>
+
+<p>Suppose IRQ-A is already being serviced when IRQ-B becomes pending. If IRQ-B cannot preempt IRQ-A, it must wait until the processor can service it.</p>
+
+<p>Ignoring other overheads, the delay caused by IRQ-A is approximately 5 µs.</p>
+
+<p>IRQ-B's total latency also includes its own exception-entry and dispatch delays.</p>
+</section>
+
+<section>
+<h2>6. ISR Execution Time vs Interrupt Latency</h2>
+<p>These two parameters describe different parts of interrupt handling.</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th><th>Example</th></tr>
+<tr><td>Interrupt latency</td><td>Request to ISR start.</td><td>6 µs</td></tr>
+<tr><td>ISR execution time</td><td>ISR start to ISR completion.</td><td>10 µs</td></tr>
+<tr><td>Request-to-handler completion</td><td>Request to completion of the ISR.</td><td>16 µs</td></tr>
+</table>
+
+<div class="formula">Request-to-Completion = Latency + ISR Execution Time</div>
+
+<p>For the example:</p>
+<div class="formula">6 + 10 = 16 µs</div>
+
+<p>The processor begins the ISR after 6 µs and completes it 10 µs later.</p>
+</section>
+
+<section>
+<h2>7. Interrupt Response Time</h2>
+<p>Interrupt response time must be defined according to the required system action.</p>
+
+<p>For example, an emergency shutdown interrupt may require the output to be placed in a safe state. In that application, ISR entry alone may not be the required response point.</p>
+
+<div class="formula">Response Time = Required Response Completion − Interrupt Request Time</div>
+
+<h3>Example</h3>
+<p>A fault signal occurs at 50 µs. The processor starts the ISR at 55 µs. The ISR sets the safe-state output at 59 µs.</p>
+
+<div class="formula">Response Time = 59 − 50 = 9 µs</div>
+
+<p><strong>Answer:</strong> The defined fault-response time is 9 µs.</p>
+</section>
+
+<section>
+<h2>8. Worked Numerical Problem 1 – Basic Latency</h2>
+<p>An interrupt request occurs at 200 µs. The ISR begins at 207 µs and completes at 215 µs.</p>
+
+<h3>Step 1: Calculate latency</h3>
+<div class="formula">L = 207 − 200 = 7 µs</div>
+
+<h3>Step 2: Calculate ISR execution time</h3>
+<div class="formula">C = 215 − 207 = 8 µs</div>
+
+<h3>Step 3: Calculate request-to-completion time</h3>
+<div class="formula">R = 215 − 200 = 15 µs</div>
+
+<p><strong>Answer:</strong> Latency = 7 µs, ISR execution time = 8 µs, and request-to-completion time = 15 µs.</p>
+</section>
+
+<section>
+<h2>9. Worked Numerical Problem 2 – Masking Delay</h2>
+<p>An interrupt occurs at 100 µs. The processor keeps the interrupt masked until 108 µs. ISR entry takes another 3 µs.</p>
+
+<h3>Solution</h3>
+<div class="formula">Masking Delay = 108 − 100 = 8 µs</div>
+<div class="formula">Interrupt Latency = 8 + 3 = 11 µs</div>
+
+<p><strong>Answer:</strong> Interrupt latency is 11 µs.</p>
+</section>
+
+<section>
+<h2>10. Worked Numerical Problem 3 – Higher-Priority Interference</h2>
+<p>A lower-priority interrupt becomes pending while a higher-priority ISR is executing.</p>
+
+<table>
+<tr><th>Parameter</th><th>Value</th></tr>
+<tr><td>Higher-priority ISR remaining execution time</td><td>6 µs</td></tr>
+<tr><td>Lower-priority interrupt entry overhead after waiting</td><td>2 µs</td></tr>
+<tr><td>Additional masking delay</td><td>1 µs</td></tr>
+</table>
+
+<h3>Solution</h3>
+<div class="formula">Latency = 6 + 2 + 1</div>
+<div class="formula">Latency = 9 µs</div>
+
+<p><strong>Answer:</strong> Under the stated simplified assumptions, the lower-priority interrupt latency is 9 µs.</p>
+</section>
+
+<section>
+<h2>11. Worked Numerical Problem 4 – Response Deadline</h2>
+<p>A fault interrupt must cause a safe-state action within 20 µs.</p>
+
+<table>
+<tr><th>Parameter</th><th>Time</th></tr>
+<tr><td>Interrupt latency</td><td>5 µs</td></tr>
+<tr><td>ISR execution until safe-state action</td><td>8 µs</td></tr>
+</table>
+
+<h3>Solution</h3>
+<div class="formula">Response Time = 5 + 8 = 13 µs</div>
+
+<p>Deadline check:</p>
+<div class="formula">13 µs ≤ 20 µs</div>
+
+<p><strong>Answer:</strong> The required response deadline is met with a margin of 7 µs under the stated timing assumptions.</p>
+</section>
+
+<section>
+<h2>12. Factors Affecting Interrupt Response</h2>
+<ul>
+<li>Processor clock frequency.</li>
+<li>Instruction execution characteristics.</li>
+<li>Interrupt masking duration.</li>
+<li>Priority assignment.</li>
+<li>Higher-priority interrupt load.</li>
+<li>ISR execution time.</li>
+<li>Memory wait states and bus contention.</li>
+<li>Interrupt-controller configuration.</li>
+<li>Critical-section implementation.</li>
+<li>Compiler and exception-handler implementation.</li>
+</ul>
+</section>
+
+<section>
+<h2>13. Reducing Interrupt Latency</h2>
+<ol>
+<li>Keep interrupt-disabled critical sections short.</li>
+<li>Assign interrupt priorities according to timing requirements.</li>
+<li>Keep high-priority ISRs short.</li>
+<li>Avoid unnecessary interrupt nesting and masking.</li>
+<li>Use efficient interrupt-vector configuration.</li>
+<li>Reduce avoidable memory and peripheral access delays.</li>
+<li>Use appropriate hardware peripherals for time-critical operations.</li>
+<li>Measure latency under representative worst-case interrupt load.</li>
+<li>Analyze higher-priority interference.</li>
+</ol>
+
+<div class="warning-box">
+Do not reduce latency by blindly assigning the highest priority to every interrupt. Poor priority design can create starvation and excessive interference.
+</div>
+</section>
+
+<section>
+<h2>14. Interrupt Latency in RTOS</h2>
+<p>An RTOS application must distinguish between interrupt response and task response.</p>
+
+<p>Consider a sensor interrupt that wakes a processing task.</p>
+
+<ol>
+<li>The sensor generates an interrupt.</li>
+<li>The processor accepts the interrupt.</li>
+<li>The ISR reads or acknowledges the sensor event.</li>
+<li>The ISR notifies a task using an ISR-safe mechanism.</li>
+<li>The task becomes ready.</li>
+<li>The scheduler selects the task when scheduling conditions permit.</li>
+<li>The task begins executing and processes the sensor data.</li>
+</ol>
+
+<p>In this case, the task response includes additional scheduling delay after interrupt handling.</p>
+
+<div class="formula">Event-to-Task Start = Interrupt Latency + ISR Work + Scheduling Delay</div>
+
+<p>The equation is a simplified model. Any additional queueing, blocking, or processing stages must also be included when calculating the full event-to-action response.</p>
+</section>
+
+<section>
+<h2>15. FreeRTOS Example – Interrupt-to-Task Notification</h2>
+<p>The following conceptual example illustrates a task notified by an interrupt.</p>
+
+<pre><code>TaskHandle_t sensorTaskHandle;
+
+void Sensor_ISR(void)
+{
+    BaseType_t higherPriorityTaskWoken = pdFALSE;
+
+    Clear_Sensor_Interrupt();
+
+    vTaskNotifyGiveFromISR(
+        sensorTaskHandle,
+        &amp;higherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(higherPriorityTaskWoken);
+}
+
+void Sensor_Task(void *pvParameters)
+{
+    while(1)
+    {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        Process_Sensor_Data();
+    }
+}</code></pre>
+
+<p>Explanation:</p>
+<ul>
+<li>The ISR acknowledges the sensor interrupt.</li>
+<li>The ISR notifies the sensor task.</li>
+<li>The task waits until notification is received.</li>
+<li>The task performs the longer processing operation.</li>
+<li>The ISR requests a yield if the port indicates that a higher-priority task was made ready.</li>
+</ul>
+
+<div class="warning-box">
+This example follows the common FreeRTOS task-notification pattern. The task handle must be initialized correctly, and the ISR priority and yield mechanism must follow the actual port's requirements. It is not evidence of a working FreeRTOS port for LPC2129.
+</div>
+</section>
+
+<section>
+<h2>16. Measuring Interrupt Latency</h2>
+<p>Interrupt latency can be measured using hardware timing facilities or carefully designed instrumentation.</p>
+
+<h3>Method 1: Hardware timer</h3>
+<ol>
+<li>Record a timestamp when the interrupt request is generated or externally observed.</li>
+<li>Capture another timestamp at ISR entry.</li>
+<li>Calculate the difference.</li>
+</ol>
+
+<h3>Method 2: GPIO instrumentation</h3>
+<ol>
+<li>Generate an external interrupt signal.</li>
+<li>Set a GPIO pin as the first appropriate ISR action.</li>
+<li>Measure the time difference between the external event and GPIO transition using a logic analyzer or oscilloscope.</li>
+</ol>
+
+<h3>Method 3: Trace and debugger</h3>
+<p>Use supported trace facilities or debugger timestamps to examine event and ISR execution timing.</p>
+
+<div class="info-box">
+For reliable measurement, instrumentation overhead and timestamp resolution must be considered. The measured maximum is not automatically a proven worst-case latency bound.
+</div>
+</section>
+
+<section>
+<h2>17. LPC2129 Timing Considerations</h2>
+<p>The LPC2129 uses an ARM7TDMI-S processor.</p>
+
+<p>Example clock configuration:</p>
+
+<table>
+<tr><th>Clock</th><th>Frequency</th></tr>
+<tr><td>FOSC</td><td>12 MHz</td></tr>
+<tr><td>CCLK</td><td>60 MHz</td></tr>
+<tr><td>PCLK</td><td>15 MHz</td></tr>
+</table>
+
+<p>For a peripheral timer configured with:</p>
+<div class="formula">PR = 14999</div>
+
+<p>The timer counter increments every:</p>
+<div class="formula">T = (PR + 1) / PCLK</div>
+<div class="formula">T = 15000 / 15,000,000 = 1 ms</div>
+
+<p>This timer configuration provides a 1 ms counter increment. It is useful for coarse timing but cannot directly resolve microsecond-scale interrupt latency.</p>
+
+<div class="warning-box">
+ARM7TDMI-S does not provide the Cortex-M DWT cycle-counter facility. Keil simulator timestamps and timer models may not reproduce physical interrupt latency. Do not claim hardware-level timing accuracy from an unsupported simulation measurement.
+</div>
+</section>
+
+<section>
+<h2>18. Practical Activity – Interrupt Timing Analysis</h2>
+<p>Use the following hypothetical measurements to practice timing analysis:</p>
+
+<table>
+<tr><th>Parameter</th><th>Measured Time</th></tr>
+<tr><td>Interrupt request</td><td>100 µs</td></tr>
+<tr><td>ISR entry</td><td>106 µs</td></tr>
+<tr><td>Critical ISR action</td><td>109 µs</td></tr>
+<tr><td>ISR completion</td><td>114 µs</td></tr>
+<tr><td>Task start after notification</td><td>120 µs</td></tr>
+</table>
+
+<h3>Calculate the following</h3>
+<ol>
+<li>Interrupt latency.</li>
+<li>Time from ISR entry to critical action.</li>
+<li>Total ISR execution time.</li>
+<li>Request-to-critical-action response time.</li>
+<li>Request-to-task-start time.</li>
+</ol>
+
+<h3>Answers</h3>
+<ul>
+<li>Interrupt latency = 106 − 100 = 6 µs.</li>
+<li>ISR entry to critical action = 109 − 106 = 3 µs.</li>
+<li>ISR execution time = 114 − 106 = 8 µs.</li>
+<li>Request-to-critical-action response = 109 − 100 = 9 µs.</li>
+<li>Request-to-task-start time = 120 − 100 = 20 µs.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Review Questions</h2>
+<ol>
+<li>Define interrupt latency.</li>
+<li>Define interrupt response time.</li>
+<li>Differentiate interrupt latency and ISR execution time.</li>
+<li>List five factors affecting interrupt latency.</li>
+<li>How does interrupt masking affect latency?</li>
+<li>How can a higher-priority ISR delay a lower-priority interrupt?</li>
+<li>What is the difference between ISR completion and task response?</li>
+<li>How can interrupt latency be measured using GPIO instrumentation?</li>
+<li>Why must measurement overhead be considered?</li>
+<li>Why is a 1 ms timer tick insufficient for precise microsecond latency measurement?</li>
+<li>Does a measured maximum prove worst-case latency?</li>
+<li>How can an RTOS task be notified from an ISR?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Lesson Summary</h2>
+<ul>
+<li>Interrupt latency measures interrupt request to ISR start.</li>
+<li>Interrupt response time depends on the defined response point.</li>
+<li>Interrupt masking, priority, exception entry, and bus delays influence latency.</li>
+<li>ISR execution time is different from interrupt latency.</li>
+<li>Interrupt response and task response are different timing measurements.</li>
+<li>Short critical sections and efficient ISRs help reduce latency.</li>
+<li>RTOS applications can notify tasks from ISRs using supported ISR-safe APIs.</li>
+<li>Worst-case timing requires analysis beyond a single observed measurement.</li>
+<li>LPC2129 timing must be evaluated with ARM7-compatible methods and realistic hardware validation.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L03_Interrupt_Service_Routines_ISR.html">← Previous Lesson</a>
+<a href="index.html">Chapter 07</a>
+<a href="L05_Nested_Interrupts_and_Priority.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
