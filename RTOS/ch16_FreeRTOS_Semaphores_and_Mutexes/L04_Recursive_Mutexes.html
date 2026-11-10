@@ -1,1 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Recursive Mutexes</title>
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fc;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 15px;
+}
+header h1 {
+    font-size: 29px;
+    margin-bottom: 8px;
+}
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 13px;
+}
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+section {
+    background: white;
+    padding: 23px;
+    margin-bottom: 22px;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    font-size: 22px;
+    border-bottom: 2px solid #d8e6fa;
+    padding-bottom: 8px;
+    margin-bottom: 15px;
+}
+h3 {
+    color: #1765b1;
+    margin: 17px 0 9px;
+    font-size: 18px;
+}
+p {
+    margin: 9px 0;
+}
+ul, ol {
+    padding-left: 25px;
+    margin: 10px 0;
+}
+li {
+    margin: 6px 0;
+}
+pre {
+    background: #172338;
+    color: #e6edf7;
+    padding: 17px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 13px 0;
+    font-size: 13px;
+    line-height: 1.6;
+}
+code {
+    font-family: Consolas, monospace;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+    display: block;
+    overflow-x: auto;
+}
+th, td {
+    border: 1px solid #d5deea;
+    padding: 11px;
+    text-align: left;
+    min-width: 135px;
+}
+th {
+    background: #eaf2ff;
+    color: #174ea6;
+}
+.note {
+    background: #eaf3ff;
+    border-left: 4px solid #2878d7;
+    padding: 13px;
+    margin: 14px 0;
+    border-radius: 5px;
+}
+.warning {
+    background: #fff5e6;
+    border-left: 4px solid #e69a24;
+    padding: 13px;
+    margin: 14px 0;
+    border-radius: 5px;
+}
+.example {
+    background: #effaf2;
+    border-left: 4px solid #269653;
+    padding: 13px;
+    margin: 14px 0;
+    border-radius: 5px;
+}
+.objectives {
+    background: #eef5ff;
+    padding: 17px 22px;
+    border-radius: 8px;
+}
+.navigation {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.navigation a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media(max-width: 600px) {
+    header h1 {
+        font-size: 23px;
+    }
+    nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    section {
+        padding: 17px;
+    }
+}
+</style>
+</head>
+<body>
 
+<header>
+    <h1>Chapter 16: FreeRTOS Semaphores and Mutexes</h1>
+    <p>Lesson 04 – Recursive Mutexes</p>
+</header>
+
+<nav>
+    <a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+    <h2>Lesson Overview</h2>
+    <p>
+        A recursive mutex is a special type of mutex that allows
+        the same task to take the same mutex multiple times without
+        blocking itself.
+    </p>
+    <p>
+        The task must release the recursive mutex the same number
+        of times it successfully acquired it. The mutex becomes
+        available to other tasks only after the recursive acquisition
+        count returns to zero.
+    </p>
+
+    <div class="objectives">
+        <h3>Learning Objectives</h3>
+        <ul>
+            <li>Understand recursive mutexes.</li>
+            <li>Differentiate normal and recursive mutexes.</li>
+            <li>Learn recursive mutex creation APIs.</li>
+            <li>Understand recursive take and give operations.</li>
+            <li>Understand recursive acquisition counting.</li>
+            <li>Apply recursive mutexes to nested function calls.</li>
+            <li>Identify common programming errors.</li>
+        </ul>
+    </div>
+</section>
+
+<section>
+    <h2>1. What Is a Recursive Mutex?</h2>
+    <p>
+        A recursive mutex is a mutex that permits its current owner
+        to acquire it repeatedly.
+    </p>
+    <p>
+        In a normal mutex, a task that already owns the mutex must
+        not attempt to take it again. Doing so can cause the task
+        to block waiting for itself.
+    </p>
+    <p>
+        A recursive mutex supports this situation by maintaining
+        a recursion count for its owner.
+    </p>
+
+    <h3>Example</h3>
+    <pre><code>Task A takes recursive mutex
+Task A takes the same recursive mutex again
+Task A takes it a third time
+
+Task A gives it once
+Task A gives it a second time
+Task A gives it a third time
+
+Mutex becomes available</code></pre>
+
+    <div class="note">
+        A recursive mutex does not allow different tasks to own
+        the mutex simultaneously. Only the current owner can
+        recursively acquire it.
+    </div>
+</section>
+
+<section>
+    <h2>2. Why Are Recursive Mutexes Required?</h2>
+    <p>
+        Recursive mutexes can be useful when a function that protects
+        a resource calls another function that also attempts to
+        protect the same resource.
+    </p>
+
+    <h3>Nested Function Example</h3>
+    <pre><code>Function A()
+{
+    Take Mutex
+
+    Function B()
+
+    Give Mutex
+}
+
+Function B()
+{
+    Take Mutex
+
+    /* Access shared resource */
+
+    Give Mutex
+}</code></pre>
+
+    <p>
+        If both functions use the same normal mutex, Function B
+        attempts to take a mutex already owned by the calling task.
+        This can cause self-deadlock.
+    </p>
+
+    <p>
+        With a recursive mutex, the same task can acquire the mutex
+        again. Each successful acquisition must still have a
+        corresponding release.
+    </p>
+</section>
+
+<section>
+    <h2>3. Normal Mutex vs Recursive Mutex</h2>
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Normal Mutex</th>
+            <th>Recursive Mutex</th>
+        </tr>
+        <tr>
+            <td>Multiple takes by owner</td>
+            <td>Not supported</td>
+            <td>Supported</td>
+        </tr>
+        <tr>
+            <td>Ownership</td>
+            <td>Yes</td>
+            <td>Yes</td>
+        </tr>
+        <tr>
+            <td>Acquisition count</td>
+            <td>No recursive count</td>
+            <td>Maintains recursion count</td>
+        </tr>
+        <tr>
+            <td>Release requirement</td>
+            <td>Release once after taking</td>
+            <td>Release once for every successful recursive take</td>
+        </tr>
+        <tr>
+            <td>Priority inheritance</td>
+            <td>Supported by standard FreeRTOS mutexes</td>
+            <td>Supported by standard FreeRTOS recursive mutexes</td>
+        </tr>
+        <tr>
+            <td>Typical use</td>
+            <td>Ordinary shared-resource protection</td>
+            <td>Nested calls using the same protected resource</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>4. Creating a Recursive Mutex</h2>
+    <p>
+        FreeRTOS provides <code>xSemaphoreCreateRecursiveMutex()</code>
+        to create a recursive mutex.
+    </p>
+
+    <pre><code>SemaphoreHandle_t xSemaphoreCreateRecursiveMutex(void);</code></pre>
+
+    <h3>Return Value</h3>
+    <ul>
+        <li>Returns a valid mutex handle if creation succeeds.</li>
+        <li>Returns <code>NULL</code> if creation fails, for example,
+            because memory allocation fails.</li>
+    </ul>
+
+    <h3>Example</h3>
+    <pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xRecursiveMutex;
+
+int main(void)
+{
+    xRecursiveMutex = xSemaphoreCreateRecursiveMutex();
+
+    if (xRecursiveMutex == NULL)
+    {
+        /* Creation failed */
+        for (;;);
+    }
+
+    /* Create application tasks here. */
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+    <div class="note">
+        This is a dynamic-allocation API. The selected FreeRTOS
+        configuration must support dynamic allocation and have
+        sufficient heap memory.
+    </div>
+</section>
+
+<section>
+    <h2>5. Taking a Recursive Mutex</h2>
+    <p>
+        A task uses <code>xSemaphoreTakeRecursive()</code> to
+        acquire a recursive mutex.
+    </p>
+
+    <pre><code>BaseType_t xSemaphoreTakeRecursive(
+    SemaphoreHandle_t xMutex,
+    TickType_t xTicksToWait
+);</code></pre>
+
+    <h3>Operation</h3>
+    <ul>
+        <li>If the mutex is available, the task becomes its owner.</li>
+        <li>If the calling task already owns the mutex, the recursive
+            acquisition count increases.</li>
+        <li>If another task owns the mutex, the calling task waits
+            according to the specified timeout.</li>
+        <li>On success, the function returns <code>pdTRUE</code>.</li>
+        <li>On timeout or failure, it returns <code>pdFALSE</code>.</li>
+    </ul>
+
+    <h3>Example</h3>
+    <pre><code>if (xSemaphoreTakeRecursive(
+        xRecursiveMutex,
+        portMAX_DELAY) == pdTRUE)
+{
+    /* Recursive mutex acquired. */
+
+    /* Perform protected operation. */
+}</code></pre>
+</section>
+
+<section>
+    <h2>6. Giving a Recursive Mutex</h2>
+    <p>
+        A task releases a recursive mutex using
+        <code>xSemaphoreGiveRecursive()</code>.
+    </p>
+
+    <pre><code>BaseType_t xSemaphoreGiveRecursive(
+    SemaphoreHandle_t xMutex
+);</code></pre>
+
+    <h3>Operation</h3>
+    <ul>
+        <li>The owning task calls the give function.</li>
+        <li>The recursion count decreases by one.</li>
+        <li>If the count remains above zero, the task still owns
+            the mutex.</li>
+        <li>When the count reaches zero, the mutex is released.</li>
+        <li>A waiting task can then obtain ownership.</li>
+    </ul>
+
+    <div class="warning">
+        Every successful call to <code>xSemaphoreTakeRecursive()</code>
+        must have a matching call to
+        <code>xSemaphoreGiveRecursive()</code>.
+        Otherwise, the mutex may remain unavailable to other tasks.
+    </div>
+</section>
+
+<section>
+    <h2>7. Understanding the Recursion Count</h2>
+    <p>
+        Consider a recursive mutex with the following sequence.
+    </p>
+
+    <table>
+        <tr>
+            <th>Operation</th>
+            <th>Recursion Count</th>
+            <th>Ownership</th>
+        </tr>
+        <tr>
+            <td>Initial state</td>
+            <td>0</td>
+            <td>Available</td>
+        </tr>
+        <tr>
+            <td>Task A takes mutex</td>
+            <td>1</td>
+            <td>Task A</td>
+        </tr>
+        <tr>
+            <td>Task A takes again</td>
+            <td>2</td>
+            <td>Task A</td>
+        </tr>
+        <tr>
+            <td>Task A takes again</td>
+            <td>3</td>
+            <td>Task A</td>
+        </tr>
+        <tr>
+            <td>Task A gives once</td>
+            <td>2</td>
+            <td>Task A</td>
+        </tr>
+        <tr>
+            <td>Task A gives again</td>
+            <td>1</td>
+            <td>Task A</td>
+        </tr>
+        <tr>
+            <td>Task A gives third time</td>
+            <td>0</td>
+            <td>Available</td>
+        </tr>
+    </table>
+
+    <p>
+        The mutex is not released to another task until all
+        recursive acquisitions have been matched by releases.
+    </p>
+</section>
+
+<section>
+    <h2>8. Practical Example: Nested Function Calls</h2>
+
+    <h3>Objective</h3>
+    <p>
+        To use a recursive mutex when one protected function calls
+        another function that also accesses the same resource.
+    </p>
+
+    <h3>Program</h3>
+    <pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xRecursiveMutex;
+
+void FunctionB(void)
+{
+    if (xSemaphoreTakeRecursive(
+            xRecursiveMutex,
+            portMAX_DELAY) == pdTRUE)
+    {
+        /* Protected operation in Function B */
+
+        xSemaphoreGiveRecursive(xRecursiveMutex);
+    }
+}
+
+void FunctionA(void)
+{
+    if (xSemaphoreTakeRecursive(
+            xRecursiveMutex,
+            portMAX_DELAY) == pdTRUE)
+    {
+        /* First protected operation */
+
+        FunctionB();
+
+        /* Continue protected operation */
+
+        xSemaphoreGiveRecursive(xRecursiveMutex);
+    }
+}
+
+void ApplicationTask(void *pvParameters)
+{
+    for (;;)
+    {
+        FunctionA();
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+int main(void)
+{
+    xRecursiveMutex = xSemaphoreCreateRecursiveMutex();
+
+    if (xRecursiveMutex == NULL)
+    {
+        for (;;);
+    }
+
+    xTaskCreate(ApplicationTask,
+                "Application",
+                256,
+                NULL,
+                2,
+                NULL);
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+    <h3>Program Explanation</h3>
+    <ol>
+        <li>The application creates a recursive mutex.</li>
+        <li>ApplicationTask calls FunctionA.</li>
+        <li>FunctionA takes the recursive mutex.</li>
+        <li>FunctionA calls FunctionB.</li>
+        <li>FunctionB takes the same mutex again.</li>
+        <li>FunctionB completes its operation and gives the mutex.</li>
+        <li>FunctionA continues and gives the mutex.</li>
+        <li>The recursion count returns to zero.</li>
+    </ol>
+
+    <h3>Expected Result</h3>
+    <p>
+        FunctionA and FunctionB can use the same recursive mutex
+        in nested calls without the task blocking itself.
+        The mutex becomes available after both give operations
+        have completed successfully.
+    </p>
+</section>
+
+<section>
+    <h2>9. Recursive Mutexes and Priority Inheritance</h2>
+    <p>
+        Standard FreeRTOS recursive mutexes support priority
+        inheritance, similarly to normal FreeRTOS mutexes.
+    </p>
+
+    <p>
+        If a high-priority task blocks while waiting for a recursive
+        mutex owned by a lower-priority task, the owner may temporarily
+        inherit the higher priority.
+    </p>
+
+    <h3>Important Considerations</h3>
+    <ul>
+        <li>Priority inheritance helps reduce certain priority-inversion
+            delays.</li>
+        <li>It does not remove the need for correct locking.</li>
+        <li>It does not prevent deadlocks caused by incorrect lock ordering.</li>
+        <li>Recursive acquisition does not allow another task to share
+            ownership of the same mutex.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>10. Recursive Mutex vs Normal Mutex</h2>
+    <table>
+        <tr>
+            <th>Aspect</th>
+            <th>Normal Mutex</th>
+            <th>Recursive Mutex</th>
+        </tr>
+        <tr>
+            <td>Creation API</td>
+            <td><code>xSemaphoreCreateMutex()</code></td>
+            <td><code>xSemaphoreCreateRecursiveMutex()</code></td>
+        </tr>
+        <tr>
+            <td>Take API</td>
+            <td><code>xSemaphoreTake()</code></td>
+            <td><code>xSemaphoreTakeRecursive()</code></td>
+        </tr>
+        <tr>
+            <td>Give API</td>
+            <td><code>xSemaphoreGive()</code></td>
+            <td><code>xSemaphoreGiveRecursive()</code></td>
+        </tr>
+        <tr>
+            <td>Same-task repeated acquisition</td>
+            <td>Not supported</td>
+            <td>Supported</td>
+        </tr>
+        <tr>
+            <td>Matching releases</td>
+            <td>One for each successful take</td>
+            <td>One for every successful recursive take</td>
+        </tr>
+        <tr>
+            <td>Priority inheritance</td>
+            <td>Supported</td>
+            <td>Supported</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>11. When Should Recursive Mutexes Be Used?</h2>
+
+    <h3>Suitable Situations</h3>
+    <ul>
+        <li>Nested functions access the same protected resource.</li>
+        <li>A legacy function hierarchy uses the same locking mechanism
+            at multiple levels.</li>
+        <li>A shared library has nested calls that require the same
+            task to retain resource ownership.</li>
+    </ul>
+
+    <h3>When to Avoid Them</h3>
+    <ul>
+        <li>Ordinary resource protection needs only one acquisition.</li>
+        <li>Nested locking can be removed through a clearer function design.</li>
+        <li>A dedicated owner task and message queue provide a simpler
+            architecture.</li>
+        <li>Developers cannot reliably match every recursive take
+            with a give.</li>
+    </ul>
+
+    <div class="note">
+        Recursive mutexes are useful for specific nested-locking
+        designs. They should not be used automatically for every
+        shared resource.
+    </div>
+</section>
+
+<section>
+    <h2>12. Common Programming Errors</h2>
+    <ol>
+        <li><strong>Using normal take/give APIs:</strong> Use
+            <code>xSemaphoreTakeRecursive()</code> and
+            <code>xSemaphoreGiveRecursive()</code> for a recursive mutex.</li>
+        <li><strong>Unbalanced acquisition:</strong> Every successful
+            recursive take needs one recursive give.</li>
+        <li><strong>Wrong owner:</strong> Only the owning task should
+            release the recursive mutex.</li>
+        <li><strong>Using it in an ISR:</strong> Recursive mutexes
+            are task-context objects and cannot be used from ISRs.</li>
+        <li><strong>Ignoring timeout:</strong> Check whether the
+            recursive take actually succeeded.</li>
+        <li><strong>Excessive nesting:</strong> Deep recursive locking
+            makes resource ownership difficult to maintain.</li>
+        <li><strong>Assuming it prevents all deadlocks:</strong>
+            Recursive mutexes do not solve deadlocks involving
+            multiple mutexes or incorrect resource ordering.</li>
+    </ol>
+</section>
+
+<section>
+    <h2>13. Practical Experiment</h2>
+
+    <h3>Objective</h3>
+    <p>
+        To observe repeated acquisition and release of a recursive
+        mutex by the same task.
+    </p>
+
+    <h3>Experiment Setup</h3>
+    <ol>
+        <li>Create one recursive mutex.</li>
+        <li>Create an application task.</li>
+        <li>In the task, take the mutex.</li>
+        <li>Call a second function that takes the same mutex.</li>
+        <li>Release the mutex in the second function.</li>
+        <li>Return to the first function and release its acquisition.</li>
+        <li>Verify that the mutex becomes available only after
+            both releases.</li>
+    </ol>
+
+    <h3>Expected Result</h3>
+    <ul>
+        <li>The first take gives the task ownership.</li>
+        <li>The nested take increases the recursive acquisition count.</li>
+        <li>The nested give decreases the count.</li>
+        <li>The final give releases the mutex.</li>
+        <li>The task does not block itself during the nested acquisition.</li>
+    </ul>
+
+    <div class="warning">
+        <strong>LPC2129 / Keil uVision note:</strong> This experiment
+        requires a compatible FreeRTOS ARM7 port and correct Keil
+        integration. LPC2129 uses ARM7TDMI-S, not Cortex-M. Do not
+        assume a Cortex-M port or interrupt-priority configuration
+        is suitable for this processor.
+    </div>
+</section>
+
+<section>
+    <h2>14. Review Questions</h2>
+    <ol>
+        <li>What is a recursive mutex?</li>
+        <li>How does it differ from a normal mutex?</li>
+        <li>Which API creates a recursive mutex?</li>
+        <li>Which API is used to acquire a recursive mutex?</li>
+        <li>Which API releases a recursive mutex?</li>
+        <li>What is the purpose of the recursion count?</li>
+        <li>How many give operations are required after three
+            successful recursive takes?</li>
+        <li>Can two different tasks own the same recursive mutex
+            simultaneously?</li>
+        <li>Can a recursive mutex be used from an ISR?</li>
+        <li>Why should recursive mutexes be used carefully?</li>
+    </ol>
+</section>
+
+<section>
+    <h2>15. Lesson Summary</h2>
+    <ul>
+        <li>A recursive mutex permits repeated acquisition by its owner.</li>
+        <li>Only one task owns the mutex at a time.</li>
+        <li><code>xSemaphoreCreateRecursiveMutex()</code> creates it.</li>
+        <li><code>xSemaphoreTakeRecursive()</code> acquires it.</li>
+        <li><code>xSemaphoreGiveRecursive()</code> releases it.</li>
+        <li>Every successful take must have a matching give.</li>
+        <li>The mutex is released when the recursive count reaches zero.</li>
+        <li>Recursive mutexes support priority inheritance in standard
+            FreeRTOS implementations.</li>
+        <li>They are useful for nested function calls that access
+            the same protected resource.</li>
+        <li>They cannot be used from an ISR.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>16. Assignment</h2>
+    <ol>
+        <li>Create a recursive mutex using FreeRTOS.</li>
+        <li>Write FunctionA that takes the recursive mutex and
+            calls FunctionB.</li>
+        <li>Write FunctionB so that it takes and gives the same
+            recursive mutex.</li>
+        <li>Explain the recursion count after each operation.</li>
+        <li>Modify the program to add a third nested function.</li>
+        <li>Explain what happens if one give operation is omitted.</li>
+        <li>Compare normal and recursive mutexes with suitable
+            applications.</li>
+    </ol>
+</section>
+
+<div class="navigation">
+    <a href="L03_FreeRTOS_Mutexes.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L05_Semaphore_Creation_and_Deletion.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+    <p>Chapter 16 – FreeRTOS Semaphores and Mutexes</p>
+</footer>
+
+</body>
+</html>
