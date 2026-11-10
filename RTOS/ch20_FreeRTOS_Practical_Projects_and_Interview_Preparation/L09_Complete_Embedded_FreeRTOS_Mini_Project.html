@@ -1,1 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Complete Embedded FreeRTOS Mini Project | NS Learning Hub</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Complete Embedded FreeRTOS Mini Project</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 20: Practical Projects and Interview Preparation</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 20</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Project Overview</h2>
+<p>This mini project integrates multiple FreeRTOS concepts into one embedded application. It demonstrates how tasks, queues, synchronization, sensor monitoring, UART communication and fault handling can work together.</p>
+
+<h3>Project Title</h3>
+<p><strong>Real-Time Embedded Monitoring and Control System Using FreeRTOS</strong></p>
+
+<h3>Project Objectives</h3>
+<ul>
+<li>Acquire sensor measurements periodically.</li>
+<li>Process sensor data in a separate task.</li>
+<li>Monitor operating conditions and detect faults.</li>
+<li>Exchange data between tasks using queues.</li>
+<li>Provide command and status communication through UART.</li>
+<li>Control a simulated actuator output.</li>
+<li>Use task scheduling and synchronization appropriately.</li>
+<li>Develop a modular and testable embedded application.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Application Scenario</h2>
+<p>Consider a small industrial monitoring and control unit that monitors temperature and supply voltage and controls an actuator output.</p>
+
+<table>
+<tr><th>Input / Output</th><th>Purpose</th></tr>
+<tr><td>Temperature sensor</td><td>Monitors system temperature.</td></tr>
+<tr><td>Voltage measurement</td><td>Monitors the supply voltage.</td></tr>
+<tr><td>UART interface</td><td>Receives commands and reports system status.</td></tr>
+<tr><td>PWM output</td><td>Controls a simulated actuator command.</td></tr>
+<tr><td>Fault indicator</td><td>Represents an application-level alarm state.</td></tr>
+</table>
+
+<p>Example operating conditions:</p>
+<ul>
+<li>Normal temperature: below the configured alarm threshold.</li>
+<li>High temperature: activate an alarm condition.</li>
+<li>Low or high supply voltage: report a voltage fault.</li>
+<li>STOP command: request actuator shutdown.</li>
+<li>STATUS command: request current measurement and operating state.</li>
+</ul>
+
+<div class="note">Thresholds and sensor conversion values in this lesson are illustrative. A real system must use the actual sensor specifications, calibration data and hardware safety limits.</div>
+</section>
+
+<section>
+<h2>3. System Architecture</h2>
+<div class="diagram">
+             UART COMMAND INPUT
+                    |
+                    v
+              COMMAND TASK
+                    |
+                    v
+              COMMAND QUEUE
+                    |
+                    v
+             CONTROL TASK
+                    |
+             +------+------+
+             |             |
+             v             v
+        PWM OUTPUT     SYSTEM STATE
+             |
+             v
+          ACTUATOR
+
+
+       SENSOR INPUTS
+             |
+             v
+        SENSOR TASK
+             |
+             v
+        SENSOR QUEUE
+             |
+             v
+       PROCESSING TASK
+             |
+             v
+       MONITORING TASK
+             |
+        +----+-----+
+        |          |
+        v          v
+    FAULT FLAG   STATUS DATA
+        |          |
+        v          v
+   SAFE OUTPUT   UART TASK
+</div>
+</section>
+
+<section>
+<h2>4. Task Design</h2>
+<table>
+<tr><th>Task</th><th>Responsibility</th><th>Illustrative Priority</th></tr>
+<tr><td>SensorTask</td><td>Reads sensor inputs periodically.</td><td>3</td></tr>
+<tr><td>ProcessingTask</td><td>Processes sensor measurements.</td><td>3</td></tr>
+<tr><td>MonitorTask</td><td>Checks thresholds and generates fault events.</td><td>4</td></tr>
+<tr><td>ControlTask</td><td>Applies validated commands and controls output.</td><td>4</td></tr>
+<tr><td>CommandTask</td><td>Processes incoming UART commands.</td><td>2</td></tr>
+<tr><td>UARTTxTask</td><td>Transmits status messages.</td><td>1</td></tr>
+</table>
+
+<div class="warning">Priority numbers are illustrative only. A production application needs a timing analysis based on task periods, execution times, blocking, interrupt interference and fault-response requirements.</div>
+</section>
+
+<section>
+<h2>5. Inter-Task Communication Design</h2>
+<table>
+<tr><th>Communication Object</th><th>Purpose</th></tr>
+<tr><td>sensorQueue</td><td>Transfers sensor measurement structures.</td></tr>
+<tr><td>commandQueue</td><td>Transfers validated control commands.</td></tr>
+<tr><td>statusQueue</td><td>Transfers status messages to UART TX task.</td></tr>
+<tr><td>faultEvent</td><td>Signals that a fault has been detected.</td></tr>
+</table>
+
+<p>Queues copy the items sent to them. This project uses structures and fixed-size message buffers to avoid sharing temporary stack-buffer pointers between tasks.</p>
+</section>
+
+<section>
+<h2>6. Define Data Structures</h2>
+<pre><code>#include "stdint.h"
+
+typedef struct
+{
+    uint16_t temperature;
+    uint16_t voltage;
+} SensorData_t;
+
+typedef enum
+{
+    CMD_STOP = 0,
+    CMD_START,
+    CMD_SET_OUTPUT,
+    CMD_STATUS
+} CommandType_t;
+
+typedef struct
+{
+    CommandType_t type;
+    uint16_t value;
+} Command_t;
+
+typedef struct
+{
+    char text[64];
+} StatusMessage_t;</code></pre>
+
+<p>These structures define the data exchanged by the application tasks.</p>
+</section>
+
+<section>
+<h2>7. Global Queue and State Definitions</h2>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "event_groups.h"
+#include "stdio.h"
+#include "string.h"
+
+#define FAULT_TEMPERATURE   (1U &lt;&lt; 0)
+#define FAULT_VOLTAGE       (1U &lt;&lt; 1)
+
+#define TEMP_LIMIT          60U
+#define VOLTAGE_MIN         10U
+#define VOLTAGE_MAX         15U
+
+static QueueHandle_t sensorQueue;
+static QueueHandle_t commandQueue;
+static QueueHandle_t statusQueue;
+
+static EventGroupHandle_t systemEvents;
+
+#define SYSTEM_RUNNING_BIT  (1U &lt;&lt; 0)
+#define SYSTEM_FAULT_BIT    (1U &lt;&lt; 1)
+
+static volatile uint16_t simulatedTemperature = 30;
+static volatile uint16_t simulatedVoltage = 12;
+
+static volatile uint16_t actuatorOutput = 0;</code></pre>
+
+<div class="note">The volatile variables above are used only to represent simple simulated input and output values. <code>volatile</code> does not provide atomicity, mutual exclusion or general inter-task synchronization. Production code should define clear ownership and use appropriate synchronization for shared state.</div>
+</section>
+
+<section>
+<h2>8. Hardware Abstraction Functions</h2>
+<p>Application tasks should call driver functions rather than directly manipulating peripheral registers throughout the application.</p>
+
+<pre><code>void Hardware_Init(void);
+
+uint16_t ReadTemperatureSensor(void);
+
+uint16_t ReadVoltageSensor(void);
+
+void SetActuatorOutput(uint16_t value);
+
+void DisableActuator(void);</code></pre>
+
+<p>These functions are hardware-dependent. For simulation, they can return controlled test values and update software variables instead of accessing physical peripherals.</p>
+</section>
+
+<section>
+<h2>9. Sensor Acquisition Task</h2>
+<p>The sensor task periodically reads the temperature and voltage measurements and sends them to the processing task.</p>
+
+<pre><code>static void SensorTask(void *pvParameters)
+{
+    SensorData_t data;
+    TickType_t previousWakeTime;
+
+    (void) pvParameters;
+
+    previousWakeTime = xTaskGetTickCount();
+
+    for (;;)
+    {
+        data.temperature = ReadTemperatureSensor();
+        data.voltage = ReadVoltageSensor();
+
+        if (xQueueSend(
+                sensorQueue,
+                &amp;data,
+                0
+            ) != pdPASS)
+        {
+            /* Record dropped measurement */
+        }
+
+        vTaskDelayUntil(
+            &amp;previousWakeTime,
+            pdMS_TO_TICKS(500)
+        );
+    }
+}</code></pre>
+
+<p>The task has a nominal 500 ms sampling period. Its actual execution timing depends on the RTOS configuration and system workload.</p>
+</section>
+
+<section>
+<h2>10. Data Processing Task</h2>
+<p>The processing task receives sensor data and creates a status message.</p>
+
+<pre><code>static void ProcessingTask(void *pvParameters)
+{
+    SensorData_t data;
+    StatusMessage_t message;
+
+    (void) pvParameters;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                sensorQueue,
+                &amp;data,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            snprintf(
+                message.text,
+                sizeof(message.text),
+                "TEMP=%u C, VOLTAGE=%u V\r\n",
+                (unsigned)data.temperature,
+                (unsigned)data.voltage
+            );
+
+            if (xQueueSend(
+                    statusQueue,
+                    &amp;message,
+                    0
+                ) != pdPASS)
+            {
+                /* Record dropped status message */
+            }
+        }
+    }
+}</code></pre>
+
+<p>The processing task converts measurements into a readable status message and sends it to the UART transmission queue.</p>
+</section>
+
+<section>
+<h2>11. Monitoring and Fault Detection Task</h2>
+<p>The monitoring task checks the latest sensor measurements and sets fault event bits when operating limits are exceeded.</p>
+
+<pre><code>static void MonitorTask(void *pvParameters)
+{
+    SensorData_t data;
+    EventBits_t faults;
+
+    (void) pvParameters;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                sensorQueue,
+                &amp;data,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            faults = 0;
+
+            if (data.temperature &gt; TEMP_LIMIT)
+            {
+                faults |= FAULT_TEMPERATURE;
+            }
+
+            if (data.voltage &lt; VOLTAGE_MIN ||
+                data.voltage &gt; VOLTAGE_MAX)
+            {
+                faults |= FAULT_VOLTAGE;
+            }
+
+            if (faults != 0)
+            {
+                xEventGroupSetBits(
+                    systemEvents,
+                    SYSTEM_FAULT_BIT
+                );
+
+                if (faults &amp; FAULT_TEMPERATURE)
+                {
+                    xEventGroupSetBits(
+                        systemEvents,
+                        FAULT_TEMPERATURE
+                    );
+                }
+
+                if (faults &amp; FAULT_VOLTAGE)
+                {
+                    xEventGroupSetBits(
+                        systemEvents,
+                        FAULT_VOLTAGE
+                    );
+                }
+            }
+            else
+            {
+                xEventGroupClearBits(
+                    systemEvents,
+                    FAULT_TEMPERATURE |
+                    FAULT_VOLTAGE
+                );
+
+                /*
+                 * Clear the overall fault state only
+                 * after the application's recovery
+                 * policy confirms it is safe.
+                 */
+            }
+        }
+    }
+}</code></pre>
+
+<div class="warning">This example demonstrates threshold detection, not a complete fault-latching or recovery design. The monitor task and processing task must not compete to consume the same queue: a FreeRTOS queue distributes each item to one receiving task, it does not broadcast each item to every receiver. A production design should use separate queues, a single consumer that distributes data, or another explicit fan-out mechanism.</div>
+</section>
+
+<section>
+<h2>12. Correct Sensor Data Distribution</h2>
+<p>Because both ProcessingTask and MonitorTask cannot independently receive every measurement from one ordinary queue, this project should use a dedicated distribution task or separate queues.</p>
+
+<h3>Recommended Design</h3>
+<div class="diagram">
+             SENSOR TASK
+                  |
+                  v
+             SENSOR QUEUE
+                  |
+                  v
+          SENSOR DISTRIBUTOR
+             /         \
+            v           v
+      PROCESSING     MONITORING
+        QUEUE           QUEUE
+            |           |
+            v           v
+       STATUS DATA   FAULT CHECK
+</div>
+
+<p>The distributor receives each sample once and copies it into the two destination queues.</p>
+
+<h3>Illustrative Distribution Task</h3>
+<pre><code>static QueueHandle_t processingQueue;
+static QueueHandle_t monitoringQueue;
+
+static void SensorDistributorTask(void *pvParameters)
+{
+    SensorData_t data;
+
+    (void) pvParameters;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                sensorQueue,
+                &amp;data,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            if (xQueueSend(
+                    processingQueue,
+                    &amp;data,
+                    0
+                ) != pdPASS)
+            {
+                /* Processing queue overflow */
+            }
+
+            if (xQueueSend(
+                    monitoringQueue,
+                    &amp;data,
+                    0
+                ) != pdPASS)
+            {
+                /* Monitoring queue overflow */
+            }
+        }
+    }
+}</code></pre>
+
+<p>Now each destination task receives its own copy of every successfully distributed sample.</p>
+</section>
+
+<section>
+<h2>13. Command Processing Task</h2>
+<p>The command task receives validated commands from a UART parser or another input interface and forwards them to the control task.</p>
+
+<pre><code>static void CommandTask(void *pvParameters)
+{
+    Command_t command;
+
+    (void) pvParameters;
+
+    for (;;)
+    {
+        /*
+         * Example command generation.
+         * Replace with a UART parser in a real project.
+         */
+        command.type = CMD_SET_OUTPUT;
+        command.value = 50;
+
+        if (xQueueSend(
+                commandQueue,
+                &amp;command,
+                pdMS_TO_TICKS(50)
+            ) != pdPASS)
+        {
+            /* Record command queue failure */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}</code></pre>
+</section>
+
+<section>
+<h2>14. Control Task</h2>
+<p>The control task is the single software owner of the normal actuator output.</p>
+
+<pre><code>static void ControlTask(void *pvParameters)
+{
+    Command_t command;
+    EventBits_t events;
+
+    (void) pvParameters;
+
+    for (;;)
+    {
+        events = xEventGroupGetBits(systemEvents);
+
+        if (events &amp; SYSTEM_FAULT_BIT)
+        {
+            DisableActuator();
+            actuatorOutput = 0;
+            continue;
+        }
+
+        if (xQueueReceive(
+                commandQueue,
+                &amp;command,
+                pdMS_TO_TICKS(100)
+            ) == pdPASS)
+        {
+            switch (command.type)
+            {
+                case CMD_START:
+                    xEventGroupSetBits(
+                        systemEvents,
+                        SYSTEM_RUNNING_BIT
+                    );
+                    break;
+
+                case CMD_STOP:
+                    DisableActuator();
+                    actuatorOutput = 0;
+
+                    xEventGroupClearBits(
+                        systemEvents,
+                        SYSTEM_RUNNING_BIT
+                    );
+                    break;
+
+                case CMD_SET_OUTPUT:
+                    if (command.value &lt;= 100)
+                    {
+                        events = xEventGroupGetBits(
+                            systemEvents
+                        );
+
+                        if ((events &amp; SYSTEM_FAULT_BIT) == 0)
+                        {
+                            actuatorOutput = command.value;
+                            SetActuatorOutput(
+                                actuatorOutput
+                            );
+                        }
+                    }
+                    break;
+
+                case CMD_STATUS:
+                    /* Status handled by communication task */
+                    break;
+
+                default:
+                    /* Reject unsupported command */
+                    break;
+            }
+        }
+    }
+}</code></pre>
+
+<div class="warning">This simplified example checks the fault state before normal output updates, but task-level checks alone cannot guarantee immediate shutdown. A fault can occur between checking the event bits and changing the output. Critical protection should use a hardware shutdown path or another design with a clearly defined atomic safety mechanism.</div>
+</section>
+
+<section>
+<h2>15. UART Transmission Task</h2>
+<p>The UART TX task receives status messages and sends them through a hardware-specific UART driver.</p>
+
+<pre><code>void UART_SendBuffer(
+    const char *buffer,
+    uint16_t length
+);
+
+static void UARTTxTask(void *pvParameters)
+{
+    StatusMessage_t message;
+
+    (void) pvParameters;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                statusQueue,
+                &amp;message,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            UART_SendBuffer(
+                message.text,
+                (uint16_t)strlen(message.text)
+            );
+        }
+    }
+}</code></pre>
+
+<p>The UART driver must ensure that the message buffer remains valid until transmission no longer requires it. This example assumes the driver completes the transfer before returning.</p>
+</section>
+
+<section>
+<h2>16. Fault Recovery Policy</h2>
+<p>A complete application needs a defined policy for entering, remaining in and recovering from a fault state.</p>
+
+<table>
+<tr><th>State</th><th>Meaning</th><th>Typical Action</th></tr>
+<tr><td>INITIALIZING</td><td>System is starting.</td><td>Initialize drivers and RTOS objects.</td></tr>
+<tr><td>READY</td><td>System checks have passed.</td><td>Accept valid commands.</td></tr>
+<tr><td>RUNNING</td><td>Normal operation is active.</td><td>Monitor sensors and control outputs.</td></tr>
+<tr><td>FAULT</td><td>Unsafe or abnormal condition detected.</td><td>Disable output and record fault.</td></tr>
+<tr><td>RECOVERY</td><td>Recovery conditions are being checked.</td><td>Require safe measurements and valid reset conditions.</td></tr>
+</table>
+
+<p>For safety-relevant equipment, fault recovery should not automatically restart an actuator merely because one measurement returns to the normal range. The restart policy must account for the cause, persistence and risk of the fault.</p>
+</section>
+
+<section>
+<h2>17. Main Function and RTOS Object Creation</h2>
+<p>The following initialization example creates the queues, event group and application tasks.</p>
+
+<pre><code>int main(void)
+{
+    Hardware_Init();
+
+    sensorQueue = xQueueCreate(
+        5,
+        sizeof(SensorData_t)
+    );
+
+    processingQueue = xQueueCreate(
+        5,
+        sizeof(SensorData_t)
+    );
+
+    monitoringQueue = xQueueCreate(
+        5,
+        sizeof(SensorData_t)
+    );
+
+    commandQueue = xQueueCreate(
+        5,
+        sizeof(Command_t)
+    );
+
+    statusQueue = xQueueCreate(
+        8,
+        sizeof(StatusMessage_t)
+    );
+
+    systemEvents = xEventGroupCreate();
+
+    if (sensorQueue == NULL ||
+        processingQueue == NULL ||
+        monitoringQueue == NULL ||
+        commandQueue == NULL ||
+        statusQueue == NULL ||
+        systemEvents == NULL)
+    {
+        for (;;)
+        {
+            /* Initialization failure */
+        }
+    }
+
+    if (xTaskCreate(
+            SensorTask,
+            "Sensor",
+            256,
+            NULL,
+            3,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;);
+    }
+
+    if (xTaskCreate(
+            SensorDistributorTask,
+            "Distributor",
+            256,
+            NULL,
+            3,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;);
+    }
+
+    if (xTaskCreate(
+            ProcessingTask,
+            "Processing",
+            256,
+            NULL,
+            2,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;);
+    }
+
+    if (xTaskCreate(
+            MonitorTask,
+            "Monitor",
+            256,
+            NULL,
+            4,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;);
+    }
+
+    if (xTaskCreate(
+            CommandTask,
+            "Command",
+            256,
+            NULL,
+            2,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;);
+    }
+
+    if (xTaskCreate(
+            ControlTask,
+            "Control",
+            256,
+            NULL,
+            4,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;);
+    }
+
+    if (xTaskCreate(
+            UARTTxTask,
+            "UART_TX",
+            256,
+            NULL,
+            1,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;);
+    }
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+        /* Scheduler startup failure */
+    }
+}</code></pre>
+
+<div class="warning">This initialization listing is an architectural integration example. The task function definitions, sensor distributor, hardware driver implementations, UART receive/parser logic and robust fault-state handling must all be included before building a complete project. Stack depths are illustrative stack elements, not byte counts.</div>
+</section>
+
+<section>
+<h2>18. Application Data Flow</h2>
+<ol>
+<li>Hardware initialization configures the peripherals and driver interfaces.</li>
+<li>FreeRTOS queues and event groups are created.</li>
+<li>Application tasks are created.</li>
+<li>The scheduler starts.</li>
+<li>The sensor task periodically acquires measurements.</li>
+<li>The distributor sends each sample to processing and monitoring queues.</li>
+<li>The processing task formats measurement data for reporting.</li>
+<li>The monitoring task checks the configured operating limits.</li>
+<li>The command task submits validated control requests.</li>
+<li>The control task manages normal actuator output.</li>
+<li>The UART TX task transmits status messages.</li>
+<li>Fault handling places the system into its defined safe state.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Testing Strategy</h2>
+<table>
+<tr><th>Test</th><th>Input / Condition</th><th>Expected Behavior</th></tr>
+<tr><td>Normal operation</td><td>Temperature 30, voltage 12</td><td>No threshold fault.</td></tr>
+<tr><td>High temperature</td><td>Temperature 70</td><td>Temperature fault detected.</td></tr>
+<tr><td>Low voltage</td><td>Voltage 8</td><td>Voltage fault detected.</td></tr>
+<tr><td>High voltage</td><td>Voltage 17</td><td>Voltage fault detected.</td></tr>
+<tr><td>Stop command</td><td>CMD_STOP</td><td>Normal actuator output disabled.</td></tr>
+<tr><td>Invalid output</td><td>Output greater than 100</td><td>Command rejected.</td></tr>
+<tr><td>Queue overload</td><td>Producer sends faster than consumer</td><td>Queue-full condition recorded.</td></tr>
+<tr><td>UART failure</td><td>Driver reports transmit error</td><td>Error recorded and recovery policy applied.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>20. Debugging and Performance Analysis</h2>
+<p>During development, monitor the following:</p>
+<ul>
+<li>Task states and priorities.</li>
+<li>Queue occupancy and failed queue operations.</li>
+<li>Task stack high-water marks.</li>
+<li>FreeRTOS heap usage where supported.</li>
+<li>Task execution time and response time.</li>
+<li>Periodic task jitter.</li>
+<li>Interrupt latency.</li>
+<li>Fault detection and shutdown response.</li>
+</ul>
+
+<h3>Useful FreeRTOS APIs</h3>
+<table>
+<tr><th>API</th><th>Purpose</th></tr>
+<tr><td>uxTaskGetSystemState()</td><td>Obtains task status information, when enabled.</td></tr>
+<tr><td>uxTaskGetStackHighWaterMark()</td><td>Reports minimum observed unused task stack.</td></tr>
+<tr><td>xPortGetFreeHeapSize()</td><td>Reports free heap space where supported.</td></tr>
+<tr><td>uxQueueMessagesWaiting()</td><td>Reports the number of queued items at the time of the call.</td></tr>
+<tr><td>xEventGroupGetBits()</td><td>Reads current event-group bits.</td></tr>
+</table>
+
+<div class="note">These measurements are useful for debugging but do not prove worst-case execution time, schedulability or complete stack safety. Availability depends on the FreeRTOS version, configuration and port.</div>
+</section>
+
+<section>
+<h2>21. LPC2129 and Keil µVision Implementation Notes</h2>
+<p>The LPC2129 is an ARM7TDMI-S-based microcontroller. The following peripherals can be studied in the context of this project.</p>
+
+<table>
+<tr><th>Peripheral</th><th>Application</th></tr>
+<tr><td>ADC</td><td>Simulated temperature and voltage acquisition.</td></tr>
+<tr><td>PWM</td><td>Study duty-cycle generation and register configuration.</td></tr>
+<tr><td>UART0</td><td>Command and diagnostic communication.</td></tr>
+<tr><td>Timer</td><td>Periodic timing and interrupt concepts.</td></tr>
+<tr><td>VIC</td><td>Interrupt source routing and handler execution.</td></tr>
+</table>
+
+<h3>Simulator-Only Work</h3>
+<ul>
+<li>Use controlled software values for sensor inputs.</li>
+<li>Inspect queue operations and task states.</li>
+<li>Trace fault detection logic.</li>
+<li>Inspect PWM-related register values if supported by the device model.</li>
+<li>Test command validation and state transitions.</li>
+<li>Use breakpoints and watch windows to inspect data structures.</li>
+</ul>
+
+<div class="warning">A compatible FreeRTOS ARM7 port and Keil compiler integration must be verified. Keil simulation cannot validate physical motor operation, analog sensor accuracy, power-stage behavior or real electrical fault response.</div>
+</section>
+
+<section>
+<h2>22. Project Extension Ideas</h2>
+<ul>
+<li>Add a PID-based closed-loop speed controller.</li>
+<li>Add a UART command parser with input validation.</li>
+<li>Use event groups to represent multiple system states.</li>
+<li>Use task notifications for lightweight event signaling.</li>
+<li>Add a watchdog strategy based on task health checks.</li>
+<li>Add data logging with timestamps.</li>
+<li>Add configurable alarm thresholds.</li>
+<li>Add a fault history buffer.</li>
+<li>Use static allocation for selected RTOS objects.</li>
+<li>Add a formal task timing and schedulability analysis.</li>
+</ul>
+</section>
+
+<section>
+<h2>23. Interview Questions</h2>
+<ol>
+<li>What is the purpose of dividing an embedded application into FreeRTOS tasks?</li>
+<li>What is the difference between a queue and an event group?</li>
+<li>Does a queue broadcast each message to every receiving task?</li>
+<li>How can one sensor sample be distributed to multiple tasks?</li>
+<li>What is the role of a sensor acquisition task?</li>
+<li>Why should a control task own a hardware output?</li>
+<li>How should a system respond to an overcurrent fault?</li>
+<li>Why is independent hardware protection sometimes required?</li>
+<li>What is the difference between normal shutdown and emergency shutdown?</li>
+<li>How can UART communication be integrated into a multitasking application?</li>
+<li>What happens when a queue becomes full?</li>
+<li>How can task stack usage be monitored?</li>
+<li>Why is task priority assignment important?</li>
+<li>Does FreeRTOS guarantee that all deadlines will be met?</li>
+<li>What is periodic task jitter?</li>
+<li>Why should a communication task not block a critical control task?</li>
+<li>What is the purpose of a watchdog timer?</li>
+<li>How can an RTOS application be tested without physical hardware?</li>
+<li>What limitations should be considered when using a microcontroller simulator?</li>
+<li>What additional testing is necessary before deploying a motor-control application?</li>
+</ol>
+</section>
+
+<section>
+<h2>24. Lesson Summary</h2>
+<ul>
+<li>A complete embedded application can be divided into sensor, processing, monitoring, command, control and communication tasks.</li>
+<li>Queues transfer structured data between tasks.</li>
+<li>A distributor or explicit fan-out design is required when multiple tasks need the same measurement.</li>
+<li>Event groups represent shared system conditions.</li>
+<li>A single software owner should manage normal hardware output changes.</li>
+<li>Fault handling must define safe-state and recovery behavior.</li>
+<li>Hardware protection may be required for fast or safety-critical shutdown.</li>
+<li>Task timing, queue capacity and stack usage must be measured and analyzed.</li>
+<li>Simulator testing validates selected software behavior but does not replace hardware testing.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L08_Multitasking_Motor_Control_Project.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L10_FreeRTOS_Interview_Questions_and_Answers.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 20 – Practical Projects and Interview Preparation</p>
+</footer>
+
+</body>
+</html>
