@@ -1,1 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interrupt Latency and Task Response Optimization | RTOS &amp; FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Interrupt Latency and Task Response Optimization</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 19: Advanced Real-Time System Concepts</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 19</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Define interrupt latency and interrupt response time.</li>
+<li>Understand the factors that affect interrupt latency.</li>
+<li>Differentiate interrupt latency from task response time.</li>
+<li>Understand context-switch overhead.</li>
+<li>Analyze task response time and blocking.</li>
+<li>Identify common sources of scheduling delay.</li>
+<li>Apply practical techniques to optimize RTOS performance.</li>
+<li>Understand timing measurement and its limitations.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction</h2>
+<p>In a real-time embedded system, an event must be detected and processed within a specified time limit.</p>
+
+<p>Examples include:</p>
+<ul>
+<li>Detecting an emergency stop input.</li>
+<li>Responding to a motor encoder pulse.</li>
+<li>Receiving a communication packet.</li>
+<li>Processing a timer expiration.</li>
+<li>Handling an overcurrent fault.</li>
+<li>Updating a control output at a fixed interval.</li>
+</ul>
+
+<p>Two important timing properties are:</p>
+<ul>
+<li><strong>Interrupt latency:</strong> Time from an interrupt request becoming active to the beginning of its interrupt service routine.</li>
+<li><strong>Task response time:</strong> Time from a task's release or triggering event to completion of the required task operation.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. Interrupt Latency</h2>
+<p>Interrupt latency is the delay between an interrupt request and the processor beginning execution of the corresponding interrupt service routine (ISR).</p>
+
+<pre><code>Interrupt Latency =
+    ISR Entry Time - Interrupt Request Time</code></pre>
+
+<div class="diagram">
+INTERRUPT REQUEST
+       |
+       |  Interrupt latency
+       |
+ISR EXECUTION BEGINS
+       |
+       |  ISR execution time
+       |
+ISR COMPLETES
+</div>
+
+<h3>Example</h3>
+<p>A timer interrupt request becomes active at 100 microseconds. The ISR begins at 104 microseconds.</p>
+<pre><code>Interrupt Latency = 104 - 100
+
+                  = 4 microseconds</code></pre>
+<p>The measured interrupt latency is 4 microseconds for this observation.</p>
+
+<div class="note">A single measurement is not a worst-case latency guarantee. Worst-case analysis must consider all relevant interrupt masking, higher-priority interrupt activity, processor state and hardware behavior.</div>
+</section>
+
+<section>
+<h2>4. Factors Affecting Interrupt Latency</h2>
+
+<h3>4.1 Interrupt Masking</h3>
+<p>If the processor masks an interrupt, the corresponding ISR cannot begin until the interrupt becomes eligible for service.</p>
+
+<h3>4.2 Higher-Priority Interrupts</h3>
+<p>An interrupt may be delayed by another interrupt that has higher priority or is already being serviced.</p>
+
+<h3>4.3 Current Processor State</h3>
+<p>The processor may need to complete or suspend the current instruction sequence and perform exception-entry operations.</p>
+
+<h3>4.4 Interrupt Controller Delay</h3>
+<p>Interrupt-controller arbitration, source routing and pending-state handling may contribute to the response delay.</p>
+
+<h3>4.5 Memory and Bus Wait States</h3>
+<p>Memory access delays and peripheral-bus behavior can affect interrupt entry and ISR execution.</p>
+
+<h3>4.6 Critical Sections</h3>
+<p>Long critical sections can delay eligible interrupts if the selected critical-section mechanism masks those interrupt sources.</p>
+
+<table>
+<tr><th>Factor</th><th>Possible Effect</th></tr>
+<tr><td>Interrupt masking</td><td>Delays interrupt service.</td></tr>
+<tr><td>Higher-priority ISR</td><td>May delay lower-priority ISR execution.</td></tr>
+<tr><td>Long critical section</td><td>May increase interrupt response delay.</td></tr>
+<tr><td>Memory wait states</td><td>May increase entry and execution time.</td></tr>
+<tr><td>Interrupt-controller processing</td><td>Adds hardware-dependent delay.</td></tr>
+<tr><td>Long ISR execution</td><td>Can delay other interrupt and task processing.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5. Interrupt Response Time vs ISR Execution Time</h2>
+<p>These two measurements describe different parts of interrupt handling.</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td>Interrupt latency</td><td>Request to ISR entry.</td></tr>
+<tr><td>ISR execution time</td><td>ISR entry to ISR completion.</td></tr>
+<tr><td>Interrupt response time</td><td>Request to completion of the required interrupt-level processing, as defined by the measurement boundary.</td></tr>
+</table>
+
+<pre><code>Interrupt Response Time =
+    Interrupt Latency
+  + ISR Execution Time</code></pre>
+
+<p>This simplified equation assumes the interrupt-level processing is completed entirely in that ISR and that the measurement ends at ISR completion.</p>
+
+<h3>Example</h3>
+<pre><code>Interrupt Latency = 3 us
+ISR Execution Time = 12 us
+
+Interrupt Response Time =
+    3 + 12
+
+    = 15 us</code></pre>
+</section>
+
+<section>
+<h2>6. Task Response Time</h2>
+<p>Task response time is the interval between a task's release and completion of the operation being analyzed.</p>
+
+<pre><code>Task Response Time =
+    Task Completion Time - Task Release Time</code></pre>
+
+<p>It may include:</p>
+<ul>
+<li>Release and interrupt-to-task notification delay.</li>
+<li>Time spent waiting in the Ready state.</li>
+<li>Preemption by higher-priority tasks.</li>
+<li>Blocking on shared resources.</li>
+<li>Execution time of the task itself.</li>
+</ul>
+
+<div class="diagram">
+EVENT OCCURS
+     |
+INTERRUPT HANDLING
+     |
+TASK BECOMES READY
+     |
+SCHEDULING / READY QUEUE WAIT
+     |
+TASK EXECUTION
+     |
+POSSIBLE PREEMPTION OR BLOCKING
+     |
+TASK OPERATION COMPLETES
+</div>
+
+<p>Task response time is not the same as CPU execution time. A task can execute for 2 ms but take 8 ms from release to completion because it waits or is preempted.</p>
+</section>
+
+<section>
+<h2>7. Execution Time, Waiting Time and Response Time</h2>
+
+<table>
+<tr><th>Term</th><th>Description</th></tr>
+<tr><td>Execution time</td><td>CPU time required by the analyzed task operation.</td></tr>
+<tr><td>Waiting time</td><td>Time spent ready but not executing, or waiting for a resource/event, depending on the stated definition.</td></tr>
+<tr><td>Blocking time</td><td>Time during which the task cannot proceed because it waits for a resource or condition.</td></tr>
+<tr><td>Response time</td><td>Elapsed time from release to completion.</td></tr>
+<tr><td>Deadline</td><td>Latest permitted completion time relative to release.</td></tr>
+</table>
+
+<h3>Example</h3>
+<p>A task has the following timing:</p>
+<table>
+<tr><th>Component</th><th>Time</th></tr>
+<tr><td>CPU execution</td><td>2 ms</td></tr>
+<tr><td>Ready-state waiting due to higher-priority work</td><td>3 ms</td></tr>
+<tr><td>Resource blocking</td><td>1 ms</td></tr>
+</table>
+
+<pre><code>Response Time = 2 + 3 + 1
+
+              = 6 ms</code></pre>
+
+<p>If its deadline is 8 ms, this example meets the deadline with 2 ms remaining margin, assuming the values are valid bounds and all relevant delays are included.</p>
+</section>
+
+<section>
+<h2>8. Context Switching Overhead</h2>
+<p>A context switch occurs when the processor stops executing one task and begins executing another task.</p>
+
+<p>The RTOS may need to save the outgoing task's execution context and restore the incoming task's context.</p>
+
+<div class="diagram">
+          TASK A RUNNING
+                |
+          SAVE TASK A CONTEXT
+                |
+          SCHEDULER DECISION
+                |
+          RESTORE TASK B CONTEXT
+                |
+          TASK B RUNNING
+</div>
+
+<h3>Context Information</h3>
+<ul>
+<li>Processor registers.</li>
+<li>Stack pointer.</li>
+<li>Program counter or return state.</li>
+<li>Processor status information.</li>
+<li>Additional port-specific task state.</li>
+</ul>
+
+<h3>Context-Switch Overhead</h3>
+<p>Context-switch overhead is the processor time consumed by saving and restoring task state and performing associated scheduling operations.</p>
+
+<p>Frequent context switching can reduce useful CPU time and increase task response times.</p>
+
+<div class="warning">The exact context saved and restored depends on the processor architecture, compiler, ABI and RTOS port. Do not assume every architecture saves identical register sets.</div>
+</section>
+
+<section>
+<h2>9. Causes of Excessive Context Switching</h2>
+<ul>
+<li>Very short task delays.</li>
+<li>Unnecessary task yielding.</li>
+<li>Excessive task creation and deletion.</li>
+<li>Frequent task notifications and event signaling.</li>
+<li>Too many tasks with similar priorities.</li>
+<li>Poor task decomposition.</li>
+<li>Excessive polling.</li>
+</ul>
+
+<h3>Optimization Approach</h3>
+<ul>
+<li>Use blocking APIs instead of continuous polling.</li>
+<li>Combine closely related operations where appropriate.</li>
+<li>Use queues and notifications efficiently.</li>
+<li>Avoid unnecessary task wake-ups.</li>
+<li>Choose suitable task priorities.</li>
+<li>Measure context-switch frequency and execution overhead.</li>
+</ul>
+</section>
+
+<section>
+<h2>10. Task Scheduling Delay</h2>
+<p>A task can become Ready but may not execute immediately.</p>
+
+<p>On a single-core fixed-priority preemptive RTOS, a Ready task generally waits while eligible higher-priority work executes, subject to scheduler and interrupt behavior.</p>
+
+<h3>Example</h3>
+<table>
+<tr><th>Task</th><th>Priority</th><th>Execution Time</th></tr>
+<tr><td>Task A</td><td>3</td><td>2 ms</td></tr>
+<tr><td>Task B</td><td>2</td><td>3 ms</td></tr>
+<tr><td>Task C</td><td>1</td><td>2 ms</td></tr>
+</table>
+
+<p>Assume all three tasks become Ready simultaneously and the scheduler starts with no higher-priority work pending.</p>
+
+<div class="diagram">
+TIME (ms)
+
+0       2           5       7
+|-------|-----------|-------|
+   A          B         C
+
+A: 0 - 2 ms
+B: 2 - 5 ms
+C: 5 - 7 ms
+</div>
+
+<p>Task C has 2 ms of execution time but a response time of 7 ms from the common release instant.</p>
+</section>
+
+<section>
+<h2>11. Response-Time Analysis</h2>
+<p>Response-time analysis estimates whether a task can complete before its deadline under a defined scheduling model.</p>
+
+<p>For a simplified single-processor, fixed-priority, preemptive task model, a common response-time recurrence is:</p>
+
+<pre><code>R_i = C_i + B_i
+      + Σ ceil(R_i / T_j) × C_j
+
+Where:
+
+R_i = Worst-case response time of task i
+C_i = Worst-case execution time of task i
+B_i = Blocking time of task i
+T_j = Period or minimum inter-arrival time
+C_j = Execution time of higher-priority task j</code></pre>
+
+<p>The summation includes relevant higher-priority tasks under the analysis assumptions.</p>
+
+<h3>Important Assumptions</h3>
+<ul>
+<li>Single processor.</li>
+<li>Fixed-priority preemptive scheduling.</li>
+<li>Known task execution-time bounds.</li>
+<li>Known periods or minimum inter-arrival times.</li>
+<li>Blocking is bounded and modeled correctly.</li>
+<li>Relevant interrupt interference and overhead are either included or analyzed separately.</li>
+</ul>
+
+<div class="note">This recurrence is a simplified fixed-priority response-time model. More complete analyses may include release jitter, self-suspension, interrupt interference, multiple blocking terms and other platform-specific effects.</div>
+</section>
+
+<section>
+<h2>12. Numerical Example – Response-Time Analysis</h2>
+<p>Consider three periodic tasks on a single processor.</p>
+
+<table>
+<tr><th>Task</th><th>Execution Time (C)</th><th>Period (T)</th><th>Priority</th></tr>
+<tr><td>T1</td><td>1 ms</td><td>4 ms</td><td>Highest</td></tr>
+<tr><td>T2</td><td>1 ms</td><td>5 ms</td><td>Medium</td></tr>
+<tr><td>T3</td><td>2 ms</td><td>10 ms</td><td>Lowest</td></tr>
+</table>
+
+<p>Assume zero blocking and implicit deadlines equal to periods.</p>
+
+<h3>Task T1</h3>
+<pre><code>R1 = C1
+
+R1 = 1 ms</code></pre>
+
+<h3>Task T2</h3>
+<pre><code>R2 = C2 + ceil(R2 / T1) × C1
+
+Initial value:
+R2(0) = 1
+
+Iteration 1:
+R2(1) = 1 + ceil(1/4) × 1
+      = 2 ms
+
+Iteration 2:
+R2(2) = 1 + ceil(2/4) × 1
+      = 2 ms
+
+Therefore:
+R2 = 2 ms</code></pre>
+
+<h3>Task T3</h3>
+<pre><code>R3 = C3
+   + ceil(R3/T1) × C1
+   + ceil(R3/T2) × C2
+
+Initial value:
+R3(0) = 2
+
+Iteration 1:
+R3(1) = 2 + ceil(2/4) × 1
+         + ceil(2/5) × 1
+      = 4 ms
+
+Iteration 2:
+R3(2) = 2 + ceil(4/4) × 1
+         + ceil(4/5) × 1
+      = 4 ms
+
+Therefore:
+R3 = 4 ms</code></pre>
+
+<h3>Schedulability Check</h3>
+<table>
+<tr><th>Task</th><th>Response Time</th><th>Deadline</th><th>Result</th></tr>
+<tr><td>T1</td><td>1 ms</td><td>4 ms</td><td>Meets deadline</td></tr>
+<tr><td>T2</td><td>2 ms</td><td>5 ms</td><td>Meets deadline</td></tr>
+<tr><td>T3</td><td>4 ms</td><td>10 ms</td><td>Meets deadline</td></tr>
+</table>
+
+<p>All three tasks meet their deadlines under the stated assumptions.</p>
+</section>
+
+<section>
+<h2>13. Priority Assignment and Response Optimization</h2>
+<p>Task priority affects how quickly a task receives CPU time when multiple tasks are Ready.</p>
+
+<h3>Priority Assignment Guidelines</h3>
+<ul>
+<li>Assign higher priority to tasks with stricter timing requirements where the scheduling policy supports that approach.</li>
+<li>Consider task periods, deadlines and execution times.</li>
+<li>Use rate-monotonic priority assignment for suitable periodic task sets with shorter periods receiving higher priorities.</li>
+<li>Consider blocking and shared-resource access.</li>
+<li>Prevent low-priority tasks from holding resources needed by critical tasks for excessive durations.</li>
+<li>Analyze interrupt interference separately from task priority.</li>
+</ul>
+
+<div class="warning">Assigning the highest priority to every important task is not a valid optimization strategy. It can create excessive interference and make lower-priority deadlines impossible to meet.</div>
+</section>
+
+<section>
+<h2>14. Critical Section Optimization</h2>
+<p>A critical section protects shared data or resources from conflicting concurrent access.</p>
+
+<p>Excessively long critical sections can increase blocking and latency.</p>
+
+<h3>Recommended Practices</h3>
+<ul>
+<li>Keep protected operations short.</li>
+<li>Avoid delays and blocking calls inside critical sections.</li>
+<li>Do not perform lengthy calculations while interrupts are masked.</li>
+<li>Use an appropriate synchronization primitive.</li>
+<li>Copy shared data into a local buffer and process it outside the protected region when safe.</li>
+<li>Document the maximum expected critical-section duration.</li>
+</ul>
+
+<h3>Illustrative Pseudocode</h3>
+<pre><code>EnterCriticalSection();
+
+localCopy = sharedData;
+
+ExitCriticalSection();
+
+/* Perform lengthy processing outside
+   the protected section. */
+
+ProcessData(localCopy);</code></pre>
+
+<p>The exact critical-section API and interrupt-masking behavior depend on the RTOS port and processor architecture.</p>
+</section>
+
+<section>
+<h2>15. ISR Optimization</h2>
+<p>An ISR should perform only the time-critical hardware operations required to acknowledge and capture the event.</p>
+
+<h3>Recommended ISR Structure</h3>
+<pre><code>void Peripheral_ISR(void)
+{
+    uint32_t status;
+
+    status = ReadInterruptStatus();
+
+    AcknowledgeInterrupt(status);
+
+    CaptureEssentialData(status);
+
+    NotifyApplicationTaskFromISR();
+}</code></pre>
+
+<p>The functions shown are placeholders, not portable FreeRTOS or LPC2129 API calls.</p>
+
+<h3>ISR Optimization Guidelines</h3>
+<ul>
+<li>Acknowledge the interrupt source correctly.</li>
+<li>Capture essential data before it is lost.</li>
+<li>Avoid lengthy loops.</li>
+<li>Avoid blocking operations.</li>
+<li>Avoid mutex operations.</li>
+<li>Use supported ISR-safe queue or notification APIs.</li>
+<li>Request a context switch on ISR exit when required by the port and a higher-priority task was unblocked.</li>
+</ul>
+</section>
+
+<section>
+<h2>16. FreeRTOS Techniques for Better Task Response</h2>
+
+<h3>16.1 Task Notifications</h3>
+<p>Task notifications can efficiently signal a specific task without requiring a separate queue object for simple event signaling or notification values.</p>
+
+<pre><code>void SensorTask(void *pvParameters)
+{
+    uint32_t notificationValue;
+
+    for (;;)
+    {
+        if (xTaskNotifyWait(
+                0,
+                0xFFFFFFFFUL,
+                &amp;notificationValue,
+                portMAX_DELAY) == pdTRUE)
+        {
+            ProcessSensorEvent(notificationValue);
+        }
+    }
+}</code></pre>
+
+<p>This task blocks while waiting for a notification. The notification sender must use the appropriate task or ISR API for its execution context.</p>
+
+<h3>16.2 Blocking Instead of Polling</h3>
+<p>Blocking on a queue, semaphore or notification allows a task to wait without repeatedly consuming CPU time.</p>
+
+<h3>16.3 Appropriate Task Priorities</h3>
+<p>Priorities should reflect timing requirements and be validated through scheduling analysis.</p>
+
+<h3>16.4 Efficient Queue Design</h3>
+<p>Choose suitable item sizes and queue lengths. Avoid copying unnecessarily large structures when a carefully designed pointer-ownership scheme is more appropriate.</p>
+
+<h3>16.5 Static Allocation</h3>
+<p>Static task and queue allocation can reduce runtime allocation uncertainty and fragmentation risk, although memory sizing and stack requirements still need analysis.</p>
+</section>
+
+<section>
+<h2>17. Reducing Communication and Processing Delays</h2>
+<ul>
+<li>Use interrupt-driven reception instead of continuous polling where appropriate.</li>
+<li>Use DMA for suitable large transfers.</li>
+<li>Reduce unnecessary data copying.</li>
+<li>Use suitable buffer sizes.</li>
+<li>Keep parsing and processing outside ISRs.</li>
+<li>Use bounded queue waits and timeout policies.</li>
+<li>Give urgent messages an appropriate processing path.</li>
+<li>Analyze bus contention and communication deadlines.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Timing Measurement and Profiling</h2>
+<p>Performance optimization should be based on measurement and analysis rather than assumptions.</p>
+
+<h3>Useful Measurement Methods</h3>
+<table>
+<tr><th>Method</th><th>Purpose</th></tr>
+<tr><td>Hardware timer</td><td>Measure elapsed time with known resolution.</td></tr>
+<tr><td>GPIO instrumentation</td><td>Observe event-to-response timing with an external logic analyzer or oscilloscope.</td></tr>
+<tr><td>RTOS run-time statistics</td><td>Estimate task CPU-time distribution.</td></tr>
+<tr><td>Trace tools</td><td>Inspect task switches, blocking and interrupt activity.</td></tr>
+<tr><td>Cycle counter</td><td>Measure processor cycles where supported.</td></tr>
+</table>
+
+<h3>Measurement Example</h3>
+<pre><code>start = ReadHardwareTimer();
+
+/* Operation under test */
+
+end = ReadHardwareTimer();
+
+elapsed = end - start;</code></pre>
+
+<p>The timer's resolution, counter width, overflow behavior and read overhead must be accounted for.</p>
+
+<div class="warning">Instrumentation changes execution behavior. Breakpoints, logging, tracing and GPIO operations can add overhead or alter timing. Use measurement methods appropriate to the required accuracy.</div>
+</section>
+
+<section>
+<h2>19. Worst-Case Execution Time (WCET)</h2>
+<p>Worst-Case Execution Time is a safe upper bound on the time required by a task or code segment under specified assumptions and operating conditions.</p>
+
+<p>The largest execution time observed during testing is not automatically WCET.</p>
+
+<h3>WCET Analysis Considerations</h3>
+<ul>
+<li>Control-flow paths.</li>
+<li>Loop bounds.</li>
+<li>Memory and cache behavior, where applicable.</li>
+<li>Processor and bus wait states.</li>
+<li>Compiler optimization.</li>
+<li>Interrupt interference.</li>
+<li>Input-dependent execution paths.</li>
+</ul>
+
+<p>WCET analysis is important for response-time and schedulability calculations.</p>
+</section>
+
+<section>
+<h2>20. LPC2129 and ARM7TDMI-S Considerations</h2>
+<p>The LPC2129 uses an ARM7TDMI-S core and a Vectored Interrupt Controller (VIC). Its interrupt and exception architecture differs from Cortex-M microcontrollers.</p>
+
+<h3>Important Points</h3>
+<ul>
+<li>ARM7TDMI-S supports IRQ and FIQ interrupt exceptions.</li>
+<li>IRQ and FIQ have different processor-mode and register-banking behavior.</li>
+<li>The LPC2129 VIC manages interrupt sources and vectored IRQ handling.</li>
+<li>Interrupt response depends on processor state, masking, source configuration and current execution.</li>
+<li>Do not apply Cortex-M NVIC, BASEPRI or Cortex-M-specific FreeRTOS interrupt-priority rules to LPC2129.</li>
+</ul>
+
+<h3>Keil Simulator Limitation</h3>
+<p>In a simulator-only workflow, you can inspect CPU execution, registers, memory and software timing behavior to the extent supported by the simulator.</p>
+
+<p>However, simulated instruction timing and peripheral behavior must not be treated as proof of real hardware interrupt latency. Physical measurements require the actual target board and suitable instrumentation.</p>
+</section>
+
+<section>
+<h2>21. Practical Exercise 1 – Interrupt Latency</h2>
+<p><strong>Problem:</strong> An interrupt request occurs at 250 microseconds. The ISR starts at 257 microseconds. Calculate interrupt latency.</p>
+
+<pre><code>Latency = 257 - 250
+
+        = 7 microseconds</code></pre>
+
+<p><strong>Answer:</strong> 7 microseconds.</p>
+</section>
+
+<section>
+<h2>22. Practical Exercise 2 – Task Response Time</h2>
+<p><strong>Problem:</strong> A task requires 3 ms CPU execution, 2 ms ready-state waiting and 1 ms resource blocking. Calculate response time.</p>
+
+<pre><code>Response Time = 3 + 2 + 1
+
+              = 6 ms</code></pre>
+
+<p><strong>Answer:</strong> 6 ms.</p>
+</section>
+
+<section>
+<h2>23. Practical Exercise 3 – Deadline Analysis</h2>
+<p><strong>Problem:</strong> A task has a worst-case response time of 7 ms and a relative deadline of 9 ms. Determine whether it meets its deadline.</p>
+
+<pre><code>Response Time = 7 ms
+Deadline      = 9 ms
+
+Margin = 9 - 7
+
+       = 2 ms</code></pre>
+
+<p><strong>Answer:</strong> It meets the deadline with a 2 ms margin, assuming the response-time bound is valid.</p>
+</section>
+
+<section>
+<h2>24. Practical Exercise 4 – Context-Switch Overhead</h2>
+<p><strong>Problem:</strong> A system performs 500 context switches per second. Each context switch consumes 8 microseconds of processor time. Estimate the CPU time spent on context switching per second.</p>
+
+<pre><code>Total Time =
+    500 × 8 microseconds
+
+  = 4000 microseconds
+
+  = 4 milliseconds
+
+CPU Percentage =
+    (4 / 1000) × 100
+
+  = 0.4%</code></pre>
+
+<p><strong>Answer:</strong> Approximately 0.4% of one CPU's time is consumed by the stated context-switch overhead, assuming the given cost is per switch.</p>
+</section>
+
+<section>
+<h2>25. Practical Exercise 5 – Response Optimization</h2>
+<p><strong>Scenario:</strong> A high-priority sensor task frequently misses its deadline because it waits for a lower-priority communication task to release a shared resource.</p>
+
+<p>Identify possible improvements:</p>
+<ol>
+<li>Reduce the duration of shared-resource ownership.</li>
+<li>Use an appropriate mutex with priority inheritance where supported.</li>
+<li>Consider a dedicated communication-owner task and message passing.</li>
+<li>Avoid blocking I/O while holding a mutex.</li>
+<li>Recalculate worst-case blocking and response time.</li>
+<li>Validate the solution under realistic load and fault conditions.</li>
+</ol>
+</section>
+
+<section>
+<h2>26. Interview Questions</h2>
+<ol>
+<li>Define interrupt latency.</li>
+<li>Differentiate interrupt latency and ISR execution time.</li>
+<li>What is task response time?</li>
+<li>Differentiate execution time and response time.</li>
+<li>What is context switching?</li>
+<li>What information is typically saved during a context switch?</li>
+<li>What factors increase interrupt latency?</li>
+<li>How can long critical sections affect real-time performance?</li>
+<li>Why should ISRs be short?</li>
+<li>What is WCET?</li>
+<li>How does priority assignment affect response time?</li>
+<li>What is blocking time?</li>
+<li>How does task notification help in FreeRTOS?</li>
+<li>Why is polling inefficient in many RTOS applications?</li>
+<li>How can GPIO instrumentation help measure interrupt response?</li>
+<li>Why is a measured maximum not necessarily a WCET bound?</li>
+<li>What is the difference between IRQ and FIQ on ARM7?</li>
+<li>How does context-switch overhead affect CPU utilization?</li>
+</ol>
+</section>
+
+<section>
+<h2>27. Lesson Summary</h2>
+<ul>
+<li>Interrupt latency is the delay from an interrupt request to ISR entry.</li>
+<li>ISR execution time and interrupt latency are separate quantities.</li>
+<li>Task response time includes execution and relevant waiting, blocking and interference.</li>
+<li>Context switching introduces CPU overhead.</li>
+<li>Long critical sections and ISRs can degrade real-time responsiveness.</li>
+<li>Priority assignment must be supported by scheduling analysis.</li>
+<li>FreeRTOS notifications, queues and blocking APIs can improve task coordination.</li>
+<li>WCET requires a safe upper bound under defined assumptions.</li>
+<li>Timing measurements must account for instrumentation overhead and hardware limitations.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L04_Real_Time_Communication_Protocols.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L06_Multicore_and_Symmetric_Multiprocessing_RTOS.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 19 – Advanced Real-Time System Concepts</p>
+</footer>
+
+</body>
+</html>
