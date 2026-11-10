@@ -1,1 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stack Overflow Detection | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Stack Overflow Detection</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 18: Memory Management and RTOS Debugging</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 18</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Define stack overflow in an RTOS.</li>
+<li>Understand common causes of stack overflow.</li>
+<li>Explain the consequences of stack corruption.</li>
+<li>Understand FreeRTOS stack-overflow checking methods.</li>
+<li>Configure stack-overflow detection.</li>
+<li>Implement the FreeRTOS stack overflow hook.</li>
+<li>Use stack monitoring and debugging techniques.</li>
+<li>Develop a stack overflow prevention strategy.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Is Stack Overflow?</h2>
+<p>Stack overflow occurs when a task uses more stack memory than has been allocated to it.</p>
+
+<p>Every task has a finite stack area. Function calls, local variables, saved registers and other execution information consume this memory.</p>
+
+<p>If execution requires more space than the allocated stack provides, data outside the stack boundary may be overwritten.</p>
+
+<div class="diagram">
+             ALLOCATED TASK STACK
+
++----------------------------------+
+|                                  |
+|        UNUSED STACK SPACE        |
+|                                  |
++----------------------------------+
+|                                  |
+|        CURRENT STACK DATA        |
+|                                  |
++----------------------------------+
+|        STACK BOUNDARY            |
++----------------------------------+
+                 |
+                 v
+      Further stack growth may
+      overwrite adjacent memory
+</div>
+
+<p>The exact direction of stack growth and location of the boundary depend on the processor architecture and FreeRTOS port.</p>
+
+<div class="warning">Stack overflow is a serious embedded-system fault. It can corrupt task context, kernel data, application variables or neighboring memory regions.</div>
+</section>
+
+<section>
+<h2>3. Causes of Stack Overflow</h2>
+
+<h3>3.1 Insufficient Stack Allocation</h3>
+<p>A task may be created with a stack smaller than its actual execution requirements.</p>
+<pre><code>xTaskCreate(
+    SensorTask,
+    "Sensor",
+    64,
+    NULL,
+    2,
+    NULL
+);</code></pre>
+<p>The stack depth of 64 elements may be insufficient for a task that uses large local arrays or deeply nested function calls. The correct size must be measured for the target and application.</p>
+
+<h3>3.2 Large Local Variables</h3>
+<pre><code>void ProcessData(void)
+{
+    uint8_t buffer[2048];
+
+    /* Process data */
+}</code></pre>
+<p>A large local array can consume a significant portion of the task stack if the compiler places it there.</p>
+
+<h3>3.3 Deep Function Calls</h3>
+<pre><code>void FunctionD(void)
+{
+    int data[100];
+}
+
+void FunctionC(void)
+{
+    FunctionD();
+}
+
+void FunctionB(void)
+{
+    FunctionC();
+}
+
+void FunctionA(void)
+{
+    FunctionB();
+}</code></pre>
+<p>Nested calls can increase peak stack consumption because multiple function frames may remain active simultaneously.</p>
+
+<h3>3.4 Recursive Functions</h3>
+<pre><code>void RecursiveFunction(int count)
+{
+    if (count &lt;= 0)
+    {
+        return;
+    }
+
+    RecursiveFunction(count - 1);
+}</code></pre>
+<p>Every recursive call can consume additional stack space. Unbounded recursion can eventually exhaust the task stack.</p>
+
+<h3>3.5 Library Function Usage</h3>
+<p>Some library functions, formatting routines and complex calculations can require more stack than expected.</p>
+
+<h3>3.6 Interrupt and Exception Handling</h3>
+<p>Interrupt handling may consume additional stack memory depending on the processor architecture, exception mechanism and RTOS port.</p>
+<div class="note">Do not assume that every interrupt uses the interrupted task's stack. Some architectures and ports use dedicated interrupt stacks or separate processor-mode stacks.</div>
+</section>
+
+<section>
+<h2>4. Consequences of Stack Overflow</h2>
+<table>
+<tr><th>Consequence</th><th>Description</th></tr>
+<tr><td>Memory corruption</td><td>Data outside the allocated stack may be overwritten.</td></tr>
+<tr><td>Task failure</td><td>The task may stop functioning correctly.</td></tr>
+<tr><td>Context corruption</td><td>Saved registers or return addresses may become invalid.</td></tr>
+<tr><td>Unexpected reset</td><td>The processor may enter a fault state or watchdog recovery.</td></tr>
+<tr><td>Incorrect output</td><td>Variables and calculated values may become corrupted.</td></tr>
+<tr><td>System instability</td><td>Other tasks or kernel objects may be affected.</td></tr>
+</table>
+
+<p>Stack overflow may not cause an immediate crash. Some faults appear later, making diagnosis difficult.</p>
+</section>
+
+<section>
+<h2>5. FreeRTOS Stack Overflow Detection</h2>
+<p>FreeRTOS provides configurable stack-overflow checking through the <code>configCHECK_FOR_STACK_OVERFLOW</code> setting in <code>FreeRTOSConfig.h</code>.</p>
+
+<h3>5.1 Configuration Value 0</h3>
+<pre><code>#define configCHECK_FOR_STACK_OVERFLOW 0</code></pre>
+<p>Stack-overflow checking is disabled.</p>
+
+<h3>5.2 Configuration Value 1</h3>
+<pre><code>#define configCHECK_FOR_STACK_OVERFLOW 1</code></pre>
+<p>Enables basic stack-boundary or stack-pointer checks implemented by the selected port.</p>
+
+<h3>5.3 Configuration Value 2</h3>
+<pre><code>#define configCHECK_FOR_STACK_OVERFLOW 2</code></pre>
+<p>Enables additional checking, commonly including examination of a known fill pattern near the stack boundary.</p>
+
+<table>
+<tr><th>Setting</th><th>Detection approach</th></tr>
+<tr><td>0</td><td>No FreeRTOS stack-overflow checking.</td></tr>
+<tr><td>1</td><td>Basic port-specific stack-boundary checks.</td></tr>
+<tr><td>2</td><td>Additional pattern checking, where implemented by the port.</td></tr>
+</table>
+
+<div class="warning">The precise checks performed by values 1 and 2 are port-dependent. These settings do not guarantee detection of every possible stack corruption event.</div>
+</section>
+
+<section>
+<h2>6. Stack Overflow Hook Function</h2>
+<p>When FreeRTOS detects a stack overflow using its configured checking mechanism, it calls the application-provided hook function.</p>
+
+<h3>6.1 Function Prototype</h3>
+<pre><code>void vApplicationStackOverflowHook(
+    TaskHandle_t xTask,
+    char *pcTaskName
+);</code></pre>
+
+<p>Parameters:</p>
+<ul>
+<li><code>xTask</code>: Handle identifying the task reported by the kernel.</li>
+<li><code>pcTaskName</code>: Name of the task reported by the kernel.</li>
+</ul>
+
+<h3>6.2 Implementation Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+void vApplicationStackOverflowHook(
+    TaskHandle_t xTask,
+    char *pcTaskName
+)
+{
+    (void)xTask;
+    (void)pcTaskName;
+
+    /* Record diagnostic information if safe */
+
+    taskDISABLE_INTERRUPTS();
+
+    for (;;)
+    {
+        /* Enter a safe failure state */
+    }
+}</code></pre>
+
+<p>The hook should avoid operations that depend on potentially corrupted task state.</p>
+
+<div class="note">The hook is application-provided. Its required declaration, configuration and behavior must match the selected FreeRTOS release and port.</div>
+</section>
+
+<section>
+<h2>7. How Stack Overflow Detection Works</h2>
+<p>A common implementation of stack checking uses stack boundary information and a known fill pattern.</p>
+
+<h3>7.1 Stack Fill Pattern</h3>
+<p>When a task is created, the port may initialize unused stack memory with a known byte pattern.</p>
+
+<div class="diagram">
+         TASK STACK AT CREATION
+
++--------------------------------+
+| 0xA5 0xA5 0xA5 0xA5 ...        |
+| 0xA5 0xA5 0xA5 0xA5 ...        |
+| 0xA5 0xA5 0xA5 0xA5 ...        |
+|                                |
+|        INITIAL STACK           |
++--------------------------------+
+</div>
+
+<p>The exact pattern and initialization method depend on the FreeRTOS port and implementation.</p>
+
+<h3>7.2 After Task Execution</h3>
+<p>As the task uses stack space, previously unused regions are overwritten by execution data.</p>
+
+<div class="diagram">
+       STACK AFTER EXECUTION
+
++--------------------------------+
+| 0xA5 0xA5 0xA5 0xA5 ...        |
+| 0xA5 0xA5 0xA5 0xA5 ...        |
+| SAVED DATA AND LOCAL VALUES    |
+| FUNCTION CALL FRAMES           |
+| CURRENT STACK DATA             |
++--------------------------------+
+</div>
+
+<p>The kernel can examine selected stack regions or boundary information during supported checking operations.</p>
+
+<div class="warning">Pattern checking is a diagnostic technique, not a memory-protection mechanism. Corruption may occur before the scheduler detects it.</div>
+</section>
+
+<section>
+<h2>8. Stack High-Water Mark Monitoring</h2>
+<p>The high-water-mark function helps estimate how much stack has been used.</p>
+
+<h3>8.1 API</h3>
+<pre><code>UBaseType_t uxTaskGetStackHighWaterMark(
+    TaskHandle_t xTask
+);</code></pre>
+
+<p>It reports the minimum amount of unused stack observed since the task started, expressed in stack elements.</p>
+
+<h3>8.2 Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+void MonitorTask(void *pvParameters)
+{
+    UBaseType_t remaining;
+
+    for (;;)
+    {
+        remaining =
+            uxTaskGetStackHighWaterMark(NULL);
+
+        /* Log remaining stack elements */
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}</code></pre>
+
+<p>For the calling task, pass <code>NULL</code>.</p>
+
+<h3>8.3 Convert to Bytes</h3>
+<pre><code>UBaseType_t remainingWords;
+size_t remainingBytes;
+
+remainingWords =
+    uxTaskGetStackHighWaterMark(NULL);
+
+remainingBytes =
+    (size_t)remainingWords * sizeof(StackType_t);</code></pre>
+
+<h3>8.4 Example Calculation</h3>
+<p>Suppose the high-water-mark result is 32 elements and each element occupies 4 bytes.</p>
+<pre><code>Unused stack = 32 × 4
+
+             = 128 bytes</code></pre>
+
+<p>This means that the task has had at least 128 bytes of unused stack remaining at the observed high-water mark, subject to the port's measurement method.</p>
+</section>
+
+<section>
+<h2>9. Stack Overflow Detection vs High-Water Mark</h2>
+<table>
+<tr><th>Parameter</th><th>Overflow Checking</th><th>High-Water Mark</th></tr>
+<tr><td>Purpose</td><td>Detect certain stack-boundary violations</td><td>Estimate minimum unused stack</td></tr>
+<tr><td>Mechanism</td><td>Port-specific boundary and/or pattern checks</td><td>Measures previously unused stack</td></tr>
+<tr><td>Result</td><td>Can trigger overflow hook</td><td>Returns an unused-stack measurement</td></tr>
+<tr><td>Usage</td><td>Fault detection</td><td>Stack sizing and monitoring</td></tr>
+<tr><td>Limitation</td><td>May not detect every corruption</td><td>Only reflects execution paths observed so far</td></tr>
+</table>
+
+<p>Both techniques complement each other. Neither replaces proper stack sizing and worst-case testing.</p>
+</section>
+
+<section>
+<h2>10. Stack Overflow Debugging Procedure</h2>
+<ol>
+<li>Identify the task reported by the overflow hook, if available.</li>
+<li>Check the task's configured stack depth.</li>
+<li>Inspect the task function and its nested function calls.</li>
+<li>Look for large local arrays and recursive calls.</li>
+<li>Check library routines and compiler-generated stack usage.</li>
+<li>Measure the task high-water mark under realistic workloads.</li>
+<li>Inspect stack memory and saved context in the debugger.</li>
+<li>Increase stack allocation when justified by measurement.</li>
+<li>Repeat tests with worst-case inputs and error paths.</li>
+</ol>
+
+<div class="tip">Do not simply increase every task stack arbitrarily. Identify the task with excessive usage and determine the actual source of consumption.</div>
+</section>
+
+<section>
+<h2>11. Compiler and Debugger Support</h2>
+<p>Compiler and debugger facilities can help identify stack consumption.</p>
+
+<table>
+<tr><th>Technique</th><th>Purpose</th></tr>
+<tr><td>Stack-usage report</td><td>Estimates stack usage for individual functions when supported by the compiler.</td></tr>
+<tr><td>Call-tree analysis</td><td>Helps identify deeply nested function calls.</td></tr>
+<tr><td>Memory inspection</td><td>Examines task stack contents and boundary regions.</td></tr>
+<tr><td>Register inspection</td><td>Examines stack pointer and saved processor context.</td></tr>
+<tr><td>Breakpoint debugging</td><td>Identifies execution paths leading to excessive stack use.</td></tr>
+<tr><td>High-water-mark logging</td><td>Tracks minimum unused stack during testing.</td></tr>
+</table>
+
+<h3>11.1 Keil uVision Simulator Considerations</h3>
+<p>In Keil uVision, a simulator-only project can be used to inspect processor registers, memory locations and execution flow when the selected processor and project configuration are supported.</p>
+
+<p>For a FreeRTOS application, actual stack-overflow behavior can only be tested after a compatible FreeRTOS port and compiler integration have been built and run successfully.</p>
+
+<div class="note">A normal LPC2129 bare-metal simulation does not automatically provide FreeRTOS task scheduling or its stack-overflow checks. The ARM7 port and simulator behavior must be verified separately.</div>
+</section>
+
+<section>
+<h2>12. Example: Estimating Stack Requirements</h2>
+<p>Assume a task uses the following approximate stack components:</p>
+
+<table>
+<tr><th>Component</th><th>Estimated Stack Usage</th></tr>
+<tr><td>Task function and local data</td><td>120 bytes</td></tr>
+<tr><td>Nested function calls</td><td>180 bytes</td></tr>
+<tr><td>Library function usage</td><td>100 bytes</td></tr>
+<tr><td>Additional execution context</td><td>100 bytes</td></tr>
+<tr><td><strong>Estimated peak</strong></td><td><strong>500 bytes</strong></td></tr>
+</table>
+
+<p>Assume a design margin of 50% for this example:</p>
+<pre><code>Required planning size =
+    500 + (500 × 0.50)
+
+= 750 bytes</code></pre>
+
+<p>If <code>sizeof(StackType_t)</code> is 4 bytes:</p>
+<pre><code>Stack depth = 750 / 4
+
+            = 187.5 elements
+
+Choose at least 188 elements,
+then validate alignment, port requirements
+and actual measured usage.</code></pre>
+
+<div class="warning">This is an illustrative estimate, not a universal sizing formula. The final stack allocation must be validated against compiler reports, port requirements and measured worst-case execution.</div>
+</section>
+
+<section>
+<h2>13. Best Practices for Preventing Stack Overflow</h2>
+<ul>
+<li>Determine stack size using analysis and measurement.</li>
+<li>Avoid large automatic local arrays in frequently called functions.</li>
+<li>Prefer bounded loops over uncontrolled recursion.</li>
+<li>Review library functions that use substantial stack memory.</li>
+<li>Enable stack-overflow checking during development.</li>
+<li>Monitor high-water marks for every important task.</li>
+<li>Test error-handling and maximum-load execution paths.</li>
+<li>Keep interrupt service routines short.</li>
+<li>Understand whether interrupts use task, system or dedicated interrupt stacks.</li>
+<li>Recheck stack usage after software or compiler changes.</li>
+<li>Maintain a documented stack budget for the complete application.</li>
+</ul>
+</section>
+
+<section>
+<h2>14. Practical Exercises</h2>
+<ol>
+<li>Define stack overflow and explain its effect on an RTOS.</li>
+<li>Write a C function containing a large local array and explain its stack impact.</li>
+<li>Explain how recursive functions can exhaust stack memory.</li>
+<li>Configure <code>configCHECK_FOR_STACK_OVERFLOW</code> to use level 2 checking.</li>
+<li>Implement <code>vApplicationStackOverflowHook()</code>.</li>
+<li>Write a task that records its own high-water mark every second.</li>
+<li>Convert 48 unused stack elements into bytes when each element is 4 bytes.</li>
+<li>Prepare a debugging checklist for a task that unexpectedly crashes.</li>
+<li>Explain why high-water-mark results do not prove that stack usage is safe for all possible execution paths.</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Interview Questions</h2>
+<ol>
+<li>What is stack overflow in an RTOS?</li>
+<li>What are the common causes of task stack overflow?</li>
+<li>What happens when a task stack exceeds its allocated memory?</li>
+<li>What does <code>configCHECK_FOR_STACK_OVERFLOW</code> control?</li>
+<li>What is the difference between overflow-checking levels 1 and 2?</li>
+<li>What is <code>vApplicationStackOverflowHook()</code>?</li>
+<li>What is the purpose of <code>uxTaskGetStackHighWaterMark()</code>?</li>
+<li>What is the difference between stack overflow detection and high-water-mark monitoring?</li>
+<li>Can stack overflow checking detect every possible memory corruption?</li>
+<li>How can a debugger help diagnose stack overflow?</li>
+<li>Why can a library function increase task stack requirements?</li>
+<li>How would you determine a suitable stack size for a real-time task?</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Lesson Summary</h2>
+<ul>
+<li>Stack overflow occurs when task execution exceeds allocated stack capacity.</li>
+<li>Common causes include insufficient stack size, large local arrays, recursion and deep function calls.</li>
+<li>Overflow can corrupt memory, saved context and kernel data.</li>
+<li>FreeRTOS provides configurable stack-overflow checking.</li>
+<li><code>vApplicationStackOverflowHook()</code> provides an application-level response to detected overflow.</li>
+<li><code>uxTaskGetStackHighWaterMark()</code> helps estimate minimum unused stack.</li>
+<li>Compiler reports, debugger inspection and worst-case testing improve stack analysis.</li>
+<li>Proper sizing and continuous validation are essential for reliable RTOS applications.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L04_Task_Stack_Management.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L06_Heap_Usage_and_Memory_Fragmentation.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 18 – Memory Management and RTOS Debugging</p>
+</footer>
+
+</body>
+</html>
