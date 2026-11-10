@@ -1,1 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Counting Semaphores</title>
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fc;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 15px;
+}
+header h1 {
+    font-size: 29px;
+    margin-bottom: 8px;
+}
+header p {
+    font-size: 15px;
+}
+nav {
+    background: #ffffff;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 13px;
+}
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+section {
+    background: white;
+    padding: 23px;
+    margin-bottom: 22px;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    font-size: 22px;
+    border-bottom: 2px solid #d8e6fa;
+    padding-bottom: 8px;
+    margin-bottom: 15px;
+}
+h3 {
+    color: #1765b1;
+    margin: 17px 0 9px;
+    font-size: 18px;
+}
+p {
+    margin: 9px 0;
+}
+ul, ol {
+    padding-left: 25px;
+    margin: 10px 0;
+}
+li {
+    margin: 6px 0;
+}
+pre {
+    background: #172338;
+    color: #e6edf7;
+    padding: 17px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 13px 0;
+    font-size: 13px;
+    line-height: 1.6;
+}
+code {
+    font-family: Consolas, monospace;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+    display: block;
+    overflow-x: auto;
+}
+th, td {
+    border: 1px solid #d5deea;
+    padding: 11px;
+    text-align: left;
+    min-width: 130px;
+}
+th {
+    background: #eaf2ff;
+    color: #174ea6;
+}
+.note {
+    background: #eaf3ff;
+    border-left: 4px solid #2878d7;
+    padding: 13px;
+    margin: 14px 0;
+    border-radius: 5px;
+}
+.warning {
+    background: #fff5e6;
+    border-left: 4px solid #e69a24;
+    padding: 13px;
+    margin: 14px 0;
+    border-radius: 5px;
+}
+.example {
+    background: #effaf2;
+    border-left: 4px solid #269653;
+    padding: 13px;
+    margin: 14px 0;
+    border-radius: 5px;
+}
+.objectives {
+    background: #eef5ff;
+    padding: 17px 22px;
+    border-radius: 8px;
+}
+.navigation {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.navigation a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media(max-width: 600px) {
+    header h1 {
+        font-size: 23px;
+    }
+    nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    section {
+        padding: 17px;
+    }
+}
+</style>
+</head>
+<body>
 
+<header>
+    <h1>Chapter 16: FreeRTOS Semaphores and Mutexes</h1>
+    <p>Lesson 02 – FreeRTOS Counting Semaphores</p>
+</header>
+
+<nav>
+    <a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+    <h2>Lesson Overview</h2>
+    <p>
+        A counting semaphore is a synchronization mechanism that maintains
+        a count of available tokens. It allows a task to track multiple
+        pending events or the number of available instances of a resource.
+    </p>
+    <p>
+        Unlike a binary semaphore, which can hold only one token, a
+        counting semaphore can hold several tokens up to a configured
+        maximum count.
+    </p>
+    <div class="objectives">
+        <h3>Learning Objectives</h3>
+        <ul>
+            <li>Understand counting semaphore operation.</li>
+            <li>Differentiate binary and counting semaphores.</li>
+            <li>Learn the counting semaphore creation API.</li>
+            <li>Understand semaphore take and give operations.</li>
+            <li>Use counting semaphores for event counting.</li>
+            <li>Apply counting semaphores to resource-pool management.</li>
+            <li>Understand counting semaphore limitations.</li>
+        </ul>
+    </div>
+</section>
+
+<section>
+    <h2>1. What Is a Counting Semaphore?</h2>
+    <p>
+        A counting semaphore is a kernel synchronization object whose
+        count represents the number of available tokens.
+    </p>
+    <p>
+        The count ranges from zero to a configured maximum value.
+    </p>
+
+    <pre><code>0 &lt;= Semaphore Count &lt;= Maximum Count</code></pre>
+
+    <ul>
+        <li>If the count is greater than zero, a task can take a token.</li>
+        <li>Taking a token decreases the count by one.</li>
+        <li>Giving a token increases the count by one, provided the
+            maximum has not been reached.</li>
+        <li>If the count is zero, a task attempting to take can block
+            until a token becomes available or its timeout expires.</li>
+    </ul>
+
+    <h3>Example: Counting Available Tokens</h3>
+    <table>
+        <tr>
+            <th>Operation</th>
+            <th>Semaphore Count</th>
+        </tr>
+        <tr>
+            <td>Initial count</td>
+            <td>3</td>
+        </tr>
+        <tr>
+            <td>Task takes one token</td>
+            <td>2</td>
+        </tr>
+        <tr>
+            <td>Another task takes one token</td>
+            <td>1</td>
+        </tr>
+        <tr>
+            <td>Another task takes one token</td>
+            <td>0</td>
+        </tr>
+        <tr>
+            <td>Task gives one token</td>
+            <td>1</td>
+        </tr>
+    </table>
+
+    <div class="note">
+        <strong>Important:</strong> A counting semaphore stores a count,
+        not event data. If every event contains a different value or
+        message, use a queue to transfer that information.
+    </div>
+</section>
+
+<section>
+    <h2>2. Binary Semaphore vs Counting Semaphore</h2>
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Binary Semaphore</th>
+            <th>Counting Semaphore</th>
+        </tr>
+        <tr>
+            <td>Maximum count</td>
+            <td>1</td>
+            <td>Configured maximum</td>
+        </tr>
+        <tr>
+            <td>Count range</td>
+            <td>0 to 1</td>
+            <td>0 to maximum</td>
+        </tr>
+        <tr>
+            <td>Purpose</td>
+            <td>Event signaling or synchronization</td>
+            <td>Counting events or available resources</td>
+        </tr>
+        <tr>
+            <td>Multiple pending tokens</td>
+            <td>No</td>
+            <td>Yes, up to maximum</td>
+        </tr>
+        <tr>
+            <td>Ownership</td>
+            <td>No</td>
+            <td>No</td>
+        </tr>
+        <tr>
+            <td>Priority inheritance</td>
+            <td>No</td>
+            <td>No</td>
+        </tr>
+    </table>
+
+    <div class="example">
+        <strong>Example:</strong> A binary semaphore can represent whether
+        at least one event is pending. A counting semaphore can represent
+        how many events are pending, up to its maximum count.
+    </div>
+</section>
+
+<section>
+    <h2>3. Creating a Counting Semaphore</h2>
+    <p>
+        FreeRTOS provides <code>xSemaphoreCreateCounting()</code> to
+        create a counting semaphore.
+    </p>
+
+    <pre><code>SemaphoreHandle_t xSemaphoreCreateCounting(
+    UBaseType_t uxMaxCount,
+    UBaseType_t uxInitialCount
+);</code></pre>
+
+    <h3>Function Parameters</h3>
+    <table>
+        <tr>
+            <th>Parameter</th>
+            <th>Description</th>
+        </tr>
+        <tr>
+            <td>uxMaxCount</td>
+            <td>Maximum number of tokens the semaphore can hold.</td>
+        </tr>
+        <tr>
+            <td>uxInitialCount</td>
+            <td>Initial number of available tokens.</td>
+        </tr>
+    </table>
+
+    <h3>Return Value</h3>
+    <ul>
+        <li>Returns a valid <code>SemaphoreHandle_t</code> on success.</li>
+        <li>Returns <code>NULL</code> if creation fails, for example,
+            because memory allocation fails.</li>
+    </ul>
+
+    <h3>Example</h3>
+    <pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xCountingSemaphore;
+
+int main(void)
+{
+    xCountingSemaphore = xSemaphoreCreateCounting(5, 0);
+
+    if (xCountingSemaphore == NULL)
+    {
+        /* Semaphore creation failed */
+        for (;;);
+    }
+
+    /* Continue with task creation and scheduler startup */
+
+    return 0;
+}</code></pre>
+
+    <div class="warning">
+        The initial count must not exceed the maximum count. The example
+        creates a semaphore with a maximum count of 5 and an initial
+        count of 0, meaning that no tokens are initially available.
+        This dynamic-creation API requires a suitable FreeRTOS heap.
+    </div>
+</section>
+
+<section>
+    <h2>4. Taking a Counting Semaphore</h2>
+    <p>
+        A task uses <code>xSemaphoreTake()</code> to obtain one token.
+    </p>
+
+    <pre><code>xSemaphoreTake(
+    xSemaphore,
+    xTicksToWait
+);</code></pre>
+
+    <h3>Operation</h3>
+    <ol>
+        <li>If the count is greater than zero, the kernel decrements
+            the count and the operation succeeds.</li>
+        <li>If the count is zero, the task waits for the specified
+            timeout.</li>
+        <li>If a token becomes available before the timeout expires,
+            the task can obtain it.</li>
+        <li>If no token becomes available, the operation returns
+            <code>pdFALSE</code>.</li>
+    </ol>
+
+    <h3>Example</h3>
+    <pre><code>if (xSemaphoreTake(xCountingSemaphore,
+                   pdMS_TO_TICKS(1000)) == pdTRUE)
+{
+    /* One token was successfully obtained. */
+
+    /* Perform the operation associated with this token. */
+}
+else
+{
+    /* Timeout: no token became available. */
+}</code></pre>
+
+    <h3>Timeout Values</h3>
+    <table>
+        <tr>
+            <th>Value</th>
+            <th>Meaning</th>
+        </tr>
+        <tr>
+            <td>0</td>
+            <td>Do not wait; check immediately.</td>
+        </tr>
+        <tr>
+            <td>Finite tick value</td>
+            <td>Wait up to the specified number of ticks.</td>
+        </tr>
+        <tr>
+            <td>portMAX_DELAY</td>
+            <td>Wait indefinitely when the relevant configuration
+                supports indefinite blocking.</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>5. Giving a Counting Semaphore</h2>
+    <p>
+        A task uses <code>xSemaphoreGive()</code> to return or add one
+        token to the semaphore.
+    </p>
+
+    <pre><code>if (xSemaphoreGive(xCountingSemaphore) == pdTRUE)
+{
+    /* Token successfully added. */
+}
+else
+{
+    /* Semaphore was already at its maximum count. */
+}</code></pre>
+
+    <h3>Operation</h3>
+    <ul>
+        <li>If the current count is below the maximum, the count
+            increases by one.</li>
+        <li>If a task is blocked waiting for a token, it may become
+            Ready after a successful give.</li>
+        <li>If the count is already at the maximum, the give operation
+            fails and the count remains unchanged.</li>
+    </ul>
+
+    <div class="note">
+        <strong>Remember:</strong> Giving a semaphore does not transfer
+        a data item. It only changes the semaphore count and may unblock
+        a waiting task.
+    </div>
+</section>
+
+<section>
+    <h2>6. Counting Semaphore from an ISR</h2>
+    <p>
+        An interrupt service routine can signal an event using
+        <code>xSemaphoreGiveFromISR()</code>.
+    </p>
+
+    <pre><code>BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+xSemaphoreGiveFromISR(
+    xCountingSemaphore,
+    &amp;xHigherPriorityTaskWoken
+);
+
+/* Request a context switch if required.
+   Use the ISR-yield mechanism provided by the selected port. */</code></pre>
+
+    <h3>Important ISR Rules</h3>
+    <ul>
+        <li>Use the FromISR API rather than the normal task-context API.</li>
+        <li>Do not block inside an ISR.</li>
+        <li>Keep interrupt service routines short.</li>
+        <li>Check the return value because the semaphore may already
+            be at its maximum count.</li>
+        <li>Use the yield mechanism specified by the selected FreeRTOS
+            port.</li>
+    </ul>
+
+    <div class="warning">
+        FreeRTOS interrupt-priority and ISR-yield rules are
+        port-specific. Do not apply Cortex-M NVIC or BASEPRI rules
+        to an ARM7 LPC2129 system.
+    </div>
+</section>
+
+<section>
+    <h2>7. Application 1: Counting Multiple Events</h2>
+    <p>
+        Suppose a system receives sensor events. A task must process
+        one unit of work for every event received.
+    </p>
+
+    <h3>Working Principle</h3>
+    <ol>
+        <li>Create a counting semaphore with maximum count 10
+            and initial count 0.</li>
+        <li>Whenever an event occurs, the producer or ISR gives
+            one token.</li>
+        <li>The processing task takes one token.</li>
+        <li>The task performs one unit of event-processing work.</li>
+    </ol>
+
+    <h3>Example Code</h3>
+    <pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xEventSemaphore;
+
+void EventProducerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Example event-generation point */
+
+        if (xSemaphoreGive(xEventSemaphore) != pdTRUE)
+        {
+            /* Token limit reached.
+               Apply the application's overflow policy. */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void EventProcessingTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(xEventSemaphore,
+                           portMAX_DELAY) == pdTRUE)
+        {
+            /* Process one event unit. */
+        }
+    }
+}
+
+int main(void)
+{
+    xEventSemaphore = xSemaphoreCreateCounting(10, 0);
+
+    if (xEventSemaphore == NULL)
+    {
+        for (;;);
+    }
+
+    xTaskCreate(EventProducerTask,
+                "Producer",
+                256,
+                NULL,
+                2,
+                NULL);
+
+    xTaskCreate(EventProcessingTask,
+                "Processor",
+                256,
+                NULL,
+                2,
+                NULL);
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+    <div class="note">
+        This is a generic FreeRTOS example. Stack-depth units and
+        available APIs depend on the selected FreeRTOS release and port.
+        The example's producer is a task, not a hardware ISR.
+    </div>
+
+    <h3>Expected Behaviour</h3>
+    <ul>
+        <li>The producer adds one token every 500 ms.</li>
+        <li>The processing task wakes when a token is available.</li>
+        <li>Each successful take consumes one token.</li>
+        <li>If the producer generates events faster than the consumer
+            can process them, the count can increase.</li>
+        <li>If the maximum count is reached, additional give operations
+            fail and the application must handle the overflow.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>8. Application 2: Resource Pool Management</h2>
+    <p>
+        A counting semaphore can track the number of available instances
+        in a pool of identical resources.
+    </p>
+
+    <h3>Example</h3>
+    <p>
+        Consider a system with four identical communication buffers.
+        A counting semaphore is created with:
+    </p>
+
+    <pre><code>xResourceSemaphore =
+    xSemaphoreCreateCounting(4, 4);</code></pre>
+
+    <p>
+        Initially, all four buffer slots are available.
+    </p>
+
+    <table>
+        <tr>
+            <th>Operation</th>
+            <th>Available Resource Count</th>
+        </tr>
+        <tr>
+            <td>Initial state</td>
+            <td>4</td>
+        </tr>
+        <tr>
+            <td>Task A obtains a resource</td>
+            <td>3</td>
+        </tr>
+        <tr>
+            <td>Task B obtains a resource</td>
+            <td>2</td>
+        </tr>
+        <tr>
+            <td>Task C obtains a resource</td>
+            <td>1</td>
+        </tr>
+        <tr>
+            <td>Task D obtains a resource</td>
+            <td>0</td>
+        </tr>
+        <tr>
+            <td>Task B releases its resource</td>
+            <td>1</td>
+        </tr>
+    </table>
+
+    <h3>Basic Resource Acquisition</h3>
+    <pre><code>if (xSemaphoreTake(xResourceSemaphore,
+                   pdMS_TO_TICKS(1000)) == pdTRUE)
+{
+    /* A resource slot is available. */
+
+    /* Obtain and use a specific buffer through
+       the application's resource-management logic. */
+
+    /* Release the resource slot when finished. */
+    xSemaphoreGive(xResourceSemaphore);
+}
+else
+{
+    /* No resource became available in time. */
+}</code></pre>
+
+    <div class="warning">
+        The semaphore tracks only the number of available slots.
+        It does not identify which particular buffer is free.
+        For distinct buffers, use a free-list, queue of buffer pointers,
+        or another ownership-tracking mechanism alongside the semaphore.
+    </div>
+</section>
+
+<section>
+    <h2>9. Counting Semaphore vs Mutex</h2>
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Counting Semaphore</th>
+            <th>Mutex</th>
+        </tr>
+        <tr>
+            <td>Primary purpose</td>
+            <td>Count tokens, events, or available instances</td>
+            <td>Protect shared resources</td>
+        </tr>
+        <tr>
+            <td>Ownership</td>
+            <td>No ownership</td>
+            <td>Has ownership</td>
+        </tr>
+        <tr>
+            <td>Priority inheritance</td>
+            <td>No</td>
+            <td>Supported by standard FreeRTOS mutexes</td>
+        </tr>
+        <tr>
+            <td>ISR use</td>
+            <td>FromISR APIs where supported</td>
+            <td>Not permitted</td>
+        </tr>
+        <tr>
+            <td>Typical application</td>
+            <td>Event counting and resource availability</td>
+            <td>Exclusive access to a shared resource</td>
+        </tr>
+    </table>
+
+    <p>
+        A counting semaphore is not a replacement for a mutex when
+        exclusive ownership and priority inheritance are required.
+    </p>
+</section>
+
+<section>
+    <h2>10. Common Programming Errors</h2>
+    <ol>
+        <li><strong>Incorrect initial count:</strong> The initial count
+            must not exceed the configured maximum.</li>
+        <li><strong>Ignoring give failure:</strong> A give can fail
+            when the count has reached its maximum.</li>
+        <li><strong>Ignoring take timeout:</strong> Always handle the
+            possibility that no token becomes available.</li>
+        <li><strong>Using a semaphore to transfer data:</strong>
+            Use a queue when event payloads must be transferred.</li>
+        <li><strong>Using a counting semaphore as a mutex:</strong>
+            Use a mutex for exclusive ownership and priority inheritance.</li>
+        <li><strong>Unbalanced resource accounting:</strong> Giving
+            extra tokens can make the count inaccurate.</li>
+        <li><strong>Assuming the count identifies a resource:</strong>
+            Maintain a separate free-list or resource ownership structure
+            when individual resources must be selected.</li>
+        <li><strong>Ignoring overflow:</strong> Define what happens
+            when the maximum count is reached.</li>
+    </ol>
+</section>
+
+<section>
+    <h2>11. Practical Experiment</h2>
+    <h3>Objective</h3>
+    <p>
+        To understand how a counting semaphore maintains multiple
+        tokens and synchronizes a producer task with a consumer task.
+    </p>
+
+    <h3>Experiment Setup</h3>
+    <ul>
+        <li>Create a counting semaphore with maximum count 5.</li>
+        <li>Set its initial count to 0.</li>
+        <li>Create one producer task and one consumer task.</li>
+        <li>The producer gives a token periodically.</li>
+        <li>The consumer takes a token and processes one event.</li>
+    </ul>
+
+    <h3>Expected Result</h3>
+    <ul>
+        <li>The consumer waits while the semaphore count is zero.</li>
+        <li>Each successful give makes one token available.</li>
+        <li>Each successful take consumes one token.</li>
+        <li>The consumer processes events as tokens become available.</li>
+        <li>The count never exceeds the configured maximum.</li>
+    </ul>
+
+    <div class="warning">
+        <strong>Keil uVision / LPC2129 note:</strong> This experiment
+        requires a compatible FreeRTOS ARM7 port, compiler integration,
+        startup code, and linker configuration. The LPC2129 uses an
+        ARM7TDMI-S core, not a Cortex-M core. Do not assume that a
+        generic FreeRTOS project will run in the Keil simulator without
+        verifying those components. The semaphore logic can also be
+        studied using a supported FreeRTOS simulator or compatible
+        development board.
+    </div>
+</section>
+
+<section>
+    <h2>12. Review Questions</h2>
+    <ol>
+        <li>What is a counting semaphore?</li>
+        <li>What is the range of a counting semaphore's count?</li>
+        <li>Which API creates a counting semaphore in FreeRTOS?</li>
+        <li>What is the purpose of the maximum-count parameter?</li>
+        <li>What happens when a task takes a semaphore whose count is zero?</li>
+        <li>What happens when a give operation is attempted at maximum count?</li>
+        <li>How does a counting semaphore differ from a binary semaphore?</li>
+        <li>How can a counting semaphore be used to track available resources?</li>
+        <li>Why does a counting semaphore not replace a mutex?</li>
+        <li>Why should a queue be used when event payloads must be transferred?</li>
+    </ol>
+</section>
+
+<section>
+    <h2>13. Lesson Summary</h2>
+    <ul>
+        <li>A counting semaphore maintains a count of available tokens.</li>
+        <li>The count ranges from zero to the configured maximum.</li>
+        <li><code>xSemaphoreCreateCounting()</code> creates the semaphore.</li>
+        <li><code>xSemaphoreTake()</code> obtains one token.</li>
+        <li><code>xSemaphoreGive()</code> adds one token.</li>
+        <li><code>xSemaphoreGiveFromISR()</code> signals from an ISR
+            where supported by the port.</li>
+        <li>Counting semaphores can count pending events and track
+            available resource instances.</li>
+        <li>They do not provide ownership or priority inheritance.</li>
+        <li>Queues should be used when actual data must be transferred.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>14. Assignment</h2>
+    <ol>
+        <li>Create a counting semaphore with a maximum count of 8
+            and initial count of 0.</li>
+        <li>Write a producer task that gives one token every 200 ms.</li>
+        <li>Write a consumer task that takes one token and processes
+            one event.</li>
+        <li>Modify the program so the consumer waits for a maximum
+            of 500 ms.</li>
+        <li>Record what happens when the producer generates tokens
+            faster than the consumer processes them.</li>
+        <li>Explain how a queue would differ from the semaphore
+            in an event-processing application.</li>
+    </ol>
+</section>
+
+<div class="navigation">
+    <a href="L01_FreeRTOS_Binary_Semaphores.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L03_FreeRTOS_Mutexes.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+    <p>Chapter 16 – FreeRTOS Semaphores and Mutexes</p>
+</footer>
+
+</body>
+</html>
