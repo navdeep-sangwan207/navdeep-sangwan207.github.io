@@ -1,1 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Priority Inversion | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Priority Inversion</h1>
+<p>Chapter 10 – Mutexes and Resource Management | Lesson 04</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 10</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>Priority inversion is a scheduling problem that occurs when a high-priority task is indirectly delayed by a lower-priority task.</p>
+
+<p>It commonly occurs when tasks share resources protected by mutexes. A low-priority task may hold a mutex that a high-priority task needs. While the high-priority task is blocked, a medium-priority task may execute and prevent the low-priority task from releasing the mutex.</p>
+
+<div class="info-box">
+<strong>Key concept:</strong> A high-priority task can be forced to wait because a lower-priority task owns a required resource. This reverses the expected priority-based execution order.
+</div>
+</section>
+
+<section>
+<h2>2. Tasks Involved in Priority Inversion</h2>
+<p>A typical priority inversion example involves three tasks:</p>
+
+<table>
+<tr><th>Task</th><th>Priority</th><th>Responsibility</th></tr>
+<tr><td>Task H</td><td>High</td><td>Needs a shared resource protected by a mutex.</td></tr>
+<tr><td>Task M</td><td>Medium</td><td>Performs an independent operation.</td></tr>
+<tr><td>Task L</td><td>Low</td><td>Initially owns the shared-resource mutex.</td></tr>
+</table>
+
+<p>Assume the priority ordering is:</p>
+<pre><code>Task H  = Highest priority
+Task M  = Medium priority
+Task L  = Lowest priority</code></pre>
+</section>
+
+<section>
+<h2>3. How Priority Inversion Occurs</h2>
+
+<h3>Step-by-step execution</h3>
+<ol>
+<li>Task L starts running and takes a mutex.</li>
+<li>Task H becomes Ready and attempts to take the same mutex.</li>
+<li>Task H cannot acquire it because Task L owns it, so Task H becomes Blocked.</li>
+<li>Task M becomes Ready and preempts Task L.</li>
+<li>Task M executes while Task H remains Blocked.</li>
+<li>Task L cannot run to release the mutex until Task M stops or blocks.</li>
+<li>Task H remains delayed even though it has the highest priority.</li>
+</ol>
+
+<div class="warning-box">
+The medium-priority task does not own the mutex. Its execution indirectly delays the high-priority task by preventing the low-priority mutex owner from running.
+</div>
+</section>
+
+<section>
+<h2>4. Priority Inversion Timeline</h2>
+
+<pre><code>Time ------------------------------------------------------>
+
+Task H:   ----------- BLOCKED -------------------- RUN
+                       Waiting for mutex
+
+Task M:   ------------- RUNNING --------
+                       Preempts Task L
+
+Task L:   RUN -- MUTEX HELD -- WAIT -- RUN -- RELEASE
+                                      |
+                                      +-- Mutex released
+
+Events:
+1. Task L takes mutex.
+2. Task H requests mutex and blocks.
+3. Task M preempts Task L.
+4. Task L resumes and releases mutex.
+5. Task H becomes Ready and can run.</code></pre>
+
+<p>The important observation is that Task H is blocked by Task L, but its waiting time is extended by Task M.</p>
+</section>
+
+<section>
+<h2>5. Numerical Example</h2>
+<p>Assume the following execution characteristics:</p>
+
+<table>
+<tr><th>Task</th><th>Priority</th><th>Execution requirement</th></tr>
+<tr><td>Task L</td><td>1 (Low)</td><td>5 ms remaining, including 2 ms of mutex-held work</td></tr>
+<tr><td>Task M</td><td>2 (Medium)</td><td>6 ms</td></tr>
+<tr><td>Task H</td><td>3 (High)</td><td>2 ms</td></tr>
+</table>
+
+<p>Assume Task L acquires the mutex at time 0. Task H requests it at time 1 ms, and Task M becomes Ready at time 2 ms.</p>
+
+<h3>Without priority inheritance</h3>
+<table>
+<tr><th>Time</th><th>Execution</th><th>Explanation</th></tr>
+<tr><td>0–1 ms</td><td>Task L</td><td>Task L owns the mutex.</td></tr>
+<tr><td>1–2 ms</td><td>Task L</td><td>Task H blocks waiting for the mutex.</td></tr>
+<tr><td>2–8 ms</td><td>Task M</td><td>Medium-priority task preempts Task L.</td></tr>
+<tr><td>8–10 ms</td><td>Task L</td><td>Task L completes the remaining mutex-held work and releases it.</td></tr>
+<tr><td>10–12 ms</td><td>Task H</td><td>Task H executes after acquiring the mutex.</td></tr>
+</table>
+
+<p>Task H waits from time 1 ms until time 10 ms before it can start its protected operation.</p>
+
+<div class="info-box">
+This example assumes Task L has 2 ms of mutex-held work remaining when it resumes. It illustrates the additional blocking caused by medium-priority execution.
+</div>
+</section>
+
+<section>
+<h2>6. Effects of Priority Inversion</h2>
+<ul>
+<li>Increased response time for high-priority tasks.</li>
+<li>Possible deadline misses.</li>
+<li>Unpredictable task execution delays.</li>
+<li>Reduced real-time system performance.</li>
+<li>Potential failure of time-critical control operations.</li>
+<li>Difficulty in calculating worst-case response time.</li>
+</ul>
+
+<p>Priority inversion is particularly important in systems where high-priority tasks must respond within bounded time intervals.</p>
+</section>
+
+<section>
+<h2>7. Priority Inversion in Embedded Systems</h2>
+
+<h3>Example: Shared communication interface</h3>
+<p>Consider an embedded controller in which:</p>
+<ul>
+<li>A low-priority task is transmitting a diagnostic message through UART.</li>
+<li>A high-priority task needs the same UART driver to report an important fault.</li>
+<li>A medium-priority task performs periodic data processing.</li>
+</ul>
+
+<p>If the low-priority task owns the UART mutex, the high-priority fault-reporting task must wait. If the medium-priority task preempts the low-priority task, the delay can become longer.</p>
+
+<h3>Other possible applications</h3>
+<ul>
+<li>Shared SPI or I2C controllers.</li>
+<li>Shared display drivers.</li>
+<li>Common memory structures.</li>
+<li>Storage and file-system interfaces.</li>
+<li>Shared peripheral driver state.</li>
+</ul>
+</section>
+
+<section>
+<h2>8. Priority Inversion vs Normal Blocking</h2>
+
+<table>
+<tr><th>Normal blocking</th><th>Priority inversion</th></tr>
+<tr><td>A task waits for a resource or event.</td><td>A high-priority task waits for a resource held by a lower-priority task.</td></tr>
+<tr><td>Waiting may be expected behavior.</td><td>Waiting can be extended by intermediate-priority execution.</td></tr>
+<tr><td>Does not necessarily involve a priority-order problem.</td><td>Involves an indirect reversal of expected priority behavior.</td></tr>
+<tr><td>Can be part of normal synchronization.</td><td>Can threaten real-time deadlines.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>9. Priority Inheritance</h2>
+<p>Priority inheritance is a mechanism used to reduce priority inversion.</p>
+
+<p>When a high-priority task blocks on a mutex owned by a lower-priority task, the mutex owner can temporarily inherit the higher priority.</p>
+
+<h3>How it works</h3>
+<ol>
+<li>Task L owns a mutex.</li>
+<li>Task H attempts to acquire the same mutex and blocks.</li>
+<li>The RTOS temporarily raises Task L's effective priority to that of Task H, subject to the RTOS's inheritance rules.</li>
+<li>Task L can now preempt Task M.</li>
+<li>Task L completes its protected operation and releases the mutex.</li>
+<li>Task H becomes Ready and can acquire the mutex.</li>
+<li>Task L's priority is restored according to the mutex and inheritance rules.</li>
+</ol>
+
+<div class="info-box">
+Priority inheritance helps the mutex owner run sooner. It does not make the mutex available immediately, nor does it remove the execution time needed to finish the protected operation.
+</div>
+</section>
+
+<section>
+<h2>10. Priority Inversion Without and With Priority Inheritance</h2>
+
+<h3>Without priority inheritance</h3>
+<pre><code>Task H:  BLOCKED ---------------------- RUN
+Task M:          RUNNING
+Task L:  RUN -- WAIT -- RUN -- RELEASE
+
+Task M delays the mutex owner.</code></pre>
+
+<h3>With priority inheritance</h3>
+<pre><code>Task H:  BLOCKED ----------- RUN
+Task M:  READY
+Task L:  RUN -- INHERITS H PRIORITY
+                  |
+                  +-- RELEASE MUTEX
+
+Task L temporarily executes at H's inherited priority.</code></pre>
+
+<p>Task M no longer preempts Task L merely because Task L originally had a lower priority than Task M.</p>
+</section>
+
+<section>
+<h2>11. FreeRTOS and Priority Inheritance</h2>
+<p>FreeRTOS mutexes provide a basic priority inheritance mechanism.</p>
+
+<h3>Creating a mutex</h3>
+<pre><code>SemaphoreHandle_t xMutex;
+
+xMutex = xSemaphoreCreateMutex();</code></pre>
+
+<h3>Taking a mutex</h3>
+<pre><code>if (xSemaphoreTake(
+        xMutex,
+        portMAX_DELAY) == pdTRUE)
+{
+    AccessSharedResource();
+
+    xSemaphoreGive(xMutex);
+}</code></pre>
+
+<p>When a higher-priority task blocks on a mutex held by a lower-priority task, FreeRTOS can raise the owner's priority to reduce inversion.</p>
+
+<h3>Important FreeRTOS behavior</h3>
+<ul>
+<li>Priority inheritance is associated with mutexes, not ordinary binary semaphores.</li>
+<li>Mutexes must be used in task context.</li>
+<li>The owning task must release the mutex.</li>
+<li>FreeRTOS uses a basic priority inheritance implementation rather than every feature of a full priority-ceiling or priority-inheritance protocol.</li>
+<li>Holding multiple mutexes can complicate priority restoration and blocking analysis.</li>
+</ul>
+
+<div class="warning-box">
+Do not assume that priority inheritance guarantees zero blocking or eliminates every priority inversion scenario. The design must still bound critical-section execution and resource waiting times.
+</div>
+</section>
+
+<section>
+<h2>12. Reducing Priority Inversion</h2>
+
+<h3>12.1 Use mutexes appropriately</h3>
+<p>Use a mutex for shared task-level resource protection instead of using a binary semaphore as a substitute for ownership-based locking.</p>
+
+<h3>12.2 Keep critical sections short</h3>
+<p>Reduce the time spent holding a mutex. Perform unrelated processing after releasing it.</p>
+
+<h3>12.3 Avoid unnecessary resource sharing</h3>
+<p>Consider assigning a dedicated owner task to a peripheral and using queues to receive requests.</p>
+
+<h3>12.4 Establish a locking order</h3>
+<p>When tasks need multiple mutexes, define a consistent acquisition order to reduce deadlock risk.</p>
+
+<h3>12.5 Analyze blocking time</h3>
+<p>Include mutex waiting and resource blocking in worst-case response-time analysis.</p>
+
+<h3>12.6 Use suitable task priorities</h3>
+<p>Assign priorities according to real-time requirements, deadlines and task criticality.</p>
+</section>
+
+<section>
+<h2>13. Priority Inheritance vs Priority Ceiling</h2>
+
+<table>
+<tr><th>Feature</th><th>Priority Inheritance</th><th>Priority Ceiling</th></tr>
+<tr><td>Basic approach</td><td>Owner temporarily inherits the priority of a higher-priority blocked task.</td><td>Resource access follows a predefined priority-ceiling rule.</td></tr>
+<tr><td>When priority changes</td><td>In response to blocking and ownership relationships.</td><td>According to the resource's configured ceiling and protocol.</td></tr>
+<tr><td>Purpose</td><td>Reduce priority inversion.</td><td>Control resource blocking and prevent certain deadlock conditions under protocol assumptions.</td></tr>
+<tr><td>Configuration</td><td>Depends on mutex and RTOS implementation.</td><td>Requires defined resource ceilings and protocol rules.</td></tr>
+</table>
+
+<p>Priority ceiling protocols are covered in the next lesson.</p>
+</section>
+
+<section>
+<h2>14. Practical Activity – Simulating Priority Inversion</h2>
+<p>Design a three-task scheduling experiment using a compatible RTOS environment.</p>
+
+<h3>Task configuration</h3>
+<table>
+<tr><th>Task</th><th>Priority</th><th>Action</th></tr>
+<tr><td>Task L</td><td>1</td><td>Take a mutex and perform protected work.</td></tr>
+<tr><td>Task M</td><td>2</td><td>Perform independent CPU work.</td></tr>
+<tr><td>Task H</td><td>3</td><td>Request the mutex held by Task L.</td></tr>
+</table>
+
+<h3>Activity steps</h3>
+<ol>
+<li>Create one mutex.</li>
+<li>Create three tasks with the specified priorities.</li>
+<li>Arrange for Task L to acquire the mutex first.</li>
+<li>Make Task H request the mutex while Task L owns it.</li>
+<li>Make Task M ready while Task H is blocked.</li>
+<li>Observe execution order and task states.</li>
+<li>Repeat using a mutex that supports priority inheritance.</li>
+<li>Compare how quickly Task L resumes and releases the mutex.</li>
+</ol>
+
+<h3>Expected result</h3>
+<p>Without priority inheritance, Task M can delay Task L. With priority inheritance, Task L can temporarily execute at the inherited priority, helping it release the mutex sooner.</p>
+
+<div class="warning-box">
+This is a generic RTOS exercise. A compatible FreeRTOS port and suitable trace or scheduling observation facilities are required. Do not assume the LPC2129 Keil simulator currently has a verified FreeRTOS port.
+</div>
+</section>
+
+<section>
+<h2>15. Review Questions</h2>
+<ol>
+<li>What is priority inversion?</li>
+<li>Which three tasks are commonly involved in the priority inversion example?</li>
+<li>Why can a medium-priority task delay a high-priority task?</li>
+<li>What role does the low-priority mutex owner play?</li>
+<li>How can priority inversion affect real-time deadlines?</li>
+<li>What is priority inheritance?</li>
+<li>How does priority inheritance help the mutex owner?</li>
+<li>Does priority inheritance eliminate all blocking?</li>
+<li>Why does FreeRTOS associate priority inheritance with mutexes?</li>
+<li>Why is a binary semaphore not a substitute for a mutex?</li>
+<li>What is the difference between normal blocking and priority inversion?</li>
+<li>How can a dedicated owner task reduce resource contention?</li>
+<li>Why should mutex hold time be minimized?</li>
+<li>Differentiate priority inheritance and priority ceiling.</li>
+<li>How would you design a priority inversion experiment?</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Lesson Summary</h2>
+<ul>
+<li>Priority inversion occurs when a high-priority task is delayed by a lower-priority mutex owner.</li>
+<li>A medium-priority task can extend this delay by preempting the low-priority owner.</li>
+<li>Priority inversion can increase response time and cause deadline misses.</li>
+<li>Priority inheritance temporarily raises the mutex owner's effective priority.</li>
+<li>FreeRTOS mutexes support basic priority inheritance.</li>
+<li>Priority inheritance does not eliminate all blocking or guarantee deadlines.</li>
+<li>Short mutex hold times and careful resource design reduce inversion risks.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L03_Shared_Resource_Management.html">← Previous Lesson</a>
+<a href="index.html">Chapter 10</a>
+<a href="L05_Priority_Inheritance.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
