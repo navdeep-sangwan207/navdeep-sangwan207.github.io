@@ -1,1 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Critical Sections | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+.formula{background:#f3f5f7;padding:15px;border-radius:7px;text-align:center;font-weight:bold;margin:15px 0;font-family:monospace;overflow-x:auto}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Critical Sections</h1>
+<p>Chapter 09 – Semaphores and Synchronization | Lesson 03</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 09</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>A critical section is a portion of program code that accesses shared data or a shared resource and therefore requires controlled access.</p>
+
+<p>If multiple tasks or interrupt handlers can access the same resource, execution must be coordinated to prevent race conditions and inconsistent data.</p>
+
+<div class="info-box">
+<strong>Key idea:</strong> A critical section protects a sensitive operation so that conflicting execution contexts cannot interfere with it during the protected operation.
+</div>
+</section>
+
+<section>
+<h2>2. Why Are Critical Sections Required?</h2>
+<p>Consider two tasks updating the same counter:</p>
+
+<pre><code>sharedCounter = sharedCounter + 1;</code></pre>
+
+<p>This statement involves reading, modifying, and writing a value. If another task interrupts the operation, an update can be lost.</p>
+
+<h3>Common reasons for using critical sections</h3>
+<ul>
+<li>Preventing race conditions.</li>
+<li>Protecting shared counters and flags.</li>
+<li>Updating shared data structures.</li>
+<li>Protecting short read-modify-write operations.</li>
+<li>Coordinating access to resources that cannot safely be accessed concurrently.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. Critical Section Structure</h2>
+<p>A typical protected operation has three parts:</p>
+
+<pre><code>        +--------------------------+
+        | Enter Critical Section   |
+        +--------------------------+
+                    |
+                    v
+        +--------------------------+
+        | Protected Operations     |
+        |                          |
+        | Read / Modify / Write    |
+        +--------------------------+
+                    |
+                    v
+        +--------------------------+
+        | Exit Critical Section    |
+        +--------------------------+</code></pre>
+
+<ol>
+<li><strong>Entry:</strong> Establish the required protection.</li>
+<li><strong>Protected code:</strong> Access or modify the shared resource.</li>
+<li><strong>Exit:</strong> Restore normal execution conditions.</li>
+</ol>
+</section>
+
+<section>
+<h2>4. Critical Section Without Protection</h2>
+<p>Consider the following example:</p>
+
+<pre><code>int sharedCounter = 0;
+
+void TaskA(void)
+{
+    sharedCounter++;
+}
+
+void TaskB(void)
+{
+    sharedCounter++;
+}</code></pre>
+
+<p>Both tasks access the same counter without synchronization. Their read-modify-write operations may overlap.</p>
+
+<table>
+<tr><th>Task A</th><th>Task B</th><th>Counter</th></tr>
+<tr><td>Reads 0</td><td>—</td><td>0</td></tr>
+<tr><td>—</td><td>Reads 0</td><td>0</td></tr>
+<tr><td>Writes 1</td><td>—</td><td>1</td></tr>
+<tr><td>—</td><td>Writes 1</td><td>1</td></tr>
+</table>
+
+<p>The expected result is 2, but the actual result can be 1.</p>
+</section>
+
+<section>
+<h2>5. Critical Section Using FreeRTOS</h2>
+<p>FreeRTOS provides port-specific critical-section macros for protecting short operations in task context.</p>
+
+<h3>Important macros</h3>
+<table>
+<tr><th>Macro</th><th>Purpose</th></tr>
+<tr><td><code>taskENTER_CRITICAL()</code></td><td>Enter a critical section in task context.</td></tr>
+<tr><td><code>taskEXIT_CRITICAL()</code></td><td>Exit the critical section.</td></tr>
+<tr><td><code>taskENTER_CRITICAL_FROM_ISR()</code></td><td>Enter an ISR critical section where supported by the port.</td></tr>
+<tr><td><code>taskEXIT_CRITICAL_FROM_ISR()</code></td><td>Exit an ISR critical section where supported by the port.</td></tr>
+</table>
+
+<h3>Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+volatile unsigned int sharedCounter = 0;
+
+void TaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        taskENTER_CRITICAL();
+
+        sharedCounter++;
+
+        taskEXIT_CRITICAL();
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void TaskB(void *pvParameters)
+{
+    for (;;)
+    {
+        taskENTER_CRITICAL();
+
+        sharedCounter++;
+
+        taskEXIT_CRITICAL();
+
+        vTaskDelay(pdMS_TO_TICKS(150));
+    }
+}</code></pre>
+
+<p><strong>Explanation:</strong></p>
+<ol>
+<li>Task A enters the critical section.</li>
+<li>The shared counter is incremented.</li>
+<li>Task A exits the critical section.</li>
+<li>Task B can then execute its protected update.</li>
+</ol>
+
+<div class="warning-box">
+The example illustrates task-context protection. The exact behavior of these macros depends on the FreeRTOS processor port. Do not assume that every port masks every interrupt or uses the same interrupt-priority mechanism.
+</div>
+</section>
+
+<section>
+<h2>6. Critical Sections and Interrupts</h2>
+<p>Interrupts can execute asynchronously relative to normal task execution. An ISR that accesses shared data may interfere with a task unless the access is properly coordinated.</p>
+
+<h3>Conceptual example</h3>
+<pre><code>volatile unsigned int eventCount = 0;
+
+/* Task context */
+void ReadEventCount(void)
+{
+    unsigned int localCount;
+
+    taskENTER_CRITICAL();
+
+    localCount = eventCount;
+    eventCount = 0;
+
+    taskEXIT_CRITICAL();
+
+    ProcessEvents(localCount);
+}
+
+/* Interrupt context */
+void UART_ISR(void)
+{
+    eventCount++;
+}</code></pre>
+
+<p>This example needs careful port-specific design. A task critical section only protects against an ISR if that critical section actually masks the relevant interrupt. If the interrupt remains enabled, the read-and-reset operation can still race with the ISR.</p>
+
+<div class="info-box">
+For task-to-ISR communication, prefer appropriate atomic operations, interrupt-safe synchronization mechanisms, or a documented ISR-to-task notification design. Use the exact rules provided by the target RTOS port.
+</div>
+</section>
+
+<section>
+<h2>7. Critical Sections vs Mutexes</h2>
+<p>Both mechanisms protect shared resources, but they work differently.</p>
+
+<table>
+<tr><th>Feature</th><th>Critical Section</th><th>Mutex</th></tr>
+<tr><td>Primary purpose</td><td>Protect a short operation from specified concurrent execution.</td><td>Provide mutual exclusion for a shared resource.</td></tr>
+<tr><td>Blocking</td><td>Does not block waiting for ownership.</td><td>A task can block while waiting.</td></tr>
+<tr><td>Ownership</td><td>Uses port-specific critical-section rules.</td><td>Has task ownership semantics.</td></tr>
+<tr><td>Priority inheritance</td><td>Not a mutex priority-inheritance mechanism.</td><td>FreeRTOS mutexes support priority inheritance.</td></tr>
+<tr><td>Typical duration</td><td>Very short.</td><td>Can cover a longer task-level resource operation.</td></tr>
+<tr><td>ISR use</td><td>Port-specific ISR variants may exist.</td><td>Mutexes must not be used from an ISR.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>8. Critical Sections vs Binary Semaphores</h2>
+<table>
+<tr><th>Feature</th><th>Critical Section</th><th>Binary Semaphore</th></tr>
+<tr><td>Operation</td><td>Protects a code region.</td><td>Signals or coordinates access.</td></tr>
+<tr><td>Waiting</td><td>No normal blocking wait.</td><td>Can block a task.</td></tr>
+<tr><td>Ownership</td><td>Not equivalent to mutex ownership.</td><td>No mutex-style ownership.</td></tr>
+<tr><td>ISR signaling</td><td>Port-specific protection only.</td><td>Can be given from ISR using the appropriate FromISR API.</td></tr>
+<tr><td>Typical use</td><td>Short protected operations.</td><td>Event signaling and task synchronization.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>9. Nested Critical Sections</h2>
+<p>Some RTOS ports support nested critical sections. In a nesting design, entering a critical section more than once must be matched with the corresponding exits.</p>
+
+<h3>Conceptual example</h3>
+<pre><code>taskENTER_CRITICAL();
+
+/* Protected operation A */
+
+taskENTER_CRITICAL();
+
+/* Protected operation B */
+
+taskEXIT_CRITICAL();
+
+taskEXIT_CRITICAL();</code></pre>
+
+<p>In ports that implement nesting, the outermost exit normally restores the previous protection state.</p>
+
+<div class="warning-box">
+Do not assume nesting behavior is identical across all ports. Follow the target port documentation and never leave a critical section without a matching exit.
+</div>
+</section>
+
+<section>
+<h2>10. Interrupt Masking and Critical Sections</h2>
+<p>Some critical-section implementations temporarily mask interrupts to prevent selected ISRs from executing during a protected operation.</p>
+
+<p>On ARM7-based systems such as the LPC2129, interrupt control involves the CPSR interrupt mask bits:</p>
+
+<table>
+<tr><th>CPSR Bit</th><th>Meaning</th></tr>
+<tr><td>I bit</td><td>When set, IRQ exceptions are masked.</td></tr>
+<tr><td>F bit</td><td>When set, FIQ exceptions are masked.</td></tr>
+</table>
+
+<p>ARM7 interrupt control is different from Cortex-M interrupt-priority mechanisms. In particular, do not apply Cortex-M BASEPRI assumptions to the LPC2129.</p>
+
+<h3>Different levels of interrupt control</h3>
+<ul>
+<li>Peripheral-level interrupt enable or disable.</li>
+<li>Vectored Interrupt Controller source enable or disable.</li>
+<li>Processor-level IRQ or FIQ masking.</li>
+</ul>
+
+<p>These controls are not interchangeable. Disabling a VIC source does not necessarily have the same effect as masking the processor's IRQ exception.</p>
+</section>
+
+<section>
+<h2>11. Risks of Long Critical Sections</h2>
+<p>Critical sections should be as short as possible.</p>
+
+<h3>Possible problems</h3>
+<ul>
+<li>Increased interrupt latency.</li>
+<li>Delayed response to external events.</li>
+<li>Missed real-time deadlines.</li>
+<li>Reduced system responsiveness.</li>
+<li>Increased timing jitter.</li>
+<li>Potential loss of hardware events if the peripheral cannot retain them while interrupts are masked.</li>
+</ul>
+
+<div class="warning-box">
+Never perform lengthy calculations, blocking delays, queue waits, or slow peripheral operations inside a critical section.
+</div>
+</section>
+
+<section>
+<h2>12. Best Practices</h2>
+<ol>
+<li>Keep protected code short and deterministic.</li>
+<li>Use mutexes for task-level shared resource ownership.</li>
+<li>Use queues or notifications for communication between tasks and ISRs.</li>
+<li>Do not call blocking APIs inside a critical section.</li>
+<li>Do not use mutexes from interrupt context.</li>
+<li>Use the appropriate ISR-specific APIs where required.</li>
+<li>Match every critical-section entry with an exit.</li>
+<li>Understand the target processor port's interrupt-masking behavior.</li>
+<li>Avoid unnecessary global interrupt masking.</li>
+<li>Protect all conflicting accesses consistently.</li>
+</ol>
+</section>
+
+<section>
+<h2>13. Practical Activity – Protecting a Shared Counter</h2>
+<p>Study the following design and identify where protection is required.</p>
+
+<h3>Task A</h3>
+<pre><code>void TaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        taskENTER_CRITICAL();
+        sharedCounter += 5;
+        taskEXIT_CRITICAL();
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}</code></pre>
+
+<h3>Task B</h3>
+<pre><code>void TaskB(void *pvParameters)
+{
+    for (;;)
+    {
+        taskENTER_CRITICAL();
+        sharedCounter += 10;
+        taskEXIT_CRITICAL();
+
+        vTaskDelay(pdMS_TO_TICKS(150));
+    }
+}</code></pre>
+
+<h3>Expected result</h3>
+<p>When both tasks use the same valid protection mechanism for every access to the counter, their updates are serialized. The counter should equal the sum of all completed increments.</p>
+
+<p>For a complete application, declare and initialize the shared variable, create both tasks, check task-creation results, and start the scheduler.</p>
+
+<p><strong>Simulator note:</strong> This is a FreeRTOS API learning example. It does not establish that a compatible FreeRTOS port is available for the LPC2129 in the user's Keil setup.</p>
+</section>
+
+<section>
+<h2>14. Review Questions</h2>
+<ol>
+<li>What is a critical section?</li>
+<li>Why are critical sections required in an RTOS?</li>
+<li>What are the three stages of a critical section?</li>
+<li>Explain how a critical section prevents a lost update.</li>
+<li>Which macros are commonly used for task-context critical sections in FreeRTOS?</li>
+<li>Why should critical sections be short?</li>
+<li>Differentiate a critical section and a mutex.</li>
+<li>Differentiate a critical section and a binary semaphore.</li>
+<li>What is a nested critical section?</li>
+<li>What are the CPSR I and F bits in ARM7?</li>
+<li>Why must ISR and task access be designed carefully?</li>
+<li>Can a mutex be used from an ISR?</li>
+<li>Why should blocking functions not be called inside critical sections?</li>
+<li>How can long interrupt masking affect real-time response?</li>
+<li>What precautions should be taken when using FreeRTOS critical-section macros?</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Lesson Summary</h2>
+<ul>
+<li>A critical section protects a short operation involving shared data or resources.</li>
+<li>FreeRTOS provides port-specific critical-section macros.</li>
+<li>Critical sections can prevent task-level interference and, depending on the port, selected interrupt interference.</li>
+<li>Mutexes provide task-level mutual exclusion with ownership semantics.</li>
+<li>Binary semaphores are useful for event signaling and synchronization.</li>
+<li>Long critical sections increase interrupt latency and can harm real-time performance.</li>
+<li>Always follow the target processor port's documentation.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L02_Race_Conditions.html">← Previous Lesson</a>
+<a href="index.html">Chapter 09</a>
+<a href="L04_Binary_Semaphores.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
