@@ -1,1 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vTaskDelete() Function | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:29px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>vTaskDelete() Function</h1>
+<p>Task Termination, Self-Deletion, Memory Cleanup and Safe Task Lifecycle</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+The vTaskDelete() function is used to remove a task
+from the FreeRTOS system. A task may be deleted by
+another task or may delete itself. Understanding
+task deletion is important for managing task
+lifecycles and system memory safely.
+</p>
+<ul>
+<li>Understand the purpose of vTaskDelete().</li>
+<li>Learn its syntax and parameter.</li>
+<li>Understand task self-deletion.</li>
+<li>Differentiate task deletion from task suspension.</li>
+<li>Understand memory cleanup after deletion.</li>
+<li>Learn the role of the Idle task.</li>
+<li>Apply safe task deletion practices.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to vTaskDelete()</h2>
+<p>
+A FreeRTOS task can be removed from the scheduler
+when it is no longer required. The kernel provides
+vTaskDelete() for this purpose.
+</p>
+<pre><code>void vTaskDelete(TaskHandle_t xTaskToDelete);</code></pre>
+<p>
+The function accepts a task handle identifying
+the task to delete.
+</p>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>xTaskToDelete</code></td><td>Handle of the task to be deleted.</td></tr>
+</table>
+<p>
+A NULL handle specifies the calling task itself
+for this API.
+</p>
+</section>
+
+<section>
+<h2>3. Deleting Another Task</h2>
+<p>
+A task can delete another task by passing its
+handle to vTaskDelete().
+</p>
+<h3>Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+TaskHandle_t workerHandle = NULL;
+
+void WorkerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform worker operations */
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void ManagerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform management operations */
+
+        vTaskDelay(pdMS_TO_TICKS(5000));
+
+        if (workerHandle != NULL)
+        {
+            vTaskDelete(workerHandle);
+            workerHandle = NULL;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+int main(void)
+{
+    BaseType_t result;
+
+    result = xTaskCreate(
+        WorkerTask,
+        "Worker",
+        256,
+        NULL,
+        2,
+        &workerHandle
+    );
+
+    if (result == pdPASS)
+    {
+        xTaskCreate(
+            ManagerTask,
+            "Manager",
+            256,
+            NULL,
+            3,
+            NULL
+        );
+
+        vTaskStartScheduler();
+    }
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Explanation</h3>
+<ol>
+<li>WorkerTask is created and its handle is stored.</li>
+<li>ManagerTask periodically performs management operations.</li>
+<li>ManagerTask passes workerHandle to vTaskDelete().</li>
+<li>The Worker task is removed from the scheduler.</li>
+<li>The manager clears its stored handle after deletion.</li>
+</ol>
+<div class="warning">
+This simplified example assumes the manager has
+exclusive control over the worker handle. If other
+tasks can access the same handle, coordinate deletion
+and handle updates to prevent concurrent use of a
+stale reference.
+</div>
+</section>
+
+<section>
+<h2>4. Self-Deletion of a Task</h2>
+<p>
+A task can delete itself by passing NULL to
+vTaskDelete(). This is useful when a task performs
+a finite operation and should terminate after
+completing its work.
+</p>
+<h3>Example</h3>
+<pre><code>void OneTimeTask(void *pvParameters)
+{
+    /* Perform initialization */
+
+    /* Perform required operation */
+
+    /* Delete the calling task */
+    vTaskDelete(NULL);
+
+    /* Execution does not continue here */
+}</code></pre>
+<h3>Explanation</h3>
+<ul>
+<li>The task starts execution.</li>
+<li>It performs its required operation.</li>
+<li>It calls vTaskDelete(NULL).</li>
+<li>The kernel removes the calling task from the scheduler.</li>
+<li>The task does not continue executing after deletion.</li>
+</ul>
+<div class="note">
+A self-deleting task does not return normally from
+its task function. Use vTaskDelete(NULL) when
+self-termination is intended.
+</div>
+</section>
+
+<section>
+<h2>5. Deleting a Task After a Finite Operation</h2>
+<p>
+Some tasks are designed to perform a one-time
+operation, such as initialization, calibration or
+a short diagnostic sequence. Such tasks may delete
+themselves after completing their work.
+</p>
+<pre><code>void InitializationTask(void *pvParameters)
+{
+    /* Step 1: Initialize application data */
+
+    /* Step 2: Configure required services */
+
+    /* Step 3: Report initialization status */
+
+    vTaskDelete(NULL);
+}</code></pre>
+<p>
+This avoids keeping a completed task in the Ready
+or Blocked state when it is no longer needed.
+However, the application must ensure that any
+required result or status has been safely delivered
+before the task deletes itself.
+</p>
+</section>
+
+<section>
+<h2>6. Task Deletion and Memory Cleanup</h2>
+<p>
+When a task is deleted, it is removed from normal
+scheduler management. With dynamically created
+tasks, FreeRTOS must also reclaim the memory used
+for the task's stack and control structure.
+</p>
+<p>
+The timing of memory reclamation depends on how
+the task is deleted and on the allocation method.
+</p>
+<h3>Dynamic Task Deletion</h3>
+<ul>
+<li>A task deleted by another task can have its allocated memory reclaimed as part of the deletion operation.</li>
+<li>When a task deletes itself, it cannot safely free the stack on which it is currently executing.</li>
+<li>Self-deleted task memory is therefore typically reclaimed later by the Idle task.</li>
+<li>The Idle task must be allowed to execute so that deferred cleanup can occur.</li>
+</ul>
+<div class="warning">
+Do not continuously keep the Idle task from running.
+If self-deleting tasks are created repeatedly while
+the Idle task never gets execution time, dynamically
+allocated task memory may not be reclaimed promptly.
+This can eventually exhaust the heap.
+</div>
+</section>
+
+<section>
+<h2>7. Role of the Idle Task in Memory Cleanup</h2>
+<p>
+FreeRTOS creates an Idle task automatically when
+the scheduler starts. Among its responsibilities
+is reclaiming memory associated with dynamically
+allocated tasks that deleted themselves.
+</p>
+<h3>Conceptual Sequence</h3>
+<ol>
+<li>A task calls vTaskDelete(NULL).</li>
+<li>The task is removed from normal scheduling.</li>
+<li>Its dynamically allocated memory is marked for deferred cleanup.</li>
+<li>The Idle task gets CPU time.</li>
+<li>The kernel reclaims the relevant memory.</li>
+</ol>
+<p>
+Applications should not delete the Idle task.
+It is a fundamental part of normal kernel operation.
+</p>
+</section>
+
+<section>
+<h2>8. Deleting Static and Dynamic Tasks</h2>
+<p>
+FreeRTOS supports both dynamic and static task
+creation. The memory management implications
+differ when a task is deleted.
+</p>
+<table>
+<tr><th>Feature</th><th>Dynamic Task</th><th>Static Task</th></tr>
+<tr><td>Creation API</td><td>xTaskCreate()</td><td>xTaskCreateStatic()</td></tr>
+<tr><td>Memory source</td><td>Kernel allocator</td><td>Application-supplied storage</td></tr>
+<tr><td>Stack storage</td><td>Allocated dynamically</td><td>Supplied by application</td></tr>
+<tr><td>TCB storage</td><td>Allocated dynamically</td><td>Supplied by application</td></tr>
+<tr><td>Deletion</td><td>vTaskDelete()</td><td>vTaskDelete()</td></tr>
+<tr><td>Memory after deletion</td><td>Kernel-managed allocation is reclaimed according to deletion behavior and heap implementation.</td><td>Application-provided storage remains application-owned; it is not freed by the kernel allocator.</td></tr>
+</table>
+<div class="note">
+After a statically created task is deleted, its
+application-owned memory can be reused only after
+the application has established that the task is
+fully deleted and no references or execution paths
+still depend on it.
+</div>
+</section>
+
+<section>
+<h2>9. vTaskDelete() Versus vTaskSuspend()</h2>
+<p>
+Task deletion and task suspension are different
+operations. Suspension temporarily removes a task
+from normal scheduling without destroying its
+task object. Deletion removes the task from the
+system.
+</p>
+<table>
+<tr><th>Feature</th><th>vTaskDelete()</th><th>vTaskSuspend()</th></tr>
+<tr><td>Purpose</td><td>Terminates and removes a task.</td><td>Temporarily prevents a task from running.</td></tr>
+<tr><td>Task state</td><td>Task is removed from scheduler management.</td><td>Task enters the Suspended state.</td></tr>
+<tr><td>Resume possible?</td><td>No; a deleted task must be created again.</td><td>Yes, using vTaskResume() or another supported resume mechanism.</td></tr>
+<tr><td>Memory behavior</td><td>Task memory is reclaimed according to allocation and deletion behavior.</td><td>Task memory remains allocated.</td></tr>
+<tr><td>Typical use</td><td>Task has completed its lifecycle.</td><td>Task should temporarily stop executing.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>10. Task Deletion and Resource Ownership</h2>
+<p>
+Deleting a task does not automatically perform
+application-specific cleanup for every resource
+that the task may have acquired.
+</p>
+<h3>Examples of Resources Requiring Care</h3>
+<ul>
+<li>Mutexes held by the task.</li>
+<li>Application memory allocated separately by the task.</li>
+<li>Peripheral ownership or device state.</li>
+<li>Communication buffers and queued pointers.</li>
+<li>Hardware operations that may still be in progress.</li>
+</ul>
+<div class="warning">
+Do not delete a task while it owns a mutex or is
+responsible for an unfinished hardware transaction
+unless the application has a deliberate recovery
+mechanism. FreeRTOS does not automatically release
+every application resource when a task is deleted.
+</div>
+<h3>Recommended Design</h3>
+<ol>
+<li>Ask the task to stop through a notification, queue or event.</li>
+<li>Allow the task to finish its current operation.</li>
+<li>Release owned mutexes and application resources.</li>
+<li>Complete or cancel outstanding peripheral operations safely.</li>
+<li>Allow the task to self-delete or have a manager delete it after a controlled shutdown.</li>
+</ol>
+</section>
+
+<section>
+<h2>11. Task Deletion from Another Task: Design Risks</h2>
+<p>
+External deletion is useful in some designs, but
+it can interrupt a task at an unexpected point.
+The task may be holding a lock, updating shared
+data or controlling a peripheral.
+</p>
+<h3>Potential Problems</h3>
+<ul>
+<li>Shared data may be left partially updated.</li>
+<li>A mutex may remain owned by the deleted task.</li>
+<li>A peripheral may remain in an incomplete state.</li>
+<li>Other tasks may retain an invalid task handle.</li>
+<li>Application memory may not be released.</li>
+</ul>
+<p>
+For many applications, a cooperative shutdown
+protocol is safer than immediate external deletion.
+</p>
+</section>
+
+<section>
+<h2>12. Practical Activity – Task Self-Deletion</h2>
+<p><strong>Objective:</strong> Create a one-time task that performs an operation and then deletes itself.</p>
+<h3>Procedure</h3>
+<ol>
+<li>Define a task function named InitializationTask.</li>
+<li>Create it using xTaskCreate().</li>
+<li>Perform a finite sequence of initialization operations inside the task.</li>
+<li>Call vTaskDelete(NULL) after completing the operation.</li>
+<li>Observe task state and task-list information using a supported debugger or trace tool.</li>
+<li>Allow the Idle task to run so deferred cleanup can take place for a dynamically allocated self-deleting task.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+The initialization task executes its operation,
+deletes itself and is no longer scheduled. Its
+dynamically allocated memory is reclaimed according
+to FreeRTOS deletion behavior when the Idle task
+performs the required cleanup.
+</p>
+</section>
+
+<section>
+<h2>13. Common Mistakes</h2>
+<table>
+<tr><th>Mistake</th><th>Consequence</th><th>Correct Practice</th></tr>
+<tr><td>Using an invalid task handle</td><td>Undefined or invalid API behavior.</td><td>Maintain valid handle ownership and lifetime.</td></tr>
+<tr><td>Assuming deletion releases every resource</td><td>Resource leaks or system deadlock.</td><td>Perform application-level cleanup.</td></tr>
+<tr><td>Preventing Idle task execution</td><td>Deferred memory reclamation may be delayed.</td><td>Allow Idle task CPU time.</td></tr>
+<tr><td>Using deletion instead of suspension</td><td>Task must be created again to resume its work.</td><td>Choose the lifecycle operation that matches the requirement.</td></tr>
+<tr><td>Deleting a task during a hardware transaction</td><td>Peripheral or data state may be inconsistent.</td><td>Use a controlled shutdown protocol.</td></tr>
+<tr><td>Reusing static task memory too early</td><td>Memory may still be referenced by the kernel or application.</td><td>Confirm deletion completion before reuse.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>14. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is the purpose of vTaskDelete()?</li>
+<li>What is the function prototype of vTaskDelete()?</li>
+<li>What does a NULL task handle mean in vTaskDelete()?</li>
+<li>What is task self-deletion?</li>
+<li>What is the role of the Idle task in memory cleanup?</li>
+<li>What is the difference between task deletion and suspension?</li>
+<li>Does task deletion automatically release every mutex and application resource?</li>
+<li>Why should the Idle task be allowed to execute?</li>
+<li>How does deletion affect a dynamically created task?</li>
+<li>How does static task memory differ after deletion?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain vTaskDelete() with suitable programming examples.</li>
+<li>Describe the process of task self-deletion and deferred memory cleanup.</li>
+<li>Explain the role of the Idle task in FreeRTOS.</li>
+<li>Compare vTaskDelete() and vTaskSuspend().</li>
+<li>Discuss the design risks of deleting a task that owns shared resources.</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Lesson Summary</h2>
+<ul>
+<li>vTaskDelete() removes a task from FreeRTOS scheduler management.</li>
+<li>A task can delete itself by calling vTaskDelete(NULL).</li>
+<li>Another task can delete a task using its handle.</li>
+<li>Dynamic self-deletion may require deferred memory cleanup by the Idle task.</li>
+<li>Static task storage remains application-owned.</li>
+<li>Task deletion is different from task suspension.</li>
+<li>Application-specific resources require deliberate cleanup.</li>
+<li>Cooperative shutdown is often safer than immediate external deletion.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+<a href="L03_xTaskCreate_Function.html">← Previous Lesson</a>
+<a href="index.html">Chapter 13 Index</a>
+<a href="L05_vTaskDelay_Function.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
