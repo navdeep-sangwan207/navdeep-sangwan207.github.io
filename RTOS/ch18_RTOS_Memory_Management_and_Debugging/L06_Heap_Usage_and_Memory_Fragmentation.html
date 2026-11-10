@@ -1,1 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Heap Usage and Memory Fragmentation | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Heap Usage and Memory Fragmentation</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 18: Memory Management and RTOS Debugging</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 18</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Explain heap utilization in an RTOS.</li>
+<li>Calculate heap usage and free-memory percentages.</li>
+<li>Differentiate internal and external fragmentation.</li>
+<li>Understand allocation and deallocation patterns.</li>
+<li>Monitor FreeRTOS heap usage.</li>
+<li>Interpret heap statistics.</li>
+<li>Identify memory leaks and allocation failures.</li>
+<li>Apply techniques for reducing fragmentation.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Is Heap Usage?</h2>
+<p>Heap usage represents the amount of dynamically managed memory currently occupied by allocated objects.</p>
+
+<p>In a FreeRTOS application, dynamic heap allocation may be used for:</p>
+<ul>
+<li>Task control blocks and task stacks.</li>
+<li>Queues and their storage.</li>
+<li>Semaphores and mutexes.</li>
+<li>Event groups.</li>
+<li>Software timers.</li>
+<li>Application buffers allocated using <code>pvPortMalloc()</code>.</li>
+</ul>
+
+<div class="diagram">
+              CONFIGURED HEAP
++----------------------------------------+
+|                                        |
+|       ALLOCATED MEMORY                 |
+|       Tasks, queues, buffers           |
+|                                        |
++----------------------------------------+
+|                                        |
+|       FREE MEMORY                      |
+|                                        |
++----------------------------------------+
+</div>
+
+<p>The available heap decreases when allocations are made and may increase when memory is released, depending on the selected heap implementation.</p>
+</section>
+
+<section>
+<h2>3. Heap Utilization</h2>
+<p>Heap utilization is the percentage of configured heap memory currently occupied by allocations.</p>
+
+<p><strong>Formula:</strong></p>
+<pre><code>Heap Utilization (%) =
+    (Used Heap / Total Heap) × 100</code></pre>
+
+<p>Free heap is:</p>
+<pre><code>Free Heap = Total Heap - Used Heap</code></pre>
+
+<h3>3.1 Calculation Example</h3>
+<p>Assume the configured heap size is 20 KB and the currently free heap is 8 KB.</p>
+
+<pre><code>Total Heap = 20 KB
+Free Heap  = 8 KB
+
+Used Heap = 20 - 8
+          = 12 KB
+
+Heap Utilization = (12 / 20) × 100
+                 = 60%</code></pre>
+
+<p>Therefore:</p>
+<ul>
+<li>Used heap = 12 KB.</li>
+<li>Free heap = 8 KB.</li>
+<li>Heap utilization = 60%.</li>
+</ul>
+
+<div class="note">This simple calculation assumes the total heap capacity is known and the reported free-memory value represents the allocator's available memory. Allocator metadata and implementation-specific details must be considered when interpreting measurements.</div>
+</section>
+
+<section>
+<h2>4. FreeRTOS Heap Monitoring Functions</h2>
+<p>FreeRTOS provides several heap-monitoring functions, depending on the selected heap implementation.</p>
+
+<table>
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td><code>xPortGetFreeHeapSize()</code></td><td>Returns the current free heap size in bytes.</td></tr>
+<tr><td><code>xPortGetMinimumEverFreeHeapSize()</code></td><td>Returns the minimum free heap size recorded since heap initialization.</td></tr>
+<tr><td><code>vPortGetHeapStats()</code></td><td>Provides detailed heap statistics where supported.</td></tr>
+</table>
+
+<h3>4.1 Current Free Heap</h3>
+<pre><code>size_t freeHeap;
+
+freeHeap = xPortGetFreeHeapSize();</code></pre>
+
+<h3>4.2 Minimum-Ever Free Heap</h3>
+<pre><code>size_t minimumFreeHeap;
+
+minimumFreeHeap =
+    xPortGetMinimumEverFreeHeapSize();</code></pre>
+
+<p>The minimum-ever free heap helps identify the lowest free-memory level observed during execution.</p>
+
+<h3>4.3 Example Monitoring Task</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+void HeapMonitorTask(void *pvParameters)
+{
+    size_t currentFree;
+    size_t minimumFree;
+
+    for (;;)
+    {
+        currentFree = xPortGetFreeHeapSize();
+
+        minimumFree =
+            xPortGetMinimumEverFreeHeapSize();
+
+        /* Record values using a suitable
+           diagnostic or logging interface. */
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}</code></pre>
+
+<div class="warning">These functions are not implemented by every heap allocator. Verify their availability in the selected heap source and FreeRTOS release.</div>
+</section>
+
+<section>
+<h2>5. Detailed Heap Statistics</h2>
+<p>Where supported, <code>vPortGetHeapStats()</code> returns a structure containing information about heap usage.</p>
+
+<h3>5.1 HeapStats_t</h3>
+<pre><code>HeapStats_t heapStats;
+
+vPortGetHeapStats(&amp;heapStats);</code></pre>
+
+<p>Common fields include:</p>
+
+<table>
+<tr><th>Field</th><th>Description</th></tr>
+<tr><td><code>xAvailableHeapSpaceInBytes</code></td><td>Total available free heap space.</td></tr>
+<tr><td><code>xSizeOfLargestFreeBlockInBytes</code></td><td>Size of the largest available free block.</td></tr>
+<tr><td><code>xSizeOfSmallestFreeBlockInBytes</code></td><td>Size of the smallest available free block.</td></tr>
+<tr><td><code>xNumberOfFreeBlocks</code></td><td>Number of free blocks.</td></tr>
+<tr><td><code>xMinimumEverFreeBytesRemaining</code></td><td>Minimum free heap recorded.</td></tr>
+<tr><td><code>xNumberOfSuccessfulAllocations</code></td><td>Number of successful allocations.</td></tr>
+<tr><td><code>xNumberOfSuccessfulFrees</code></td><td>Number of successful frees.</td></tr>
+</table>
+
+<p>The exact structure and availability depend on the heap implementation and FreeRTOS release.</p>
+
+<h3>5.2 Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+void ReadHeapStatistics(void)
+{
+    HeapStats_t stats;
+
+    vPortGetHeapStats(&amp;stats);
+
+    /* Inspect or record:
+       stats.xAvailableHeapSpaceInBytes
+       stats.xSizeOfLargestFreeBlockInBytes
+       stats.xNumberOfFreeBlocks
+       stats.xMinimumEverFreeBytesRemaining
+    */
+}</code></pre>
+
+<p>These statistics can help distinguish low overall free memory from fragmentation-related allocation problems.</p>
+</section>
+
+<section>
+<h2>6. What Is Memory Fragmentation?</h2>
+<p>Memory fragmentation occurs when available memory is divided into blocks that cannot be used efficiently for future allocation requests.</p>
+
+<p>Two important types are:</p>
+<ul>
+<li>Internal fragmentation.</li>
+<li>External fragmentation.</li>
+</ul>
+
+<div class="diagram">
+             MEMORY FRAGMENTATION
+                      |
+              +-------+-------+
+              |               |
+          INTERNAL         EXTERNAL
+          FRAGMENTATION    FRAGMENTATION
+              |               |
+       Waste inside       Free memory split
+       allocated block    into separate blocks
+</div>
+</section>
+
+<section>
+<h2>7. Internal Fragmentation</h2>
+<p>Internal fragmentation occurs when an allocated memory block contains unused space that cannot be independently allocated to another object.</p>
+
+<h3>7.1 Example</h3>
+<p>Assume an allocator rounds a 13-byte request up to a 16-byte allocation unit.</p>
+
+<div class="diagram">
+       ALLOCATED BLOCK: 16 BYTES
+
++-----------------------+
+|   13 BYTES USED       |
++-----------------------+
+|   3 BYTES UNUSED      |
++-----------------------+
+
+Internal waste = 3 bytes
+</div>
+
+<p>The unused space is part of the allocated block and is not available for another allocation.</p>
+
+<h3>7.2 Causes</h3>
+<ul>
+<li>Memory alignment requirements.</li>
+<li>Allocator block-size rounding.</li>
+<li>Fixed-size memory pools.</li>
+<li>Metadata or allocation-unit overhead.</li>
+</ul>
+
+<h3>7.3 Reduction Techniques</h3>
+<ul>
+<li>Choose suitable allocation sizes.</li>
+<li>Use appropriately sized memory pools.</li>
+<li>Group related small objects where practical.</li>
+<li>Understand alignment requirements.</li>
+</ul>
+</section>
+
+<section>
+<h2>8. External Fragmentation</h2>
+<p>External fragmentation occurs when free memory is divided into separate non-contiguous regions.</p>
+
+<h3>8.1 Example</h3>
+<div class="diagram">
+INITIAL MEMORY
+
++----------+----------+----------+----------+
+| BLOCK A  | BLOCK B  | BLOCK C  |   FREE   |
++----------+----------+----------+----------+
+
+AFTER FREEING A AND C
+
++----------+----------+----------+----------+
+|   FREE   | BLOCK B  |   FREE   |   FREE   |
++----------+----------+----------+----------+
+</div>
+
+<p>Assume the free regions are 100, 150 and 200 bytes.</p>
+
+<pre><code>Total Free Memory = 100 + 150 + 200
+                  = 450 bytes
+
+Largest Free Block = 200 bytes</code></pre>
+
+<p>A request for 300 contiguous bytes cannot be satisfied by these regions, even though total free memory is 450 bytes.</p>
+
+<h3>8.2 Causes</h3>
+<ul>
+<li>Repeated allocation and deallocation.</li>
+<li>Variable-sized allocation requests.</li>
+<li>Long-lived objects separating short-lived objects.</li>
+<li>Allocation patterns that leave small unusable gaps.</li>
+</ul>
+
+<h3>8.3 Reduction Techniques</h3>
+<ul>
+<li>Use static allocation for long-lived critical objects.</li>
+<li>Use fixed-size memory pools for repeated buffer sizes.</li>
+<li>Reduce unnecessary allocation and deallocation cycles.</li>
+<li>Choose an allocator that supports coalescing where appropriate.</li>
+<li>Monitor the largest free block.</li>
+</ul>
+</section>
+
+<section>
+<h2>9. Heap Fragmentation and FreeRTOS Heap Implementations</h2>
+<p>Different FreeRTOS heap implementations have different memory-management behavior.</p>
+
+<table>
+<tr><th>Heap</th><th>Allocation</th><th>Freeing</th><th>Coalescing</th></tr>
+<tr><td>heap_1</td><td>Yes</td><td>No</td><td>Not applicable</td></tr>
+<tr><td>heap_2</td><td>Yes</td><td>Yes</td><td>No</td></tr>
+<tr><td>heap_3</td><td>Through C library</td><td>Through C library</td><td>Depends on C library</td></tr>
+<tr><td>heap_4</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>heap_5</td><td>Yes</td><td>Yes</td><td>Within individual regions</td></tr>
+</table>
+
+<p>heap_4 and heap_5 can merge adjacent free blocks. However, they cannot eliminate all external fragmentation when allocated blocks separate free regions.</p>
+
+<div class="note">For details of each allocator's implementation, see Lesson 03: FreeRTOS Heap Implementations.</div>
+</section>
+
+<section>
+<h2>10. Memory Leak</h2>
+<p>A memory leak occurs when dynamically allocated memory is no longer needed but is not released, and the application loses the ability to reuse it.</p>
+
+<h3>10.1 Example of a Memory Leak</h3>
+<pre><code>#include "FreeRTOS.h"
+
+void AllocateRepeatedly(void)
+{
+    uint8_t *buffer;
+
+    buffer = pvPortMalloc(100);
+
+    if (buffer == NULL)
+    {
+        return;
+    }
+
+    buffer[0] = 0x55;
+
+    /* Missing vPortFree(buffer) */
+
+}</code></pre>
+
+<p>If this function is called repeatedly and each allocated block becomes unreachable without being freed, available heap memory will progressively decrease.</p>
+
+<h3>10.2 Corrected Example</h3>
+<pre><code>#include "FreeRTOS.h"
+
+void AllocateAndRelease(void)
+{
+    uint8_t *buffer;
+
+    buffer = pvPortMalloc(100);
+
+    if (buffer == NULL)
+    {
+        return;
+    }
+
+    buffer[0] = 0x55;
+
+    /* Complete all operations using buffer */
+
+    vPortFree(buffer);
+    buffer = NULL;
+}</code></pre>
+
+<div class="warning">Only free a block after all tasks, callbacks and peripherals have stopped using it. Setting one pointer to NULL does not invalidate other pointers to the same memory.</div>
+</section>
+
+<section>
+<h2>11. Heap Monitoring Example with Utilization</h2>
+<p>The following example calculates a basic heap-utilization percentage for a heap implementation with a known configured capacity.</p>
+
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include &lt;stdint.h&gt;
+
+#define HEAP_CAPACITY_BYTES  (20U * 1024U)
+
+void CalculateHeapUsage(void)
+{
+    size_t freeHeap;
+    size_t usedHeap;
+    uint32_t utilization;
+
+    freeHeap = xPortGetFreeHeapSize();
+
+    if (freeHeap &gt; HEAP_CAPACITY_BYTES)
+    {
+        /* Invalid assumption or configuration */
+        return;
+    }
+
+    usedHeap = HEAP_CAPACITY_BYTES - freeHeap;
+
+    utilization =
+        (uint32_t)((usedHeap * 100U) /
+                   HEAP_CAPACITY_BYTES);
+
+    /* Record:
+       freeHeap
+       usedHeap
+       utilization
+    */
+}</code></pre>
+
+<p>This calculation is appropriate only when the selected allocator's reported free space and configured capacity are comparable.</p>
+
+<div class="note">The example assumes a 20 KB heap. Do not use this constant for heap_3 or heap_5 unless the actual memory capacity and allocator accounting are established separately.</div>
+</section>
+
+<section>
+<h2>12. Allocation Pattern Analysis</h2>
+<p>Consider an application that allocates memory for communication buffers.</p>
+
+<h3>Pattern A: Repeated Variable-Sized Allocation</h3>
+<pre><code>buffer1 = pvPortMalloc(100);
+buffer2 = pvPortMalloc(300);
+buffer3 = pvPortMalloc(150);
+
+vPortFree(buffer2);
+
+buffer4 = pvPortMalloc(250);</code></pre>
+
+<p>The allocation of 250 bytes may fail if no suitable contiguous block exists, even when the total free memory is greater than 250 bytes.</p>
+
+<h3>Pattern B: Fixed-Size Buffer Reuse</h3>
+<pre><code>#define BUFFER_SIZE 256
+
+/* Allocate a fixed-size pool or set of
+   buffers during system initialization. */
+
+/* Reuse available buffers instead of
+   repeatedly requesting variable-sized
+   heap blocks. */</code></pre>
+
+<p>Fixed-size buffer management can make memory use more predictable and avoid many variable-size fragmentation patterns.</p>
+</section>
+
+<section>
+<h2>13. Heap Usage in Real-Time Systems</h2>
+<p>Dynamic memory operations can affect real-time behavior.</p>
+
+<table>
+<tr><th>Concern</th><th>Possible Effect</th><th>Design Approach</th></tr>
+<tr><td>Variable allocation time</td><td>Uncertain execution latency</td><td>Measure allocator timing and limit runtime allocation.</td></tr>
+<tr><td>Allocation failure</td><td>Task or service cannot create required object</td><td>Check return values and define recovery behavior.</td></tr>
+<tr><td>Fragmentation</td><td>Large allocation may fail despite sufficient total free memory</td><td>Use pools, static storage or suitable allocators.</td></tr>
+<tr><td>Memory leak</td><td>Available memory decreases over time</td><td>Define ownership and release paths.</td></tr>
+<tr><td>Heap contention</td><td>Concurrent allocations may require synchronization</td><td>Review allocator and port behavior.</td></tr>
+</table>
+
+<p>For highly predictable real-time systems, a common design is to perform required dynamic allocation during initialization and avoid unpredictable allocation operations during critical runtime phases.</p>
+</section>
+
+<section>
+<h2>14. Heap Optimization Best Practices</h2>
+<ol>
+<li>Prepare a complete RAM budget before development.</li>
+<li>Use static allocation for essential long-lived objects when practical.</li>
+<li>Choose a suitable heap implementation.</li>
+<li>Check every dynamic allocation result.</li>
+<li>Release memory only after its final use.</li>
+<li>Use fixed-size memory pools for repeated buffer sizes where appropriate.</li>
+<li>Monitor current and minimum-ever free heap.</li>
+<li>Inspect the largest free block when detailed statistics are available.</li>
+<li>Avoid unnecessary variable-sized allocations.</li>
+<li>Test worst-case allocation patterns.</li>
+<li>Define behavior for memory exhaustion.</li>
+<li>Review memory usage after major software changes.</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Practical Exercises</h2>
+<ol>
+<li>Calculate heap utilization when total heap is 32 KB and free heap is 12 KB.</li>
+<li>Explain internal and external fragmentation with diagrams.</li>
+<li>Calculate total free memory when three free blocks are 128, 256 and 512 bytes.</li>
+<li>Explain why a 400-byte request may fail when total free memory is 896 bytes.</li>
+<li>Write a FreeRTOS task that monitors current and minimum-ever free heap.</li>
+<li>Explain the purpose of <code>xSizeOfLargestFreeBlockInBytes</code>.</li>
+<li>Identify the memory leak in a program that repeatedly allocates without freeing.</li>
+<li>Compare variable-sized allocation with fixed-size memory pools.</li>
+<li>Prepare a memory-usage monitoring plan for a sensor-monitoring application.</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Interview Questions</h2>
+<ol>
+<li>What is heap utilization?</li>
+<li>How do you calculate heap utilization percentage?</li>
+<li>What is internal fragmentation?</li>
+<li>What is external fragmentation?</li>
+<li>What is the difference between heap_2 and heap_4?</li>
+<li>What is a memory leak?</li>
+<li>What is the purpose of <code>xPortGetFreeHeapSize()</code>?</li>
+<li>What is the purpose of <code>xPortGetMinimumEverFreeHeapSize()</code>?</li>
+<li>Why is the largest free block important?</li>
+<li>Can total free heap be sufficient while an allocation still fails?</li>
+<li>How can fixed-size memory pools reduce fragmentation?</li>
+<li>Why should dynamic allocation be controlled in hard real-time applications?</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+<ul>
+<li>Heap usage describes dynamically allocated memory consumption.</li>
+<li>Heap utilization can be calculated from used and total heap capacity.</li>
+<li>FreeRTOS provides heap-monitoring functions in supported implementations.</li>
+<li>Internal fragmentation wastes space inside allocated blocks.</li>
+<li>External fragmentation divides free memory into separate regions.</li>
+<li>Memory leaks progressively reduce reusable heap memory.</li>
+<li>Largest-free-block statistics help identify fragmentation-related limitations.</li>
+<li>Fixed-size pools and controlled allocation patterns improve predictability.</li>
+<li>Heap monitoring, ownership rules and failure handling are essential for reliable RTOS applications.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L05_Stack_Overflow_Detection.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L07_FreeRTOS_Run_Time_Statistics.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 18 – Memory Management and RTOS Debugging</p>
+</footer>
+
+</body>
+</html>
