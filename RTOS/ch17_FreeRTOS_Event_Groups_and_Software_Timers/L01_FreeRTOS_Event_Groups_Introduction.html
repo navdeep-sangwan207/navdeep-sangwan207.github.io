@@ -1,1 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Event Groups Introduction</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 15px}
+header h1{font-size:28px;margin-bottom:8px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 7px rgba(0,0,0,.08)}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h2{color:#174ea6;font-size:22px;border-bottom:2px solid #d8e6fa;padding-bottom:8px;margin-bottom:15px}
+h3{color:#1765b1;margin:17px 0 9px;font-size:18px}
+p{margin:9px 0}
+ul,ol{padding-left:25px;margin:10px 0}
+li{margin:6px 0}
+pre{background:#172338;color:#e6edf7;padding:17px;border-radius:8px;overflow-x:auto;margin:13px 0;font-size:13px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0;display:block;overflow-x:auto}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;min-width:135px}
+th{background:#eaf2ff;color:#174ea6}
+.note{background:#eaf3ff;border-left:4px solid #2878d7;padding:13px;margin:14px 0;border-radius:5px}
+.warning{background:#fff5e6;border-left:4px solid #e69a24;padding:13px;margin:14px 0;border-radius:5px}
+.example{background:#effaf2;border-left:4px solid #269653;padding:13px;margin:14px 0;border-radius:5px}
+.objectives{background:#eef5ff;padding:17px 22px;border-radius:8px}
+.navigation{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:600px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 17: FreeRTOS Event Groups and Software Timers</h1>
+<p>Lesson 01 – FreeRTOS Event Groups: Introduction</p>
+</header>
+
+<nav>
+<a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+<a href="index.html">Chapter Index</a>
+<a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>Lesson Overview</h2>
+<p>
+FreeRTOS event groups provide a mechanism for synchronizing tasks
+using a collection of event bits. Each bit represents a condition
+or event in an application. Tasks can set, clear, and wait for
+specific combinations of these bits.
+</p>
+<p>
+Event groups are useful when a task must wait until one or more
+conditions are satisfied, such as sensor initialization, network
+connection, data availability, or completion of multiple operations.
+</p>
+<div class="objectives">
+<h3>Learning Objectives</h3>
+<ul>
+<li>Understand the concept of event groups.</li>
+<li>Understand event bits and event flags.</li>
+<li>Identify the purpose of event groups in an RTOS.</li>
+<li>Understand how tasks use event groups for synchronization.</li>
+<li>Compare event groups with semaphores and queues.</li>
+<li>Identify practical applications of event groups.</li>
+<li>Understand important FreeRTOS event-group limitations.</li>
+</ul>
+</div>
+</section>
+
+<section>
+<h2>1. What Is an Event Group?</h2>
+<p>
+An event group is a FreeRTOS kernel object containing a collection
+of event bits. Each bit represents a Boolean condition:
+</p>
+<ul>
+<li><strong>1:</strong> The corresponding event or condition is set.</li>
+<li><strong>0:</strong> The corresponding event or condition is not set.</li>
+</ul>
+<p>
+A task can wait for one event bit or a combination of event bits.
+Another task or an appropriate ISR-related API can set bits to
+indicate that events have occurred.
+</p>
+
+<div class="example">
+<strong>Example:</strong>
+A device must initialize three subsystems before starting normal
+operation:
+<ul>
+<li>Bit 0: Sensor initialized.</li>
+<li>Bit 1: Communication initialized.</li>
+<li>Bit 2: Storage initialized.</li>
+</ul>
+The application can wait until all three bits are set before
+allowing the main application task to proceed.
+</div>
+
+</section>
+
+<section>
+<h2>2. Event Bits and Bit Representation</h2>
+<p>
+An event group stores multiple event conditions in a bit pattern.
+Consider the following simplified eight-bit illustration:
+</p>
+
+<pre><code>Bit position:  7  6  5  4  3  2  1  0
+
+Event bits:    0  0  0  0  0  1  1  0
+
+Binary value:  00000110</code></pre>
+
+<p>
+In this example:
+</p>
+<ul>
+<li>Bit 0 = 0: Event 0 is not set.</li>
+<li>Bit 1 = 1: Event 1 is set.</li>
+<li>Bit 2 = 1: Event 2 is set.</li>
+<li>All other displayed bits are zero.</li>
+</ul>
+
+<h3>Example Event-Bit Definitions</h3>
+<pre><code>#define EVENT_SENSOR_READY    (1U << 0)
+#define EVENT_UART_READY      (1U << 1)
+#define EVENT_STORAGE_READY   (1U << 2)
+#define EVENT_NETWORK_READY   (1U << 3)</code></pre>
+
+<p>
+These definitions assign a unique bit position to each application
+condition. Bitwise operations allow the application to combine
+multiple event masks.
+</p>
+
+<div class="note">
+The eight-bit diagram is only an illustration. The actual number
+of usable event bits depends on the FreeRTOS configuration and
+port. Some event-group bits are reserved internally by the kernel.
+</div>
+</section>
+
+<section>
+<h2>3. Why Are Event Groups Required?</h2>
+<p>
+A binary semaphore can represent one pending token, while an event
+group can represent several independent conditions in a single
+synchronization object.
+</p>
+
+<h3>Example: Embedded Device Startup</h3>
+<p>
+Suppose an embedded device contains:
+</p>
+<ol>
+<li>Temperature sensor.</li>
+<li>UART communication interface.</li>
+<li>Data storage subsystem.</li>
+<li>Network interface.</li>
+</ol>
+<p>
+The main application task should begin its operation only after
+the required subsystems are initialized.
+</p>
+
+<pre><code>Sensor initialized     -> Bit 0 = 1
+UART initialized       -> Bit 1 = 1
+Storage initialized    -> Bit 2 = 1
+Network initialized    -> Bit 3 = 1</code></pre>
+
+<p>
+The application can wait for all four conditions or only a selected
+combination, depending on its startup requirements.
+</p>
+</section>
+
+<section>
+<h2>4. Basic Event Group Operations</h2>
+<p>
+FreeRTOS provides APIs to create an event group, set or clear bits,
+read the current bit pattern, and wait for specified conditions.
+</p>
+
+<table>
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td><code>xEventGroupCreate()</code></td><td>Create an event group dynamically.</td></tr>
+<tr><td><code>xEventGroupSetBits()</code></td><td>Set one or more event bits.</td></tr>
+<tr><td><code>xEventGroupClearBits()</code></td><td>Clear selected event bits.</td></tr>
+<tr><td><td><code>xEventGroupGetBits()</code></td><td>Read the current event-bit pattern.</td></tr>
+<tr><td><code>xEventGroupWaitBits()</code></td><td>Wait for selected event conditions.</td></tr>
+<tr><td><code>vEventGroupDelete()</code></td><td>Delete an event group.</td></tr>
+</table>
+
+<div class="note">
+Event-group APIs are declared in <code>event_groups.h</code>.
+Include both <code>FreeRTOS.h</code> and <code>event_groups.h</code>
+in a project that uses these functions.
+</div>
+</section>
+
+<section>
+<h2>5. Event Groups vs Semaphores</h2>
+<table>
+<tr><th>Feature</th><th>Event Group</th><th>Semaphore</th></tr>
+<tr><td>Representation</td><td>Collection of event bits</td><td>One token or a count of tokens</td></tr>
+<tr><td>Multiple conditions</td><td>Can represent multiple independent conditions</td><td>Usually represents one synchronization or counting condition</td></tr>
+<tr><td>Wait behavior</td><td>Can wait for any or all selected bits</td><td>Waits for a token</td></tr>
+<tr><td>Data transfer</td><td>Does not transfer payload data</td><td>Does not transfer payload data</td></tr>
+<tr><td>Typical application</td><td>Wait for several subsystem conditions</td><td>Signal an event or manage resource tokens</td></tr>
+</table>
+
+<p>
+Event groups do not replace every semaphore. Choose the object
+according to the synchronization requirement.
+</p>
+</section>
+
+<section>
+<h2>6. Event Groups vs Queues</h2>
+<table>
+<tr><th>Feature</th><th>Event Group</th><th>Queue</th></tr>
+<tr><td>Purpose</td><td>Signal Boolean conditions</td><td>Transfer data items</td></tr>
+<tr><td>Payload</td><td>Event bits only</td><td>Fixed-size copied items</td></tr>
+<tr><td>Multiple conditions</td><td>Yes</td><td>Application must interpret queued items</td></tr>
+<tr><td>Preserves every occurrence</td><td>No; repeated setting of an already-set bit coalesces</td><td>Can preserve queued items until capacity is reached</td></tr>
+<tr><td>Typical use</td><td>Subsystem readiness</td><td>Sensor readings and commands</td></tr>
+</table>
+
+<div class="warning">
+Event bits represent conditions, not event counters. If the same bit
+is set repeatedly before it is cleared, the event group still shows
+that bit as set only once. Use a queue or counting semaphore when
+every occurrence must be recorded.
+</div>
+</section>
+
+<section>
+<h2>7. Practical Applications of Event Groups</h2>
+
+<h3>Application 1 – Sensor Initialization</h3>
+<p>
+A monitoring task waits until all required sensors report that
+initialization has completed.
+</p>
+
+<h3>Application 2 – Network Connectivity</h3>
+<p>
+A communication task waits for network-connected and
+configuration-ready conditions before transmitting application data.
+</p>
+
+<h3>Application 3 – Multi-Task Operation Completion</h3>
+<p>
+A controller waits for multiple processing tasks to complete
+their assigned operations before starting the next stage.
+</p>
+
+<h3>Application 4 – Embedded System Startup</h3>
+<p>
+A central application task waits for communication, storage,
+and peripheral initialization flags.
+</p>
+
+<h3>Application 5 – System State Management</h3>
+<p>
+An application uses event bits to represent operating conditions
+such as calibration complete, fault detected, or data ready.
+</p>
+</section>
+
+<section>
+<h2>8. Conceptual Example – Waiting for Multiple Conditions</h2>
+<p>
+Consider a controller that requires both sensor initialization
+and UART initialization before sending measurement data.
+</p>
+
+<pre><code>#define SENSOR_READY   (1U << 0)
+#define UART_READY     (1U << 1)
+
+Required conditions:
+
+SENSOR_READY = 1
+UART_READY   = 1
+
+Combined mask:
+
+SENSOR_READY | UART_READY
+
+Binary representation:
+
+00000011</code></pre>
+
+<p>
+The application waits for the combined mask with an all-bits
+condition. The next lessons explain the actual FreeRTOS API and
+the wait-any and wait-all options.
+</p>
+</section>
+
+<section>
+<h2>9. Important Design Considerations</h2>
+<ul>
+<li>Assign unique bit positions to independent conditions.</li>
+<li>Define clearly which task or ISR is allowed to set each bit.</li>
+<li>Understand whether bits are persistent state indicators or temporary notifications.</li>
+<li>Choose whether the application needs any-bit or all-bit waiting.</li>
+<li>Consider whether clearing bits on exit is appropriate.</li>
+<li>Do not use event groups to transfer sensor values or structured data.</li>
+<li>Remember that multiple tasks may observe the same event bits.</li>
+<li>Coordinate clear-on-exit behavior when several tasks wait on shared bits.</li>
+<li>Check return values from creation and other APIs.</li>
+<li>Consider event-group bit limitations for the selected FreeRTOS port.</li>
+</ul>
+</section>
+
+<section>
+<h2>10. Review Questions</h2>
+<ol>
+<li>What is an event group in FreeRTOS?</li>
+<li>What does an event bit represent?</li>
+<li>What is the difference between a set bit and a cleared bit?</li>
+<li>Why are event groups useful in embedded systems?</li>
+<li>How can a task wait for multiple conditions?</li>
+<li>What is the difference between an event group and a binary semaphore?</li>
+<li>Why should a queue be used for transferring sensor readings?</li>
+<li>What happens when the same event bit is set repeatedly?</li>
+<li>Can multiple tasks wait on the same event group?</li>
+<li>Why must event-bit ownership and clearing rules be planned?</li>
+</ol>
+</section>
+
+<section>
+<h2>11. Lesson Summary</h2>
+<ul>
+<li>An event group is a collection of event bits.</li>
+<li>Each bit represents a Boolean condition or event state.</li>
+<li>Tasks can wait for one or multiple event conditions.</li>
+<li>Event groups are useful for coordinating subsystem initialization and multi-task operation.</li>
+<li>They do not transfer application payload data.</li>
+<li>Repeated setting of an already-set bit does not count multiple event occurrences.</li>
+<li>FreeRTOS event groups support synchronization using any-bit and all-bit conditions.</li>
+<li>Correct bit allocation and clearing rules are important in multi-task applications.</li>
+</ul>
+</section>
+
+<section>
+<h2>12. Practical Assignment</h2>
+<ol>
+<li>Define four event bits for sensor, UART, storage, and network readiness.</li>
+<li>Draw an event-group bit representation for all four conditions being set.</li>
+<li>Explain how a task can wait until sensor and UART initialization are complete.</li>
+<li>Compare event groups with binary and counting semaphores.</li>
+<li>Explain why an event group is not a suitable replacement for a sensor-data queue.</li>
+<li>Describe a situation in which repeated events must be counted rather than represented by one bit.</li>
+<li>Design an event-group-based startup sequence for an embedded controller.</li>
+</ol>
+</section>
+
+<div class="navigation">
+<a href="../ch16_FreeRTOS_Semaphores_and_Mutexes/index.html">← Previous Chapter</a>
+<a href="index.html">Chapter Index</a>
+<a href="L02_xEventGroupCreate_Function.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 17 – FreeRTOS Event Groups and Software Timers</p>
+</footer>
+
+</body>
+</html>
