@@ -1,1 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wait Any and Wait All Conditions | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f4f7fc;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 15px;
+}
+header h1 { margin: 0 0 8px; font-size: 30px; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 13px;
+}
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+section {
+    background: white;
+    margin-bottom: 22px;
+    padding: 24px;
+    border-radius: 10px;
+    box-shadow: 0 2px 9px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8fa;
+    padding-bottom: 8px;
+    margin-top: 0;
+}
+h3 { color: #2165b5; margin-top: 22px; }
+p { text-align: justify; }
+ul, ol { padding-left: 25px; }
+li { margin-bottom: 7px; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+th, td {
+    border: 1px solid #d5deeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #eaf2ff; color: #174ea6; }
+pre {
+    background: #172334;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+.note {
+    background: #edf5ff;
+    border-left: 4px solid #2878d7;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.warning {
+    background: #fff6e5;
+    border-left: 4px solid #e5a000;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.example {
+    background: #f5f8fc;
+    border: 1px solid #dce5f1;
+    padding: 16px;
+    border-radius: 8px;
+    margin: 15px 0;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media(max-width:650px) {
+    header h1 { font-size: 24px; }
+    nav a { display: inline-block; margin: 5px 8px; }
+    section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+}
+</style>
+</head>
+<body>
 
+<header>
+    <h1>Wait Any and Wait All Conditions</h1>
+    <p>RTOS & FreeRTOS – Chapter 11: Event Groups and Software Timers</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../rtos.html">RTOS Course</a>
+    <a href="index.html">Chapter 11</a>
+</nav>
+
+<div class="container">
+
+<section>
+    <h2>1. Learning Objectives</h2>
+    <p>
+        An RTOS application often needs to wait for one event from a group
+        of possible events or for several conditions to become true
+        simultaneously. FreeRTOS event groups support both synchronization
+        patterns.
+    </p>
+    <ul>
+        <li>Understand wait-for-any and wait-for-all conditions.</li>
+        <li>Learn the role of the xWaitForAllBits parameter.</li>
+        <li>Analyze event-bit combinations using binary masks.</li>
+        <li>Understand the returned event-bit value.</li>
+        <li>Configure automatic clearing and timeouts.</li>
+        <li>Implement both waiting modes in FreeRTOS programs.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>2. Event Group Fundamentals</h2>
+    <p>
+        A FreeRTOS event group contains a collection of event bits.
+        Each bit represents a condition or event reported by a task
+        or another permitted execution context.
+    </p>
+
+    <h3>Example Event Definitions</h3>
+    <pre><code>#define EVENT_SENSOR_READY  (1U &lt;&lt; 0)
+#define EVENT_UART_READY    (1U &lt;&lt; 1)
+#define EVENT_CONFIG_READY  (1U &lt;&lt; 2)
+
+#define EVENT_FAULT         (1U &lt;&lt; 3)</code></pre>
+
+    <table>
+        <tr>
+            <th>Bit</th>
+            <th>Event</th>
+            <th>Meaning</th>
+        </tr>
+        <tr>
+            <td>Bit 0</td>
+            <td>Sensor ready</td>
+            <td>Sensor initialization has completed.</td>
+        </tr>
+        <tr>
+            <td>Bit 1</td>
+            <td>UART ready</td>
+            <td>UART initialization has completed.</td>
+        </tr>
+        <tr>
+            <td>Bit 2</td>
+            <td>Configuration ready</td>
+            <td>Configuration loading has completed.</td>
+        </tr>
+        <tr>
+            <td>Bit 3</td>
+            <td>Fault</td>
+            <td>A fault condition has been reported.</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>3. Wait-for-Any Condition</h2>
+
+    <p>
+        Wait-for-any means that a task becomes unblocked when at least
+        one of the requested event bits is set.
+    </p>
+
+    <p>
+        It is useful when a task must respond to whichever event occurs
+        first from a group of possible events.
+    </p>
+
+    <h3>Example</h3>
+    <p>A monitoring task waits for any of these conditions:</p>
+    <ul>
+        <li>UART data available.</li>
+        <li>Sensor threshold exceeded.</li>
+        <li>Communication fault detected.</li>
+    </ul>
+
+    <pre><code>#define ANY_EVENT_BITS \
+    (EVENT_UART_READY | EVENT_SENSOR_READY | EVENT_FAULT)</code></pre>
+
+    <h3>FreeRTOS API</h3>
+    <pre><code>EventBits_t result;
+
+result = xEventGroupWaitBits(
+    xEventGroup,
+    ANY_EVENT_BITS,
+    pdFALSE,
+    pdFALSE,
+    portMAX_DELAY
+);</code></pre>
+
+    <p>
+        The fourth parameter is <code>pdFALSE</code>, which selects
+        wait-for-any behavior. The task proceeds when at least one
+        requested bit is set.
+    </p>
+
+    <h3>Binary Example</h3>
+    <pre><code>Requested bits:  0111
+Current bits:    0010
+                 ----
+AND result:      0010</code></pre>
+
+    <p>
+        The AND result is non-zero, so at least one requested event
+        is present.
+    </p>
+</section>
+
+<section>
+    <h2>4. Wait-for-All Condition</h2>
+
+    <p>
+        Wait-for-all means that a task remains blocked until every
+        requested event bit has been set.
+    </p>
+
+    <p>
+        It is useful when an operation must not begin until all
+        prerequisite conditions are satisfied.
+    </p>
+
+    <h3>Example</h3>
+    <p>
+        A main application task must wait until sensor, UART and
+        configuration initialization are complete.
+    </p>
+
+    <pre><code>#define ALL_READY_BITS \
+    (EVENT_SENSOR_READY | EVENT_UART_READY | EVENT_CONFIG_READY)</code></pre>
+
+    <h3>FreeRTOS API</h3>
+    <pre><code>EventBits_t result;
+
+result = xEventGroupWaitBits(
+    xEventGroup,
+    ALL_READY_BITS,
+    pdFALSE,
+    pdTRUE,
+    portMAX_DELAY
+);</code></pre>
+
+    <p>
+        The fourth parameter is <code>pdTRUE</code>, which selects
+        wait-for-all behavior.
+    </p>
+
+    <h3>Binary Example</h3>
+    <pre><code>Requested bits:  0111
+Current bits:    0111
+                 ----
+AND result:      0111</code></pre>
+
+    <p>
+        All requested bits are set, so the waiting task can proceed.
+    </p>
+</section>
+
+<section>
+    <h2>5. Comparison of Wait-Any and Wait-All</h2>
+
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Wait for Any</th>
+            <th>Wait for All</th>
+        </tr>
+        <tr>
+            <td>FreeRTOS parameter</td>
+            <td><code>pdFALSE</code></td>
+            <td><code>pdTRUE</code></td>
+        </tr>
+        <tr>
+            <td>Required condition</td>
+            <td>At least one requested bit is set.</td>
+            <td>Every requested bit is set.</td>
+        </tr>
+        <tr>
+            <td>Typical use</td>
+            <td>React to one of several events.</td>
+            <td>Wait for all initialization tasks.</td>
+        </tr>
+        <tr>
+            <td>Partial bit match</td>
+            <td>Sufficient to unblock.</td>
+            <td>Not sufficient to unblock.</td>
+        </tr>
+        <tr>
+            <td>Example</td>
+            <td>UART event OR sensor event OR fault event.</td>
+            <td>Sensor AND UART AND configuration ready.</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>6. Execution Scenarios</h2>
+
+    <h3>Scenario A – Wait for Any</h3>
+    <p>Requested event mask: <code>0111</code></p>
+
+    <table>
+        <tr>
+            <th>Current Bits</th>
+            <th>At Least One Set?</th>
+            <th>Task Unblocked?</th>
+        </tr>
+        <tr><td>0000</td><td>No</td><td>No</td></tr>
+        <tr><td>0001</td><td>Yes</td><td>Yes</td></tr>
+        <tr><td>0010</td><td>Yes</td><td>Yes</td></tr>
+        <tr><td>0100</td><td>Yes</td><td>Yes</td></tr>
+        <tr><td>0110</td><td>Yes</td><td>Yes</td></tr>
+        <tr><td>0111</td><td>Yes</td><td>Yes</td></tr>
+    </table>
+
+    <h3>Scenario B – Wait for All</h3>
+    <p>Requested event mask: <code>0111</code></p>
+
+    <table>
+        <tr>
+            <th>Current Bits</th>
+            <th>All Set?</th>
+            <th>Task Unblocked?</th>
+        </tr>
+        <tr><td>0000</td><td>No</td><td>No</td></tr>
+        <tr><td>0001</td><td>No</td><td>No</td></tr>
+        <tr><td>0011</td><td>No</td><td>No</td></tr>
+        <tr><td>0101</td><td>No</td><td>No</td></tr>
+        <tr><td>0110</td><td>No</td><td>No</td></tr>
+        <tr><td>0111</td><td>Yes</td><td>Yes</td></tr>
+    </table>
+
+    <div class="note">
+        These examples assume the requested event bits are initially
+        cleared and that the task is waiting for those bits. Bits outside
+        the requested mask do not affect the wait condition.
+    </div>
+</section>
+
+<section>
+    <h2>7. Understanding the Returned Event-Bit Value</h2>
+
+    <p>
+        <code>xEventGroupWaitBits()</code> returns the event-bit value
+        observed when the task leaves the wait. The returned value is
+        useful for identifying which requested events were present.
+    </p>
+
+    <h3>Example</h3>
+    <pre><code>EventBits_t result;
+
+result = xEventGroupWaitBits(
+    xEventGroup,
+    ANY_EVENT_BITS,
+    pdFALSE,
+    pdFALSE,
+    portMAX_DELAY
+);
+
+if ((result &amp; EVENT_UART_READY) != 0U)
+{
+    /* UART event was present. */
+}
+
+if ((result &amp; EVENT_SENSOR_READY) != 0U)
+{
+    /* Sensor event was present. */
+}
+
+if ((result &amp; EVENT_FAULT) != 0U)
+{
+    /* Fault event was present. */
+}</code></pre>
+
+    <div class="warning">
+        A non-zero return value does not automatically mean every
+        requested bit is set. For wait-for-all, compare the returned
+        requested bits against the complete requested mask.
+    </div>
+</section>
+
+<section>
+    <h2>8. Clear-on-Exit with Wait-Any and Wait-All</h2>
+
+    <p>
+        The third parameter of <code>xEventGroupWaitBits()</code>
+        determines whether requested bits are cleared after a
+        successful wait condition.
+    </p>
+
+    <table>
+        <tr>
+            <th>Wait Mode</th>
+            <th>Clear-on-Exit</th>
+            <th>Behavior on Successful Wait</th>
+        </tr>
+        <tr>
+            <td>Wait-any</td>
+            <td><code>pdFALSE</code></td>
+            <td>Matching bits remain set.</td>
+        </tr>
+        <tr>
+            <td>Wait-any</td>
+            <td><code>pdTRUE</code></td>
+            <td>Requested bits that were set are cleared.</td>
+        </tr>
+        <tr>
+            <td>Wait-all</td>
+            <td><code>pdFALSE</code></td>
+            <td>Requested bits remain set.</td>
+        </tr>
+        <tr>
+            <td>Wait-all</td>
+            <td><code>pdTRUE</code></td>
+            <td>All requested bits are cleared.</td>
+        </tr>
+    </table>
+
+    <p>
+        Automatic clearing occurs when the specified wait condition
+        is satisfied. A timeout does not automatically clear the
+        requested bits.
+    </p>
+
+    <h3>Example – Wait for Any and Clear Matching Bits</h3>
+    <pre><code>result = xEventGroupWaitBits(
+    xEventGroup,
+    ANY_EVENT_BITS,
+    pdTRUE,
+    pdFALSE,
+    portMAX_DELAY
+);</code></pre>
+
+    <h3>Example – Wait for All and Keep Bits Set</h3>
+    <pre><code>result = xEventGroupWaitBits(
+    xEventGroup,
+    ALL_READY_BITS,
+    pdFALSE,
+    pdTRUE,
+    portMAX_DELAY
+);</code></pre>
+</section>
+
+<section>
+    <h2>9. Example 1 – Wait for Any Event</h2>
+
+    <p><strong>Objective:</strong> A monitoring task responds to any one of three event conditions.</p>
+
+    <pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "event_groups.h"
+
+#define UART_EVENT_BIT    (1U &lt;&lt; 0)
+#define SENSOR_EVENT_BIT  (1U &lt;&lt; 1)
+#define FAULT_EVENT_BIT   (1U &lt;&lt; 2)
+
+#define ANY_EVENT_BITS \
+    (UART_EVENT_BIT | SENSOR_EVENT_BIT | FAULT_EVENT_BIT)
+
+EventGroupHandle_t xEvents;
+
+void MonitoringTask(void *pvParameters)
+{
+    EventBits_t result;
+
+    for (;;)
+    {
+        result = xEventGroupWaitBits(
+            xEvents,
+            ANY_EVENT_BITS,
+            pdTRUE,
+            pdFALSE,
+            portMAX_DELAY
+        );
+
+        if ((result &amp; UART_EVENT_BIT) != 0U)
+        {
+            /* Process UART event. */
+        }
+
+        if ((result &amp; SENSOR_EVENT_BIT) != 0U)
+        {
+            /* Process sensor event. */
+        }
+
+        if ((result &amp; FAULT_EVENT_BIT) != 0U)
+        {
+            /* Process fault event. */
+        }
+    }
+}
+
+int main(void)
+{
+    xEvents = xEventGroupCreate();
+
+    if (xEvents != NULL)
+    {
+        xTaskCreate(
+            MonitoringTask,
+            "Monitor",
+            256,
+            NULL,
+            2,
+            NULL
+        );
+
+        vTaskStartScheduler();
+    }
+
+    for (;;);
+}</code></pre>
+
+    <h3>Working</h3>
+    <ol>
+        <li>The monitoring task blocks while none of the requested bits is set.</li>
+        <li>Another task sets one or more event bits.</li>
+        <li>The monitoring task becomes ready when at least one requested bit is set.</li>
+        <li>The returned value identifies which requested bits were set.</li>
+        <li>With clear-on-exit enabled, the requested bits that were set are cleared.</li>
+    </ol>
+</section>
+
+<section>
+    <h2>10. Example 2 – Wait for All Initialization Events</h2>
+
+    <p><strong>Objective:</strong> Start normal operation only after all three initialization tasks report success.</p>
+
+    <pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "event_groups.h"
+
+#define SENSOR_READY_BIT  (1U &lt;&lt; 0)
+#define UART_READY_BIT    (1U &lt;&lt; 1)
+#define CONFIG_READY_BIT  (1U &lt;&lt; 2)
+
+#define ALL_READY_BITS \
+    (SENSOR_READY_BIT | UART_READY_BIT | CONFIG_READY_BIT)
+
+EventGroupHandle_t xEvents;
+
+void SensorInitTask(void *pvParameters)
+{
+    /* Perform sensor initialization. */
+
+    xEventGroupSetBits(xEvents, SENSOR_READY_BIT);
+
+    vTaskDelete(NULL);
+}
+
+void UARTInitTask(void *pvParameters)
+{
+    /* Perform UART initialization. */
+
+    xEventGroupSetBits(xEvents, UART_READY_BIT);
+
+    vTaskDelete(NULL);
+}
+
+void ConfigInitTask(void *pvParameters)
+{
+    /* Load and validate configuration. */
+
+    xEventGroupSetBits(xEvents, CONFIG_READY_BIT);
+
+    vTaskDelete(NULL);
+}
+
+void ApplicationTask(void *pvParameters)
+{
+    EventBits_t result;
+
+    result = xEventGroupWaitBits(
+        xEvents,
+        ALL_READY_BITS,
+        pdTRUE,
+        pdTRUE,
+        pdMS_TO_TICKS(5000)
+    );
+
+    if ((result &amp; ALL_READY_BITS) == ALL_READY_BITS)
+    {
+        for (;;)
+        {
+            /* Normal application operation. */
+
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+    else
+    {
+        for (;;)
+        {
+            /* Handle incomplete initialization. */
+
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+}
+
+int main(void)
+{
+    xEvents = xEventGroupCreate();
+
+    if (xEvents != NULL)
+    {
+        xTaskCreate(SensorInitTask, "SensorInit", 256, NULL, 2, NULL);
+        xTaskCreate(UARTInitTask, "UARTInit", 256, NULL, 2, NULL);
+        xTaskCreate(ConfigInitTask, "ConfigInit", 256, NULL, 2, NULL);
+        xTaskCreate(ApplicationTask, "Application", 256, NULL, 3, NULL);
+
+        vTaskStartScheduler();
+    }
+
+    for (;;);
+}</code></pre>
+
+    <h3>Expected Behavior</h3>
+    <ul>
+        <li>All three initialization tasks perform their operations.</li>
+        <li>Each task sets its corresponding event bit.</li>
+        <li>ApplicationTask remains blocked until all three bits are set.</li>
+        <li>If all conditions are met before the timeout, normal operation starts.</li>
+        <li>Otherwise, the application follows its incomplete-initialization handling path.</li>
+    </ul>
+
+    <div class="note">
+        This example assumes the initialization tasks set their bits only
+        after successful completion. A production system should also
+        report initialization failures explicitly, rather than treating
+        every missing ready bit as an undifferentiated timeout.
+    </div>
+</section>
+
+<section>
+    <h2>11. Timeout Handling</h2>
+
+    <p>
+        A finite wait time prevents a task from blocking indefinitely
+        when an expected event does not occur.
+    </p>
+
+    <h3>Example</h3>
+    <pre><code>EventBits_t result;
+
+result = xEventGroupWaitBits(
+    xEvents,
+    ALL_READY_BITS,
+    pdTRUE,
+    pdTRUE,
+    pdMS_TO_TICKS(3000)
+);
+
+if ((result &amp; ALL_READY_BITS) == ALL_READY_BITS)
+{
+    /* All requested events were received. */
+}
+else
+{
+    /* At least one requested event was missing at timeout. */
+}</code></pre>
+
+    <p>
+        The returned event bits can be inspected to identify which
+        readiness conditions were present when the task left the wait.
+    </p>
+
+    <div class="warning">
+        A timeout is not proof that a particular subsystem failed.
+        It indicates only that the requested condition was not satisfied
+        within the specified wait interval. Application-specific
+        diagnostics should identify the underlying cause.
+    </div>
+</section>
+
+<section>
+    <h2>12. Important Design Considerations</h2>
+
+    <ul>
+        <li>Use wait-any when any one event is sufficient to continue.</li>
+        <li>Use wait-all when every specified prerequisite must be satisfied.</li>
+        <li>Use named masks to make event combinations readable.</li>
+        <li>Check the returned bits instead of assuming the requested condition succeeded.</li>
+        <li>Use finite timeouts when indefinite waiting is unacceptable.</li>
+        <li>Understand clear-on-exit behavior before sharing an event group among multiple waiters.</li>
+        <li>Event bits do not count repeated occurrences.</li>
+        <li>Use queues when events carry data or every occurrence must be preserved.</li>
+        <li>Use task notifications for efficient task-directed signaling where appropriate.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>13. Practical Activity</h2>
+
+    <h3>Activity – Embedded Monitoring Controller</h3>
+
+    <p><strong>Objective:</strong> Design an event-driven controller that responds to several subsystem conditions.</p>
+
+    <ol>
+        <li>Create event bits for sensor-ready, UART-ready, configuration-ready and system-fault conditions.</li>
+        <li>Implement three initialization tasks.</li>
+        <li>Use wait-all to verify that all initialization tasks have completed.</li>
+        <li>Implement a monitoring task that waits for any fault-related event.</li>
+        <li>Configure a finite timeout for initialization.</li>
+        <li>Inspect the returned event-bit value and identify missing conditions.</li>
+        <li>Define how the application clears and reports fault conditions.</li>
+    </ol>
+
+    <p><strong>Expected Result:</strong> Normal operation starts only after all required initialization events are received. The monitoring task can respond when any configured event occurs.</p>
+
+    <div class="warning">
+        These programs demonstrate generic FreeRTOS APIs. They require
+        a compatible FreeRTOS port and target environment. They should
+        not be assumed to run on the LPC2129 Keil uVision simulator
+        without a verified ARM7-compatible port.
+    </div>
+</section>
+
+<section>
+    <h2>14. Review Questions</h2>
+
+    <ol>
+        <li>What does wait-for-any mean in FreeRTOS?</li>
+        <li>What does wait-for-all mean?</li>
+        <li>Which value of xWaitForAllBits selects wait-for-any?</li>
+        <li>Which value selects wait-for-all?</li>
+        <li>What happens if only one requested bit is set in wait-for-all mode?</li>
+        <li>How can the returned event bits be inspected?</li>
+        <li>What is the purpose of the clear-on-exit parameter?</li>
+        <li>How should an application handle a wait timeout?</li>
+        <li>What problems can arise when several tasks wait on the same event group?</li>
+        <li>When is a queue more suitable than an event group?</li>
+    </ol>
+</section>
+
+<section>
+    <h2>15. Lesson Summary</h2>
+
+    <ul>
+        <li>Wait-any unblocks when at least one requested event bit is set.</li>
+        <li>Wait-all unblocks only when every requested event bit is set.</li>
+        <li>The fourth parameter of xEventGroupWaitBits selects the waiting mode.</li>
+        <li>The returned EventBits_t value identifies the event bits observed when the wait ends.</li>
+        <li>Clear-on-exit controls automatic clearing after a successful wait.</li>
+        <li>Finite timeouts help prevent indefinite blocking.</li>
+        <li>Event groups coordinate conditions but do not count repeated events or transfer payload data.</li>
+    </ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L03_Task_Synchronization_Using_Event_Groups.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 11</a>
+    <a href="L05_Introduction_to_Software_Timers.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+    <p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
