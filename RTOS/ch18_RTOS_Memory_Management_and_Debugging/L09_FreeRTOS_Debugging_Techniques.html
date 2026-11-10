@@ -1,1 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Debugging Techniques | RTOS &amp; FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>FreeRTOS Debugging Techniques</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 18: Memory Management and RTOS Debugging</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 18</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Explain debugging in an RTOS-based application.</li>
+<li>Identify common FreeRTOS runtime failures.</li>
+<li>Use breakpoints, watch windows and call stacks.</li>
+<li>Debug task creation and scheduling problems.</li>
+<li>Investigate stack overflow and heap exhaustion.</li>
+<li>Diagnose queue, semaphore and mutex problems.</li>
+<li>Understand assertion-based debugging.</li>
+<li>Develop a systematic debugging workflow.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Is RTOS Debugging?</h2>
+<p>RTOS debugging is the process of identifying, analyzing and correcting software defects in a real-time operating system application.</p>
+
+<p>Unlike a simple sequential program, an RTOS application contains multiple tasks, interrupts and shared resources. Therefore, debugging must consider both program logic and execution timing.</p>
+
+<p>Common problems include:</p>
+<ul>
+<li>Task not executing.</li>
+<li>Unexpected task blocking.</li>
+<li>Incorrect task priority.</li>
+<li>Stack overflow.</li>
+<li>Heap allocation failure.</li>
+<li>Queue communication failure.</li>
+<li>Semaphore misuse.</li>
+<li>Priority inversion and deadlock.</li>
+<li>Race conditions and data corruption.</li>
+<li>Timing and deadline violations.</li>
+</ul>
+
+<div class="diagram">
+          RTOS APPLICATION FAILURE
+                    |
+          +---------+---------+
+          |         |         |
+       TASK       MEMORY    SYNC / IPC
+       ISSUES     ISSUES     ISSUES
+          |         |         |
+          +---------+---------+
+                    |
+              DEBUGGING
+                    |
+              ROOT CAUSE
+                    |
+              CORRECTION
+</div>
+</section>
+
+<section>
+<h2>3. Common Debugging Tools</h2>
+<table>
+<tr><th>Tool</th><th>Purpose</th></tr>
+<tr><td>Breakpoint</td><td>Pauses execution at a selected program location.</td></tr>
+<tr><td>Watch window</td><td>Displays variable values during debugging.</td></tr>
+<tr><td>Memory window</td><td>Inspects memory contents and addresses.</td></tr>
+<tr><td>Register window</td><td>Displays processor registers.</td></tr>
+<tr><td>Call stack</td><td>Shows the active function-call chain.</td></tr>
+<tr><td>Disassembly window</td><td>Displays generated machine instructions.</td></tr>
+<tr><td>RTOS-aware debugger</td><td>Displays task and kernel information when supported.</td></tr>
+<tr><td>Trace analyzer</td><td>Analyzes recorded task and system events.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. Breakpoint-Based Debugging</h2>
+<p>A breakpoint pauses program execution when the processor reaches a specified instruction or when a configured condition is satisfied.</p>
+
+<h3>4.1 Types of Breakpoints</h3>
+<ul>
+<li><strong>Software breakpoint:</strong> Uses debugger-supported instruction replacement or another software mechanism.</li>
+<li><strong>Hardware breakpoint:</strong> Uses processor debug hardware.</li>
+<li><strong>Conditional breakpoint:</strong> Stops only when a specified condition is true, if supported.</li>
+<li><strong>Data watchpoint:</strong> Stops when a monitored memory location is accessed in a configured way, if supported.</li>
+</ul>
+
+<h3>4.2 Example</h3>
+<pre><code>void ControlTask(void *pvParameters)
+{
+    int sensorValue;
+
+    for (;;)
+    {
+        sensorValue = ReadSensor();
+
+        /* Set breakpoint here */
+
+        ProcessSensorValue(sensorValue);
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}</code></pre>
+
+<p>At the breakpoint, inspect:</p>
+<ul>
+<li><code>sensorValue</code>.</li>
+<li>Current processor registers.</li>
+<li>Program counter.</li>
+<li>Call stack.</li>
+<li>Relevant global variables.</li>
+</ul>
+
+<div class="warning">A breakpoint stops or slows the processor. This changes normal task scheduling and timing. Do not use breakpoint-based timing measurements as proof of real-time performance.</div>
+</section>
+
+<section>
+<h2>5. Watch Window and Variable Inspection</h2>
+<p>A watch window displays selected variables while the debugger is active.</p>
+
+<p>Useful variables include:</p>
+<ul>
+<li>Task handles.</li>
+<li>Queue handles.</li>
+<li>Semaphore handles.</li>
+<li>Task counters.</li>
+<li>Sensor values.</li>
+<li>State-machine variables.</li>
+<li>Error codes and function return values.</li>
+</ul>
+
+<h3>5.1 Example</h3>
+<pre><code>volatile uint32_t sampleCount = 0;
+volatile uint32_t errorCount = 0;
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (ReadSensor() &gt;= 0)
+        {
+            sampleCount++;
+        }
+        else
+        {
+            errorCount++;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}</code></pre>
+
+<p>Monitor <code>sampleCount</code> and <code>errorCount</code> to investigate sensor-reading behavior.</p>
+
+<div class="note"><code>volatile</code> may be appropriate for certain variables observed or modified outside ordinary program flow, but it does not provide atomicity, mutual exclusion or general inter-task synchronization.</div>
+</section>
+
+<section>
+<h2>6. Debugging Task Creation Problems</h2>
+<p>A task may fail to start because its creation failed, the scheduler has not started, or the task is not eligible to execute.</p>
+
+<h3>6.1 Common Causes</h3>
+<ul>
+<li>Insufficient heap for dynamic task creation.</li>
+<li>Invalid task function or parameter.</li>
+<li>Incorrect task priority.</li>
+<li>Incorrect scheduler initialization.</li>
+<li>Task created but blocked or suspended.</li>
+<li>Stack allocation or configuration problem.</li>
+</ul>
+
+<h3>6.2 Debugging xTaskCreate()</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+TaskHandle_t sensorTaskHandle = NULL;
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Sensor processing */
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void CreateSensorTask(void)
+{
+    BaseType_t result;
+
+    result = xTaskCreate(
+        SensorTask,
+        "Sensor",
+        256,
+        NULL,
+        2,
+        &amp;sensorTaskHandle
+    );
+
+    if (result != pdPASS)
+    {
+        /* Task creation failed */
+        sensorTaskHandle = NULL;
+    }
+}</code></pre>
+
+<p>Check the return value and verify that the task handle is valid after successful creation.</p>
+
+<div class="warning">The stack-depth argument is expressed in stack elements, not bytes. Its memory requirement depends on <code>sizeof(StackType_t)</code> for the selected port.</div>
+</section>
+
+<section>
+<h2>7. Debugging Task Scheduling Problems</h2>
+<p>A task may not run when expected because of priority, blocking, suspension or scheduler behavior.</p>
+
+<h3>7.1 Common Causes</h3>
+<ul>
+<li>A higher-priority task remains Ready.</li>
+<li>The task is Blocked on a queue or semaphore.</li>
+<li>The task is suspended.</li>
+<li>The task has been deleted.</li>
+<li>The scheduler is not running.</li>
+<li>Long interrupt handlers delay task execution.</li>
+<li>Scheduler suspension delays normal context switches.</li>
+</ul>
+
+<h3>7.2 Task State Inspection</h3>
+<p>Task status information can be collected using supported FreeRTOS APIs.</p>
+
+<pre><code>eTaskState state;
+
+state = eTaskGetState(sensorTaskHandle);</code></pre>
+
+<p>Possible states include Running, Ready, Blocked and Suspended. A task-state result is a snapshot and can change immediately after it is read.</p>
+
+<h3>7.3 Useful Debugging Questions</h3>
+<ol>
+<li>Is the scheduler running?</li>
+<li>Was the task created successfully?</li>
+<li>What is its priority?</li>
+<li>Is it Ready, Blocked or Suspended?</li>
+<li>Is it waiting indefinitely for an event?</li>
+<li>Is another task continuously occupying the processor?</li>
+</ol>
+</section>
+
+<section>
+<h2>8. Debugging Stack Overflow</h2>
+<p>Stack overflow occurs when a task uses more stack memory than allocated.</p>
+
+<h3>8.1 Common Causes</h3>
+<ul>
+<li>Large local arrays.</li>
+<li>Deep function-call chains.</li>
+<li>Recursive functions.</li>
+<li>Large local structures.</li>
+<li>Excessive nested function calls.</li>
+<li>Unexpected interrupt-stack usage, depending on processor architecture.</li>
+</ul>
+
+<h3>8.2 Stack Monitoring</h3>
+<pre><code>UBaseType_t remainingStack;
+
+remainingStack =
+    uxTaskGetStackHighWaterMark(sensorTaskHandle);</code></pre>
+
+<p>The returned value represents the minimum unused stack observed, measured in stack elements.</p>
+
+<h3>8.3 Overflow Detection Configuration</h3>
+<pre><code>#define configCHECK_FOR_STACK_OVERFLOW  2</code></pre>
+
+<p>When the selected port supports the configured checking method, FreeRTOS can invoke the application stack-overflow hook.</p>
+
+<pre><code>void vApplicationStackOverflowHook(
+    TaskHandle_t xTask,
+    char *pcTaskName
+)
+{
+    /* Record minimal diagnostic information.
+       Avoid complex operations here. */
+
+    for (;;)
+    {
+        /* Halt for investigation */
+    }
+}</code></pre>
+
+<div class="warning">Stack-overflow checking details depend on the FreeRTOS port. The hook may execute after memory corruption has occurred, so it should not perform unsafe logging or dynamic allocation.</div>
+</section>
+
+<section>
+<h2>9. Debugging Heap Allocation Problems</h2>
+<p>Dynamic allocation may fail when the selected heap allocator cannot satisfy a request.</p>
+
+<h3>9.1 Check Allocation Result</h3>
+<pre><code>uint8_t *buffer;
+
+buffer = pvPortMalloc(256);
+
+if (buffer == NULL)
+{
+    /* Allocation failed */
+}
+else
+{
+    /* Use the allocated memory */
+
+    vPortFree(buffer);
+    buffer = NULL;
+}</code></pre>
+
+<h3>9.2 Monitor Free Heap</h3>
+<pre><code>size_t freeHeap;
+size_t minimumFreeHeap;
+
+freeHeap = xPortGetFreeHeapSize();
+
+minimumFreeHeap =
+    xPortGetMinimumEverFreeHeapSize();</code></pre>
+
+<p>These monitoring functions are available only with supported heap implementations.</p>
+
+<h3>9.3 Common Causes</h3>
+<ul>
+<li>Insufficient available heap.</li>
+<li>Memory leaks.</li>
+<li>Fragmentation.</li>
+<li>Incorrect allocation sizes.</li>
+<li>Unreleased dynamically allocated objects.</li>
+<li>Invalid memory ownership.</li>
+</ul>
+</section>
+
+<section>
+<h2>10. Debugging Queue Communication</h2>
+<p>Queues are commonly used to exchange data between FreeRTOS tasks.</p>
+
+<h3>10.1 Common Queue Problems</h3>
+<ul>
+<li>Queue creation failure.</li>
+<li>Queue full condition.</li>
+<li>Queue empty condition.</li>
+<li>Incorrect item size.</li>
+<li>Incorrect queue handle.</li>
+<li>Unexpected timeout.</li>
+<li>Incorrect pointer ownership.</li>
+</ul>
+
+<h3>10.2 Debugging Queue Send</h3>
+<pre><code>BaseType_t result;
+uint32_t sensorData = 123;
+
+result = xQueueSend(
+    sensorQueue,
+    &amp;sensorData,
+    pdMS_TO_TICKS(100)
+);
+
+if (result != pdPASS)
+{
+    /* Send failed or timed out */
+}</code></pre>
+
+<h3>10.3 Debugging Queue Receive</h3>
+<pre><code>uint32_t receivedData;
+BaseType_t result;
+
+result = xQueueReceive(
+    sensorQueue,
+    &amp;receivedData,
+    pdMS_TO_TICKS(100)
+);
+
+if (result == pdPASS)
+{
+    /* Process receivedData */
+}
+else
+{
+    /* No item received within the wait period */
+}</code></pre>
+
+<p>Inspect the queue handle, item size, return value and blocking time.</p>
+</section>
+
+<section>
+<h2>11. Debugging Semaphore and Mutex Problems</h2>
+<p>Incorrect synchronization can cause tasks to block indefinitely or access shared resources unsafely.</p>
+
+<h3>11.1 Common Problems</h3>
+<ul>
+<li>Semaphore never given.</li>
+<li>Semaphore given more times than expected.</li>
+<li>Task waiting indefinitely.</li>
+<li>Mutex not released.</li>
+<li>Incorrect mutex ownership.</li>
+<li>Deadlock caused by inconsistent lock ordering.</li>
+<li>Using a mutex from an ISR.</li>
+</ul>
+
+<h3>11.2 Debugging a Mutex</h3>
+<pre><code>if (xSemaphoreTake(
+        uartMutex,
+        pdMS_TO_TICKS(100)
+    ) == pdPASS)
+{
+    /* Access shared UART resource */
+
+    xSemaphoreGive(uartMutex);
+}
+else
+{
+    /* Record timeout or resource contention */
+}</code></pre>
+
+<div class="warning">A task that successfully takes a mutex must release it according to the ownership design. Never use a mutex from an ISR; use an appropriate ISR-safe signaling mechanism instead.</div>
+</section>
+
+<section>
+<h2>12. Debugging Priority Inversion and Deadlock</h2>
+
+<h3>12.1 Priority Inversion</h3>
+<p>Priority inversion occurs when a high-priority task is delayed because a lower-priority task holds a required resource.</p>
+
+<p>Investigate:</p>
+<ul>
+<li>Which task owns the mutex?</li>
+<li>Which task is waiting?</li>
+<li>What priorities are assigned?</li>
+<li>Is priority inheritance supported and active?</li>
+<li>How long does the owner hold the resource?</li>
+</ul>
+
+<h3>12.2 Deadlock</h3>
+<p>Deadlock occurs when tasks wait indefinitely for resources held by one another.</p>
+
+<p>Debugging methods include:</p>
+<ul>
+<li>Inspect all mutex ownership relationships.</li>
+<li>Check task blocking states.</li>
+<li>Review lock acquisition order.</li>
+<li>Look for circular dependencies.</li>
+<li>Use timeouts where appropriate as a detection or recovery measure.</li>
+</ul>
+
+<div class="tip">Define a consistent global lock-acquisition order to reduce the risk of circular wait.</div>
+</section>
+
+<section>
+<h2>13. Assertion-Based Debugging</h2>
+<p>Assertions detect unexpected conditions during development.</p>
+
+<p>FreeRTOS provides <code>configASSERT()</code> as a configurable assertion mechanism.</p>
+
+<h3>13.1 Example Configuration</h3>
+<pre><code>#define configASSERT(x) \
+    if ((x) == 0) { \
+        taskDISABLE_INTERRUPTS(); \
+        for (;;) { } \
+    }</code></pre>
+
+<p>When the assertion condition is false, execution enters the failure path.</p>
+
+<h3>13.2 Application Example</h3>
+<pre><code>void ProcessData(uint32_t *data)
+{
+    configASSERT(data != NULL);
+
+    /* Process valid data */
+}</code></pre>
+
+<p>Assertions help detect invalid handles, unexpected states and violated assumptions during development.</p>
+
+<div class="warning">The assertion implementation must be appropriate for the target port and execution context. Avoid assuming that task-level interrupt-control macros are safe in every context.</div>
+</section>
+
+<section>
+<h2>14. Debugging Interrupt-Related Problems</h2>
+<p>Interrupt problems can affect RTOS task behavior and response time.</p>
+
+<h3>14.1 Common Causes</h3>
+<ul>
+<li>Interrupt source not enabled.</li>
+<li>Incorrect interrupt vector or handler.</li>
+<li>Peripheral interrupt flag not cleared.</li>
+<li>Excessively long ISR.</li>
+<li>Incorrect interrupt priority configuration.</li>
+<li>Calling a blocking task API from an ISR.</li>
+<li>Incorrect use of ISR-safe FreeRTOS APIs.</li>
+</ul>
+
+<h3>14.2 ISR Debugging Checklist</h3>
+<ol>
+<li>Verify the peripheral interrupt source.</li>
+<li>Verify the interrupt controller configuration.</li>
+<li>Check the handler entry and exit.</li>
+<li>Confirm the interrupt flag is acknowledged correctly.</li>
+<li>Measure or inspect ISR execution duration.</li>
+<li>Check that the ISR uses only appropriate non-blocking APIs.</li>
+<li>Verify deferred task processing.</li>
+</ol>
+
+<div class="note">ISR priority rules and yield mechanisms are port-specific. Do not apply Cortex-M NVIC or BASEPRI rules to an ARM7 processor.</div>
+</section>
+
+<section>
+<h2>15. Debugging with Keil uVision Simulator</h2>
+<p>Keil uVision provides debugging facilities that can be useful for studying program execution in a supported simulator configuration.</p>
+
+<h3>15.1 Useful Debugging Features</h3>
+<ul>
+<li>Set breakpoints in C source code.</li>
+<li>Execute code step by step.</li>
+<li>Inspect local and global variables.</li>
+<li>View CPU registers.</li>
+<li>Inspect memory locations.</li>
+<li>View disassembled instructions.</li>
+<li>Inspect the call stack where debug information permits.</li>
+<li>Observe program-counter changes.</li>
+</ul>
+
+<h3>15.2 Suggested Workflow</h3>
+<ol>
+<li>Open the embedded project in Keil uVision.</li>
+<li>Build the project and check compiler errors.</li>
+<li>Enable debug information in the project settings.</li>
+<li>Select an appropriate simulator/debug target.</li>
+<li>Start the debug session.</li>
+<li>Set breakpoints in task functions and relevant kernel paths.</li>
+<li>Inspect variables and processor state.</li>
+<li>Step through the code and investigate unexpected behavior.</li>
+</ol>
+
+<div class="warning">Keil simulator support for the selected FreeRTOS ARM7 port, timer configuration, interrupts and peripheral behavior must be verified separately. Simulator execution does not establish real hardware timing or electrical behavior.</div>
+</section>
+
+<section>
+<h2>16. Systematic Debugging Workflow</h2>
+<div class="diagram">
+          IDENTIFY THE FAILURE
+                  |
+                  v
+          REPRODUCE THE PROBLEM
+                  |
+                  v
+          COLLECT DEBUG INFORMATION
+                  |
+                  v
+          CHECK TASK STATES
+                  |
+                  v
+          CHECK STACK AND HEAP
+                  |
+                  v
+          CHECK QUEUES / SEMAPHORES
+                  |
+                  v
+          CHECK INTERRUPTS / TIMING
+                  |
+                  v
+          IDENTIFY ROOT CAUSE
+                  |
+                  v
+          APPLY CORRECTION
+                  |
+                  v
+          RETEST AND VERIFY
+</div>
+
+<p>Use a repeatable debugging process rather than changing several unrelated parameters at once.</p>
+</section>
+
+<section>
+<h2>17. Debugging Checklist</h2>
+<table>
+<tr><th>Area</th><th>Checks</th></tr>
+<tr><td>Task creation</td><td>Check return values, handles and stack depth.</td></tr>
+<tr><td>Scheduling</td><td>Check priorities, states and scheduler status.</td></tr>
+<tr><td>Stack</td><td>Check high-water marks and overflow configuration.</td></tr>
+<tr><td>Heap</td><td>Check allocation results and available memory.</td></tr>
+<tr><td>Queue</td><td>Check capacity, item size and send/receive results.</td></tr>
+<tr><td>Semaphore</td><td>Check give/take operations and wait times.</td></tr>
+<tr><td>Mutex</td><td>Check ownership, lock order and release paths.</td></tr>
+<tr><td>Interrupts</td><td>Check source configuration, ISR duration and API usage.</td></tr>
+<tr><td>Timing</td><td>Check execution time, blocking time and deadlines.</td></tr>
+<tr><td>Trace</td><td>Review event sequences and task timelines.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>18. Practical Exercises</h2>
+<ol>
+<li>Explain why RTOS debugging differs from ordinary sequential-program debugging.</li>
+<li>Set a breakpoint inside a task function and inspect its local variables.</li>
+<li>Write a task-creation routine that checks the return value of <code>xTaskCreate()</code>.</li>
+<li>Explain how to detect a task that is blocked indefinitely.</li>
+<li>Write code to inspect a task's stack high-water mark.</li>
+<li>Explain how to diagnose heap allocation failure.</li>
+<li>Identify common queue communication errors.</li>
+<li>Explain how a mutex-related deadlock can be investigated.</li>
+<li>Describe the purpose of <code>configASSERT()</code>.</li>
+<li>Prepare a debugging checklist for a sensor-monitoring RTOS application.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Interview Questions</h2>
+<ol>
+<li>What is RTOS debugging?</li>
+<li>What is a breakpoint?</li>
+<li>What is the purpose of a watch window?</li>
+<li>How do you debug a task that is not running?</li>
+<li>How do you identify stack overflow?</li>
+<li>How can heap allocation failure be diagnosed?</li>
+<li>What causes a queue send operation to fail?</li>
+<li>What is deadlock?</li>
+<li>How can priority inversion be investigated?</li>
+<li>What is the purpose of <code>configASSERT()</code>?</li>
+<li>Why should an ISR not call blocking APIs?</li>
+<li>What are the limitations of breakpoint-based debugging in real-time systems?</li>
+<li>What is the difference between debugging with a simulator and debugging on physical hardware?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Lesson Summary</h2>
+<ul>
+<li>RTOS debugging investigates task, memory, synchronization and timing problems.</li>
+<li>Breakpoints and watch windows help inspect program execution.</li>
+<li>Task creation and scheduling failures require checking handles, states and priorities.</li>
+<li>Stack and heap monitoring help identify memory-related faults.</li>
+<li>Queue, semaphore and mutex return values should be checked.</li>
+<li>Assertions detect unexpected conditions during development.</li>
+<li>Interrupt debugging requires attention to port-specific API and priority rules.</li>
+<li>Trace analysis provides execution history and scheduling information.</li>
+<li>Keil uVision simulation is useful for supported program-level inspection, but does not replace hardware validation.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L08_Trace_Facility_and_System_Visualization.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L10_Memory_and_Stack_Analysis_Exercises.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 18 – Memory Management and RTOS Debugging</p>
+</footer>
+
+</body>
+</html>
