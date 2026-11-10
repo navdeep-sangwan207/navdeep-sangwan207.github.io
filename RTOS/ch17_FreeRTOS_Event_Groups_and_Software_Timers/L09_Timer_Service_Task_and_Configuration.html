@@ -1,1 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Timer Service Task</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 15px}
+header h1{font-size:28px;margin-bottom:8px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 7px rgba(0,0,0,.08)}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h2{color:#174ea6;font-size:22px;border-bottom:2px solid #d8e6fa;padding-bottom:8px;margin-bottom:15px}
+h3{color:#1765b1;margin:17px 0 9px;font-size:18px}
+p{margin:9px 0}
+ul,ol{padding-left:25px;margin:10px 0}
+li{margin:6px 0}
+pre{background:#172338;color:#e6edf7;padding:17px;border-radius:8px;overflow-x:auto;margin:13px 0;font-size:13px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0;display:block;overflow-x:auto}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;min-width:135px}
+th{background:#eaf2ff;color:#174ea6}
+.note{background:#eaf3ff;border-left:4px solid #2878d7;padding:13px;margin:14px 0;border-radius:5px}
+.warning{background:#fff5e6;border-left:4px solid #e69a24;padding:13px;margin:14px 0;border-radius:5px}
+.example{background:#effaf2;border-left:4px solid #269653;padding:13px;margin:14px 0;border-radius:5px}
+.objectives{background:#eef5ff;padding:17px 22px;border-radius:8px}
+.navigation{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:600px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 17: FreeRTOS Event Groups and Software Timers</h1>
+<p>Lesson 09 – FreeRTOS Timer Service Task</p>
+</header>
+
+<nav>
+<a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+<a href="index.html">Chapter Index</a>
+<a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>Lesson Overview</h2>
+<p>
+The FreeRTOS timer service task is a kernel-managed task
+responsible for processing software timer commands and executing
+timer callback functions. It provides centralized management
+for all software timers in an application.
+</p>
+<p>
+The timer service task is also called the timer daemon task in
+FreeRTOS documentation.
+</p>
+<div class="objectives">
+<h3>Learning Objectives</h3>
+<ul>
+<li>Understand the purpose of the timer service task.</li>
+<li>Learn its internal architecture.</li>
+<li>Understand timer command queue processing.</li>
+<li>Learn timer service task priority and stack configuration.</li>
+<li>Understand timer expiry processing.</li>
+<li>Study scheduling and callback execution delays.</li>
+<li>Understand timer service task debugging and design practices.</li>
+</ul>
+</div>
+</section>
+
+<section>
+<h2>1. What Is the Timer Service Task?</h2>
+<p>
+The timer service task is a dedicated FreeRTOS task that
+manages software timers. When software timer support is enabled,
+the kernel creates this task as part of scheduler initialization.
+</p>
+<p>
+It processes commands such as:
+</p>
+<ul>
+<li>Starting a timer.</li>
+<li>Stopping a timer.</li>
+<li>Resetting a timer.</li>
+<li>Changing a timer period.</li>
+<li>Deleting a timer.</li>
+<li>Executing callbacks when timers expire.</li>
+</ul>
+
+<div class="note">
+The timer service task is not a hardware timer interrupt. It is
+a software task scheduled by the FreeRTOS scheduler.
+</div>
+</section>
+
+<section>
+<h2>2. Why Is the Timer Service Task Required?</h2>
+<p>
+A system may contain many software timers. Creating a separate
+application task for every timer would increase task-management
+overhead and consume additional stack memory.
+</p>
+<p>
+The timer service task provides a centralized mechanism to
+manage multiple timers.
+</p>
+
+<h3>Advantages</h3>
+<ul>
+<li>Centralized software timer management.</li>
+<li>Shared timer processing infrastructure.</li>
+<li>Support for one-shot and auto-reload timers.</li>
+<li>Common execution context for timer callbacks.</li>
+<li>Reduced need for dedicated timing tasks.</li>
+<li>Integration with FreeRTOS scheduling.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. Timer Service Task Architecture</h2>
+<p>
+Timer API functions generally submit commands to the timer
+command queue. The timer service task receives these commands,
+updates timer state, tracks expiry times, and executes callbacks.
+</p>
+
+<pre><code>        Application Task
+               |
+               |
+       Timer API Functions
+               |
+               v
+       Timer Command Queue
+               |
+               v
+       Timer Service Task
+               |
+        +------+------+
+        |             |
+        v             v
+   Process Timer   Check Expiry
+     Commands          |
+                       v
+                Timer Callback
+                       |
+                       v
+               Application Action</code></pre>
+
+<h3>Architecture Components</h3>
+<table>
+<tr><th>Component</th><th>Function</th></tr>
+<tr><td>Application task</td><td>Submits timer control commands.</td></tr>
+<tr><td>Timer command queue</td><td>Stores pending timer commands.</td></tr>
+<tr><td>Timer service task</td><td>Processes commands and manages expirations.</td></tr>
+<tr><td>Timer list</td><td>Kernel-managed timer data structures used to track expiry.</td></tr>
+<tr><td>Callback function</td><td>Executes application-defined timer-expiry behavior.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. Timer Command Queue</h2>
+<p>
+The timer command queue is used to transfer timer commands
+to the timer service task.
+</p>
+<p>
+For example, when an application calls:
+</p>
+<pre><code>xTimerStart(xStatusTimer, 0);</code></pre>
+
+<p>
+the start command is submitted to the timer command queue.
+The timer service task processes it later.
+</p>
+
+<h3>Common Timer Commands</h3>
+<table>
+<tr><th>Command</th><th>Purpose</th></tr>
+<tr><td>Start</td><td>Start a timer.</td></tr>
+<tr><td>Stop</td><td>Stop a timer.</td></tr>
+<tr><td>Reset</td><td>Restart its countdown.</td></tr>
+<tr><td>Change period</td><td>Update the timer period and restart its countdown.</td></tr>
+<tr><td>Delete</td><td>Request timer deletion.</td></tr>
+</table>
+
+<h3>Queue Configuration</h3>
+<pre><code>#define configTIMER_QUEUE_LENGTH 10</code></pre>
+
+<p>
+This configuration sets the timer command queue capacity to
+ten entries in this example.
+</p>
+
+<div class="warning">
+If the command queue is full, a timer API call may fail when
+the specified queue-wait time is insufficient. Always check
+the return value of timer command APIs.
+</div>
+</section>
+
+<section>
+<h2>5. Timer Service Task Priority</h2>
+<p>
+The timer service task has a configurable priority. Its priority
+determines how it competes with other Ready tasks.
+</p>
+
+<pre><code>#define configTIMER_TASK_PRIORITY 3</code></pre>
+
+<p>
+A higher priority can help the timer service task process
+commands and callbacks promptly, but it also gives the task
+greater scheduling precedence over lower-priority application
+tasks.
+</p>
+
+<h3>Priority Design Considerations</h3>
+<ul>
+<li>Choose a priority based on application timing requirements.</li>
+<li>Consider the priority of tasks that submit timer commands.</li>
+<li>Account for callback execution time.</li>
+<li>Avoid assigning unnecessarily high priority.</li>
+<li>Ensure the timer service task gets enough CPU time.</li>
+</ul>
+
+<div class="note">
+A high timer service task priority does not guarantee precise
+callback timing. Interrupt activity, higher-priority tasks,
+critical sections, and long callbacks can still affect response.
+</div>
+</section>
+
+<section>
+<h2>6. Timer Service Task Stack</h2>
+<p>
+The timer service task requires stack memory for command
+processing, function calls, and callback execution.
+</p>
+
+<pre><code>#define configTIMER_TASK_STACK_DEPTH 256</code></pre>
+
+<p>
+The value shown is illustrative. In standard FreeRTOS
+configuration, this depth is specified in stack elements
+(<code>StackType_t</code>), not necessarily bytes.
+</p>
+
+<h3>Stack Usage Depends On</h3>
+<ul>
+<li>Timer service task implementation.</li>
+<li>Number and complexity of callback functions.</li>
+<li>Functions called by callbacks.</li>
+<li>Compiler and port-specific stack requirements.</li>
+<li>Debugging and tracing configuration.</li>
+</ul>
+
+<div class="warning">
+A callback that performs complex processing can increase timer
+service task stack usage. Keep callbacks small and inspect stack
+high-water information where the selected port supports it.
+</div>
+</section>
+
+<section>
+<h2>7. Timer Expiry Processing</h2>
+<p>
+The timer service task manages timer expiry using the RTOS tick
+count and the kernel's timer data structures.
+</p>
+
+<h3>Expiry Sequence</h3>
+<ol>
+<li>The application creates a software timer.</li>
+<li>The application submits a start command.</li>
+<li>The timer service task processes the command.</li>
+<li>The timer becomes active with an expiry time.</li>
+<li>The RTOS tick count advances.</li>
+<li>The timer service task processes the timer when its expiry is due.</li>
+<li>The callback executes in timer service task context.</li>
+<li>A one-shot timer becomes inactive; an auto-reload timer is scheduled for another period.</li>
+</ol>
+
+<div class="note">
+The callback does not necessarily execute at the exact instant
+the tick count reaches the expiry value. The timer service task
+must be scheduled and process the expiry.
+</div>
+</section>
+
+<section>
+<h2>8. Timer Service Task Configuration</h2>
+<p>
+The following configuration parameters are commonly used for
+software timers.
+</p>
+
+<pre><code>#define configUSE_TIMERS                 1
+
+#define configTIMER_TASK_PRIORITY        3
+
+#define configTIMER_QUEUE_LENGTH         10
+
+#define configTIMER_TASK_STACK_DEPTH     256</code></pre>
+
+<table>
+<tr><th>Configuration</th><th>Purpose</th></tr>
+<tr><td><code>configUSE_TIMERS</code></td><td>Enables software timer support.</td></tr>
+<tr><td><code>configTIMER_TASK_PRIORITY</code></td><td>Sets timer service task priority.</td></tr>
+<tr><td><code>configTIMER_QUEUE_LENGTH</code></td><td>Sets timer command queue capacity.</td></tr>
+<tr><td><code>configTIMER_TASK_STACK_DEPTH</code></td><td>Sets timer service task stack depth.</td></tr>
+</table>
+
+<p>
+These definitions belong in the application's
+<code>FreeRTOSConfig.h</code> when required by the selected
+FreeRTOS version and port.
+</p>
+</section>
+
+<section>
+<h2>9. Timer Service Task and ISR Communication</h2>
+<p>
+An ISR may need to request a timer-related operation. FreeRTOS
+provides ISR-specific timer APIs for supported operations.
+</p>
+
+<h3>Example API</h3>
+<pre><code>xTimerStartFromISR(
+    xStatusTimer,
+    &amp;xHigherPriorityTaskWoken
+);</code></pre>
+
+<p>
+The ISR-specific API submits a command for the timer service
+task to process. It does not execute the timer callback inside
+the ISR.
+</p>
+
+<h3>Important Considerations</h3>
+<ul>
+<li>Use ISR-specific APIs from interrupt context.</li>
+<li>Do not use ordinary task-context timer APIs from an ISR.</li>
+<li>Do not block inside an ISR.</li>
+<li>Check the API return value.</li>
+<li>Use the port-appropriate ISR yield mechanism when required.</li>
+<li>Ensure the timer command queue has sufficient capacity.</li>
+</ul>
+
+<div class="warning">
+ISR timer commands depend on the timer command queue. A queue
+that is full can cause an ISR command to fail. ISR APIs must
+remain non-blocking.
+</div>
+</section>
+
+<section>
+<h2>10. Complete Program – Periodic Timer and Service Task</h2>
+
+<h3>Objective</h3>
+<p>
+Create an auto-reload timer that generates a periodic notification.
+The timer callback sends a notification to an application task.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "timers.h"
+
+static TimerHandle_t xPeriodicTimer;
+static TaskHandle_t xWorkerTaskHandle;
+
+void PeriodicCallback(TimerHandle_t xTimer)
+{
+    xTaskNotifyGive(xWorkerTaskHandle);
+}
+
+void WorkerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        ulTaskNotifyTake(
+            pdTRUE,
+            portMAX_DELAY
+        );
+
+        /* Perform periodic application processing */
+    }
+}
+
+int main(void)
+{
+    if (xTaskCreate(
+        WorkerTask,
+        "Worker",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        &amp;xWorkerTaskHandle
+    ) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xPeriodicTimer = xTimerCreate(
+        "PeriodicTimer",
+        pdMS_TO_TICKS(1000),
+        pdTRUE,
+        NULL,
+        PeriodicCallback
+    );
+
+    if (xPeriodicTimer == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTimerStart(xPeriodicTimer, 0) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<h3>Program Explanation</h3>
+<ol>
+<li>Create an application worker task.</li>
+<li>Store the worker task handle.</li>
+<li>Create a one-second auto-reload timer.</li>
+<li>Start the timer.</li>
+<li>The timer service task processes the start command.</li>
+<li>When the timer expires, the callback executes.</li>
+<li>The callback notifies the worker task.</li>
+<li>The worker task performs the actual application operation.</li>
+</ol>
+
+<h3>Expected Behavior</h3>
+<table>
+<tr><th>Approximate Time</th><th>Operation</th></tr>
+<tr><td>1 second</td><td>First timer callback notifies the worker.</td></tr>
+<tr><td>2 seconds</td><td>Second notification is generated.</td></tr>
+<tr><td>3 seconds</td><td>Third notification is generated.</td></tr>
+<tr><td>Subsequent periods</td><td>Timer continues generating notifications while active.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>11. Timer Service Task Scheduling Considerations</h2>
+<p>
+The timer service task shares processor time with all other
+application and kernel tasks. Its execution latency depends on
+the overall scheduling configuration.
+</p>
+
+<h3>Factors Affecting Callback Latency</h3>
+<ul>
+<li>Timer service task priority.</li>
+<li>Execution time of higher-priority tasks.</li>
+<li>Interrupt frequency and ISR execution time.</li>
+<li>Critical sections and scheduler suspension.</li>
+<li>Time spent in other timer callbacks.</li>
+<li>Timer command queue activity.</li>
+</ul>
+
+<p>
+A callback that is due may be delayed until the timer service
+task can run. If a callback is long, subsequent callbacks and
+timer commands may also be delayed.
+</p>
+</section>
+
+<section>
+<h2>12. Debugging the Timer Service Task</h2>
+<p>
+Timer-related problems can be investigated by checking the
+timer configuration, queue behavior, callback execution, and
+task scheduling.
+</p>
+
+<h3>Debugging Checklist</h3>
+<ul>
+<li>Verify <code>configUSE_TIMERS</code> is enabled.</li>
+<li>Check timer creation return values.</li>
+<li>Check timer command API return values.</li>
+<li>Verify the timer service task is created.</li>
+<li>Check timer service task priority and stack depth.</li>
+<li>Check the timer command queue capacity.</li>
+<li>Use breakpoints in callback functions.</li>
+<li>Inspect task states and stack usage where supported.</li>
+<li>Check whether callbacks contain lengthy operations.</li>
+</ul>
+
+<div class="note">
+The availability of task inspection, trace, and stack-monitoring
+features depends on the FreeRTOS port, compiler, and debugging
+environment.
+</div>
+</section>
+
+<section>
+<h2>13. Common Programming Errors</h2>
+<table>
+<tr><th>Error</th><th>Correction</th></tr>
+<tr><td>Assuming callbacks execute in an ISR</td><td>They execute in timer service task context.</td></tr>
+<tr><td>Using a very low service-task priority</td><td>Evaluate callback latency and command-processing requirements.</td></tr>
+<tr><td>Using an insufficient stack</td><td>Measure and configure stack requirements.</td></tr>
+<tr><td>Ignoring command queue failures</td><td>Check API return values and queue capacity.</td></tr>
+<tr><td>Writing long callbacks</td><td>Delegate lengthy operations to application tasks.</td></tr>
+<tr><td>Assuming exact expiry timing</td><td>Account for tick resolution and scheduling latency.</td></tr>
+<tr><td>Using task APIs in an ISR</td><td>Use the matching ISR-specific API.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>14. Review Questions</h2>
+<ol>
+<li>What is the timer service task?</li>
+<li>What is another name for the timer service task?</li>
+<li>What are its main responsibilities?</li>
+<li>What is the purpose of the timer command queue?</li>
+<li>Which configuration parameter controls its priority?</li>
+<li>Which configuration parameter controls its stack depth?</li>
+<li>Which configuration parameter controls command queue capacity?</li>
+<li>How are timer callbacks executed?</li>
+<li>What happens if a callback takes too long?</li>
+<li>Can an ISR submit a timer command?</li>
+<li>Does a successful timer command submission guarantee immediate processing?</li>
+<li>Which factors affect callback latency?</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Practical Assignment</h2>
+<ol>
+<li>Draw the timer service task architecture.</li>
+<li>Explain the timer command queue operation.</li>
+<li>Create two timers with different periods.</li>
+<li>Use a common callback to notify an application task.</li>
+<li>Explain how timer service task priority affects callback latency.</li>
+<li>Investigate the effect of a long-running callback.</li>
+<li>Explain the purpose of all four timer configuration parameters.</li>
+<li>Design a periodic monitoring application using a software timer.</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Lesson Summary</h2>
+<ul>
+<li>The timer service task manages FreeRTOS software timers.</li>
+<li>It is also known as the timer daemon task.</li>
+<li>Timer commands are submitted through a command queue.</li>
+<li>The task processes commands and timer expirations.</li>
+<li>Timer callbacks execute in timer service task context.</li>
+<li>Priority and stack depth are configurable.</li>
+<li>Command queue capacity affects timer command reliability.</li>
+<li>Long callbacks can delay other timer operations.</li>
+<li>ISR timer APIs submit commands without executing callbacks in ISR context.</li>
+</ul>
+</section>
+
+<div class="navigation">
+<a href="L08_Timer_Callback_Functions.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L10_Event_Groups_and_Timer_Programming.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 17 – FreeRTOS Event Groups and Software Timers</p>
+</footer>
+
+</body>
+</html>
