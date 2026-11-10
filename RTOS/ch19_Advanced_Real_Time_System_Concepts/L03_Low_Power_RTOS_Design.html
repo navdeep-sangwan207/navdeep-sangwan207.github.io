@@ -1,1 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Low-Power RTOS Design | RTOS &amp; FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Low-Power RTOS Design</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 19: Advanced Real-Time System Concepts</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 19</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Explain the importance of low-power embedded design.</li>
+<li>Understand different processor power modes.</li>
+<li>Explain the relationship between RTOS scheduling and power consumption.</li>
+<li>Understand FreeRTOS tickless idle operation.</li>
+<li>Identify task and peripheral power-management techniques.</li>
+<li>Calculate basic energy consumption.</li>
+<li>Design an energy-aware RTOS application.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Low-Power RTOS Design</h2>
+<p>Low-power design aims to reduce the electrical energy consumed by an embedded system while maintaining its required functionality and real-time performance.</p>
+
+<p>Power management is particularly important in:</p>
+<ul>
+<li>Battery-powered embedded devices.</li>
+<li>Wireless sensor networks.</li>
+<li>Portable medical equipment.</li>
+<li>Industrial monitoring systems.</li>
+<li>Wearable electronics.</li>
+<li>Remote monitoring and IoT devices.</li>
+</ul>
+
+<h3>Why Reduce Power Consumption?</h3>
+<ul>
+<li>Extend battery operating time.</li>
+<li>Reduce heat generation.</li>
+<li>Improve energy efficiency.</li>
+<li>Reduce cooling requirements.</li>
+<li>Increase system operating lifetime where battery replacement is difficult.</li>
+</ul>
+
+<div class="diagram">
+       LOW-POWER RTOS DESIGN
+                 |
+       +---------+---------+
+       |         |         |
+    PROCESSOR  MEMORY   PERIPHERALS
+       |         |         |
+    IDLE MODE  ACCESS   POWER DOWN
+       |         |         |
+       +---------+---------+
+                 |
+          ENERGY REDUCTION
+</div>
+</section>
+
+<section>
+<h2>3. Power and Energy Fundamentals</h2>
+
+<h3>3.1 Electrical Power</h3>
+<p>Electrical power is the rate at which electrical energy is consumed.</p>
+<pre><code>P = V × I</code></pre>
+<p>Where:</p>
+<ul>
+<li>P = power in watts.</li>
+<li>V = voltage in volts.</li>
+<li>I = current in amperes.</li>
+</ul>
+
+<h3>3.2 Energy Consumption</h3>
+<pre><code>E = P × t</code></pre>
+<p>Where E is energy, P is average power and t is operating time.</p>
+
+<h3>3.3 Average Power</h3>
+<p>For a system operating in multiple power states:</p>
+<pre><code>Pavg = (P1 × t1 + P2 × t2 + ... + Pn × tn) / T</code></pre>
+
+<p>Here, T is the total observation period and each state has its own power and duration.</p>
+</section>
+
+<section>
+<h2>4. Processor Power Modes</h2>
+<p>Microcontrollers commonly provide multiple power states. Exact names and behavior depend on the device.</p>
+
+<table>
+<tr><th>Power Mode</th><th>Typical Behavior</th></tr>
+<tr><td>Run Mode</td><td>CPU and selected peripherals operate normally.</td></tr>
+<tr><td>Idle Mode</td><td>CPU execution stops or pauses while selected clocks and peripherals remain active.</td></tr>
+<tr><td>Sleep Mode</td><td>CPU or selected clock domains are stopped; wake-up sources remain available.</td></tr>
+<tr><td>Deep Sleep</td><td>More clock domains or peripherals are disabled to reduce current.</td></tr>
+<tr><td>Standby / Power-Down</td><td>Most circuitry is disabled while selected wake-up and retention features remain active.</td></tr>
+</table>
+
+<div class="warning">Power-mode names are not standardized across all microcontrollers. Always consult the target device datasheet and reference manual for exact retention, wake-up and clock behavior.</div>
+</section>
+
+<section>
+<h2>5. RTOS Power Consumption</h2>
+<p>An RTOS application can consume power even when application tasks have no useful work to perform.</p>
+
+<h3>Sources of Unnecessary Activity</h3>
+<ul>
+<li>Frequent periodic task wake-ups.</li>
+<li>Continuous polling loops.</li>
+<li>High-frequency system ticks.</li>
+<li>Unnecessary peripheral operation.</li>
+<li>Excessive communication activity.</li>
+<li>Unnecessary memory and bus accesses.</li>
+</ul>
+
+<h3>Example: Polling vs Blocking</h3>
+
+<p><strong>Polling approach:</strong></p>
+<pre><code>void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (SensorDataReady())
+        {
+            ProcessSensorData();
+        }
+    }
+}</code></pre>
+
+<p>This task continuously checks the sensor and may prevent the processor from entering a low-power state.</p>
+
+<p><strong>Blocking approach:</strong></p>
+<pre><code>void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        WaitForSensorEvent();
+
+        ProcessSensorData();
+    }
+}</code></pre>
+
+<p>In a real implementation, <code>WaitForSensorEvent()</code> should block using a suitable RTOS synchronization mechanism or hardware event mechanism. The task can remain Blocked until the event occurs.</p>
+
+<div class="tip">Event-driven designs generally provide better opportunities for low-power operation than continuous polling.</div>
+</section>
+
+<section>
+<h2>6. FreeRTOS Idle Task</h2>
+<p>FreeRTOS automatically creates an Idle task when the scheduler starts.</p>
+
+<p>The Idle task executes when no other task is Ready to run.</p>
+
+<h3>Functions of the Idle Task</h3>
+<ul>
+<li>Provides processor time when application tasks are blocked or suspended.</li>
+<li>Performs kernel housekeeping, including deferred cleanup of dynamically allocated task resources.</li>
+<li>Can execute an application-defined Idle Hook when configured.</li>
+</ul>
+
+<h3>Idle Hook</h3>
+<p>An Idle Hook is an application callback that executes while the Idle task runs.</p>
+
+<pre><code>void vApplicationIdleHook(void)
+{
+    /*
+      Optional low-power operation may be
+      performed here when the selected
+      processor port supports it.
+    */
+}</code></pre>
+
+<p>Configuration commonly includes:</p>
+<pre><code>#define configUSE_IDLE_HOOK 1</code></pre>
+
+<div class="warning">The Idle Hook must not block or call APIs that block. It should be short and must not interfere with kernel housekeeping. Do not assume that entering a CPU sleep instruction from the hook is safe without checking the port's synchronization requirements.</div>
+</section>
+
+<section>
+<h2>7. Tick Interrupt and Power Consumption</h2>
+<p>FreeRTOS normally uses a periodic tick interrupt to maintain time and schedule task delays.</p>
+
+<p>For example, with a tick rate of 1000 Hz:</p>
+<pre><code>Tick Frequency = 1000 Hz
+
+Tick Period = 1 / 1000
+
+Tick Period = 0.001 seconds
+            = 1 millisecond</code></pre>
+
+<p>The periodic interrupt can wake the processor even when no application task needs to execute.</p>
+
+<h3>Potential Effects</h3>
+<ul>
+<li>Increased processor wake-ups.</li>
+<li>Additional interrupt processing.</li>
+<li>Reduced time available for deep sleep.</li>
+<li>Increased energy consumption in applications with long idle periods.</li>
+</ul>
+</section>
+
+<section>
+<h2>8. Tickless Idle in FreeRTOS</h2>
+<p>Tickless idle reduces unnecessary periodic tick interrupts during extended idle periods.</p>
+
+<p>Instead of waking for every normal tick, the RTOS can suppress periodic ticks temporarily and arrange a wake-up near the next required timeout.</p>
+
+<div class="diagram">
+       ALL APPLICATION TASKS BLOCKED
+                    |
+              IDLE PERIOD
+                    |
+          DETERMINE NEXT TIMEOUT
+                    |
+           SUPPRESS TICK EVENTS
+                    |
+          ENTER LOW-POWER STATE
+                    |
+          HARDWARE WAKE-UP EVENT
+                    |
+          RECONSTRUCT ELAPSED TICKS
+                    |
+             RESUME SCHEDULING
+</div>
+
+<h3>Benefits</h3>
+<ul>
+<li>Reduces unnecessary tick interrupts.</li>
+<li>Increases the duration of idle periods.</li>
+<li>Creates opportunities for deeper sleep modes.</li>
+<li>Can reduce average power consumption.</li>
+</ul>
+
+<h3>Configuration</h3>
+<pre><code>#define configUSE_TICKLESS_IDLE 1</code></pre>
+
+<p>The actual implementation requires support from the selected FreeRTOS port and hardware timer.</p>
+
+<div class="warning">Setting <code>configUSE_TICKLESS_IDLE</code> alone does not guarantee correct low-power operation. The port must implement the required tick suppression, elapsed-time compensation and low-power entry/exit behavior.</div>
+</section>
+
+<section>
+<h2>9. FreeRTOS Tickless Idle Example – Concept</h2>
+<p>Consider a system where the next task timeout is expected after 500 milliseconds.</p>
+
+<table>
+<tr><th>Normal Tick Operation</th><th>Tickless Idle Operation</th></tr>
+<tr><td>Periodic tick interrupt continues at the configured frequency.</td><td>Periodic tick interrupts are suppressed during the permitted idle interval.</td></tr>
+<tr><td>CPU may wake repeatedly.</td><td>CPU can remain asleep for a longer interval.</td></tr>
+<tr><td>Each tick is processed normally.</td><td>Elapsed time is accounted for when execution resumes.</td></tr>
+</table>
+
+<p>For a nominal 1 kHz tick, a 500 ms interval corresponds to 500 nominal tick periods. The actual suppressed interval is limited by the next required timeout, hardware timer range, interrupt events and port implementation.</p>
+</section>
+
+<section>
+<h2>10. FreeRTOS Tickless Idle Port Configuration</h2>
+<p>Tickless idle is a port-level feature. A typical configuration may contain:</p>
+
+<pre><code>#define configUSE_TICKLESS_IDLE 1
+
+/* Optional application threshold */
+#define configEXPECTED_IDLE_TIME_BEFORE_SLEEP 2</code></pre>
+
+<p>The expected-idle-time threshold is available in applicable FreeRTOS versions and configurations. Its exact use should be checked against the selected kernel release.</p>
+
+<p>A port may provide or require functions and hooks for:</p>
+<ul>
+<li>Suppressing the periodic tick source.</li>
+<li>Configuring a wake-up timer.</li>
+<li>Entering a processor-specific sleep state.</li>
+<li>Measuring elapsed sleep time.</li>
+<li>Correcting the kernel tick count after wake-up.</li>
+</ul>
+
+<div class="note">The low-power implementation is processor- and port-specific. A generic application cannot safely substitute arbitrary sleep instructions for the port's tickless-idle implementation.</div>
+</section>
+
+<section>
+<h2>11. Task-Level Power Management</h2>
+<p>Tasks should be designed to spend as much time as practical in the Blocked state when no work is available.</p>
+
+<h3>Recommended Techniques</h3>
+<ul>
+<li>Use queues instead of continuous polling.</li>
+<li>Use task notifications for event signaling.</li>
+<li>Use semaphores for synchronization.</li>
+<li>Use appropriate blocking timeouts.</li>
+<li>Avoid unnecessary periodic wake-ups.</li>
+<li>Batch operations when latency requirements permit.</li>
+<li>Keep background processing efficient.</li>
+</ul>
+
+<h3>Example – Event-Driven Task</h3>
+<pre><code>void DataProcessingTask(void *pvParameters)
+{
+    uint32_t notificationValue;
+
+    for (;;)
+    {
+        if (xTaskNotifyWait(
+                0,
+                0xFFFFFFFFUL,
+                &amp;notificationValue,
+                portMAX_DELAY) == pdTRUE)
+        {
+            ProcessReceivedData(notificationValue);
+        }
+    }
+}</code></pre>
+
+<p>The task blocks until it receives a notification. The notification value can carry a 32-bit value or event bits according to the selected notification action.</p>
+</section>
+
+<section>
+<h2>12. Peripheral Power Management</h2>
+<p>Peripheral modules can consume power even when the CPU is idle.</p>
+
+<h3>Common Peripheral Management Techniques</h3>
+<table>
+<tr><th>Peripheral</th><th>Power-Saving Technique</th></tr>
+<tr><td>ADC</td><td>Disable conversion when measurements are not required.</td></tr>
+<tr><td>UART</td><td>Disable unused communication interfaces and clocks where supported.</td></tr>
+<tr><td>SPI / I2C</td><td>Disable or reduce activity when no transaction is required.</td></tr>
+<tr><td>Timers</td><td>Stop unused timer modules.</td></tr>
+<tr><td>Display</td><td>Reduce refresh activity or enter display sleep mode.</td></tr>
+<tr><td>Radio</td><td>Use sleep, receive and transmit states appropriately.</td></tr>
+<tr><td>Sensors</td><td>Use standby or duty-cycled measurement modes.</td></tr>
+</table>
+
+<h3>Peripheral Management Sequence</h3>
+<pre><code>void EnterPeripheralLowPowerMode(void)
+{
+    StopUnnecessaryADC();
+    DisableUnusedUART();
+    StopUnusedTimers();
+
+    /*
+      Hardware-specific peripheral
+      power controls belong here.
+    */
+}</code></pre>
+
+<p>These functions are illustrative placeholders. Peripheral shutdown must not interrupt an active DMA transfer, communication transaction or required safety function.</p>
+</section>
+
+<section>
+<h2>13. Clock Management and Dynamic Frequency Scaling</h2>
+<p>Dynamic frequency scaling changes the processor clock frequency according to system workload.</p>
+
+<p>Reducing clock frequency can reduce dynamic power consumption, although the actual savings depend on voltage, clock architecture and other circuit behavior.</p>
+
+<p>A simplified dynamic power relationship is:</p>
+<pre><code>Pdynamic ∝ C × V² × f</code></pre>
+
+<p>Where:</p>
+<ul>
+<li>C = effective switched capacitance.</li>
+<li>V = supply voltage.</li>
+<li>f = switching frequency.</li>
+</ul>
+
+<h3>Example</h3>
+<p>If voltage and effective capacitance remain unchanged and frequency is reduced to half:</p>
+<pre><code>New Dynamic Power ≈ 0.5 × Original Power</code></pre>
+
+<p>This is an idealized relationship for dynamic power, not a prediction of total board power. Static power, peripheral consumption and regulator losses also contribute.</p>
+
+<div class="warning">Changing clock frequency can affect peripheral baud rates, timer periods, RTOS tick configuration and control-loop timing. Clock changes must be coordinated with the entire system.</div>
+</section>
+
+<section>
+<h2>14. Power Management and Real-Time Constraints</h2>
+<p>Power-saving operations introduce wake-up latency and may affect deadline satisfaction.</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td>Sleep Entry Time</td><td>Time required to enter a low-power state.</td></tr>
+<tr><td>Wake-Up Latency</td><td>Time required to resume the required operation.</td></tr>
+<tr><td>Clock Stabilization</td><td>Time needed for clocks or oscillators to become valid.</td></tr>
+<tr><td>Peripheral Restoration</td><td>Time required to restore peripheral configuration.</td></tr>
+<tr><td>Response Time</td><td>Time from the relevant event or release to completion of the required response.</td></tr>
+</table>
+
+<p>The total wake-up and restoration delay must be included in response-time and deadline analysis.</p>
+
+<h3>Design Rule</h3>
+<p>Do not enter a power state whose wake-up and restoration latency makes the next required deadline impossible to meet.</p>
+</section>
+
+<section>
+<h2>15. Exercise 1 – Average Power Calculation</h2>
+<p><strong>Problem:</strong> An embedded device operates in two states:</p>
+
+<table>
+<tr><th>State</th><th>Power</th><th>Duration</th></tr>
+<tr><td>Run</td><td>100 mW</td><td>2 seconds</td></tr>
+<tr><td>Sleep</td><td>10 mW</td><td>8 seconds</td></tr>
+</table>
+
+<h3>Solution</h3>
+<pre><code>Total Energy =
+    (100 × 2) + (10 × 8)
+
+    = 200 + 80
+    = 280 mJ
+
+Total Time = 2 + 8
+           = 10 seconds
+
+Average Power = 280 / 10
+              = 28 mW</code></pre>
+
+<p><strong>Answer:</strong> Average power consumption is 28 mW.</p>
+</section>
+
+<section>
+<h2>16. Exercise 2 – Energy Saving</h2>
+<p><strong>Problem:</strong> A controller consumes 80 mW continuously. After implementing a suitable sleep strategy, it consumes 80 mW for 20% of the time and 8 mW for the remaining 80%.</p>
+
+<h3>Solution</h3>
+<pre><code>Average Power =
+    (80 × 0.20) + (8 × 0.80)
+
+    = 16 + 6.4
+
+    = 22.4 mW
+
+Power Reduction =
+    ((80 - 22.4) / 80) × 100
+
+    = 72%</code></pre>
+
+<p><strong>Answer:</strong> The theoretical average power reduction is 72%, assuming the stated power levels and time fractions.</p>
+</section>
+
+<section>
+<h2>17. Exercise 3 – Tickless Idle Decision</h2>
+<p><strong>Problem:</strong> All application tasks are blocked. The next task is scheduled to wake after 300 ms. The port supports tickless idle.</p>
+
+<h3>Questions</h3>
+<ol>
+<li>Why can tickless idle be useful?</li>
+<li>What happens to periodic tick interrupts during the permitted idle interval?</li>
+<li>What must happen when the processor wakes?</li>
+</ol>
+
+<h3>Suggested Answer</h3>
+<ol>
+<li>It can reduce unnecessary periodic wake-ups and allow a longer low-power interval.</li>
+<li>The port suppresses the normal periodic tick for the selected interval.</li>
+<li>The port accounts for elapsed time and resumes normal scheduling.</li>
+</ol>
+</section>
+
+<section>
+<h2>18. Exercise 4 – Power vs Deadline</h2>
+<p><strong>Problem:</strong> A processor enters deep sleep. Wake-up and clock restoration require 12 ms. A critical response must complete within 10 ms after an external event.</p>
+
+<h3>Solution</h3>
+<pre><code>Wake-Up Latency = 12 ms
+Deadline        = 10 ms
+
+12 ms &gt; 10 ms</code></pre>
+
+<p><strong>Answer:</strong> The selected deep-sleep state cannot meet this deadline if the response depends on completing that 12 ms wake-up sequence first.</p>
+
+<p>The designer must select a faster wake-up state, keep the required hardware active or redesign the event-response architecture.</p>
+</section>
+
+<section>
+<h2>19. Practical Design Exercise – Low-Power Sensor Node</h2>
+<p><strong>Objective:</strong> Design an RTOS architecture for a battery-powered sensor node.</p>
+
+<h3>Requirements</h3>
+<ul>
+<li>Read a sensor once every 5 seconds.</li>
+<li>Process the measurement.</li>
+<li>Transmit data when required.</li>
+<li>Remain in a low-power state between operations.</li>
+<li>Detect sensor and communication failures.</li>
+</ul>
+
+<h3>Suggested Architecture</h3>
+<div class="diagram">
+          PERIODIC WAKE-UP
+                 |
+            SENSOR TASK
+                 |
+           VALIDATE DATA
+                 |
+          PROCESS MEASUREMENT
+                 |
+          TRANSMIT IF REQUIRED
+                 |
+          BLOCK ALL TASKS
+                 |
+          TICKLESS IDLE / SLEEP
+                 |
+            NEXT WAKE-UP
+</div>
+
+<h3>Design Considerations</h3>
+<ol>
+<li>Use an appropriate timer or hardware wake-up source.</li>
+<li>Use event-driven task communication.</li>
+<li>Disable unused peripherals.</li>
+<li>Minimize sensor and radio active time.</li>
+<li>Include wake-up latency in deadline analysis.</li>
+<li>Monitor battery voltage where required.</li>
+<li>Provide watchdog and fault-recovery behavior.</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Important Low-Power Design Practices</h2>
+<ul>
+<li>Prefer event-driven processing over continuous polling.</li>
+<li>Allow tasks to enter the Blocked state when idle.</li>
+<li>Use tickless idle when supported and appropriate.</li>
+<li>Disable unused peripheral clocks and modules.</li>
+<li>Choose sleep modes according to wake-up requirements.</li>
+<li>Minimize unnecessary memory and bus activity.</li>
+<li>Use efficient communication and data batching where possible.</li>
+<li>Consider clock and voltage scaling where supported.</li>
+<li>Measure actual current consumption on target hardware.</li>
+<li>Verify that power transitions do not violate real-time deadlines.</li>
+</ul>
+</section>
+
+<section>
+<h2>21. Interview Questions</h2>
+<ol>
+<li>What is low-power RTOS design?</li>
+<li>Why is power management important in embedded systems?</li>
+<li>Differentiate Run, Idle, Sleep and Deep Sleep modes.</li>
+<li>What is the FreeRTOS Idle task?</li>
+<li>What is an Idle Hook?</li>
+<li>Why can periodic tick interrupts increase power consumption?</li>
+<li>What is tickless idle?</li>
+<li>How does FreeRTOS tickless idle work?</li>
+<li>What is the role of <code>configUSE_TICKLESS_IDLE</code>?</li>
+<li>Why is tickless idle port-specific?</li>
+<li>How can blocking tasks reduce power consumption?</li>
+<li>What is dynamic frequency scaling?</li>
+<li>How does wake-up latency affect real-time deadlines?</li>
+<li>How can unused peripherals be managed?</li>
+<li>How do you measure average power consumption?</li>
+</ol>
+</section>
+
+<section>
+<h2>22. Lesson Summary</h2>
+<ul>
+<li>Low-power design reduces energy consumption while preserving required system behavior.</li>
+<li>Microcontrollers provide different power modes with different wake-up characteristics.</li>
+<li>RTOS tasks that block when idle create opportunities for power savings.</li>
+<li>The FreeRTOS Idle task executes when no other task is Ready.</li>
+<li>Tickless idle suppresses unnecessary periodic tick activity during suitable idle intervals.</li>
+<li>Peripheral and clock management can reduce power consumption.</li>
+<li>Wake-up latency must be considered in real-time scheduling and response-time analysis.</li>
+<li>Power consumption should be measured on the actual target hardware.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L02_Watchdog_Timers_in_RTOS.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L04_Real_Time_Communication_Protocols.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 19 – Advanced Real-Time System Concepts</p>
+</footer>
+
+</body>
+</html>
