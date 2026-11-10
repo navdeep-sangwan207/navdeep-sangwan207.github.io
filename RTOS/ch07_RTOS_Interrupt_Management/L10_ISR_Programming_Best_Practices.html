@@ -1,1 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ISR Programming Best Practices | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+.formula{background:#f3f5f7;padding:15px;border-radius:7px;text-align:center;font-weight:bold;margin:15px 0;font-family:monospace;overflow-x:auto}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>ISR Programming Best Practices</h1>
+<p>Chapter 07 – Interrupt Management in RTOS | Lesson 10</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 07</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>An Interrupt Service Routine (ISR) is a special function executed in response to an interrupt request. ISRs are essential in embedded systems because they allow the processor to respond to hardware events without continuously polling peripheral status registers.</p>
+
+<p>However, poorly designed interrupt handlers can increase interrupt latency, cause data loss, introduce race conditions, and affect real-time scheduling.</p>
+
+<p>Therefore, ISR programming requires careful attention to execution time, interrupt priority, synchronization, hardware acknowledgement, and communication with RTOS tasks.</p>
+
+<div class="info-box">
+<strong>Primary design objective:</strong> An ISR should perform only the essential work required to service an interrupt safely and promptly. Longer processing should normally be deferred to an appropriate task or worker context.
+</div>
+</section>
+
+<section>
+<h2>2. Keep ISRs Short and Efficient</h2>
+<p>An ISR should execute quickly and have a predictable execution time.</p>
+
+<h3>Recommended operations</h3>
+<ul>
+<li>Identify the interrupt source.</li>
+<li>Read the required peripheral status.</li>
+<li>Capture essential data.</li>
+<li>Acknowledge or clear the interrupt condition.</li>
+<li>Update a small amount of shared state safely.</li>
+<li>Notify a task or schedule deferred processing.</li>
+</ul>
+
+<h3>Operations to avoid</h3>
+<ul>
+<li>Long calculations.</li>
+<li>Blocking delays.</li>
+<li>Waiting for a mutex or semaphore.</li>
+<li>Long polling loops.</li>
+<li>Complex packet parsing.</li>
+<li>File-system operations.</li>
+<li>Blocking UART transmission.</li>
+<li>Formatted output such as lengthy <code>printf()</code> calls.</li>
+</ul>
+
+<div class="warning-box">
+A short ISR is not automatically a correct ISR. It must also acknowledge the peripheral correctly, preserve required data, and avoid losing interrupt events.
+</div>
+</section>
+
+<section>
+<h2>3. Use Deferred Interrupt Processing</h2>
+<p>Move non-urgent processing from the ISR to task context whenever practical.</p>
+
+<h3>Example: UART receive interrupt</h3>
+<p>The ISR should read the received byte and place it into a suitable buffer or queue. A communication task can assemble and validate the complete packet.</p>
+
+<pre><code>UART Hardware
+      |
+      v
+UART Interrupt
+      |
+      v
+Read Received Byte
+      |
+      v
+Store Byte in Buffer
+      |
+      v
+Notify Communication Task
+      |
+      v
+Communication Task
+      |
+      v
+Parse and Validate Packet
+      |
+      v
+Execute Application Command</code></pre>
+
+<p>This separates immediate hardware servicing from longer application processing.</p>
+</section>
+
+<section>
+<h2>4. Use the Correct ISR-Safe RTOS APIs</h2>
+<p>RTOS APIs designed for task context may block or manipulate scheduler state in ways that are unsuitable for interrupt context.</p>
+
+<p>FreeRTOS provides dedicated ISR-safe functions for supported communication mechanisms.</p>
+
+<table>
+<tr><th>Task-context API</th><th>ISR-safe API</th></tr>
+<tr><td>xSemaphoreGive()</td><td>xSemaphoreGiveFromISR()</td></tr>
+<tr><td>xQueueSend()</td><td>xQueueSendFromISR()</td></tr>
+<tr><td>xTaskNotifyGive()</td><td>vTaskNotifyGiveFromISR()</td></tr>
+<tr><td>xTaskNotify()</td><td>xTaskNotifyFromISR()</td></tr>
+<tr><td>xEventGroupSetBits()</td><td>xEventGroupSetBitsFromISR()</td></tr>
+</table>
+
+<h3>Important rules</h3>
+<ul>
+<li>Use only APIs documented as ISR-safe.</li>
+<li>Do not call blocking task APIs from an ISR.</li>
+<li>Do not use mutexes inside an ISR.</li>
+<li>Check API return values where event loss is possible.</li>
+<li>Use the appropriate ISR yield mechanism for the selected port.</li>
+</ul>
+</section>
+
+<section>
+<h2>5. Use the Higher-Priority-Task-Woken Mechanism Correctly</h2>
+<p>Some FreeRTOS ISR-safe APIs accept a pointer to <code>xHigherPriorityTaskWoken</code>.</p>
+
+<p>This variable indicates whether an ISR operation has made a higher-priority task Ready.</p>
+
+<h3>Typical pattern</h3>
+<pre><code>BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+/* Call an ISR-safe API here. */
+
+portYIELD_FROM_ISR(xHigherPriorityTaskWoken);</code></pre>
+
+<p>The yield mechanism requests an appropriate context switch at the permitted point, normally as the ISR exits.</p>
+
+<div class="warning-box">
+The exact yield macro and calling convention depend on the FreeRTOS port. Do not assume that the same macro signature applies to every processor architecture.
+</div>
+</section>
+
+<section>
+<h2>6. Acknowledge Interrupts Correctly</h2>
+<p>A peripheral interrupt source must be serviced according to the device's hardware documentation.</p>
+
+<p>Depending on the peripheral, acknowledgement may require:</p>
+<ul>
+<li>Reading a data register.</li>
+<li>Writing a one to a status bit.</li>
+<li>Clearing a pending flag.</li>
+<li>Reading or writing a specific register sequence.</li>
+<li>Disabling or re-enabling an interrupt source.</li>
+</ul>
+
+<p>Incorrect acknowledgement can cause repeated interrupts, missed events, or an interrupt storm.</p>
+
+<div class="info-box">
+Do not assume that every interrupt flag is cleared by writing zero. Some hardware uses write-one-to-clear (W1C) status bits. Always follow the peripheral reference manual.
+</div>
+</section>
+
+<section>
+<h2>7. Avoid Unnecessary Interrupt Masking</h2>
+<p>Interrupt masking prevents selected interrupt requests from being serviced for a period of time.</p>
+
+<p>Masking may be necessary when protecting shared data or performing a critical operation, but excessive masking increases interrupt latency.</p>
+
+<h3>Best practices</h3>
+<ul>
+<li>Keep critical sections as short as possible.</li>
+<li>Mask only the required interrupt sources when supported.</li>
+<li>Preserve and restore the previous interrupt state correctly.</li>
+<li>Avoid long calculations while interrupts are masked.</li>
+<li>Do not confuse scheduler suspension with interrupt masking.</li>
+</ul>
+
+<p>On ARM7TDMI-S, the CPSR I bit masks IRQ exceptions and the F bit masks FIQ exceptions. These are processor-level controls, not substitutes for peripheral-specific interrupt control.</p>
+</section>
+
+<section>
+<h2>8. Handle Shared Data Safely</h2>
+<p>An ISR and a task may access the same variable or buffer. This can cause race conditions if access is not properly synchronized.</p>
+
+<h3>Example of shared data</h3>
+<pre><code>volatile unsigned int eventCount = 0;
+
+void Timer_IRQHandler(void)
+{
+    /* Acknowledge timer interrupt. */
+    eventCount++;
+}
+
+void ApplicationTask(void *pvParameters)
+{
+    unsigned int localCount;
+
+    for (;;)
+    {
+        localCount = eventCount;
+
+        Process_Event_Count(localCount);
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}</code></pre>
+
+<p>The <code>volatile</code> qualifier prevents certain compiler optimizations that would otherwise assume the variable cannot change unexpectedly. It does not make an operation atomic or provide complete synchronization.</p>
+
+<h3>Safer design considerations</h3>
+<ul>
+<li>Use naturally atomic access widths where guaranteed by the architecture.</li>
+<li>Use suitable atomic operations or short critical sections.</li>
+<li>Protect multi-field structures against inconsistent reads.</li>
+<li>Use queues when transferring data simplifies synchronization.</li>
+<li>Consider compiler and processor memory-ordering requirements.</li>
+</ul>
+
+<div class="warning-box">
+A read-modify-write expression such as <code>eventCount++</code> is not guaranteed to be atomic merely because the variable is declared volatile.
+</div>
+</section>
+
+<section>
+<h2>9. Use Appropriate Interrupt Priorities</h2>
+<p>Interrupt priorities determine which interrupt sources can preempt or delay other interrupt sources, subject to the processor and interrupt-controller design.</p>
+
+<h3>Priority design guidelines</h3>
+<ul>
+<li>Identify the most time-critical hardware events.</li>
+<li>Keep high-priority handlers especially short.</li>
+<li>Avoid unnecessary nesting.</li>
+<li>Consider stack usage during nested interrupts.</li>
+<li>Ensure interrupt masking does not violate deadlines.</li>
+<li>Analyze the worst-case interference from other interrupt sources.</li>
+</ul>
+
+<p>Interrupt priority and RTOS task priority are separate concepts. A high-priority interrupt does not automatically imply that its associated task has the highest task priority.</p>
+</section>
+
+<section>
+<h2>10. Handle Nested Interrupts Carefully</h2>
+<p>Nested interrupts occur when one interrupt handler is interrupted by another interrupt handler.</p>
+
+<p>Although nesting can improve response for urgent sources, it also increases complexity.</p>
+
+<h3>Risks</h3>
+<ul>
+<li>Increased stack consumption.</li>
+<li>Shared-data corruption.</li>
+<li>Re-entrant function problems.</li>
+<li>Longer worst-case execution paths.</li>
+<li>More difficult debugging.</li>
+</ul>
+
+<p>On ARM7TDMI-S, IRQ and FIQ have different exception behavior and banked registers. Nested handling must be designed according to the ARM architecture and the LPC2129 VIC configuration.</p>
+</section>
+
+<section>
+<h2>11. Prevent Interrupt Storms</h2>
+<p>An interrupt storm occurs when an interrupt source repeatedly generates requests without being properly serviced or controlled.</p>
+
+<h3>Possible causes</h3>
+<ul>
+<li>Interrupt status flag not cleared.</li>
+<li>Incorrect peripheral configuration.</li>
+<li>Electrical noise on an external interrupt pin.</li>
+<li>Interrupt source continuously asserted.</li>
+<li>Incorrect trigger selection.</li>
+<li>Incorrect interrupt acknowledgement sequence.</li>
+</ul>
+
+<h3>Prevention</h3>
+<ul>
+<li>Inspect peripheral status registers.</li>
+<li>Verify edge-triggered or level-triggered configuration.</li>
+<li>Follow the hardware acknowledgement sequence.</li>
+<li>Use suitable input filtering where available.</li>
+<li>Record unexpected interrupt counts.</li>
+<li>Provide a controlled fault-handling strategy.</li>
+</ul>
+</section>
+
+<section>
+<h2>12. Avoid Blocking and Long Polling in ISRs</h2>
+<p>An ISR must not wait for an operation that depends on another task or on an event that may not occur until the ISR finishes.</p>
+
+<h3>Incorrect conceptual example</h3>
+<pre><code>void UART_IRQHandler(void)
+{
+    while (UART_TransmitBusy())
+    {
+        /* Waiting inside an ISR is undesirable. */
+    }
+
+    UART_SendByte('A');
+}</code></pre>
+
+<h3>Better approach</h3>
+<pre><code>void UART_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Capture the received data. */
+    /* Notify the communication task. */
+
+    vTaskNotifyGiveFromISR(
+        xCommunicationTaskHandle,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}</code></pre>
+
+<p>The communication task can perform the longer transmission or processing operation using appropriate task-context APIs.</p>
+</section>
+
+<section>
+<h2>13. Manage ISR Stack Usage</h2>
+<p>Interrupt execution consumes stack space. Nested interrupts can increase the required stack depth.</p>
+
+<h3>Stack management guidelines</h3>
+<ul>
+<li>Avoid large local arrays in ISRs.</li>
+<li>Avoid deep function-call chains.</li>
+<li>Limit nested interrupt depth.</li>
+<li>Consider exception-mode stack requirements.</li>
+<li>Check the processor's stack allocation and initialization.</li>
+<li>Use available debugging and stack-analysis facilities.</li>
+</ul>
+
+<p>On ARM7TDMI-S, exception modes have banked stack pointers. IRQ and FIQ stack initialization must be considered during startup configuration.</p>
+</section>
+
+<section>
+<h2>14. Handle Queue and Buffer Overflow</h2>
+<p>Interrupts may generate data faster than a task can process it.</p>
+
+<p>If the queue or buffer becomes full, the application must define how to handle the new event.</p>
+
+<h3>Possible strategies</h3>
+<ul>
+<li>Increase buffer capacity based on measured and analyzed traffic.</li>
+<li>Use a suitable DMA or circular-buffer architecture.</li>
+<li>Reduce unnecessary processing in the receiving task.</li>
+<li>Record overflow counters.</li>
+<li>Discard data according to a documented policy when loss is unavoidable.</li>
+<li>Apply flow control when the communication protocol supports it.</li>
+</ul>
+
+<p>Never silently assume that a queue-send operation always succeeds.</p>
+</section>
+
+<section>
+<h2>15. Debugging and Testing ISRs</h2>
+<p>Interrupt-related defects can be difficult to reproduce because their occurrence depends on timing and event ordering.</p>
+
+<h3>Recommended debugging techniques</h3>
+<ul>
+<li>Inspect interrupt enable and pending registers.</li>
+<li>Verify peripheral status before and after acknowledgement.</li>
+<li>Use counters to record interrupt occurrences.</li>
+<li>Measure ISR duration using an available hardware timer or trace facility.</li>
+<li>Inspect task states and priorities.</li>
+<li>Monitor queue overflow and dropped-event counters.</li>
+<li>Test burst traffic and simultaneous interrupt sources.</li>
+<li>Test shared-data synchronization under repeated events.</li>
+</ul>
+
+<div class="info-box">
+The maximum ISR execution time observed during testing is not automatically a proven worst-case execution time. A complete timing argument must consider all relevant operating conditions and interference.
+</div>
+</section>
+
+<section>
+<h2>16. LPC2129 and Keil uVision Considerations</h2>
+<p>The LPC2129 uses an ARM7TDMI-S processor core and a Vectored Interrupt Controller (VIC).</p>
+
+<h3>Important architecture details</h3>
+<ul>
+<li>ARM7TDMI-S supports IRQ and FIQ exceptions.</li>
+<li>The CPSR I bit masks IRQ exceptions.</li>
+<li>The CPSR F bit masks FIQ exceptions.</li>
+<li>The processor uses banked registers in exception modes.</li>
+<li>The LPC2129 VIC supports interrupt-source selection and vectored IRQ handling.</li>
+<li>VICVectAddr is involved in vectored IRQ handler dispatch and end-of-interrupt handling.</li>
+</ul>
+
+<h3>Simulator activity</h3>
+<ol>
+<li>Open an LPC2129 project in Keil uVision.</li>
+<li>Inspect the processor registers and CPSR state.</li>
+<li>Review the interrupt vector and handler structure.</li>
+<li>Inspect relevant VIC registers where supported by the simulator.</li>
+<li>Set breakpoints at ISR entry and exit.</li>
+<li>Inspect variables modified by the ISR.</li>
+<li>Step through the handler and verify the intended control flow.</li>
+</ol>
+
+<div class="warning-box">
+Keil uVision simulation can help inspect software execution and registers, but it does not guarantee complete peripheral behavior or physical interrupt timing. Do not assume a working FreeRTOS LPC2129 port without verifying a compatible port and build configuration.
+</div>
+</section>
+
+<section>
+<h2>17. Worked Numerical Problem 1 – ISR Execution Time</h2>
+<p>An ISR performs the following operations:</p>
+
+<table>
+<tr><th>Operation</th><th>Time</th></tr>
+<tr><td>Read status register</td><td>2 µs</td></tr>
+<tr><td>Capture data</td><td>4 µs</td></tr>
+<tr><td>Acknowledge interrupt</td><td>2 µs</td></tr>
+<tr><td>Notify task</td><td>3 µs</td></tr>
+</table>
+
+<h3>Solution</h3>
+<div class="formula">ISR Time = 2 + 4 + 2 + 3 = 11 µs</div>
+
+<p><strong>Answer:</strong> The ISR execution time is 11 µs under the stated assumptions.</p>
+</section>
+
+<section>
+<h2>18. Worked Numerical Problem 2 – Interrupt Utilization</h2>
+<p>An interrupt occurs 500 times per second. Each ISR requires 20 µs of CPU time.</p>
+
+<h3>Solution</h3>
+<div class="formula">CPU Time per Second = 500 × 20 µs = 10,000 µs</div>
+<div class="formula">Interrupt CPU Utilization = 10,000 / 1,000,000 × 100</div>
+<div class="formula">= 1%</div>
+
+<p><strong>Answer:</strong> The ISR consumes 1% of one CPU's time, assuming the stated interrupt rate and execution time remain constant.</p>
+</section>
+
+<section>
+<h2>19. Worked Numerical Problem 3 – Interrupt Stack Usage</h2>
+<p>An application has an estimated interrupt stack requirement of 96 bytes for the first ISR. A nested ISR requires another 64 bytes. Assume both stack requirements are additive and exclude any additional margin.</p>
+
+<h3>Solution</h3>
+<div class="formula">Combined Stack Requirement = 96 + 64 = 160 bytes</div>
+
+<p><strong>Answer:</strong> The estimated combined requirement is 160 bytes. Actual stack allocation should include additional space for exception entry, saved context, compiler-generated code, function calls, and worst-case nesting.</p>
+</section>
+
+<section>
+<h2>20. ISR Programming Checklist</h2>
+<ul>
+<li>Identify the exact interrupt source.</li>
+<li>Confirm the correct interrupt vector and handler.</li>
+<li>Use the correct peripheral acknowledgement sequence.</li>
+<li>Keep ISR execution short and bounded.</li>
+<li>Avoid blocking and sleeping operations.</li>
+<li>Use documented ISR-safe RTOS APIs.</li>
+<li>Handle queue and buffer overflow.</li>
+<li>Protect shared data correctly.</li>
+<li>Verify interrupt priorities and masking.</li>
+<li>Account for nested interrupt stack usage.</li>
+<li>Measure and analyze response time.</li>
+<li>Test repeated events and fault conditions.</li>
+</ul>
+</section>
+
+<section>
+<h2>21. Practical Activity – Design a Safe Interrupt-Driven Application</h2>
+<p>Design a timer-driven application that periodically notifies an RTOS task.</p>
+
+<h3>Suggested architecture</h3>
+<pre><code>        Hardware Timer
+               |
+               v
+        Timer Interrupt
+               |
+               v
+        +--------------+
+        |     ISR      |
+        +--------------+
+               |
+               | Acknowledge timer
+               | Notify task
+               v
+        +--------------+
+        | RTOS Task    |
+        +--------------+
+               |
+               v
+        Update Application State
+               |
+               v
+        Return to Blocked State</code></pre>
+
+<h3>Implementation tasks</h3>
+<ol>
+<li>Identify the timer interrupt source.</li>
+<li>Configure the timer period.</li>
+<li>Write a short interrupt handler.</li>
+<li>Clear the timer interrupt condition correctly.</li>
+<li>Notify the application task using a suitable mechanism.</li>
+<li>Perform application processing in task context.</li>
+<li>Measure the event-to-task response time.</li>
+<li>Check behavior under repeated timer events.</li>
+</ol>
+
+<p>For the LPC2129 setup, a peripheral timer can be configured using the appropriate PCLK, prescaler, match register, and interrupt-enable settings. The example should be treated as a hardware-timer exercise unless a compatible RTOS port is separately established.</p>
+</section>
+
+<section>
+<h2>22. Review Questions</h2>
+<ol>
+<li>What is the primary responsibility of an ISR?</li>
+<li>Why should ISR execution time be minimized?</li>
+<li>What is deferred interrupt processing?</li>
+<li>Why should blocking APIs not be called from an ISR?</li>
+<li>What is the difference between task and ISR-safe FreeRTOS APIs?</li>
+<li>What is the purpose of the higher-priority-task-woken variable?</li>
+<li>Why is volatile insufficient for complete synchronization?</li>
+<li>What causes an interrupt storm?</li>
+<li>How does interrupt masking affect latency?</li>
+<li>Why must ISR stack usage be considered?</li>
+<li>How can queue overflow be detected?</li>
+<li>What is the difference between interrupt priority and task priority?</li>
+<li>Which interrupt exceptions are supported by ARM7TDMI-S?</li>
+<li>Why should simulator measurements not be treated as proof of WCET?</li>
+</ol>
+</section>
+
+<section>
+<h2>23. Lesson Summary</h2>
+<ul>
+<li>ISRs should be short, efficient, and predictable.</li>
+<li>Longer operations should normally be deferred to task context.</li>
+<li>Only documented ISR-safe RTOS APIs should be used in interrupt context.</li>
+<li>Peripheral interrupt conditions must be acknowledged correctly.</li>
+<li>Shared data requires suitable synchronization.</li>
+<li>Interrupt masking, priority, and nesting affect response time.</li>
+<li>Stack usage and queue overflow must be considered.</li>
+<li>Testing must include repeated events, interference, and fault conditions.</li>
+</ul>
+</section>
+
+<section>
+<h2>24. Chapter 07 – Completion</h2>
+<p>You have completed all 10 lessons of <strong>Chapter 07: Interrupt Management in RTOS</strong>.</p>
+
+<h3>Lessons completed</h3>
+<ol>
+<li>Introduction to Interrupt Management</li>
+<li>Hardware and Software Interrupts</li>
+<li>Interrupt Service Routines (ISR)</li>
+<li>Interrupt Latency and Response Time</li>
+<li>Nested Interrupts and Priority</li>
+<li>Interrupt Nesting and Masking</li>
+<li>Deferred Interrupt Processing</li>
+<li>Top Half and Bottom Half Concepts</li>
+<li>Interrupt-to-Task Communication</li>
+<li>ISR Programming Best Practices</li>
+</ol>
+
+<p><strong>Next chapter:</strong> Chapter 08 – Inter-Task Communication.</p>
+</section>
+
+<div class="lesson-buttons">
+<a href="L09_Interrupt_to_Task_Communication.html">← Previous Lesson</a>
+<a href="index.html">Chapter 07</a>
+<a href="../ch08_RTOS_Inter_Task_Communication/index.html">Next Chapter →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
