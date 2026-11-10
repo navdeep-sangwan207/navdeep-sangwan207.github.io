@@ -1,1 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Higher-Priority Task Preemption | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:29px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Higher-Priority Task Preemption</h1>
+<p>Task Wakeups, Scheduling Decisions and Context Switching</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 14</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+Higher-priority task preemption is an important
+feature of preemptive FreeRTOS scheduling. It
+allows a newly Ready task with a higher priority
+to receive processor time before a lower-priority
+task completes its current operation.
+</p>
+<ul>
+<li>Understand task preemption.</li>
+<li>Learn when a higher-priority task becomes Ready.</li>
+<li>Understand scheduling decisions after task wakeups.</li>
+<li>Study preemption caused by queue and semaphore events.</li>
+<li>Understand interrupt-triggered task wakeups.</li>
+<li>Learn the role of context switching.</li>
+<li>Analyze task execution timelines.</li>
+<li>Identify factors that can delay preemption.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Higher-Priority Preemption</h2>
+<p>
+In a preemptive FreeRTOS configuration, the
+scheduler normally selects the highest-priority
+task that is Ready.
+</p>
+<p>
+Suppose a low-priority task is currently
+executing. If an event makes a higher-priority
+task Ready, the scheduler can switch execution
+to the higher-priority task at an appropriate
+scheduling point.
+</p>
+<table>
+<tr><th>Task</th><th>Priority</th><th>Initial State</th></tr>
+<tr><td>Task A</td><td>1</td><td>Running</td></tr>
+<tr><td>Task B</td><td>3</td><td>Blocked</td></tr>
+</table>
+<p>
+When Task B becomes Ready, it has higher
+priority than Task A and can preempt it.
+</p>
+</section>
+
+<section>
+<h2>3. Conditions Required for Preemption</h2>
+<p>
+Higher-priority task preemption depends on
+several conditions:
+</p>
+<ol>
+<li>Preemptive scheduling must be enabled.</li>
+<li>A higher-priority task must become Ready.</li>
+<li>The scheduler must be permitted to make a scheduling decision.</li>
+<li>Interrupt masking or critical-section restrictions must not prevent the required scheduling operation.</li>
+<li>The processor port must support the required context-switch mechanism.</li>
+</ol>
+<h3>Configuration</h3>
+<pre><code>#define configUSE_PREEMPTION 1</code></pre>
+<div class="note">
+A higher-priority task becoming Ready does not
+mean it executes at the exact instant of the
+event. The switch occurs when the kernel and
+processor port reach an appropriate scheduling
+point.
+</div>
+</section>
+
+<section>
+<h2>4. Step-by-Step Preemption Sequence</h2>
+<p>
+Consider a system with two tasks:
+</p>
+<table>
+<tr><th>Task</th><th>Priority</th><th>Responsibility</th></tr>
+<tr><td>LowTask</td><td>1</td><td>Background processing</td></tr>
+<tr><td>HighTask</td><td>3</td><td>Urgent event processing</td></tr>
+</table>
+<h3>Execution Sequence</h3>
+<ol>
+<li>LowTask is Running.</li>
+<li>HighTask is Blocked, waiting for an event.</li>
+<li>The required event occurs.</li>
+<li>HighTask becomes Ready.</li>
+<li>The kernel requests a scheduling decision.</li>
+<li>HighTask is selected because its priority is higher.</li>
+<li>LowTask is preempted and remains Ready.</li>
+<li>HighTask executes its work.</li>
+<li>HighTask blocks or otherwise stops being the highest-priority Ready task.</li>
+<li>LowTask can resume execution.</li>
+</ol>
+</section>
+
+<section>
+<h2>5. Preemption Timing Diagram</h2>
+<pre><code>Time       T0      T1      T2      T3      T4      T5
+           |-------|-------|-------|-------|-------|
+
+LowTask    RUN     RUN     READY   READY   RUN     RUN
+HighTask   BLOCK   BLOCK   RUN     RUN     BLOCK   BLOCK
+
+Event              EVENT
+                   OCCURS
+
+RUN   = Running
+READY = Ready
+BLOCK = Blocked</code></pre>
+<p>
+At T2, HighTask becomes Ready and preempts
+LowTask. After HighTask blocks at T4, LowTask
+becomes eligible to run again.
+</p>
+</section>
+
+<section>
+<h2>6. Preemption When a Queue Receives Data</h2>
+<p>
+A common situation occurs when a high-priority
+task waits for data from a queue and a lower-
+priority task sends an item.
+</p>
+<p>
+If the queue receive operation has blocked the
+high-priority task, sending an item can unblock
+it. The sender's API may cause the scheduler
+to select the newly Ready higher-priority task.
+</p>
+<h3>Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+QueueHandle_t dataQueue;
+
+void ReceiverTask(void *pvParameters)
+{
+    int receivedData;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                dataQueue,
+                &receivedData,
+                portMAX_DELAY) == pdPASS)
+        {
+            /* Process received data */
+        }
+    }
+}
+
+void SenderTask(void *pvParameters)
+{
+    int data = 100;
+
+    for (;;)
+    {
+        if (xQueueSend(
+                dataQueue,
+                &data,
+                0) == pdPASS)
+        {
+            /* Data successfully sent */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+int main(void)
+{
+    dataQueue = xQueueCreate(5, sizeof(int));
+
+    if (dataQueue != NULL)
+    {
+        if (xTaskCreate(
+                ReceiverTask,
+                "Receiver",
+                256,
+                NULL,
+                3,
+                NULL) == pdPASS)
+        {
+            if (xTaskCreate(
+                    SenderTask,
+                    "Sender",
+                    256,
+                    NULL,
+                    1,
+                    NULL) == pdPASS)
+            {
+                vTaskStartScheduler();
+            }
+        }
+    }
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Explanation</h3>
+<ul>
+<li>ReceiverTask has priority 3.</li>
+<li>SenderTask has priority 1.</li>
+<li>ReceiverTask waits for queue data.</li>
+<li>SenderTask sends an integer value.</li>
+<li>The receive operation can unblock ReceiverTask.</li>
+<li>In a preemptive configuration, ReceiverTask can preempt SenderTask.</li>
+</ul>
+</section>
+
+<section>
+<h2>7. Preemption Through Semaphore Signaling</h2>
+<p>
+A semaphore can be used to signal that an event
+has occurred. A high-priority task can wait on
+the semaphore while a lower-priority task gives
+it.
+</p>
+<h3>Conceptual Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t eventSemaphore;
+
+void HighPriorityTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                eventSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Handle the event */
+        }
+    }
+}
+
+void LowPriorityTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Detect or generate an event */
+
+        xSemaphoreGive(eventSemaphore);
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+int main(void)
+{
+    eventSemaphore = xSemaphoreCreateBinary();
+
+    if (eventSemaphore != NULL)
+    {
+        if (xTaskCreate(
+                HighPriorityTask,
+                "High",
+                256,
+                NULL,
+                3,
+                NULL) == pdPASS)
+        {
+            if (xTaskCreate(
+                    LowPriorityTask,
+                    "Low",
+                    256,
+                    NULL,
+                    1,
+                    NULL) == pdPASS)
+            {
+                vTaskStartScheduler();
+            }
+        }
+    }
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<p>
+When LowPriorityTask gives the semaphore,
+HighPriorityTask can become Ready. Since it
+has a higher priority, the scheduler can
+preempt the lower-priority task.
+</p>
+</section>
+
+<section>
+<h2>8. Interrupt-Triggered Task Preemption</h2>
+<p>
+An external hardware event may generate an
+interrupt. The ISR can notify a task using a
+suitable FreeRTOS FromISR API.
+</p>
+<h3>Typical Sequence</h3>
+<pre><code>External Hardware Event
+          |
+          v
+    Interrupt Occurs
+          |
+          v
+       ISR Executes
+          |
+          v
+   FromISR API Called
+          |
+          v
+   High-Priority Task
+       Becomes Ready
+          |
+          v
+ ISR Requests a Yield
+          |
+          v
+ ISR Exits
+          |
+          v
+ Scheduler Selects Task</code></pre>
+<p>
+For example, an ISR may use a queue-send or
+semaphore-give FromISR API to wake a task.
+If the API reports that a higher-priority task
+was woken, the ISR can request a context switch
+using the mechanism defined by the selected port.
+</p>
+<div class="warning">
+Never call ordinary blocking task APIs from
+an ISR. Use the documented FromISR versions
+where available. Do not use a mutex from an ISR.
+</div>
+</section>
+
+<section>
+<h2>9. portYIELD_FROM_ISR()</h2>
+<p>
+Many FreeRTOS ports provide a macro or
+equivalent mechanism named portYIELD_FROM_ISR()
+to request a context switch when an ISR wakes
+a higher-priority task.
+</p>
+<h3>Illustrative Pattern</h3>
+<pre><code>void ExampleISR(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Use an appropriate FromISR API here. */
+
+    portYIELD_FROM_ISR(
+        xHigherPriorityTaskWoken
+    );
+}</code></pre>
+<p>
+The actual ISR must acknowledge the hardware
+interrupt and use the correct FromISR API.
+The code above shows the general pattern rather
+than a complete hardware-specific ISR.
+</p>
+<div class="note">
+The exact yield macro, parameters and interrupt
+requirements are port-specific. Always use the
+implementation supplied with the selected
+FreeRTOS port.
+</div>
+</section>
+
+<section>
+<h2>10. Factors That Can Delay Preemption</h2>
+<p>
+A newly Ready high-priority task may not execute
+immediately in every situation.
+</p>
+<table>
+<tr><th>Factor</th><th>Effect</th></tr>
+<tr><td>Interrupt masking</td><td>Can delay kernel scheduling or context switching.</td></tr>
+<tr><td>Critical section</td><td>Can temporarily restrict preemption according to the port's implementation.</td></tr>
+<tr><td>Scheduler suspension</td><td>Defers task scheduling decisions until the scheduler resumes.</td></tr>
+<tr><td>Long-running ISR</td><td>Delays task execution until interrupt processing completes.</td></tr>
+<tr><td>Non-preemptive configuration</td><td>Requires a suitable scheduling point before switching.</td></tr>
+<tr><td>Higher-priority Ready task</td><td>The newly Ready task may still wait behind another higher-priority Ready task.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>11. Preemption and Critical Sections</h2>
+<p>
+A critical section protects a short sequence of
+operations from specified forms of interruption
+or concurrent kernel activity. FreeRTOS critical
+section behavior depends on the processor port.
+</p>
+<p>
+While a critical section is active, a newly
+Ready task may not execute immediately.
+Once the protected region ends, the scheduler
+can make the required scheduling decision.
+</p>
+<pre><code>taskENTER_CRITICAL();
+
+/* Short protected operation */
+
+taskEXIT_CRITICAL();</code></pre>
+<div class="warning">
+Critical sections must be short. Their interrupt
+masking behavior is port-specific, and they
+must not be used as a general replacement for
+mutexes or blocking synchronization.
+</div>
+</section>
+
+<section>
+<h2>12. Preemption and Scheduler Suspension</h2>
+<p>
+FreeRTOS provides scheduler suspension APIs
+that defer task switching while the scheduler
+is suspended.
+</p>
+<pre><code>vTaskSuspendAll();
+
+/* Short operation that does not block */
+
+xTaskResumeAll();</code></pre>
+<p>
+Tasks can become Ready while scheduling is
+suspended, but the scheduler does not perform
+the normal task switch until scheduling resumes.
+</p>
+<p>
+Scheduler suspension is not equivalent to
+disabling interrupts. Interrupts may still occur,
+subject to the port's interrupt configuration.
+</p>
+</section>
+
+<section>
+<h2>13. Practical Example – Queue-Based Preemption</h2>
+<p><strong>Objective:</strong> Demonstrate how a queue can unblock a high-priority task while a lower-priority task sends data.</p>
+<h3>Procedure</h3>
+<ol>
+<li>Create a queue with a suitable length and item size.</li>
+<li>Create a receiver task with priority 3.</li>
+<li>Create a sender task with priority 1.</li>
+<li>Make the receiver wait indefinitely for queue data.</li>
+<li>Allow the sender to send an item periodically.</li>
+<li>Observe the receiver becoming Ready when data arrives.</li>
+<li>Inspect task states and execution order using debugger or trace facilities.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+When the sender places data into the queue,
+the blocked receiver can become Ready. Since
+the receiver has a higher priority, it can be
+selected before the sender continues its
+remaining work in a preemptive configuration.
+</p>
+</section>
+
+<section>
+<h2>14. Debugging and Verification</h2>
+<ul>
+<li>Verify configUSE_PREEMPTION is enabled.</li>
+<li>Check that the awakened task has a higher priority.</li>
+<li>Verify the task is actually Blocked before the event.</li>
+<li>Inspect queue and semaphore return values.</li>
+<li>Verify ISR APIs are used only from interrupt context.</li>
+<li>Check the port-specific ISR yield mechanism.</li>
+<li>Inspect critical-section duration.</li>
+<li>Check scheduler suspension and resumption.</li>
+<li>Measure event-to-task response time under realistic load.</li>
+<li>Check for interrupt overload and higher-priority task interference.</li>
+</ul>
+</section>
+
+<section>
+<h2>15. Important Notes for LPC2129 and Keil</h2>
+<p>
+The LPC2129 uses an ARM7TDMI-S core. Actual
+FreeRTOS preemption requires a compatible ARM7
+port with correct context-switch and interrupt
+integration.
+</p>
+<ul>
+<li>Do not use Cortex-M NVIC assumptions for LPC2129.</li>
+<li>Verify the ARM7 port's interrupt and yield implementation.</li>
+<li>Check the processor's IRQ/FIQ behavior and VIC configuration.</li>
+<li>Verify the tick source and context-switch mechanism.</li>
+<li>Confirm Keil compiler and simulator compatibility.</li>
+</ul>
+<div class="note">
+This lesson explains generic FreeRTOS behavior.
+The example code should be executed only in a
+verified FreeRTOS port environment. It does not
+establish that the current LPC2129 simulator
+project supports FreeRTOS.
+</div>
+</section>
+
+<section>
+<h2>16. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is higher-priority task preemption?</li>
+<li>Which configuration enables preemptive scheduling?</li>
+<li>What happens when a queue send unblocks a higher-priority task?</li>
+<li>How can a semaphore trigger task preemption?</li>
+<li>What is the purpose of a FromISR API?</li>
+<li>What is the purpose of portYIELD_FROM_ISR()?</li>
+<li>Why should ISRs remain short?</li>
+<li>How can a critical section delay preemption?</li>
+<li>What is scheduler suspension?</li>
+<li>Does scheduler suspension disable all interrupts?</li>
+<li>Why is the processor-specific port important?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain higher-priority task preemption with a timing diagram.</li>
+<li>Explain preemption using a queue-send operation.</li>
+<li>Describe how an ISR can wake a high-priority task.</li>
+<li>Explain the role of portYIELD_FROM_ISR().</li>
+<li>Discuss factors that delay task preemption.</li>
+<li>Compare critical sections and scheduler suspension.</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+<ul>
+<li>Preemption allows a higher-priority Ready task to replace a lower-priority Running task.</li>
+<li>Queue and semaphore operations can unblock waiting tasks.</li>
+<li>ISRs can wake tasks through suitable FromISR APIs.</li>
+<li>Port-specific yield mechanisms support interrupt-triggered context switches.</li>
+<li>Critical sections and scheduler suspension can defer task switching.</li>
+<li>Long ISRs and interrupt masking increase response latency.</li>
+<li>Actual preemption behavior depends on the FreeRTOS port and configuration.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Practice Assignment</h2>
+<ol>
+<li>Create a high-priority task waiting on a queue.</li>
+<li>Create a low-priority task that sends queue data.</li>
+<li>Observe task states before and after the send operation.</li>
+<li>Repeat the experiment using a binary semaphore.</li>
+<li>Draw the execution timeline for both experiments.</li>
+<li>Explain how an ISR can wake a task.</li>
+<li>Identify the port-specific ISR yield mechanism.</li>
+<li>Study how critical sections affect scheduling.</li>
+<li>Measure response time from event arrival to task execution.</li>
+<li>Prepare a short report on factors that delay preemption.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L03_Task_Priority_Configuration.html">← Previous Lesson</a>
+<a href="index.html">Chapter 14 Index</a>
+<a href="L05_Time_Slicing_and_Round_Robin.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
