@@ -1,1 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Queue Full and Queue Empty Conditions | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:28px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Queue Full and Queue Empty Conditions</h1>
+<p>Queue Capacity, Blocking, Timeouts and Error Handling</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 15</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+A FreeRTOS queue has a finite capacity.
+When all available positions contain items,
+the queue becomes full. When no items remain,
+the queue becomes empty. Correctly handling
+these conditions is essential for reliable
+inter-task communication.
+</p>
+<ul>
+<li>Understand queue capacity.</li>
+<li>Study full and empty queue conditions.</li>
+<li>Learn queue status-checking functions.</li>
+<li>Understand blocking and timeout behavior.</li>
+<li>Study queue overflow and data-loss risks.</li>
+<li>Learn queue sizing and error-handling techniques.</li>
+<li>Understand producer and consumer rate differences.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Queue Capacity</h2>
+<p>
+Queue capacity is the maximum number of
+items that a queue can store at one time.
+It is defined when the queue is created.
+</p>
+<pre><code>QueueHandle_t dataQueue;
+
+dataQueue = xQueueCreate(
+    5,
+    sizeof(int)
+);</code></pre>
+<p>
+In this example, the queue can hold five
+integer items. The queue does not grow
+automatically when additional data arrives.
+</p>
+<table>
+<tr><th>Property</th><th>Description</th></tr>
+<tr><td>Queue length</td><td>Maximum number of stored items.</td></tr>
+<tr><td>Item size</td><td>Size of each item in bytes.</td></tr>
+<tr><td>Current item count</td><td>Number of items currently stored.</td></tr>
+<tr><td>Available spaces</td><td>Unused queue positions.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>3. Queue Full Condition</h2>
+<p>
+A queue becomes full when its current
+number of items reaches its maximum capacity.
+A normal send operation cannot insert another
+item until space becomes available.
+</p>
+<h3>Example: Queue Capacity = 4</h3>
+<pre><code>After sending 10:
++----+----+----+----+
+| 10 |    |    |    |
++----+----+----+----+
+
+After sending 20 and 30:
++----+----+----+----+
+| 10 | 20 | 30 |    |
++----+----+----+----+
+
+After sending 40:
++----+----+----+----+
+| 10 | 20 | 30 | 40 |
++----+----+----+----+
+
+Queue is FULL.</code></pre>
+<p>
+A fifth send cannot complete immediately
+because all four positions are occupied.
+</p>
+</section>
+
+<section>
+<h2>4. Queue Empty Condition</h2>
+<p>
+A queue is empty when it contains no items.
+A receive operation cannot retrieve data
+until an item is inserted.
+</p>
+<pre><code>Initially:
++----+----+----+----+
+|    |    |    |    |
++----+----+----+----+
+
+Queue is EMPTY.
+
+After sending 10:
++----+----+----+----+
+| 10 |    |    |    |
++----+----+----+----+
+
+After receiving 10:
++----+----+----+----+
+|    |    |    |    |
++----+----+----+----+
+
+Queue is EMPTY again.</code></pre>
+</section>
+
+<section>
+<h2>5. Queue Status Functions</h2>
+<p>
+FreeRTOS provides functions to inspect the
+current number of queued items and available
+spaces.
+</p>
+<table>
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>uxQueueMessagesWaiting()</td><td>Returns the number of items currently in the queue.</td></tr>
+<tr><td>uxQueueSpacesAvailable()</td><td>Returns the number of free item positions.</td></tr>
+<tr><td>xQueueIsQueueEmpty()</td><td>Checks whether the queue is empty.</td></tr>
+<tr><td>xQueueIsQueueFull()</td><td>Checks whether the queue is full.</td></tr>
+</table>
+<h3>Syntax</h3>
+<pre><code>UBaseType_t uxQueueMessagesWaiting(
+    QueueHandle_t xQueue
+);
+
+UBaseType_t uxQueueSpacesAvailable(
+    QueueHandle_t xQueue
+);
+
+BaseType_t xQueueIsQueueEmpty(
+    QueueHandle_t xQueue
+);
+
+BaseType_t xQueueIsQueueFull(
+    QueueHandle_t xQueue
+);</code></pre>
+<div class="note">
+These status functions provide a snapshot.
+In a system with multiple tasks, another
+task may change the queue immediately after
+the status check. Prefer performing the
+actual send or receive operation and checking
+its return value.
+</div>
+</section>
+
+<section>
+<h2>6. Checking Queue Status</h2>
+<pre><code>#include "FreeRTOS.h"
+#include "queue.h"
+
+QueueHandle_t dataQueue;
+
+void CheckQueueStatus(void)
+{
+    UBaseType_t messages;
+    UBaseType_t spaces;
+
+    messages = uxQueueMessagesWaiting(dataQueue);
+    spaces = uxQueueSpacesAvailable(dataQueue);
+
+    if (xQueueIsQueueEmpty(dataQueue) == pdTRUE)
+    {
+        /* Queue is empty */
+    }
+
+    if (xQueueIsQueueFull(dataQueue) == pdTRUE)
+    {
+        /* Queue is full */
+    }
+}</code></pre>
+<p>
+This example reads the current queue status.
+It assumes that dataQueue is a valid,
+successfully created queue handle.
+</p>
+</section>
+
+<section>
+<h2>7. Handling a Full Queue</h2>
+<p>
+When a queue is full, the sender has several
+possible strategies.
+</p>
+<h3>Strategy 1: Non-Blocking Send</h3>
+<pre><code>if (xQueueSend(
+        dataQueue,
+        &value,
+        0
+    ) == pdPASS)
+{
+    /* Send successful */
+}
+else
+{
+    /* Queue full: handle failure */
+}</code></pre>
+<p>
+The sender returns immediately if the item
+cannot be inserted.
+</p>
+<h3>Strategy 2: Blocking Send</h3>
+<pre><code>if (xQueueSend(
+        dataQueue,
+        &value,
+        pdMS_TO_TICKS(100)
+    ) == pdPASS)
+{
+    /* Send successful */
+}
+else
+{
+    /* Timeout or send failure */
+}</code></pre>
+<p>
+The calling task can wait for up to the
+specified number of ticks for queue space.
+</p>
+<h3>Strategy 3: Use a Suitable Overflow Policy</h3>
+<ul>
+<li>Retry later when losing data is unacceptable.</li>
+<li>Record an error counter for diagnostics.</li>
+<li>Use a larger queue if memory permits and analysis supports it.</li>
+<li>Reduce producer rate or improve consumer throughput.</li>
+<li>Use an overwrite strategy when only the latest value matters.</li>
+</ul>
+</section>
+
+<section>
+<h2>8. Handling an Empty Queue</h2>
+<p>
+When a queue is empty, a receiver cannot
+retrieve an item immediately.
+</p>
+<h3>Strategy 1: Non-Blocking Receive</h3>
+<pre><code>if (xQueueReceive(
+        dataQueue,
+        &receivedValue,
+        0
+    ) == pdPASS)
+{
+    /* Data received */
+}
+else
+{
+    /* No data available */
+}</code></pre>
+<h3>Strategy 2: Blocking Receive</h3>
+<pre><code>if (xQueueReceive(
+        dataQueue,
+        &receivedValue,
+        pdMS_TO_TICKS(500)
+    ) == pdPASS)
+{
+    /* Process received data */
+}
+else
+{
+    /* Receive timed out */
+}</code></pre>
+<h3>Strategy 3: Wait Indefinitely</h3>
+<pre><code>xQueueReceive(
+    dataQueue,
+    &receivedValue,
+    portMAX_DELAY
+);</code></pre>
+<p>
+The receiver remains blocked until data
+becomes available, subject to the applicable
+configuration and queue lifecycle.
+</p>
+</section>
+
+<section>
+<h2>9. Blocking Behavior and Task States</h2>
+<p>
+When a task requests an operation that cannot
+currently complete and specifies a non-zero
+wait time, FreeRTOS can place it in the
+Blocked state.
+</p>
+<h3>Sender Waiting for Space</h3>
+<pre><code>Sender Task
+     |
+     v
+Queue Full?
+     |
+     +---- Yes ----+
+     |             |
+     v             v
+Send Now       Blocked
+                   |
+                   v
+             Space Available
+                   |
+                   v
+             Ready to Run</code></pre>
+<h3>Receiver Waiting for Data</h3>
+<pre><code>Receiver Task
+     |
+     v
+Queue Empty?
+     |
+     +---- Yes ----+
+     |             |
+     v             v
+Receive Now    Blocked
+                   |
+                   v
+              Data Arrives
+                   |
+                   v
+              Ready to Run</code></pre>
+<p>
+Becoming Ready does not mean that the task
+executes immediately. The scheduler selects
+it according to the scheduling policy and
+task priorities.
+</p>
+</section>
+
+<section>
+<h2>10. Queue Overflow and Data Loss</h2>
+<p>
+Queue overflow occurs when the application
+produces data faster than the consumer can
+process it for long enough that the queue
+reaches its capacity.
+</p>
+<h3>Example</h3>
+<ul>
+<li>Sensor task produces one item every 10 ms.</li>
+<li>Display task consumes one item every 100 ms.</li>
+<li>Items accumulate faster than they are consumed.</li>
+<li>The queue eventually becomes full.</li>
+</ul>
+<p>
+If the sender uses a zero wait time, subsequent
+send attempts can fail. If it waits, it may
+block and affect other work.
+</p>
+<h3>Possible Solutions</h3>
+<ul>
+<li>Increase queue capacity after memory and timing analysis.</li>
+<li>Improve consumer execution time.</li>
+<li>Reduce unnecessary data production.</li>
+<li>Use a latest-value design if intermediate values are not needed.</li>
+<li>Use an explicit data-loss policy and diagnostic counter.</li>
+</ul>
+</section>
+
+<section>
+<h2>11. Queue Underflow</h2>
+<p>
+In queue-based application discussions,
+underflow describes an attempt to consume
+data when no item is available.
+For FreeRTOS, a receive from an empty queue
+does not return an invalid item: it either
+fails immediately or waits according to
+the specified timeout.
+</p>
+<table>
+<tr><th>Condition</th><th>Result</th></tr>
+<tr><td>Empty queue, zero wait</td><td>Receive fails immediately.</td></tr>
+<tr><td>Empty queue, finite wait</td><td>Receiver waits up to the timeout.</td></tr>
+<tr><td>Data arrives during wait</td><td>Receive can complete successfully.</td></tr>
+<tr><td>No data arrives before timeout</td><td>Receive returns failure.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>12. Producer and Consumer Rate Analysis</h2>
+<p>
+Queue capacity should be selected using
+producer rate, consumer rate, burst size
+and the longest expected period during which
+the consumer cannot process data.
+</p>
+<h3>Example</h3>
+<p>
+A producer generates 20 items per second.
+The consumer can process 20 items per second
+on average, but may be unavailable for
+200 ms.
+</p>
+<p>
+Items generated during that interval:
+</p>
+<p><strong>20 items/second × 0.2 seconds = 4 items</strong></p>
+<p>
+At least four free positions are needed to
+absorb this particular interruption, plus
+additional capacity if bursts or other
+delays are possible.
+</p>
+<div class="warning">
+Equal average production and consumption
+rates do not guarantee that a queue will
+never fill. Burst arrivals, scheduling delays
+and execution-time variation must also be
+considered.
+</div>
+</section>
+
+<section>
+<h2>13. Practical Program – Full and Empty Handling</h2>
+<pre><code>#include "FreeRTOS.h"
+#include "queue.h"
+
+QueueHandle_t dataQueue;
+
+void QueueTest(void)
+{
+    int value;
+    int received;
+
+    dataQueue = xQueueCreate(
+        3,
+        sizeof(int)
+    );
+
+    if (dataQueue == NULL)
+    {
+        return;
+    }
+
+    value = 10;
+    xQueueSend(dataQueue, &value, 0);
+
+    value = 20;
+    xQueueSend(dataQueue, &value, 0);
+
+    value = 30;
+    xQueueSend(dataQueue, &value, 0);
+
+    /* Queue now contains three items */
+
+    value = 40;
+
+    if (xQueueSend(dataQueue, &value, 0) != pdPASS)
+    {
+        /* Queue is full */
+    }
+
+    if (xQueueReceive(
+            dataQueue,
+            &received,
+            0
+        ) == pdPASS)
+    {
+        /* One item removed */
+    }
+
+    /* A queue position is now available */
+
+    if (xQueueSend(
+            dataQueue,
+            &value,
+            0
+        ) == pdPASS)
+    {
+        /* New item inserted */
+    }
+
+    vQueueDelete(dataQueue);
+    dataQueue = NULL;
+}</code></pre>
+<h3>Program Explanation</h3>
+<ol>
+<li>A queue is created with capacity three.</li>
+<li>Three values are inserted successfully.</li>
+<li>A fourth immediate send is expected to fail while the queue is full.</li>
+<li>One item is received and removed.</li>
+<li>The freed position allows another item to be sent.</li>
+<li>The queue is deleted after the demonstration operations.</li>
+</ol>
+</section>
+
+<section>
+<h2>14. Best Practices</h2>
+<ul>
+<li>Choose queue length based on measured or analysed workload.</li>
+<li>Always check send and receive return values.</li>
+<li>Use finite timeouts when indefinite blocking is not appropriate.</li>
+<li>Avoid polling loops that continuously check queue status without yielding or blocking.</li>
+<li>Track failed sends when data loss matters.</li>
+<li>Do not rely on a status check as a guarantee that the next operation will succeed.</li>
+<li>Use queue overwrite only when replacing old data is intentional.</li>
+<li>Ensure queue users stop before queue deletion.</li>
+<li>Use FromISR APIs in interrupt context.</li>
+</ul>
+</section>
+
+<section>
+<h2>15. LPC2129 and Keil Simulator Considerations</h2>
+<ul>
+<li>LPC2129 uses ARM7TDMI-S architecture.</li>
+<li>Verify the selected FreeRTOS ARM7 port and compiler integration.</li>
+<li>Check the configured heap and available RAM.</li>
+<li>Use debugger variables or a supported trace facility to inspect queue-related application state.</li>
+<li>Do not assume that simulated peripheral activity represents real hardware timing.</li>
+</ul>
+<div class="warning">
+The examples in this lesson use generic
+FreeRTOS APIs. They are not verified LPC2129
+Keil simulator projects.
+</div>
+</section>
+
+<section>
+<h2>16. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is queue capacity?</li>
+<li>When does a queue become full?</li>
+<li>When does a queue become empty?</li>
+<li>What does uxQueueMessagesWaiting() return?</li>
+<li>What does uxQueueSpacesAvailable() return?</li>
+<li>What is the purpose of xQueueIsQueueFull()?</li>
+<li>What is the purpose of xQueueIsQueueEmpty()?</li>
+<li>What happens when a zero-wait send is attempted on a full queue?</li>
+<li>What happens when a zero-wait receive is attempted on an empty queue?</li>
+<li>What is queue overflow?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain full and empty queue conditions with diagrams.</li>
+<li>Describe the FreeRTOS queue status functions.</li>
+<li>Explain blocking and non-blocking queue behavior.</li>
+<li>Discuss queue overflow and data-loss handling.</li>
+<li>Explain producer and consumer rate analysis.</li>
+<li>Write a program demonstrating full and empty conditions.</li>
+<li>Discuss queue sizing and design best practices.</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+<ul>
+<li>A queue has a fixed capacity defined at creation.</li>
+<li>A full queue cannot accept another normal item immediately.</li>
+<li>An empty queue cannot provide an item immediately.</li>
+<li>Queue status functions report the current state.</li>
+<li>Send and receive operations can block for a configured time.</li>
+<li>Non-blocking operations return immediately.</li>
+<li>Overflow can cause failed sends and data loss.</li>
+<li>Queue capacity must account for bursts and consumer delays.</li>
+<li>Always check operation return values.</li>
+<li>Coordinate queue deletion with all queue users.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Practice Assignment</h2>
+<ol>
+<li>Create a queue with capacity five.</li>
+<li>Insert five integer values.</li>
+<li>Attempt to insert a sixth value without waiting.</li>
+<li>Check the number of messages waiting.</li>
+<li>Receive two values and inspect the remaining capacity.</li>
+<li>Attempt to receive from an empty queue.</li>
+<li>Explain the difference between blocking and non-blocking operations.</li>
+<li>Calculate the queue capacity required for a given producer rate and consumer delay.</li>
+<li>Describe three methods to handle queue overflow.</li>
+<li>Explain why queue status checks can become outdated in a multitasking system.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L03_xQueueSend_and_xQueueReceive.html">← Previous Lesson</a>
+<a href="index.html">Chapter 15 Index</a>
+<a href="L05_Blocking_Time_and_Queue_Timeout.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
