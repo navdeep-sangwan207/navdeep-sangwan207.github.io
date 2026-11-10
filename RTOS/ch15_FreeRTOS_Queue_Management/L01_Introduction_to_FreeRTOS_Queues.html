@@ -1,1 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Introduction to FreeRTOS Queues | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:28px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Introduction to FreeRTOS Queues</h1>
+<p>Inter-Task Communication and Data Transfer</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 15</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+Queues are one of the most important
+communication mechanisms in FreeRTOS.
+They allow tasks and, through appropriate
+APIs, interrupt service routines to exchange
+data in a structured and synchronized way.
+</p>
+<ul>
+<li>Understand the concept of a queue.</li>
+<li>Study the role of queues in an RTOS.</li>
+<li>Understand queue storage and capacity.</li>
+<li>Learn how tasks communicate using queues.</li>
+<li>Understand queue sender and receiver behavior.</li>
+<li>Study blocking and non-blocking queue operations.</li>
+<li>Understand data copying in FreeRTOS queues.</li>
+<li>Identify practical applications of queues.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Is a Queue?</h2>
+<p>
+A queue is a data structure used to store
+multiple items in an organized sequence.
+FreeRTOS queues provide a mechanism for
+communication and synchronization between
+tasks and interrupt service routines.
+</p>
+<p>
+In the standard queue operation, items are
+received in the order in which they were sent.
+This is commonly called FIFO (First In,
+First Out).
+</p>
+<h3>Basic Queue Representation</h3>
+<pre><code>        SEND DATA
+            |
+            v
+    +-------------------+
+    |     QUEUE         |
+    |-------------------|
+    | Item 1            |
+    | Item 2            |
+    | Item 3            |
+    | Item 4            |
+    +-------------------+
+            |
+            v
+       RECEIVE DATA</code></pre>
+<p>
+The sender places an item into the queue.
+The receiver retrieves an item from the queue.
+</p>
+</section>
+
+<section>
+<h2>3. Why Are Queues Required in RTOS?</h2>
+<p>
+In multitasking applications, different tasks
+often perform different operations. One task
+may collect sensor data, while another task
+processes or displays that data.
+</p>
+<p>
+Queues allow these tasks to exchange data
+without requiring them to execute at the same
+time.
+</p>
+<h3>Example: Sensor and Display Tasks</h3>
+<pre><code>Sensor Task
+     |
+     | Sensor data
+     v
+  FreeRTOS Queue
+     |
+     | Received data
+     v
+Display Task</code></pre>
+<h3>Advantages</h3>
+<ul>
+<li>Provides structured inter-task communication.</li>
+<li>Separates data production from data processing.</li>
+<li>Can block a receiver until data becomes available.</li>
+<li>Can block a sender while the queue is full.</li>
+<li>Provides controlled data transfer.</li>
+<li>Reduces the need for shared global data.</li>
+<li>Supports task-to-task and ISR-to-task communication through suitable APIs.</li>
+</ul>
+</section>
+
+<section>
+<h2>4. FIFO – First In, First Out</h2>
+<p>
+A normal FreeRTOS queue uses FIFO behavior.
+The first item sent to the queue is normally
+the first item received.
+</p>
+<h3>Example</h3>
+<p>Suppose a task sends three values:</p>
+<pre><code>Queue Send: 10
+Queue Send: 20
+Queue Send: 30</code></pre>
+<p>The queue contains:</p>
+<pre><code>FRONT                     BACK
+  |                         |
+  v                         v
++------+    +------+    +------+
+|  10  | -> |  20  | -> |  30  |
++------+    +------+    +------+</code></pre>
+<p>
+The receiver normally receives 10, then 20,
+then 30.
+</p>
+<div class="note">
+FreeRTOS also provides queue operations that
+can place an item at the front or back of a
+queue. FIFO behavior describes the normal
+send-to-back and receive-from-front pattern.
+</div>
+</section>
+
+<section>
+<h2>5. Queue Components</h2>
+<table>
+<tr><th>Component</th><th>Description</th></tr>
+<tr><td>Queue length</td><td>Maximum number of items that can be stored.</td></tr>
+<tr><td>Item size</td><td>Size in bytes of each queue item.</td></tr>
+<tr><td>Queue storage</td><td>Memory used to store queued items.</td></tr>
+<tr><td>Queue handle</td><td>Reference used by application code to access the queue.</td></tr>
+<tr><td>Sender task</td><td>Task that places data into the queue.</td></tr>
+<tr><td>Receiver task</td><td>Task that retrieves data from the queue.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>6. Queue Length and Item Size</h2>
+<p>
+When creating a queue, two important
+parameters are specified:
+</p>
+<ul>
+<li><strong>Queue length:</strong> Maximum number of items.</li>
+<li><strong>Item size:</strong> Number of bytes in each item.</li>
+</ul>
+<h3>Example</h3>
+<pre><code>QueueHandle_t dataQueue;
+
+dataQueue = xQueueCreate(
+    5,
+    sizeof(int)
+);</code></pre>
+<p>
+This creates a queue with a capacity of five
+integer items, assuming dynamic allocation
+is enabled and sufficient heap memory is
+available.
+</p>
+<table>
+<tr><th>Parameter</th><th>Value</th></tr>
+<tr><td>Queue length</td><td>5</td></tr>
+<tr><td>Item type</td><td>int</td></tr>
+<tr><td>Item size</td><td>sizeof(int) bytes</td></tr>
+<tr><td>Maximum stored items</td><td>5</td></tr>
+</table>
+<p>
+The queue's item storage requirement is
+approximately:
+</p>
+<p><strong>Queue item storage = Queue length × Item size</strong></p>
+<p>
+The total memory allocation also includes
+queue control and implementation overhead.
+</p>
+</section>
+
+<section>
+<h2>7. Queue Handle</h2>
+<p>
+A queue handle is a variable of type
+<code>QueueHandle_t</code>. It is used to
+refer to a queue created by FreeRTOS.
+</p>
+<pre><code>QueueHandle_t sensorQueue;</code></pre>
+<p>
+After successful queue creation, the returned
+handle is used in queue operations.
+</p>
+<pre><code>sensorQueue = xQueueCreate(
+    10,
+    sizeof(int)
+);
+
+if (sensorQueue == NULL)
+{
+    /* Queue creation failed */
+}</code></pre>
+<div class="note">
+QueueHandle_t is an opaque handle. Application
+code should use the public queue APIs rather
+than accessing internal queue-control structures.
+</div>
+</section>
+
+<section>
+<h2>8. Queue Data Transfer – Copying Mechanism</h2>
+<p>
+FreeRTOS queues normally copy each item into
+the queue's internal storage when it is sent.
+When an item is received, it is copied from
+the queue into the receiver's destination
+memory.
+</p>
+<h3>Data Transfer</h3>
+<pre><code>Sender Variable
+      |
+      | xQueueSend()
+      v
+Queue Internal Storage
+      |
+      | xQueueReceive()
+      v
+Receiver Variable</code></pre>
+<p>
+For example, if an integer value is sent,
+the queue stores a copy of that integer.
+Changing the sender's original variable after
+the send does not change the queued copy.
+</p>
+<div class="warning">
+If the queue item is a pointer, FreeRTOS copies
+the pointer value, not the data pointed to.
+The application must manage buffer ownership
+and lifetime correctly.
+</div>
+</section>
+
+<section>
+<h2>9. Queue Creation Function</h2>
+<p>
+The <code>xQueueCreate()</code> function
+creates a queue dynamically.
+</p>
+<h3>Syntax</h3>
+<pre><code>QueueHandle_t xQueueCreate(
+    UBaseType_t uxQueueLength,
+    UBaseType_t uxItemSize
+);</code></pre>
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>uxQueueLength</td><td>Maximum number of items stored in the queue.</td></tr>
+<tr><td>uxItemSize</td><td>Size in bytes of each queue item.</td></tr>
+</table>
+<h3>Return Value</h3>
+<table>
+<tr><th>Return</th><th>Meaning</th></tr>
+<tr><td>Valid QueueHandle_t</td><td>Queue created successfully.</td></tr>
+<tr><td>NULL</td><td>Queue creation failed, for example because memory was unavailable.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>10. Queue Sender and Receiver</h2>
+<h3>Sender</h3>
+<p>
+The sender task uses a queue send API to place
+an item into the queue.
+</p>
+<pre><code>int value = 100;
+
+xQueueSend(
+    sensorQueue,
+    &value,
+    0
+);</code></pre>
+<h3>Receiver</h3>
+<p>
+The receiver task uses a queue receive API
+to retrieve an item.
+</p>
+<pre><code>int receivedValue;
+
+xQueueReceive(
+    sensorQueue,
+    &receivedValue,
+    portMAX_DELAY
+);</code></pre>
+<p>
+The receiver waits indefinitely for an item
+when <code>portMAX_DELAY</code> is used,
+subject to the relevant FreeRTOS configuration.
+</p>
+</section>
+
+<section>
+<h2>11. Blocking and Non-Blocking Queue Operations</h2>
+<p>
+Queue APIs allow the application to specify
+how long a task should wait when a queue
+cannot immediately complete the requested
+operation.
+</p>
+<table>
+<tr><th>Wait Time</th><th>Behavior</th></tr>
+<tr><td>0 ticks</td><td>Do not wait; return immediately if the operation cannot complete.</td></tr>
+<tr><td>Finite ticks</td><td>Wait up to the specified number of ticks.</td></tr>
+<tr><td>portMAX_DELAY</td><td>Wait indefinitely when supported by the configuration.</td></tr>
+</table>
+<h3>Example – Non-Blocking Send</h3>
+<pre><code>if (xQueueSend(
+        sensorQueue,
+        &value,
+        0
+    ) == pdPASS)
+{
+    /* Item successfully queued */
+}
+else
+{
+    /* Queue is full */
+}</code></pre>
+<h3>Example – Blocking Receive</h3>
+<pre><code>if (xQueueReceive(
+        sensorQueue,
+        &receivedValue,
+        portMAX_DELAY
+    ) == pdPASS)
+{
+    /* Process received item */
+}</code></pre>
+</section>
+
+<section>
+<h2>12. Practical Application – Sensor Data Communication</h2>
+<p>
+A sensor monitoring application can use one
+task to collect measurements and another task
+to process them.
+</p>
+<pre><code>Sensor Task
+    |
+    | Collect measurement
+    v
+FreeRTOS Queue
+    |
+    | Transfer measurement
+    v
+Processing Task
+    |
+    v
+Display / Monitoring / Control</code></pre>
+<h3>Applications</h3>
+<ul>
+<li>Temperature monitoring systems.</li>
+<li>Industrial data acquisition.</li>
+<li>UART receive-data processing.</li>
+<li>Communication between application tasks.</li>
+<li>Event and command transfer.</li>
+<li>Sensor-to-control task communication.</li>
+</ul>
+</section>
+
+<section>
+<h2>13. Queue vs Shared Global Variable</h2>
+<table>
+<tr><th>Feature</th><th>Queue</th><th>Shared Global Variable</th></tr>
+<tr><td>Data storage</td><td>Can store multiple items.</td><td>Usually stores one current value.</td></tr>
+<tr><td>Data transfer</td><td>Copies items through queue APIs.</td><td>Tasks access the same memory.</td></tr>
+<tr><td>Synchronization</td><td>Queue operations provide synchronization behavior.</td><td>Requires appropriate synchronization.</td></tr>
+<tr><td>Blocking</td><td>Sender and receiver can block.</td><td>No built-in blocking behavior.</td></tr>
+<tr><td>Multiple pending values</td><td>Supported up to queue capacity.</td><td>New writes may overwrite old values.</td></tr>
+</table>
+<p>
+A queue is often a better choice when every
+message or data item must be transferred.
+A shared variable may be appropriate for
+a carefully synchronized latest-value design.
+</p>
+</section>
+
+<section>
+<h2>14. Important Queue Programming Rules</h2>
+<ul>
+<li>Always check whether queue creation succeeds.</li>
+<li>Use the correct item size.</li>
+<li>Check the return value of send and receive operations.</li>
+<li>Choose queue capacity based on expected data rate and consumer delays.</li>
+<li>Define a policy for queue-full conditions.</li>
+<li>Use the appropriate FromISR API inside interrupt service routines.</li>
+<li>Never use a blocking queue operation inside an ISR.</li>
+<li>Do not assume sending a pointer copies the pointed-to data.</li>
+<li>Manage pointer ownership and buffer lifetime carefully.</li>
+<li>Use queues for data transfer and event communication where appropriate.</li>
+</ul>
+</section>
+
+<section>
+<h2>15. Practical Experiment – Basic Queue Communication</h2>
+<p><strong>Objective:</strong> Understand how one task sends data to another task using a FreeRTOS queue.</p>
+<h3>Procedure</h3>
+<ol>
+<li>Create a queue with capacity five and item size sizeof(int).</li>
+<li>Create a sender task.</li>
+<li>Create a receiver task.</li>
+<li>Send integer values through the queue.</li>
+<li>Receive values in the receiver task.</li>
+<li>Observe the received values using a debugger or suitable output mechanism.</li>
+<li>Test what happens when the queue is full.</li>
+<li>Test what happens when the queue is empty.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+The receiver obtains the values in queue
+order when using normal send-to-back and
+receive-from-front operations. If the queue
+is empty, a blocking receiver waits for data.
+If the queue is full, a sender may wait or
+return failure depending on its wait time.
+</p>
+</section>
+
+<section>
+<h2>16. LPC2129 and Keil Simulator Considerations</h2>
+<p>
+The LPC2129 uses an ARM7TDMI-S processor.
+Running FreeRTOS queue examples requires
+a compatible kernel port and correct
+project integration.
+</p>
+<ul>
+<li>Verify the ARM7-compatible FreeRTOS port.</li>
+<li>Verify the compiler and startup configuration.</li>
+<li>Verify heap configuration and available memory.</li>
+<li>Use debugger inspection to examine task execution where supported.</li>
+<li>Do not assume that queue examples will run in the current Keil simulator without a working port.</li>
+</ul>
+<div class="warning">
+The examples are generic FreeRTOS educational
+code. They are not verified LPC2129 Keil
+simulator projects.
+</div>
+</section>
+
+<section>
+<h2>17. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is a FreeRTOS queue?</li>
+<li>What does FIFO mean?</li>
+<li>Why are queues used in RTOS?</li>
+<li>What is a queue handle?</li>
+<li>What is queue length?</li>
+<li>What is item size?</li>
+<li>What is the purpose of xQueueCreate()?</li>
+<li>How does FreeRTOS transfer queue items?</li>
+<li>What is a blocking queue operation?</li>
+<li>What is the difference between a queue and a shared global variable?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain the architecture and working of a FreeRTOS queue.</li>
+<li>Explain FIFO operation with an example.</li>
+<li>Describe queue creation and its parameters.</li>
+<li>Explain the data-copying mechanism.</li>
+<li>Discuss blocking and non-blocking queue operations.</li>
+<li>Develop a sensor-to-display task communication design.</li>
+<li>Compare queues and shared global variables.</li>
+</ol>
+</section>
+
+<section>
+<h2>18. Lesson Summary</h2>
+<ul>
+<li>A FreeRTOS queue is used for inter-task and ISR-to-task communication.</li>
+<li>Normal queue operation follows FIFO order.</li>
+<li>Queue length determines the maximum number of stored items.</li>
+<li>Item size determines the size of each queue item in bytes.</li>
+<li>xQueueCreate() creates a queue dynamically.</li>
+<li>Queue operations normally copy data into and out of queue storage.</li>
+<li>Blocking time controls how long a task waits.</li>
+<li>Pointer queues copy pointer values, not pointed-to data.</li>
+<li>Queues help separate data production from data processing.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Practice Assignment</h2>
+<ol>
+<li>Define a queue in your own words.</li>
+<li>Explain FIFO operation with five values.</li>
+<li>Write the syntax of xQueueCreate().</li>
+<li>Create a queue for ten integer values.</li>
+<li>Explain the difference between queue length and item size.</li>
+<li>Draw a sensor-to-display queue communication diagram.</li>
+<li>Explain blocking and non-blocking queue operations.</li>
+<li>Describe the pointer-copying behavior of FreeRTOS queues.</li>
+<li>Write five practical applications of queues.</li>
+<li>Design a queue-based data communication system for an embedded application.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="../ch14_FreeRTOS_Scheduling_and_Priority_Management/index.html">← Previous Chapter</a>
+<a href="index.html">Chapter 15 Index</a>
+<a href="L02_Queue_Creation_and_Deletion.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
