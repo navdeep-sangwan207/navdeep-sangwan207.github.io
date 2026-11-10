@@ -1,1 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mutex-Based Shared Resource Project | NS Learning Hub</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Mutex-Based Shared Resource Project</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 20: Practical Projects and Interview Preparation</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 20</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Understand shared resource management in an RTOS.</li>
+<li>Identify race conditions caused by concurrent resource access.</li>
+<li>Understand mutex ownership and mutual exclusion.</li>
+<li>Create a mutex using <code>xSemaphoreCreateMutex()</code>.</li>
+<li>Use <code>xSemaphoreTake()</code> and <code>xSemaphoreGive()</code>.</li>
+<li>Protect a shared UART or peripheral driver.</li>
+<li>Understand priority inversion and priority inheritance.</li>
+<li>Recognize deadlock and improper mutex usage.</li>
+<li>Design a resource-sharing application using FreeRTOS.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Project Introduction</h2>
+<p>In an embedded system, multiple FreeRTOS tasks may need to access the same hardware peripheral or software resource.</p>
+
+<p>For example, two tasks may need to transmit messages through a single UART interface. If both tasks access the UART simultaneously without synchronization, their messages may become interleaved.</p>
+
+<h3>Project Objective</h3>
+<p>Use a FreeRTOS mutex to ensure that only one task at a time accesses the shared UART transmission interface.</p>
+
+<table>
+<tr><th>Component</th><th>Responsibility</th></tr>
+<tr><td>Task 1</td><td>Transmits sensor information.</td></tr>
+<tr><td>Task 2</td><td>Transmits system status information.</td></tr>
+<tr><td>Mutex</td><td>Protects the shared UART resource.</td></tr>
+<tr><td>UART Driver</td><td>Transmits characters to the serial interface.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>3. Shared Resource Architecture</h2>
+<div class="diagram">
+           TASK 1
+       Sensor Message
+              |
+              v
+         MUTEX TAKE
+              |
+              |
+           UART
+        TRANSMISSION
+              |
+         MUTEX GIVE
+              |
+              |
+           TASK 2
+       Status Message
+              |
+              v
+         MUTEX TAKE
+              |
+              |
+           UART
+        TRANSMISSION
+              |
+         MUTEX GIVE
+</div>
+
+<p>Both tasks use the same UART driver. The mutex provides exclusive access during the protected operation.</p>
+</section>
+
+<section>
+<h2>4. Understanding Shared Resources</h2>
+<p>A shared resource is a hardware or software component accessed by more than one execution context.</p>
+
+<h3>Examples of Shared Resources</h3>
+<table>
+<tr><th>Resource</th><th>Possible Users</th></tr>
+<tr><td>UART peripheral</td><td>Logging task and communication task</td></tr>
+<tr><td>SPI peripheral</td><td>Display task and flash-memory task</td></tr>
+<tr><td>I2C peripheral</td><td>Sensor task and EEPROM task</td></tr>
+<tr><td>Shared data structure</td><td>Measurement task and monitoring task</td></tr>
+<tr><td>File system</td><td>Logging task and configuration task</td></tr>
+</table>
+
+<p>Not every shared resource requires a mutex. The correct synchronization mechanism depends on the resource, access pattern, driver design and interrupt involvement.</p>
+</section>
+
+<section>
+<h2>5. What Is a Mutex?</h2>
+<p>A mutex (mutual exclusion object) is a synchronization mechanism used to protect a shared resource.</p>
+
+<h3>Important Characteristics</h3>
+<ul>
+<li>Only one task can own a mutex at a time.</li>
+<li>A task takes the mutex before entering the protected section.</li>
+<li>The owning task releases the mutex after completing the protected operation.</li>
+<li>Other tasks attempting to take the mutex may block.</li>
+<li>FreeRTOS mutexes support priority inheritance.</li>
+<li>A mutex cannot be used as an ISR synchronization object.</li>
+</ul>
+
+<div class="note">A mutex is an ownership-based synchronization object. It is different from a binary semaphore, which does not enforce ownership.</div>
+</section>
+
+<section>
+<h2>6. FreeRTOS Mutex APIs</h2>
+
+<h3>Mutex Creation</h3>
+<pre><code>SemaphoreHandle_t xSemaphoreCreateMutex(void);</code></pre>
+<p>Creates a mutex and returns its handle. Check whether the returned handle is NULL.</p>
+
+<h3>Take Mutex</h3>
+<pre><code>xSemaphoreTake(
+    xMutex,
+    xTicksToWait
+);</code></pre>
+<p>The calling task attempts to acquire the mutex.</p>
+
+<h3>Give Mutex</h3>
+<pre><code>xSemaphoreGive(xMutex);</code></pre>
+<p>The owning task releases the mutex.</p>
+
+<h3>API Summary</h3>
+<table>
+<tr><th>API</th><th>Purpose</th></tr>
+<tr><td><code>xSemaphoreCreateMutex()</code></td><td>Create a mutex.</td></tr>
+<tr><td><code>xSemaphoreTake()</code></td><td>Acquire the mutex.</td></tr>
+<tr><td><code>xSemaphoreGive()</code></td><td>Release the mutex.</td></tr>
+<tr><td><code>xSemaphoreCreateMutexStatic()</code></td><td>Create a mutex using application-provided storage, where supported.</td></tr>
+</table>
+
+<div class="warning">Do not use <code>xSemaphoreGiveFromISR()</code> to release a mutex. Mutexes are not intended for ISR use because they depend on task ownership and priority inheritance.</div>
+</section>
+
+<section>
+<h2>7. Hardware and Software Requirements</h2>
+<h3>Hardware</h3>
+<ul>
+<li>FreeRTOS-supported microcontroller.</li>
+<li>UART peripheral.</li>
+<li>USB-to-UART adapter or onboard debugger, if physical serial output is required.</li>
+<li>Development computer.</li>
+</ul>
+
+<h3>Software</h3>
+<ul>
+<li>FreeRTOS kernel.</li>
+<li>Compatible processor port.</li>
+<li>Compiler and development environment.</li>
+<li>UART driver implementation.</li>
+<li>Terminal application for physical UART testing.</li>
+</ul>
+
+<div class="note">The example focuses on mutual exclusion. UART initialization, pin mapping, baud rate and transmission functions are target-specific.</div>
+</section>
+
+<section>
+<h2>8. Complete FreeRTOS Application Code</h2>
+<p><strong>Objective:</strong> Protect a shared UART transmission function using a mutex.</p>
+
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+#include "stdint.h"
+#include "stdio.h"
+
+/* Shared mutex handle */
+static SemaphoreHandle_t uartMutex = NULL;
+
+/* Task declarations */
+static void SensorTask(void *pvParameters);
+static void StatusTask(void *pvParameters);
+
+/*
+ * Hardware-specific UART initialization
+ * and transmission functions.
+ */
+void UART_Init(void);
+void UART_SendString(const char *message);
+
+/* Shared UART resource function */
+static void UART_PrintProtected(const char *message)
+{
+    if (xSemaphoreTake(
+            uartMutex,
+            pdMS_TO_TICKS(100)
+        ) == pdPASS)
+    {
+        /*
+         * Protected UART operation.
+         * The driver must provide the required
+         * transmission-completion behavior.
+         */
+        UART_SendString(message);
+
+        /* Release mutex */
+        xSemaphoreGive(uartMutex);
+    }
+    else
+    {
+        /* Mutex acquisition timeout */
+    }
+}
+
+/* Sensor task */
+static void SensorTask(void *pvParameters)
+{
+    (void) pvParameters;
+
+    for (;;)
+    {
+        UART_PrintProtected(
+            "Sensor Task: Temperature = 28 C\r\n"
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+/* Status task */
+static void StatusTask(void *pvParameters)
+{
+    (void) pvParameters;
+
+    for (;;)
+    {
+        UART_PrintProtected(
+            "Status Task: System Running\r\n"
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(1500));
+    }
+}
+
+/* Main application */
+int main(void)
+{
+    /* Initialize UART hardware */
+    UART_Init();
+
+    /* Create mutex */
+    uartMutex = xSemaphoreCreateMutex();
+
+    if (uartMutex == NULL)
+    {
+        for (;;)
+        {
+            /* Mutex creation failed */
+        }
+    }
+
+    /* Create sensor task */
+    if (xTaskCreate(
+            SensorTask,
+            "SensorTask",
+            256,
+            NULL,
+            2,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+            /* Sensor task creation failed */
+        }
+    }
+
+    /* Create status task */
+    if (xTaskCreate(
+            StatusTask,
+            "StatusTask",
+            256,
+            NULL,
+            2,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+            /* Status task creation failed */
+        }
+    }
+
+    /* Start scheduler */
+    vTaskStartScheduler();
+
+    /* Reached if scheduler startup fails */
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<div class="warning">The UART driver function must have a clearly defined completion and buffering contract. If it only starts an asynchronous DMA transfer and returns, releasing the mutex immediately may allow another task to modify or reuse the transmission buffer before DMA finishes. Protect the full resource-use interval or use a dedicated UART-owner task and queue.</div>
+</section>
+
+<section>
+<h2>9. Program Explanation</h2>
+
+<h3>Step 1 – Declare Mutex Handle</h3>
+<pre><code>static SemaphoreHandle_t uartMutex = NULL;</code></pre>
+<p>This handle identifies the mutex protecting the shared UART resource.</p>
+
+<h3>Step 2 – Create Mutex</h3>
+<pre><code>uartMutex = xSemaphoreCreateMutex();</code></pre>
+<p>The mutex is created before the application tasks begin using it.</p>
+
+<h3>Step 3 – Acquire Mutex</h3>
+<pre><code>xSemaphoreTake(
+    uartMutex,
+    pdMS_TO_TICKS(100)
+);</code></pre>
+<p>A task attempts to acquire the mutex and waits up to the configured timeout if another task owns it.</p>
+
+<h3>Step 4 – Access Shared Resource</h3>
+<pre><code>UART_SendString(message);</code></pre>
+<p>The protected operation executes while the task owns the mutex.</p>
+
+<h3>Step 5 – Release Mutex</h3>
+<pre><code>xSemaphoreGive(uartMutex);</code></pre>
+<p>The task releases the mutex so another task can acquire it.</p>
+</section>
+
+<section>
+<h2>10. Understanding Race Conditions</h2>
+<p>A race condition occurs when the result of an operation depends on the timing or interleaving of concurrent accesses.</p>
+
+<h3>Without Mutex</h3>
+<p>Suppose two tasks transmit messages simultaneously:</p>
+<pre><code>Task 1: SENSOR DATA
+Task 2: SYSTEM STATUS</code></pre>
+
+<p>The UART output may become interleaved:</p>
+<pre><code>SENSSYTSEOMR  DATA
+STATUS</code></pre>
+
+<p>This is an illustrative example of interleaved output, not a guaranteed UART result.</p>
+
+<h3>With Mutex</h3>
+<p>Only one task performs the protected transmission at a time. The messages are serialized at the application level.</p>
+
+<div class="tip">A mutex protects the critical section only when every relevant access path follows the same locking protocol.</div>
+</section>
+
+<section>
+<h2>11. Critical Section and Mutex</h2>
+<p>A critical section is a region of code that must not be executed concurrently by competing tasks when accessing a protected resource.</p>
+
+<pre><code>if (xSemaphoreTake(
+        uartMutex,
+        portMAX_DELAY
+    ) == pdPASS)
+{
+    /* Critical section */
+    UART_SendString(message);
+
+    /* End of critical section */
+    xSemaphoreGive(uartMutex);
+}</code></pre>
+
+<p>The mutex provides task-level mutual exclusion for this region.</p>
+
+<div class="note">A mutex does not automatically protect the resource from direct ISR access, DMA activity or code that bypasses the mutex. Those access paths need an appropriate driver-level design.</div>
+</section>
+
+<section>
+<h2>12. Mutex Ownership</h2>
+<p>A mutex has an owner: the task that successfully takes it.</p>
+
+<table>
+<tr><th>Operation</th><th>Ownership Rule</th></tr>
+<tr><td>Take mutex</td><td>Task becomes owner when acquisition succeeds.</td></tr>
+<tr><td>Use protected resource</td><td>Owner performs the protected operation.</td></tr>
+<tr><td>Give mutex</td><td>Owner releases the mutex.</td></tr>
+<tr><td>Another task attempts take</td><td>It may block until the mutex becomes available.</td></tr>
+</table>
+
+<div class="warning">A task must not release a mutex it does not own. Always check the result of the take operation before entering the protected section.</div>
+</section>
+
+<section>
+<h2>13. Priority Inversion</h2>
+<p>Priority inversion occurs when a high-priority task is delayed because a lower-priority task holds a resource it needs.</p>
+
+<h3>Example</h3>
+<table>
+<tr><th>Task</th><th>Priority</th><th>Activity</th></tr>
+<tr><td>Task H</td><td>High</td><td>Needs the UART mutex.</td></tr>
+<tr><td>Task M</td><td>Medium</td><td>Performs unrelated processing.</td></tr>
+<tr><td>Task L</td><td>Low</td><td>Owns the UART mutex.</td></tr>
+</table>
+
+<p>Task L acquires the mutex. Task H becomes Ready and attempts to take it, but blocks because Task L owns it. If Task M preempts Task L, the low-priority owner may be delayed from releasing the mutex.</p>
+
+<div class="diagram">
+Task H: HIGH PRIORITY
+       Waiting for mutex
+              |
+              v
+Task M: MEDIUM PRIORITY
+       Preempts Task L
+              |
+              v
+Task L: LOW PRIORITY
+       Owns mutex
+       Cannot run to release it
+</div>
+</section>
+
+<section>
+<h2>14. Priority Inheritance</h2>
+<p>FreeRTOS mutexes support basic priority inheritance. When a higher-priority task blocks on a mutex held by a lower-priority task, the owner may temporarily inherit the higher priority.</p>
+
+<h3>Result</h3>
+<ul>
+<li>The mutex owner receives an elevated effective priority.</li>
+<li>Unrelated medium-priority tasks are less likely to delay the owner.</li>
+<li>The owner can complete its critical section and release the mutex sooner.</li>
+<li>The original priority is restored according to the kernel's priority-inheritance rules.</li>
+</ul>
+
+<div class="note">Priority inheritance reduces certain forms of priority inversion. It does not eliminate all blocking, deadlock or deadline-miss possibilities.</div>
+</section>
+
+<section>
+<h2>15. Correct Mutex Usage with Timeout</h2>
+<p>A finite timeout allows the task to respond if the resource remains unavailable.</p>
+
+<pre><code>if (xSemaphoreTake(
+        uartMutex,
+        pdMS_TO_TICKS(100)
+    ) == pdPASS)
+{
+    UART_SendString("System Message\r\n");
+
+    xSemaphoreGive(uartMutex);
+}
+else
+{
+    /* Record resource acquisition timeout */
+}</code></pre>
+
+<p>The timeout does not automatically fix the underlying contention. It provides an opportunity for the application to handle the failure.</p>
+</section>
+
+<section>
+<h2>16. Avoid Holding a Mutex for Too Long</h2>
+<p>Long mutex ownership increases blocking for other tasks.</p>
+
+<h3>Bad Design</h3>
+<pre><code>xSemaphoreTake(uartMutex, portMAX_DELAY);
+
+UART_SendString("Starting operation");
+
+/* Long delay while holding mutex */
+vTaskDelay(pdMS_TO_TICKS(1000));
+
+UART_SendString("Operation complete");
+
+xSemaphoreGive(uartMutex);</code></pre>
+
+<h3>Better Design</h3>
+<pre><code>xSemaphoreTake(uartMutex, portMAX_DELAY);
+
+UART_SendString("Starting operation");
+
+xSemaphoreGive(uartMutex);
+
+/* Perform unrelated processing outside lock */
+vTaskDelay(pdMS_TO_TICKS(1000));
+
+xSemaphoreTake(uartMutex, portMAX_DELAY);
+
+UART_SendString("Operation complete");
+
+xSemaphoreGive(uartMutex);</code></pre>
+
+<p>Keep the protected region limited to the operations that actually require exclusive access.</p>
+</section>
+
+<section>
+<h2>17. Deadlock Prevention</h2>
+<p>Deadlock can occur when tasks wait indefinitely for resources held by one another.</p>
+
+<h3>Example</h3>
+<ul>
+<li>Task 1 owns Mutex A and waits for Mutex B.</li>
+<li>Task 2 owns Mutex B and waits for Mutex A.</li>
+<li>Neither task can continue.</li>
+</ul>
+
+<h3>Prevention Techniques</h3>
+<ul>
+<li>Define a global lock acquisition order.</li>
+<li>Avoid nested mutexes where possible.</li>
+<li>Keep ownership periods short.</li>
+<li>Use timeouts and explicit recovery policies where appropriate.</li>
+<li>Review every error path to ensure acquired mutexes are released.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Alternative Design: Dedicated UART Owner Task</h2>
+<p>For complex communication systems, a dedicated task can own the UART peripheral. Other tasks send messages to it through a queue.</p>
+
+<div class="diagram">
+        SENSOR TASK
+             |
+             v
+          MESSAGE
+             |
+        +----------+
+        |  QUEUE   |
+        +----------+
+             |
+             v
+       UART OWNER TASK
+             |
+        UART DRIVER
+             |
+        SERIAL OUTPUT
+             ^
+             |
+        STATUS TASK
+</div>
+
+<p>Advantages include:</p>
+<ul>
+<li>Only one task directly accesses the UART driver.</li>
+<li>Message ordering can be managed centrally.</li>
+<li>DMA completion and buffer ownership can be handled by the owner task.</li>
+<li>Other tasks do not need to acquire the UART mutex.</li>
+</ul>
+
+<div class="note">A dedicated owner task is often a better architecture for asynchronous peripherals or drivers with complex transaction lifetimes.</div>
+</section>
+
+<section>
+<h2>19. Practical Exercise 1 – Add a Third Task</h2>
+<p><strong>Objective:</strong> Add a logging task that also uses the UART.</p>
+<ul>
+<li>Create <code>LoggingTask()</code>.</li>
+<li>Use the same UART mutex.</li>
+<li>Acquire the mutex before transmitting.</li>
+<li>Release it after the protected transmission.</li>
+<li>Test all three tasks together.</li>
+</ul>
+<p><strong>Expected result:</strong> All three tasks share the UART through serialized protected operations.</p>
+</section>
+
+<section>
+<h2>20. Practical Exercise 2 – Protect a Shared Counter</h2>
+<p><strong>Objective:</strong> Protect a shared counter accessed by two tasks.</p>
+
+<pre><code>static SemaphoreHandle_t counterMutex;
+static uint32_t sharedCounter = 0;
+
+void UpdateCounter(void)
+{
+    if (xSemaphoreTake(
+            counterMutex,
+            portMAX_DELAY
+        ) == pdPASS)
+    {
+        sharedCounter++;
+
+        xSemaphoreGive(counterMutex);
+    }
+}</code></pre>
+
+<p><strong>Expected result:</strong> Each increment executes under mutual exclusion, preventing concurrent task updates from interfering with one another.</p>
+
+<div class="warning">The counter must not be accessed outside the same synchronization protocol. Also consider whether an atomic operation or a dedicated owner task would be more appropriate for the target.</div>
+</section>
+
+<section>
+<h2>21. Practical Exercise 3 – Simulate Priority Inversion</h2>
+<p><strong>Objective:</strong> Study priority inversion and the effect of mutex priority inheritance.</p>
+<ul>
+<li>Create low-, medium- and high-priority tasks.</li>
+<li>Let the low-priority task acquire a mutex.</li>
+<li>Make the high-priority task attempt to acquire the same mutex.</li>
+<li>Allow the medium-priority task to perform unrelated work.</li>
+<li>Observe task execution with and without mutex priority inheritance, using a suitable comparison mechanism.</li>
+</ul>
+<p><strong>Expected result:</strong> Observe how priority inheritance can allow the low-priority mutex owner to execute and release the mutex sooner.</p>
+</section>
+
+<section>
+<h2>22. Practical Exercise 4 – Add Mutex Timeout Handling</h2>
+<p><strong>Objective:</strong> Detect a mutex acquisition timeout.</p>
+
+<pre><code>if (xSemaphoreTake(
+        uartMutex,
+        pdMS_TO_TICKS(200)
+    ) == pdPASS)
+{
+    UART_SendString("Message\r\n");
+    xSemaphoreGive(uartMutex);
+}
+else
+{
+    /* Log timeout or activate recovery policy */
+}</code></pre>
+
+<p><strong>Expected result:</strong> The task detects when the mutex cannot be acquired within the specified interval.</p>
+</section>
+
+<section>
+<h2>23. Common Problems and Troubleshooting</h2>
+<table>
+<tr><th>Problem</th><th>Possible Cause</th><th>Solution</th></tr>
+<tr><td>Mutex creation fails</td><td>Insufficient memory or unsupported configuration.</td><td>Check allocation and kernel configuration.</td></tr>
+<tr><td>Task blocks indefinitely</td><td>Mutex owner never releases it.</td><td>Inspect ownership and all error paths.</td></tr>
+<tr><td>UART messages still interleave</td><td>Some access path bypasses the mutex.</td><td>Centralize or consistently protect access.</td></tr>
+<tr><td>Long task delays</td><td>Mutex held for too long.</td><td>Reduce protected-section duration.</td></tr>
+<tr><td>Unexpected priority behavior</td><td>Priority inheritance or task priorities misunderstood.</td><td>Inspect task priorities and mutex ownership.</td></tr>
+<tr><td>DMA transmission data corrupted</td><td>Mutex released before DMA finishes or buffer reused.</td><td>Coordinate transfer completion and buffer lifetime.</td></tr>
+<tr><td>Deadlock</td><td>Inconsistent nested lock ordering.</td><td>Define and enforce a global lock order.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>24. Keil µVision and LPC2129 Simulator Notes</h2>
+<p>The LPC2129 is based on ARM7TDMI-S. A mutex-based application can be studied with a compatible FreeRTOS port and toolchain.</p>
+
+<h3>Suggested Study Activities</h3>
+<ul>
+<li>Inspect the mutex handle and creation result.</li>
+<li>Set breakpoints before and after mutex acquisition.</li>
+<li>Observe task states while one task owns the mutex.</li>
+<li>Study task priority changes during priority inheritance, where visible.</li>
+<li>Inspect UART driver access and transmission completion logic.</li>
+<li>Review the order in which tasks acquire and release shared resources.</li>
+</ul>
+
+<div class="warning">Verify LPC2129 FreeRTOS port and Keil compiler compatibility before attempting execution. The simulator cannot establish physical UART timing, DMA behavior or electrical correctness unless those features are explicitly modeled.</div>
+</section>
+
+<section>
+<h2>25. Interview Questions</h2>
+<ol>
+<li>What is a mutex in FreeRTOS?</li>
+<li>Why is a mutex needed for shared resource protection?</li>
+<li>What is the difference between a mutex and a binary semaphore?</li>
+<li>What is mutex ownership?</li>
+<li>Which API creates a FreeRTOS mutex?</li>
+<li>How do you acquire and release a mutex?</li>
+<li>Can a mutex be used inside an ISR?</li>
+<li>What is priority inversion?</li>
+<li>How does priority inheritance work?</li>
+<li>Does priority inheritance eliminate all blocking?</li>
+<li>What is a critical section?</li>
+<li>What happens if a task never releases its mutex?</li>
+<li>What is deadlock?</li>
+<li>How can deadlock be prevented?</li>
+<li>Why should a mutex not be held during a long delay?</li>
+<li>How can multiple tasks share a UART peripheral safely?</li>
+<li>What is the dedicated peripheral-owner task pattern?</li>
+<li>Why is DMA buffer ownership important?</li>
+<li>What is the difference between mutual exclusion and data transfer?</li>
+<li>When might a queue be preferable to a mutex?</li>
+</ol>
+</section>
+
+<section>
+<h2>26. Lesson Summary</h2>
+<ul>
+<li>A mutex protects a shared resource from concurrent task access.</li>
+<li>FreeRTOS creates a mutex using <code>xSemaphoreCreateMutex()</code>.</li>
+<li>A task acquires it with <code>xSemaphoreTake()</code>.</li>
+<li>The owning task releases it with <code>xSemaphoreGive()</code>.</li>
+<li>FreeRTOS mutexes support basic priority inheritance.</li>
+<li>Mutexes are not intended for ISR use.</li>
+<li>All relevant access paths must follow the same locking protocol.</li>
+<li>Long mutex ownership increases blocking.</li>
+<li>Lock ordering and careful resource design help prevent deadlock.</li>
+<li>A dedicated peripheral-owner task can simplify complex shared-driver designs.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L04_Binary_Semaphore_Interrupt_Project.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L06_Sensor_Monitoring_Using_FreeRTOS_Project.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 20 – Practical Projects and Interview Preparation</p>
+</footer>
+
+</body>
+</html>
