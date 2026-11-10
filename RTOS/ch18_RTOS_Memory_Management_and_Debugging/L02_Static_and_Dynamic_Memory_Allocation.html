@@ -1,1 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Static and Dynamic Memory Allocation | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:#fff;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+p{margin:10px 0}
+ul,ol{padding-left:25px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Static and Dynamic Memory Allocation</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 18: Memory Management and RTOS Debugging</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 18</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Explain static and dynamic memory allocation.</li>
+<li>Compare their advantages, limitations and use cases.</li>
+<li>Understand FreeRTOS memory-allocation configuration options.</li>
+<li>Create tasks and queues using static and dynamic APIs.</li>
+<li>Identify memory lifetime and allocation failure problems.</li>
+<li>Select an appropriate memory strategy for an embedded RTOS.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Memory Allocation</h2>
+<p>Memory allocation is the process of reserving RAM for program variables, data structures and RTOS objects such as tasks, queues, semaphores and timers.</p>
+
+<p>RTOS applications commonly use two allocation strategies:</p>
+<ul>
+<li><strong>Static allocation:</strong> Memory is reserved before runtime, generally through global or static objects and application-provided storage.</li>
+<li><strong>Dynamic allocation:</strong> Memory is requested at runtime from a memory allocator or heap.</li>
+</ul>
+
+<div class="diagram">
+                MEMORY ALLOCATION
+                       |
+             +---------+---------+
+             |                   |
+          STATIC              DYNAMIC
+             |                   |
+       Pre-reserved RAM     Runtime request
+             |                   |
+       Known storage        Allocator/heap
+             |                   |
+       Predictable size     Allocation may fail
+</div>
+</section>
+
+<section>
+<h2>3. Static Memory Allocation</h2>
+<p>In static allocation, the application provides storage for an object before that object is created or used. The storage commonly resides in global or static variables.</p>
+
+<h3>3.1 Example in C</h3>
+<pre><code>#include &lt;stdint.h&gt;
+
+static uint8_t sensor_buffer[128];
+
+int main(void)
+{
+    sensor_buffer[0] = 25;
+
+    while (1)
+    {
+        /* Application processing */
+    }
+}</code></pre>
+
+<p>The array has a fixed size of 128 bytes. Its storage exists for the lifetime of the program.</p>
+
+<h3>3.2 Characteristics</h3>
+<ul>
+<li>Memory size is determined in advance.</li>
+<li>No runtime heap allocation is required for the object.</li>
+<li>Memory usage is easier to estimate during design.</li>
+<li>There is no heap fragmentation for the statically reserved object.</li>
+<li>Changing the required size may require changing the program and rebuilding it.</li>
+<li>Unused reserved memory can reduce RAM available to other components.</li>
+</ul>
+
+<div class="note"><strong>Important:</strong> Static allocation does not mean that every object is automatically safe. The application must still provide enough memory, initialize it correctly and ensure that concurrent tasks access shared data safely.</div>
+</section>
+
+<section>
+<h2>4. Dynamic Memory Allocation</h2>
+<p>Dynamic allocation reserves memory while the program is running. The application requests a block from an allocator and receives a pointer to the allocated memory.</p>
+
+<h3>4.1 Standard C Example</h3>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void)
+{
+    int *data;
+
+    data = malloc(10 * sizeof(int));
+
+    if (data == NULL)
+    {
+        printf("Memory allocation failed\n");
+        return 1;
+    }
+
+    data[0] = 100;
+
+    printf("First value = %d\n", data[0]);
+
+    free(data);
+    data = NULL;
+
+    return 0;
+}</code></pre>
+
+<p><strong>Expected output:</strong></p>
+<pre><code>First value = 100</code></pre>
+
+<h3>4.2 Characteristics</h3>
+<ul>
+<li>Memory is requested when required.</li>
+<li>Object sizes can be selected at runtime.</li>
+<li>Memory can be released and reused when supported by the allocator.</li>
+<li>Allocation may fail when sufficient memory is unavailable.</li>
+<li>Repeated allocation and release can cause fragmentation with some allocators.</li>
+<li>Allocation and deallocation time may vary depending on the heap implementation.</li>
+</ul>
+
+<div class="warning"><strong>Embedded-system caution:</strong> Never assume that a dynamic allocation request will succeed. Check the returned pointer or RTOS API status before using the object.</div>
+</section>
+
+<section>
+<h2>5. Static vs Dynamic Allocation</h2>
+<table>
+<tr><th>Parameter</th><th>Static Allocation</th><th>Dynamic Allocation</th></tr>
+<tr><td>Allocation time</td><td>Storage reserved in advance</td><td>Requested at runtime</td></tr>
+<tr><td>Memory size</td><td>Usually fixed</td><td>Can be selected at runtime</td></tr>
+<tr><td>Heap usage</td><td>Not required for the object</td><td>Normally uses an allocator</td></tr>
+<tr><td>Allocation failure</td><td>Insufficient storage is generally a design/build issue</td><td>Can fail during execution</td></tr>
+<tr><td>Fragmentation</td><td>No heap fragmentation for that object</td><td>Depends on allocator and usage pattern</td></tr>
+<tr><td>Runtime flexibility</td><td>Lower</td><td>Higher</td></tr>
+<tr><td>Memory planning</td><td>Generally easier to estimate</td><td>Requires runtime heap analysis</td></tr>
+<tr><td>Typical use</td><td>Fixed tasks, buffers and control objects</td><td>Variable-sized or conditionally created objects</td></tr>
+</table>
+</section>
+
+<section>
+<h2>6. Memory Allocation in FreeRTOS</h2>
+<p>FreeRTOS supports static and dynamic creation of kernel objects, depending on the kernel version, configuration and APIs used.</p>
+
+<h3>6.1 FreeRTOSConfig.h Options</h3>
+<pre><code>#define configSUPPORT_STATIC_ALLOCATION       1
+#define configSUPPORT_DYNAMIC_ALLOCATION      1</code></pre>
+
+<p>These configuration options control whether the application can use the corresponding allocation methods.</p>
+
+<table>
+<tr><th>Configuration</th><th>Meaning</th></tr>
+<tr><td><code>configSUPPORT_STATIC_ALLOCATION</code></td><td>Enables static object creation APIs.</td></tr>
+<tr><td><code>configSUPPORT_DYNAMIC_ALLOCATION</code></td><td>Enables dynamic object creation APIs.</td></tr>
+</table>
+
+<p>Both methods can be enabled in the same application. This allows a hybrid memory-allocation strategy.</p>
+
+<div class="note">The exact configuration requirements and available APIs depend on the FreeRTOS release and port. Use the matching release documentation and configuration template.</div>
+</section>
+
+<section>
+<h2>7. Dynamic Task Creation: xTaskCreate()</h2>
+<p><code>xTaskCreate()</code> creates a task using dynamically allocated memory for its task control block and stack.</p>
+
+<h3>7.1 Function Syntax</h3>
+<pre><code>BaseType_t xTaskCreate(
+    TaskFunction_t pvTaskCode,
+    const char * const pcName,
+    configSTACK_DEPTH_TYPE usStackDepth,
+    void *pvParameters,
+    UBaseType_t uxPriority,
+    TaskHandle_t *pxCreatedTask
+);</code></pre>
+
+<h3>7.2 Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Read and process sensor data */
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+int main(void)
+{
+    BaseType_t result;
+
+    result = xTaskCreate(
+        SensorTask,
+        "Sensor",
+        256,
+        NULL,
+        2,
+        NULL
+    );
+
+    if (result != pdPASS)
+    {
+        /* Handle task creation failure */
+        for (;;);
+    }
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+<p><strong>Explanation:</strong></p>
+<ul>
+<li><code>SensorTask</code> is the task function.</li>
+<li><code>"Sensor"</code> is the task name.</li>
+<li><code>256</code> is the stack depth in stack elements, not bytes.</li>
+<li><code>NULL</code> means no task parameter is supplied.</li>
+<li><code>2</code> is the task priority.</li>
+<li>The final <code>NULL</code> means the application does not request the created task handle.</li>
+<li><code>pdPASS</code> indicates successful task creation.</li>
+</ul>
+
+<div class="warning">The example is generic FreeRTOS code. It requires a compatible processor port, compiler integration, startup code and hardware or simulator support before it can run on a target.</div>
+</section>
+
+<section>
+<h2>8. Static Task Creation: xTaskCreateStatic()</h2>
+<p><code>xTaskCreateStatic()</code> creates a task using memory supplied by the application. The application provides storage for both the task control block and task stack.</p>
+
+<h3>8.1 Function Syntax</h3>
+<pre><code>TaskHandle_t xTaskCreateStatic(
+    TaskFunction_t pvTaskCode,
+    const char * const pcName,
+    configSTACK_DEPTH_TYPE uxStackDepth,
+    void *pvParameters,
+    UBaseType_t uxPriority,
+    StackType_t *puxStackBuffer,
+    StaticTask_t *pxTaskBuffer
+);</code></pre>
+
+<h3>8.2 Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+#define SENSOR_STACK_SIZE 256
+
+static StackType_t sensorStack[SENSOR_STACK_SIZE];
+static StaticTask_t sensorTaskControlBlock;
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Read and process sensor data */
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+int main(void)
+{
+    TaskHandle_t sensorHandle;
+
+    sensorHandle = xTaskCreateStatic(
+        SensorTask,
+        "Sensor",
+        SENSOR_STACK_SIZE,
+        NULL,
+        2,
+        sensorStack,
+        &amp;sensorTaskControlBlock
+    );
+
+    if (sensorHandle == NULL)
+    {
+        /* Handle task creation failure */
+        for (;;);
+    }
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+<h3>8.3 Explanation</h3>
+<ul>
+<li><code>sensorStack</code> supplies the task's stack storage.</li>
+<li><code>sensorTaskControlBlock</code> supplies storage for the task control block.</li>
+<li><code>SENSOR_STACK_SIZE</code> specifies the number of stack elements.</li>
+<li>The returned task handle identifies the created task.</li>
+<li>The supplied storage must remain valid for the lifetime of the task.</li>
+</ul>
+
+<div class="tip"><strong>Design rule:</strong> Do not provide task stack or control-block storage using local automatic variables in a function that returns. The storage must remain valid while the RTOS object exists.</div>
+</section>
+
+<section>
+<h2>9. Static and Dynamic Queue Creation</h2>
+<p>FreeRTOS also supports both allocation methods for queues.</p>
+
+<h3>9.1 Dynamic Queue Creation</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "queue.h"
+
+QueueHandle_t sensorQueue;
+
+void CreateSensorQueue(void)
+{
+    sensorQueue = xQueueCreate(
+        5,
+        sizeof(int)
+    );
+
+    if (sensorQueue == NULL)
+    {
+        /* Handle allocation failure */
+    }
+}</code></pre>
+
+<p>The queue storage and queue control structure are obtained dynamically.</p>
+
+<h3>9.2 Static Queue Creation</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "queue.h"
+
+#define QUEUE_LENGTH 5
+
+static StaticQueue_t queueControlBlock;
+
+static uint8_t queueStorage[
+    QUEUE_LENGTH * sizeof(int)
+];
+
+QueueHandle_t sensorQueue;
+
+void CreateSensorQueue(void)
+{
+    sensorQueue = xQueueCreateStatic(
+        QUEUE_LENGTH,
+        sizeof(int),
+        queueStorage,
+        &amp;queueControlBlock
+    );
+
+    if (sensorQueue == NULL)
+    {
+        /* Handle creation failure */
+    }
+}</code></pre>
+
+<p>In this example, the application supplies both the queue's item storage and its control-block storage.</p>
+
+<div class="note">The supplied queue storage must be correctly sized and suitably aligned for the target and API requirements. Static queue APIs and storage types should be checked against the selected FreeRTOS release.</div>
+</section>
+
+<section>
+<h2>10. Static Creation APIs for Other FreeRTOS Objects</h2>
+<p>Static allocation is also available for several other kernel objects in FreeRTOS releases that support the corresponding APIs.</p>
+
+<table>
+<tr><th>Object</th><th>Dynamic API</th><th>Static API</th></tr>
+<tr><td>Task</td><td><code>xTaskCreate()</code></td><td><code>xTaskCreateStatic()</code></td></tr>
+<tr><td>Queue</td><td><code>xQueueCreate()</code></td><td><code>xQueueCreateStatic()</code></td></tr>
+<tr><td>Binary semaphore</td><td><code>xSemaphoreCreateBinary()</code></td><td><code>xSemaphoreCreateBinaryStatic()</code></td></tr>
+<tr><td>Mutex</td><td><code>xSemaphoreCreateMutex()</code></td><td><code>xSemaphoreCreateMutexStatic()</code></td></tr>
+<tr><td>Event group</td><td><code>xEventGroupCreate()</code></td><td><code>xEventGroupCreateStatic()</code></td></tr>
+<tr><td>Software timer</td><td><code>xTimerCreate()</code></td><td><code>xTimerCreateStatic()</code></td></tr>
+</table>
+
+<p>Static creation APIs use application-provided storage types such as:</p>
+<ul>
+<li><code>StaticTask_t</code></li>
+<li><code>StackType_t</code></li>
+<li><code>StaticQueue_t</code></li>
+<li><code>StaticSemaphore_t</code></li>
+<li><code>StaticEventGroup_t</code></li>
+<li><code>StaticTimer_t</code></li>
+</ul>
+
+<p>Not every type or API is required for every object. For example, a static task requires both a stack buffer and a task control-block buffer. Check the relevant API declaration for the exact storage requirements.</p>
+</section>
+
+<section>
+<h2>11. FreeRTOS Dynamic Memory APIs</h2>
+<p>FreeRTOS provides allocator functions for applications and kernel components:</p>
+
+<table>
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td><code>pvPortMalloc()</code></td><td>Requests a memory block from the configured FreeRTOS heap.</td></tr>
+<tr><td><code>vPortFree()</code></td><td>Releases a previously allocated block where supported.</td></tr>
+</table>
+
+<h3>11.1 Example</h3>
+<pre><code>#include "FreeRTOS.h"
+
+void AllocateBuffer(void)
+{
+    uint8_t *buffer;
+
+    buffer = pvPortMalloc(128);
+
+    if (buffer == NULL)
+    {
+        /* Handle allocation failure */
+        return;
+    }
+
+    buffer[0] = 0x55;
+
+    /* Use the buffer */
+
+    vPortFree(buffer);
+    buffer = NULL;
+}</code></pre>
+
+<p><code>pvPortMalloc()</code> and <code>vPortFree()</code> use the configured FreeRTOS heap implementation. They are not simply interchangeable with the standard C library's <code>malloc()</code> and <code>free()</code>.</p>
+
+<div class="warning">Do not release memory while another task, ISR or peripheral operation still uses it. Coordinate buffer ownership before freeing dynamically allocated storage.</div>
+</section>
+
+<section>
+<h2>12. Hybrid Memory Allocation</h2>
+<p>A hybrid approach combines static and dynamic allocation in one RTOS application.</p>
+
+<p>For example:</p>
+<ul>
+<li>Use static allocation for essential control tasks.</li>
+<li>Use static buffers for critical communication paths.</li>
+<li>Use dynamic allocation for optional objects created according to operating conditions.</li>
+<li>Reserve and monitor heap capacity for runtime allocations.</li>
+</ul>
+
+<div class="diagram">
+              HYBRID RTOS APPLICATION
+                       |
+              +--------+--------+
+              |                 |
+        STATIC OBJECTS     DYNAMIC OBJECTS
+              |                 |
+        Control tasks       Optional tasks
+        Critical buffers    Variable buffers
+        Fixed queues        Runtime objects
+</div>
+
+<p>The choice should be based on timing requirements, RAM capacity, failure handling and application lifecycle.</p>
+</section>
+
+<section>
+<h2>13. Memory Calculation Example</h2>
+<p>Assume a FreeRTOS task uses a stack depth of 256 elements and the target's <code>StackType_t</code> is 4 bytes.</p>
+
+<p><strong>Stack memory required:</strong></p>
+<pre><code>Stack memory = Stack depth × Size of StackType_t
+
+             = 256 × 4
+
+             = 1024 bytes
+
+             = 1 KB</code></pre>
+
+<p>If three tasks each use a stack depth of 256 elements:</p>
+<pre><code>Total task stack memory
+= 3 × 1024
+= 3072 bytes
+= 3 KB</code></pre>
+
+<p>This calculation covers only the task stacks. It does not include task control blocks, queues, other kernel objects, application variables or allocator overhead.</p>
+
+<div class="note">Always calculate stack memory using the actual target's <code>sizeof(StackType_t)</code>. Stack depth is expressed in stack elements, not universally in bytes.</div>
+</section>
+
+<section>
+<h2>14. Common Memory Allocation Problems</h2>
+<table>
+<tr><th>Problem</th><th>Cause</th><th>Prevention</th></tr>
+<tr><td>Allocation failure</td><td>Insufficient available heap</td><td>Check allocation results and plan RAM usage.</td></tr>
+<tr><td>Memory leak</td><td>Allocated memory is never released</td><td>Define clear ownership and cleanup paths.</td></tr>
+<tr><td>Dangling pointer</td><td>Memory is accessed after release</td><td>Control object lifetime and invalidate released pointers.</td></tr>
+<tr><td>Heap fragmentation</td><td>Repeated variable-sized allocation and release</td><td>Choose a suitable allocator and predictable allocation pattern.</td></tr>
+<tr><td>Stack overflow</td><td>Task stack is too small</td><td>Measure usage and provide sufficient stack capacity.</td></tr>
+<tr><td>Buffer overrun</td><td>Writing beyond allocated storage</td><td>Validate array bounds and input lengths.</td></tr>
+<tr><td>Invalid storage lifetime</td><td>Static API receives storage that expires too early</td><td>Use persistent storage with sufficient lifetime.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>15. Choosing an Allocation Strategy</h2>
+<table>
+<tr><th>Application requirement</th><th>Suggested approach</th></tr>
+<tr><td>Fixed number of critical tasks</td><td>Static task creation</td></tr>
+<tr><td>Known queue size and lifetime</td><td>Static queue creation</td></tr>
+<tr><td>Optional objects created at runtime</td><td>Dynamic allocation with failure handling</td></tr>
+<tr><td>Strict memory predictability</td><td>Prefer static allocation where practical</td></tr>
+<tr><td>Variable workload and object sizes</td><td>Evaluate dynamic allocation and allocator behavior</td></tr>
+<tr><td>High-reliability embedded system</td><td>Use a documented memory budget, controlled allocation policy and runtime monitoring</td></tr>
+</table>
+
+<p>Static allocation is often preferred for essential real-time objects because memory requirements can be determined in advance. Dynamic allocation remains useful when runtime flexibility is genuinely required.</p>
+</section>
+
+<section>
+<h2>16. Practical Exercises</h2>
+<ol>
+<li>Write a C program that declares a fixed-size global array and uses it as a sensor buffer.</li>
+<li>Write a C program using <code>malloc()</code> and <code>free()</code> with proper allocation-failure handling.</li>
+<li>Create a FreeRTOS task using <code>xTaskCreate()</code>.</li>
+<li>Create the same task using <code>xTaskCreateStatic()</code>.</li>
+<li>Create a queue using <code>xQueueCreate()</code> and compare it with <code>xQueueCreateStatic()</code>.</li>
+<li>Calculate the total stack memory for four tasks, each using 128 stack elements, when <code>sizeof(StackType_t)</code> is 4 bytes.</li>
+<li>Design a hybrid allocation plan for a sensor-monitoring application.</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Interview Questions</h2>
+<ol>
+<li>What is static memory allocation?</li>
+<li>What is dynamic memory allocation?</li>
+<li>What are the advantages of static allocation in an RTOS?</li>
+<li>What is heap fragmentation?</li>
+<li>What is the difference between <code>xTaskCreate()</code> and <code>xTaskCreateStatic()</code>?</li>
+<li>What is the purpose of <code>configSUPPORT_STATIC_ALLOCATION</code>?</li>
+<li>What is the difference between <code>malloc()</code> and <code>pvPortMalloc()</code>?</li>
+<li>Why must static task stack storage remain valid for the lifetime of the task?</li>
+<li>Can static and dynamic allocation be used in the same FreeRTOS application?</li>
+<li>Why should every dynamic allocation result be checked?</li>
+</ol>
+</section>
+
+<section>
+<h2>18. Lesson Summary</h2>
+<ul>
+<li>Static allocation reserves application-provided storage in advance.</li>
+<li>Dynamic allocation requests memory at runtime from an allocator.</li>
+<li>FreeRTOS supports both strategies through separate object-creation APIs.</li>
+<li><code>xTaskCreateStatic()</code> requires application-provided task stack and control-block storage.</li>
+<li><code>xQueueCreateStatic()</code> requires application-provided queue storage and control-block storage.</li>
+<li>Static allocation improves memory predictability but requires careful RAM budgeting.</li>
+<li>Dynamic allocation offers flexibility but requires failure handling and memory-lifetime management.</li>
+<li>A hybrid strategy can combine predictable critical objects with runtime flexibility.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L01_RTOS_Memory_Architecture.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L03_FreeRTOS_Heap_1_to_Heap_5.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 18 – Memory Management and RTOS Debugging</p>
+</footer>
+
+</body>
+</html>
