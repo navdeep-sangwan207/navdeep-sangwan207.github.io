@@ -1,1 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Mutexes</title>
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fc;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 15px;
+}
+header h1 {
+    font-size: 29px;
+    margin-bottom: 8px;
+}
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 13px;
+}
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+section {
+    background: white;
+    padding: 23px;
+    margin-bottom: 22px;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    font-size: 22px;
+    border-bottom: 2px solid #d8e6fa;
+    padding-bottom: 8px;
+    margin-bottom: 15px;
+}
+h3 {
+    color: #1765b1;
+    margin: 17px 0 9px;
+    font-size: 18px;
+}
+p {
+    margin: 9px 0;
+}
+ul, ol {
+    padding-left: 25px;
+    margin: 10px 0;
+}
+li {
+    margin: 6px 0;
+}
+pre {
+    background: #172338;
+    color: #e6edf7;
+    padding: 17px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 13px 0;
+    font-size: 13px;
+    line-height: 1.6;
+}
+code {
+    font-family: Consolas, monospace;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+    display: block;
+    overflow-x: auto;
+}
+th, td {
+    border: 1px solid #d5deea;
+    padding: 11px;
+    text-align: left;
+    min-width: 135px;
+}
+th {
+    background: #eaf2ff;
+    color: #174ea6;
+}
+.note {
+    background: #eaf3ff;
+    border-left: 4px solid #2878d7;
+    padding: 13px;
+    margin: 14px 0;
+    border-radius: 5px;
+}
+.warning {
+    background: #fff5e6;
+    border-left: 4px solid #e69a24;
+    padding: 13px;
+    margin: 14px 0;
+    border-radius: 5px;
+}
+.example {
+    background: #effaf2;
+    border-left: 4px solid #269653;
+    padding: 13px;
+    margin: 14px 0;
+    border-radius: 5px;
+}
+.objectives {
+    background: #eef5ff;
+    padding: 17px 22px;
+    border-radius: 8px;
+}
+.navigation {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.navigation a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media(max-width: 600px) {
+    header h1 {
+        font-size: 23px;
+    }
+    nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    section {
+        padding: 17px;
+    }
+}
+</style>
+</head>
+<body>
 
+<header>
+    <h1>Chapter 16: FreeRTOS Semaphores and Mutexes</h1>
+    <p>Lesson 03 – FreeRTOS Mutexes</p>
+</header>
+
+<nav>
+    <a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+    <h2>Lesson Overview</h2>
+    <p>
+        A mutex, or mutual exclusion object, is a synchronization
+        mechanism used to protect shared resources from simultaneous
+        access by multiple tasks.
+    </p>
+    <p>
+        In FreeRTOS, a mutex provides ownership semantics and supports
+        priority inheritance. These features help coordinate access
+        to resources such as UART interfaces, shared data structures,
+        communication peripherals, and other non-reentrant components.
+    </p>
+
+    <div class="objectives">
+        <h3>Learning Objectives</h3>
+        <ul>
+            <li>Understand mutual exclusion and mutex operation.</li>
+            <li>Learn the ownership concept of a mutex.</li>
+            <li>Understand mutex creation and deletion.</li>
+            <li>Use mutex take and give operations.</li>
+            <li>Protect shared resources in FreeRTOS applications.</li>
+            <li>Understand priority inheritance.</li>
+            <li>Identify common mutex programming errors.</li>
+        </ul>
+    </div>
+</section>
+
+<section>
+    <h2>1. What Is a Mutex?</h2>
+    <p>
+        A mutex is a synchronization object that ensures only one
+        task at a time owns a protected resource.
+    </p>
+    <p>
+        The term mutex comes from <strong>mutual exclusion</strong>.
+        When a task successfully takes a mutex, it becomes the owner.
+        Other tasks attempting to take the same mutex must wait until
+        the owner releases it.
+    </p>
+
+    <h3>Basic Mutex Operation</h3>
+    <ol>
+        <li>A task attempts to take the mutex.</li>
+        <li>If the mutex is available, the task obtains ownership.</li>
+        <li>The task accesses the protected resource.</li>
+        <li>The task gives the mutex when it has finished.</li>
+        <li>A waiting task may then obtain the mutex.</li>
+    </ol>
+
+    <div class="example">
+        <strong>Example:</strong> Two tasks need to transmit messages
+        through the same UART peripheral. A mutex can ensure that
+        only one task performs the protected transmission operation
+        at a time.
+    </div>
+</section>
+
+<section>
+    <h2>2. Why Are Mutexes Required?</h2>
+    <p>
+        In a multitasking system, several tasks may need to access
+        the same resource. Without synchronization, their operations
+        can overlap and produce incorrect results.
+    </p>
+
+    <h3>Example: Shared UART</h3>
+    <p>
+        Suppose Task A wants to transmit <code>HELLO</code> and
+        Task B wants to transmit <code>WORLD</code>.
+    </p>
+
+    <p>Without mutual exclusion, the output may become interleaved:</p>
+    <pre><code>HWEOLRLLOD</code></pre>
+
+    <p>
+        The exact result depends on the timing of the tasks and
+        the UART driver implementation.
+    </p>
+
+    <h3>With a Mutex</h3>
+    <pre><code>Task A takes mutex
+Task A transmits "HELLO"
+Task A gives mutex
+
+Task B takes mutex
+Task B transmits "WORLD"
+Task B gives mutex</code></pre>
+
+    <p>The protected transmissions are serialized:</p>
+    <pre><code>HELLOWORLD</code></pre>
+
+    <div class="note">
+        A mutex protects the operations placed inside its ownership
+        interval. It does not automatically protect unrelated code,
+        hardware activity, DMA transfers, or interrupt handlers.
+    </div>
+</section>
+
+<section>
+    <h2>3. Mutex Ownership</h2>
+    <p>
+        Ownership is a defining property of a mutex.
+    </p>
+    <ul>
+        <li>A task that successfully takes a mutex becomes its owner.</li>
+        <li>The owning task is responsible for releasing the mutex.</li>
+        <li>Another task cannot legitimately release a mutex owned
+            by a different task.</li>
+        <li>A task should not delete or abandon a mutex while it
+            still owns it.</li>
+    </ul>
+
+    <h3>Ownership Example</h3>
+    <pre><code>Task A:
+    Take Mutex
+    Access Shared Resource
+    Give Mutex
+
+Task B:
+    Take Mutex
+    Wait if unavailable
+    Access Shared Resource
+    Give Mutex</code></pre>
+
+    <div class="warning">
+        A mutex is not an event-signaling object. Do not use it as a
+        substitute for a binary semaphore when one task or an ISR
+        needs to signal an event to another task.
+    </div>
+</section>
+
+<section>
+    <h2>4. Creating a FreeRTOS Mutex</h2>
+    <p>
+        FreeRTOS provides <code>xSemaphoreCreateMutex()</code>
+        to create a mutex.
+    </p>
+
+    <pre><code>SemaphoreHandle_t xSemaphoreCreateMutex(void);</code></pre>
+
+    <h3>Return Value</h3>
+    <ul>
+        <li>Returns a valid semaphore handle if creation succeeds.</li>
+        <li>Returns <code>NULL</code> if creation fails, for example,
+            because memory allocation fails.</li>
+    </ul>
+
+    <h3>Example</h3>
+    <pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xUARTMutex;
+
+int main(void)
+{
+    xUARTMutex = xSemaphoreCreateMutex();
+
+    if (xUARTMutex == NULL)
+    {
+        /* Mutex creation failed */
+        for (;;);
+    }
+
+    /* Create application tasks here. */
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+    <div class="note">
+        <code>xSemaphoreCreateMutex()</code> is a dynamic-allocation
+        API. Static mutex creation is also available in supported
+        FreeRTOS configurations using
+        <code>xSemaphoreCreateMutexStatic()</code>.
+    </div>
+</section>
+
+<section>
+    <h2>5. Taking a Mutex</h2>
+    <p>
+        A task uses <code>xSemaphoreTake()</code> to obtain ownership
+        of a mutex.
+    </p>
+
+    <pre><code>xSemaphoreTake(
+    xMutex,
+    xTicksToWait
+);</code></pre>
+
+    <h3>Operation</h3>
+    <ol>
+        <li>If the mutex is available, the task takes it.</li>
+        <li>If another task owns it, the calling task can enter
+            the Blocked state while waiting.</li>
+        <li>If the mutex becomes available before the timeout,
+            the waiting task may obtain ownership.</li>
+        <li>If the timeout expires first, the take operation fails.</li>
+    </ol>
+
+    <h3>Example</h3>
+    <pre><code>if (xSemaphoreTake(xUARTMutex,
+                   pdMS_TO_TICKS(1000)) == pdTRUE)
+{
+    /* Mutex acquired. */
+
+    /* Access the protected UART resource. */
+
+    xSemaphoreGive(xUARTMutex);
+}
+else
+{
+    /* Mutex could not be obtained within the timeout. */
+}</code></pre>
+
+    <div class="warning">
+        Always define a failure policy for mutex acquisition.
+        Do not access the protected resource when the take operation
+        has failed.
+    </div>
+</section>
+
+<section>
+    <h2>6. Giving a Mutex</h2>
+    <p>
+        The owning task releases a mutex using
+        <code>xSemaphoreGive()</code>.
+    </p>
+
+    <pre><code>if (xSemaphoreGive(xUARTMutex) != pdTRUE)
+{
+    /* Handle an unexpected release failure. */
+}</code></pre>
+
+    <h3>Important Rules</h3>
+    <ul>
+        <li>The task that owns the mutex should release it.</li>
+        <li>Release the mutex after completing the protected operation.</li>
+        <li>Do not give the same mutex multiple times without
+            successfully taking it again.</li>
+        <li>Do not block indefinitely or perform unnecessary long
+            operations while holding a mutex.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>7. Deleting a Mutex</h2>
+    <p>
+        FreeRTOS provides <code>vSemaphoreDelete()</code> to delete
+        a semaphore or mutex object.
+    </p>
+
+    <pre><code>vSemaphoreDelete(xUARTMutex);
+
+xUARTMutex = NULL;</code></pre>
+
+    <p>
+        Deleting a mutex releases its dynamically allocated kernel
+        storage when applicable. Static storage remains owned by
+        the application.
+    </p>
+
+    <div class="warning">
+        Do not delete a mutex while tasks are using it or while
+        a task owns it. Coordinate shutdown so that no task can
+        access the object after deletion.
+    </div>
+</section>
+
+<section>
+    <h2>8. Complete Example: Protecting a Shared Resource</h2>
+
+    <h3>Objective</h3>
+    <p>
+        To use a FreeRTOS mutex to protect a shared resource accessed
+        by two tasks.
+    </p>
+
+    <h3>Program</h3>
+    <pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xResourceMutex;
+
+int sharedCounter = 0;
+
+void TaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(xResourceMutex,
+                           portMAX_DELAY) == pdTRUE)
+        {
+            sharedCounter++;
+
+            /* Protected resource operation */
+
+            xSemaphoreGive(xResourceMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void TaskB(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(xResourceMutex,
+                           portMAX_DELAY) == pdTRUE)
+        {
+            sharedCounter++;
+
+            /* Protected resource operation */
+
+            xSemaphoreGive(xResourceMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(150));
+    }
+}
+
+int main(void)
+{
+    xResourceMutex = xSemaphoreCreateMutex();
+
+    if (xResourceMutex == NULL)
+    {
+        for (;;);
+    }
+
+    xTaskCreate(TaskA,
+                "TaskA",
+                256,
+                NULL,
+                2,
+                NULL);
+
+    xTaskCreate(TaskB,
+                "TaskB",
+                256,
+                NULL,
+                2,
+                NULL);
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+    <h3>Program Explanation</h3>
+    <ul>
+        <li>A mutex is created before the scheduler starts.</li>
+        <li>Two tasks are created.</li>
+        <li>Both tasks need access to <code>sharedCounter</code>.</li>
+        <li>Each task takes the mutex before modifying the variable.</li>
+        <li>Each task releases the mutex after the modification.</li>
+        <li>The protected increment operations cannot overlap.</li>
+    </ul>
+
+    <h3>Expected Result</h3>
+    <p>
+        Both tasks can update the shared counter without concurrent
+        execution of the protected increment operation.
+    </p>
+    <p>
+        The exact counter value at any observation time depends on
+        task scheduling and execution timing.
+    </p>
+
+    <div class="note">
+        The example uses a shared integer to demonstrate mutual
+        exclusion. In a production system, the protected region
+        should be kept short, and all accesses that require the
+        same protection must follow the same synchronization policy.
+    </div>
+</section>
+
+<section>
+    <h2>9. Priority Inheritance in Mutexes</h2>
+    <p>
+        Priority inheritance is a mechanism that helps reduce
+        priority inversion when a high-priority task is blocked
+        waiting for a mutex owned by a lower-priority task.
+    </p>
+
+    <h3>Example Tasks</h3>
+    <table>
+        <tr>
+            <th>Task</th>
+            <th>Priority</th>
+            <th>Role</th>
+        </tr>
+        <tr>
+            <td>Task H</td>
+            <td>High</td>
+            <td>Needs the mutex</td>
+        </tr>
+        <tr>
+            <td>Task M</td>
+            <td>Medium</td>
+            <td>Unrelated processing</td>
+        </tr>
+        <tr>
+            <td>Task L</td>
+            <td>Low</td>
+            <td>Currently owns the mutex</td>
+        </tr>
+    </table>
+
+    <h3>Without Priority Inheritance</h3>
+    <ol>
+        <li>Task L takes the mutex.</li>
+        <li>Task H becomes Ready and attempts to take the mutex.</li>
+        <li>Task H blocks because Task L owns the mutex.</li>
+        <li>Task M becomes Ready and preempts Task L.</li>
+        <li>Task L cannot finish its protected operation promptly.</li>
+        <li>Task H remains blocked for longer than necessary.</li>
+    </ol>
+
+    <h3>With Priority Inheritance</h3>
+    <ol>
+        <li>Task L takes the mutex.</li>
+        <li>Task H attempts to take the mutex and blocks.</li>
+        <li>The mutex owner, Task L, temporarily inherits
+            the higher priority of Task H.</li>
+        <li>Task L can execute ahead of Task M.</li>
+        <li>Task L completes its protected operation and gives
+            the mutex.</li>
+        <li>Task H can then obtain the mutex.</li>
+        <li>Task L's priority is adjusted according to the
+            remaining inheritance conditions.</li>
+    </ol>
+
+    <div class="note">
+        Standard FreeRTOS mutexes support a simplified priority
+        inheritance mechanism. It reduces certain priority-inversion
+        delays, but it does not eliminate all blocking or guarantee
+        that every real-time deadline will be met.
+    </div>
+</section>
+
+<section>
+    <h2>10. Mutex vs Binary Semaphore vs Counting Semaphore</h2>
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Mutex</th>
+            <th>Binary Semaphore</th>
+            <th>Counting Semaphore</th>
+        </tr>
+        <tr>
+            <td>Main purpose</td>
+            <td>Mutual exclusion</td>
+            <td>Event signaling</td>
+            <td>Counting tokens or events</td>
+        </tr>
+        <tr>
+            <td>Ownership</td>
+            <td>Yes</td>
+            <td>No</td>
+            <td>No</td>
+        </tr>
+        <tr>
+            <td>Priority inheritance</td>
+            <td>Yes, in standard FreeRTOS mutexes</td>
+            <td>No</td>
+            <td>No</td>
+        </tr>
+        <tr>
+            <td>Maximum count</td>
+            <td>One owner at a time</td>
+            <td>1</td>
+            <td>Configured maximum</td>
+        </tr>
+        <tr>
+            <td>ISR give operation</td>
+            <td>Not permitted</td>
+            <td>FromISR API</td>
+            <td>FromISR API</td>
+        </tr>
+        <tr>
+            <td>Typical use</td>
+            <td>Protect shared resource</td>
+            <td>Signal an event</td>
+            <td>Count events or available instances</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>11. Mutex Programming Best Practices</h2>
+    <ul>
+        <li>Keep the protected critical section as short as practical.</li>
+        <li>Always release a mutex after completing the protected operation.</li>
+        <li>Use a consistent lock-acquisition order when multiple mutexes
+            are required.</li>
+        <li>Avoid long delays while holding a mutex.</li>
+        <li>Avoid blocking I/O while holding a mutex unless the design
+            explicitly requires it.</li>
+        <li>Do not take or give a mutex from an ISR.</li>
+        <li>Do not use a mutex to transfer data between tasks.</li>
+        <li>Use queues or task notifications for event and data communication.</li>
+        <li>Consider a dedicated driver task when multiple tasks need
+            complex access to one peripheral.</li>
+        <li>Check mutex creation and acquisition results.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>12. Common Programming Errors</h2>
+    <ol>
+        <li><strong>Forgetting to release:</strong> Other tasks may remain
+            blocked indefinitely.</li>
+        <li><strong>Incorrect ownership:</strong> A task must not release
+            a mutex owned by another task.</li>
+        <li><strong>Using a mutex in an ISR:</strong> Mutex operations
+            are task-context operations.</li>
+        <li><strong>Holding a mutex too long:</strong> This increases
+            blocking time for other tasks.</li>
+        <li><strong>Deleting an active mutex:</strong> Tasks may access
+            an invalid synchronization object.</li>
+        <li><strong>Assuming priority inheritance solves everything:</strong>
+            Deadlocks and excessive blocking can still occur.</li>
+        <li><strong>Using a mutex for event signaling:</strong>
+            Use a binary semaphore, counting semaphore, queue,
+            or task notification as appropriate.</li>
+        <li><strong>Protecting only some accesses:</strong> Every task
+            that accesses the same protected data must follow the
+            synchronization design.</li>
+    </ol>
+</section>
+
+<section>
+    <h2>13. Practical Experiment</h2>
+
+    <h3>Objective</h3>
+    <p>
+        To understand how a mutex prevents simultaneous access to
+        a shared resource by two FreeRTOS tasks.
+    </p>
+
+    <h3>Experiment Setup</h3>
+    <ol>
+        <li>Create a shared variable.</li>
+        <li>Create one mutex before starting the scheduler.</li>
+        <li>Create two tasks that access the shared variable.</li>
+        <li>Make each task take the mutex before modifying the variable.</li>
+        <li>Release the mutex after completing the modification.</li>
+        <li>Observe task execution and the shared variable.</li>
+    </ol>
+
+    <h3>Expected Result</h3>
+    <ul>
+        <li>Only one task owns the mutex at a time.</li>
+        <li>A task attempting to take an owned mutex waits.</li>
+        <li>The owning task releases the mutex after its operation.</li>
+        <li>A waiting task can then obtain ownership.</li>
+        <li>The protected operations execute without overlapping.</li>
+    </ul>
+
+    <div class="warning">
+        <strong>LPC2129 / Keil uVision note:</strong> Running this
+        experiment requires a compatible FreeRTOS ARM7 port,
+        compiler integration, startup code, and linker configuration.
+        LPC2129 uses ARM7TDMI-S, not Cortex-M. Do not assume that
+        Cortex-M interrupt-priority configuration or a generic
+        FreeRTOS port applies to this target.
+    </div>
+</section>
+
+<section>
+    <h2>14. Review Questions</h2>
+    <ol>
+        <li>What is a mutex?</li>
+        <li>What is meant by mutual exclusion?</li>
+        <li>Why is ownership important in a mutex?</li>
+        <li>Which API creates a FreeRTOS mutex?</li>
+        <li>Which API is used to take a mutex?</li>
+        <li>Which API releases a mutex?</li>
+        <li>Can a mutex be taken or given from an ISR?</li>
+        <li>What is priority inheritance?</li>
+        <li>How does a mutex differ from a binary semaphore?</li>
+        <li>Why should a mutex not be held during unnecessary delays?</li>
+    </ol>
+</section>
+
+<section>
+    <h2>15. Lesson Summary</h2>
+    <ul>
+        <li>A mutex provides mutual exclusion for shared resources.</li>
+        <li>A task that takes a mutex becomes its owner.</li>
+        <li><code>xSemaphoreCreateMutex()</code> creates a mutex.</li>
+        <li><code>xSemaphoreTake()</code> obtains mutex ownership.</li>
+        <li><code>xSemaphoreGive()</code> releases the mutex.</li>
+        <li><code>vSemaphoreDelete()</code> deletes a mutex object.</li>
+        <li>Standard FreeRTOS mutexes support priority inheritance.</li>
+        <li>Mutexes cannot be used from an ISR.</li>
+        <li>Mutexes are used for resource protection, not data transfer.</li>
+        <li>Correct locking and unlocking are essential for reliable
+            multitasking applications.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>16. Assignment</h2>
+    <ol>
+        <li>Create a FreeRTOS project containing two tasks and one mutex.</li>
+        <li>Make both tasks access a shared counter.</li>
+        <li>Protect the counter using the mutex.</li>
+        <li>Modify the program to use a finite mutex timeout.</li>
+        <li>Explain what happens if a task does not release the mutex.</li>
+        <li>Draw a priority-inversion example involving three tasks.</li>
+        <li>Explain how priority inheritance helps reduce priority inversion.</li>
+        <li>Compare mutexes, binary semaphores, and counting semaphores.</li>
+    </ol>
+</section>
+
+<div class="navigation">
+    <a href="L02_FreeRTOS_Counting_Semaphores.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L04_Recursive_Mutexes.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+    <p>Chapter 16 – FreeRTOS Semaphores and Mutexes</p>
+</footer>
+
+</body>
+</html>
