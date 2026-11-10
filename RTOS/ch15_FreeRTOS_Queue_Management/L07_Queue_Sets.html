@@ -1,1 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Queue Sets | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:28px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Queue Sets</h1>
+<p>Monitoring Multiple Queues and Semaphores Using a Single Selection Mechanism</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 15</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+A FreeRTOS application may use multiple queues
+and semaphores for communication between tasks.
+A task sometimes needs to wait until any one
+of several communication objects becomes ready.
+Queue sets provide a mechanism for this purpose.
+</p>
+<ul>
+<li>Understand the concept of queue sets.</li>
+<li>Learn why queue sets are used.</li>
+<li>Study queue-set creation and membership.</li>
+<li>Understand xQueueSelectFromSet().</li>
+<li>Learn how to receive data from a selected queue.</li>
+<li>Study queue-set capacity requirements.</li>
+<li>Understand limitations and programming precautions.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Is a Queue Set?</h2>
+<p>
+A queue set is a FreeRTOS object that allows
+a task to block while waiting for activity
+on one or more queues or semaphores.
+When a member object becomes available, the
+queue set can report which member is ready.
+</p>
+<p>
+For example, an application may have:
+</p>
+<ul>
+<li>Sensor queue for measurement data.</li>
+<li>Command queue for control commands.</li>
+<li>Binary semaphore for an event signal.</li>
+</ul>
+<p>
+Instead of checking each object repeatedly,
+a task can wait on the queue set and then
+process the member object identified by it.
+</p>
+</section>
+
+<section>
+<h2>3. Why Are Queue Sets Required?</h2>
+<p>
+Without a queue set, a task that needs to
+monitor multiple queues may repeatedly check
+each queue. This is often called polling.
+Polling can waste CPU time and complicate
+the task's waiting behavior.
+</p>
+<h3>Without Queue Set</h3>
+<pre><code>        Monitoring Task
+               |
+       +-------+-------+
+       |       |       |
+       v       v       v
+    Queue A Queue B Semaphore
+       |       |       |
+       +-------+-------+
+          Repeated Checks</code></pre>
+<h3>With Queue Set</h3>
+<pre><code>        Monitoring Task
+               |
+               v
+         Queue Set Wait
+               |
+       +-------+-------+
+       |       |       |
+       v       v       v
+    Queue A Queue B Semaphore
+               |
+               v
+      Select Ready Member</code></pre>
+<p>
+A queue set allows the task to block until
+a member object has an available item or
+token, subject to the queue-set rules.
+</p>
+</section>
+
+<section>
+<h2>4. Queue Set Architecture</h2>
+<p>
+A queue set is itself a queue-like object
+used to record which member queue or
+semaphore has become ready.
+The application selects a ready member and
+then performs the normal receive or take
+operation on that member.
+</p>
+<table>
+<tr><th>Component</th><th>Purpose</th></tr>
+<tr><td>Queue set</td><td>Tracks readiness notifications from member objects.</td></tr>
+<tr><td>Member queue</td><td>Stores application data.</td></tr>
+<tr><td>Member semaphore</td><td>Provides a synchronization token.</td></tr>
+<tr><td>Monitoring task</td><td>Waits for and selects a ready member.</td></tr>
+</table>
+<div class="note">
+Selecting a member from a queue set does
+not itself remove the application data from
+that member queue or take the semaphore.
+The task must perform the corresponding
+receive or take operation.
+</div>
+</section>
+
+<section>
+<h2>5. Queue Set Configuration</h2>
+<p>
+Queue-set support is controlled by the
+FreeRTOS configuration option:
+</p>
+<pre><code>#define configUSE_QUEUE_SETS 1</code></pre>
+<p>
+The option must be enabled in
+<code>FreeRTOSConfig.h</code> for queue-set
+APIs to be available in the selected kernel
+configuration.
+</p>
+</section>
+
+<section>
+<h2>6. xQueueCreateSet() Function</h2>
+<p>
+The <code>xQueueCreateSet()</code> function
+creates a queue set with a specified capacity.
+</p>
+<h3>Syntax</h3>
+<pre><code>QueueSetHandle_t xQueueCreateSet(
+    const UBaseType_t uxEventQueueLength
+);</code></pre>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>uxEventQueueLength</td><td>Capacity of the queue set's internal event queue.</td></tr>
+</table>
+<h3>Return Value</h3>
+<p>
+Returns a QueueSetHandle_t if creation
+succeeds, or NULL if the required memory
+cannot be allocated.
+</p>
+<h3>Example</h3>
+<pre><code>QueueSetHandle_t sensorSet;
+
+sensorSet = xQueueCreateSet(10);
+
+if (sensorSet == NULL)
+{
+    /* Handle creation failure */
+}</code></pre>
+</section>
+
+<section>
+<h2>7. xQueueAddToSet() Function</h2>
+<p>
+The <code>xQueueAddToSet()</code> function
+adds a queue or semaphore to an existing
+queue set.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xQueueAddToSet(
+    QueueSetMemberHandle_t xQueueOrSemaphore,
+    QueueSetHandle_t xQueueSet
+);</code></pre>
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>xQueueOrSemaphore</td><td>Handle of the queue or supported semaphore to add.</td></tr>
+<tr><td>xQueueSet</td><td>Handle of the destination queue set.</td></tr>
+</table>
+<h3>Example</h3>
+<pre><code>BaseType_t result;
+
+result = xQueueAddToSet(
+    sensorQueue,
+    sensorSet
+);
+
+if (result != pdPASS)
+{
+    /* Handle membership failure */
+}</code></pre>
+<p>
+A member should be empty when added to a
+queue set. Existing queued items or available
+semaphore tokens must be handled before
+membership is established.
+</p>
+</section>
+
+<section>
+<h2>8. xQueueSelectFromSet() Function</h2>
+<p>
+The <code>xQueueSelectFromSet()</code>
+function allows a task to wait for a member
+of a queue set to become ready.
+It returns the handle of a ready member.
+</p>
+<h3>Syntax</h3>
+<pre><code>QueueSetMemberHandle_t xQueueSelectFromSet(
+    QueueSetHandle_t xQueueSet,
+    TickType_t xTicksToWait
+);</code></pre>
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>xQueueSet</td><td>Queue-set handle.</td></tr>
+<tr><td>xTicksToWait</td><td>Maximum waiting time in RTOS ticks.</td></tr>
+</table>
+<h3>Return Value</h3>
+<ul>
+<li>Returns a member handle when a member is ready.</li>
+<li>Returns NULL when no member becomes ready within the specified wait.</li>
+</ul>
+<h3>Example</h3>
+<pre><code>QueueSetMemberHandle_t selectedMember;
+
+selectedMember = xQueueSelectFromSet(
+    sensorSet,
+    portMAX_DELAY
+);
+
+if (selectedMember != NULL)
+{
+    /* Process selected member */
+}</code></pre>
+</section>
+
+<section>
+<h2>9. Receiving Data from a Selected Queue</h2>
+<p>
+After a queue is selected, the task must
+receive data from that queue using
+<code>xQueueReceive()</code>.
+</p>
+<pre><code>QueueSetMemberHandle_t selectedMember;
+int sensorValue;
+
+selectedMember = xQueueSelectFromSet(
+    sensorSet,
+    portMAX_DELAY
+);
+
+if (selectedMember == sensorQueue)
+{
+    if (xQueueReceive(
+            sensorQueue,
+            &sensorValue,
+            0
+        ) == pdPASS)
+    {
+        /* Process sensorValue */
+    }
+}</code></pre>
+<p>
+The zero wait time is appropriate in this
+pattern because the queue set has already
+reported the member as ready. The task
+should still check the receive result.
+</p>
+</section>
+
+<section>
+<h2>10. Complete Queue Set Example</h2>
+<p>
+The following example demonstrates a
+monitoring task that waits for data from
+two queues: a sensor queue and a command
+queue.
+</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+#define QUEUE_LENGTH 5
+
+QueueHandle_t sensorQueue;
+QueueHandle_t commandQueue;
+QueueSetHandle_t applicationSet;
+
+void MonitoringTask(void *pvParameters)
+{
+    QueueSetMemberHandle_t selectedMember;
+    int sensorValue;
+    int commandValue;
+
+    for (;;)
+    {
+        selectedMember = xQueueSelectFromSet(
+            applicationSet,
+            portMAX_DELAY
+        );
+
+        if (selectedMember == sensorQueue)
+        {
+            if (xQueueReceive(
+                    sensorQueue,
+                    &sensorValue,
+                    0
+                ) == pdPASS)
+            {
+                /* Process sensor data */
+            }
+        }
+        else if (selectedMember == commandQueue)
+        {
+            if (xQueueReceive(
+                    commandQueue,
+                    &commandValue,
+                    0
+                ) == pdPASS)
+            {
+                /* Process command */
+            }
+        }
+    }
+}
+
+int main(void)
+{
+    sensorQueue = xQueueCreate(
+        QUEUE_LENGTH,
+        sizeof(int)
+    );
+
+    commandQueue = xQueueCreate(
+        QUEUE_LENGTH,
+        sizeof(int)
+    );
+
+    if ((sensorQueue == NULL) ||
+        (commandQueue == NULL))
+    {
+        for (;;)
+        {
+        }
+    }
+
+    /*
+     * Queue-set capacity must be at least
+     * the sum of the member capacities.
+     */
+    applicationSet = xQueueCreateSet(
+        QUEUE_LENGTH * 2
+    );
+
+    if (applicationSet == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xQueueAddToSet(
+            sensorQueue,
+            applicationSet
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xQueueAddToSet(
+            commandQueue,
+            applicationSet
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(
+        MonitoringTask,
+        "Monitor",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        NULL
+    );
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Program Explanation</h3>
+<ol>
+<li>Two queues are created.</li>
+<li>A queue set is created with capacity ten.</li>
+<li>Both queues are added to the set.</li>
+<li>The monitoring task waits for a ready member.</li>
+<li>The selected handle identifies the queue to process.</li>
+<li>The task receives the item from the selected queue.</li>
+</ol>
+<div class="warning">
+This is an illustrative queue-set example.
+A complete application must also check
+task-creation results, define producer tasks,
+and provide a suitable cleanup strategy.
+</div>
+</section>
+
+<section>
+<h2>11. Queue Set Capacity Calculation</h2>
+<p>
+The queue-set capacity must be at least the
+sum of the maximum number of items that can
+be held by all member queues and the maximum
+number of available tokens in member
+semaphores.
+</p>
+<h3>Example</h3>
+<table>
+<tr><th>Member</th><th>Capacity</th></tr>
+<tr><td>Sensor queue</td><td>5</td></tr>
+<tr><td>Command queue</td><td>4</td></tr>
+<tr><td>Binary semaphore</td><td>1</td></tr>
+<tr><th>Total required queue-set capacity</th><th>10</th></tr>
+</table>
+<p>
+Therefore:
+</p>
+<p><strong>Queue-set capacity = 5 + 4 + 1 = 10</strong></p>
+<div class="warning">
+An undersized queue set can lose readiness
+notifications and break the intended
+selection behavior. Do not size it merely
+for the number of member objects.
+</div>
+</section>
+
+<section>
+<h2>12. Adding Semaphores to Queue Sets</h2>
+<p>
+Queue sets can include supported semaphore
+types as members, allowing a task to wait
+for either queued data or a semaphore token.
+</p>
+<pre><code>#include "FreeRTOS.h"
+#include "queue.h"
+#include "semphr.h"
+
+QueueHandle_t eventSemaphore;
+QueueSetHandle_t eventSet;
+
+void CreateSemaphoreSet(void)
+{
+    eventSemaphore = xSemaphoreCreateBinary();
+
+    eventSet = xQueueCreateSet(1);
+
+    if ((eventSemaphore != NULL) &&
+        (eventSet != NULL))
+    {
+        xQueueAddToSet(
+            eventSemaphore,
+            eventSet
+        );
+    }
+}</code></pre>
+<p>
+When the semaphore becomes available, the
+queue set can report the semaphore handle.
+The task must then take the semaphore.
+</p>
+<pre><code>QueueSetMemberHandle_t selected;
+
+selected = xQueueSelectFromSet(
+    eventSet,
+    portMAX_DELAY
+);
+
+if (selected == eventSemaphore)
+{
+    if (xSemaphoreTake(
+            eventSemaphore,
+            0
+        ) == pdPASS)
+    {
+        /* Handle event */
+    }
+}</code></pre>
+</section>
+
+<section>
+<h2>13. Queue Set Restrictions and Precautions</h2>
+<ul>
+<li>Enable configUSE_QUEUE_SETS in FreeRTOSConfig.h.</li>
+<li>Use the queue-set APIs supported by the selected kernel version.</li>
+<li>Add only supported queue and semaphore objects.</li>
+<li>A member must be empty when it is added to a queue set.</li>
+<li>Do not receive from or take a member independently while relying on the queue set to track its readiness.</li>
+<li>After selection, perform the matching receive or semaphore-take operation.</li>
+<li>Size the queue set to cover all possible member items and tokens.</li>
+<li>Check the return values of creation and membership functions.</li>
+<li>Queue sets consume additional memory.</li>
+<li>Consider direct task notifications or another design when a queue set is unnecessary.</li>
+</ul>
+<div class="note">
+Queue sets are generally most useful when
+one task must wait on several independent
+queue or semaphore objects. They are not
+a replacement for every queue communication
+design.
+</div>
+</section>
+
+<section>
+<h2>14. Queue Set vs Individual Queue Monitoring</h2>
+<table>
+<tr><th>Feature</th><th>Individual Monitoring</th><th>Queue Set</th></tr>
+<tr><td>Monitoring method</td><td>Check each object separately.</td><td>Wait for a ready member.</td></tr>
+<tr><td>Blocking on multiple objects</td><td>Requires additional design.</td><td>Supported through the set.</td></tr>
+<tr><td>CPU usage</td><td>Polling can waste CPU time.</td><td>Task can block while waiting.</td></tr>
+<tr><td>Memory overhead</td><td>No queue-set object required.</td><td>Additional queue-set storage.</td></tr>
+<tr><td>Complexity</td><td>Can become complicated with many objects.</td><td>Centralized readiness selection.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>15. Practical Experiment</h2>
+<p><strong>Objective:</strong> Create a queue set and monitor two queues.</p>
+<h3>Procedure</h3>
+<ol>
+<li>Enable queue-set support in the FreeRTOS configuration.</li>
+<li>Create two queues for integer data.</li>
+<li>Create a queue set with sufficient capacity.</li>
+<li>Add both queues to the set while they are empty.</li>
+<li>Create producer tasks that send values to the queues.</li>
+<li>Create a monitoring task that calls xQueueSelectFromSet().</li>
+<li>Receive data from the selected queue.</li>
+<li>Verify which queue supplied each value.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+The monitoring task blocks until one of
+the member queues contains an available
+item. It then identifies the ready queue
+and receives data from that queue.
+</p>
+</section>
+
+<section>
+<h2>16. Common Programming Mistakes</h2>
+<table>
+<tr><th>Mistake</th><th>Correction</th></tr>
+<tr><td>Forgetting configUSE_QUEUE_SETS</td><td>Enable the feature in the selected configuration.</td></tr>
+<tr><td>Using an undersized queue set</td><td>Calculate capacity from all member capacities.</td></tr>
+<tr><td>Adding a non-empty member</td><td>Ensure the member is empty before adding it.</td></tr>
+<tr><td>Assuming selection removes data</td><td>Receive from the selected queue or take the semaphore.</td></tr>
+<tr><td>Ignoring NULL from selection</td><td>Handle the timeout case.</td></tr>
+<tr><td>Independently consuming member data</td><td>Keep member access coordinated with queue-set selection.</td></tr>
+<tr><td>Ignoring creation failures</td><td>Check all returned handles and status values.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>17. LPC2129 and Keil Simulator Considerations</h2>
+<ul>
+<li>LPC2129 uses ARM7TDMI-S architecture.</li>
+<li>Verify a compatible FreeRTOS ARM7 port and Keil compiler integration.</li>
+<li>Check queue-set support in the selected kernel release.</li>
+<li>Enable the queue-set configuration option.</li>
+<li>Account for queue-set memory in the available RAM budget.</li>
+<li>Use debugger or trace facilities to inspect task execution where supported.</li>
+</ul>
+<div class="warning">
+The examples use generic FreeRTOS APIs.
+They are not verified LPC2129 Keil simulator
+projects. Confirm port and kernel-version
+compatibility before building.
+</div>
+</section>
+
+<section>
+<h2>18. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is a queue set?</li>
+<li>Why are queue sets used?</li>
+<li>Which configuration option enables queue sets?</li>
+<li>What is the purpose of xQueueCreateSet()?</li>
+<li>What is the purpose of xQueueAddToSet()?</li>
+<li>What does xQueueSelectFromSet() return?</li>
+<li>Does selecting a member remove its data?</li>
+<li>Can supported semaphores be members of a queue set?</li>
+<li>How is queue-set capacity calculated?</li>
+<li>Why must a member be empty when added?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain queue-set architecture with a diagram.</li>
+<li>Describe xQueueCreateSet() and xQueueAddToSet().</li>
+<li>Explain xQueueSelectFromSet() with an example.</li>
+<li>Write a program to monitor two queues using a queue set.</li>
+<li>Explain how semaphores can be used in a queue set.</li>
+<li>Calculate queue-set capacity for multiple queues and semaphores.</li>
+<li>Discuss queue-set restrictions and design precautions.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Lesson Summary</h2>
+<ul>
+<li>A queue set allows a task to wait on multiple queue or semaphore members.</li>
+<li>configUSE_QUEUE_SETS must be enabled.</li>
+<li>xQueueCreateSet() creates the queue set.</li>
+<li>xQueueAddToSet() adds a supported member.</li>
+<li>xQueueSelectFromSet() identifies a ready member.</li>
+<li>The task must still receive data or take the selected semaphore.</li>
+<li>Queue-set capacity must cover the sum of member capacities.</li>
+<li>Members should be empty when added.</li>
+<li>Queue sets use additional memory and require coordinated access.</li>
+</ul>
+</section>
+
+<section>
+<h2>20. Practice Assignment</h2>
+<ol>
+<li>Define a queue set.</li>
+<li>Explain why queue sets are useful in multitasking applications.</li>
+<li>Write the syntax of xQueueCreateSet().</li>
+<li>Explain xQueueAddToSet() with an example.</li>
+<li>Explain xQueueSelectFromSet().</li>
+<li>Create two queues and monitor them using a queue set.</li>
+<li>Explain how to add a binary semaphore to a queue set.</li>
+<li>Calculate the required capacity for queues of lengths 5 and 4 and one binary semaphore.</li>
+<li>List common queue-set programming mistakes.</li>
+<li>Compare queue sets with individual queue polling.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L06_Queue_Peek_and_Reset.html">← Previous Lesson</a>
+<a href="index.html">Chapter 15 Index</a>
+<a href="L08_Queue_Communication_Between_Tasks.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
