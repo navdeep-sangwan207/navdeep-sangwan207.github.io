@@ -1,1 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interrupt Nesting and Masking | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+.formula{background:#f3f5f7;padding:15px;border-radius:7px;text-align:center;font-weight:bold;margin:15px 0;font-family:monospace;overflow-x:auto}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Interrupt Nesting and Masking</h1>
+<p>Chapter 07 – Interrupt Management in RTOS | Lesson 06</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 07</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>Interrupt masking is a mechanism used to prevent selected interrupt requests from being accepted by the processor for a period of time.</p>
+
+<p>It is commonly used to protect critical operations, control interrupt nesting, and prevent unwanted interruption of sensitive code.</p>
+
+<p>Interrupt nesting and interrupt masking are closely related:</p>
+<ul>
+<li><strong>Interrupt nesting</strong> allows eligible interrupts to preempt an active ISR.</li>
+<li><strong>Interrupt masking</strong> prevents selected interrupts from being accepted.</li>
+</ul>
+
+<div class="info-box">
+Interrupt masking does not necessarily stop a peripheral from generating an interrupt request. It controls whether the processor or interrupt controller allows that request to be serviced.
+</div>
+</section>
+
+<section>
+<h2>2. What Is Interrupt Masking?</h2>
+<p>When an interrupt is masked, its request is prevented from being accepted according to the applicable processor or controller masking rules.</p>
+
+<p>For example, suppose a timer interrupt occurs while IRQ exceptions are masked. The timer peripheral may still set its interrupt status flag, but the processor will not accept the IRQ until the masking condition is removed, provided the source retains its request.</p>
+
+<h3>Simple conceptual example</h3>
+<pre><code>Disable_Selected_Interrupts();
+
+Update_Shared_Data();
+
+Enable_Selected_Interrupts();</code></pre>
+
+<p>This example illustrates the concept only. A real implementation must preserve the previous interrupt state and use the correct architecture-specific mechanism.</p>
+</section>
+
+<section>
+<h2>3. Why Is Interrupt Masking Required?</h2>
+<ul>
+<li>To protect shared data during a critical update.</li>
+<li>To prevent unwanted nesting during sensitive operations.</li>
+<li>To maintain consistency of multi-step register or data operations.</li>
+<li>To control interrupt handling during system initialization.</li>
+<li>To implement processor-specific critical sections.</li>
+<li>To prevent selected interrupts from interfering with an urgent operation.</li>
+</ul>
+
+<div class="warning-box">
+Interrupt masking should be as short as possible. Long interrupt-disabled sections increase latency and can cause missed deadlines or peripheral data loss.
+</div>
+</section>
+
+<section>
+<h2>4. Types of Interrupt Masking</h2>
+
+<h3>4.1 Global interrupt masking</h3>
+<p>Global masking prevents acceptance of a defined class or classes of interrupts at the processor level.</p>
+
+<p>On ARM7TDMI-S, the CPSR contains separate mask bits for IRQ and FIQ.</p>
+
+<h3>4.2 Selective interrupt masking</h3>
+<p>Selective masking disables a particular interrupt source or group of sources through the interrupt controller or peripheral configuration.</p>
+
+<p>For example, a program may disable only the UART interrupt while leaving the timer interrupt enabled.</p>
+
+<h3>4.3 Priority-based masking</h3>
+<p>Some processor architectures and interrupt controllers support masking interrupts based on priority thresholds. This allows selected priority levels to remain serviceable while others are blocked.</p>
+
+<div class="warning-box">
+Priority-threshold masking is architecture-specific. ARM7TDMI-S does not provide the Cortex-M BASEPRI register or its masking model.
+</div>
+</section>
+
+<section>
+<h2>5. Global vs Selective Interrupt Masking</h2>
+<table>
+<tr><th>Parameter</th><th>Global Masking</th><th>Selective Masking</th></tr>
+<tr><td>Scope</td><td>A processor-defined interrupt class or classes.</td><td>Selected sources or groups.</td></tr>
+<tr><td>Control</td><td>Processor status or architecture-specific mechanism.</td><td>Interrupt controller or peripheral registers.</td></tr>
+<tr><td>Flexibility</td><td>Broad control.</td><td>Fine-grained control.</td></tr>
+<tr><td>Effect</td><td>Can delay many interrupt sources.</td><td>Usually affects only selected sources.</td></tr>
+<tr><td>Example</td><td>Set ARM7 CPSR IRQ mask bit.</td><td>Disable a selected VIC interrupt source.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>6. ARM7 CPSR Interrupt Mask Bits</h2>
+<p>The ARM7TDMI-S Current Program Status Register (CPSR) contains two important interrupt mask bits.</p>
+
+<table>
+<tr><th>Bit</th><th>Name</th><th>Meaning</th></tr>
+<tr><td>I</td><td>IRQ mask bit</td><td>When set to 1, IRQ exceptions are masked.</td></tr>
+<tr><td>F</td><td>FIQ mask bit</td><td>When set to 1, FIQ exceptions are masked.</td></tr>
+</table>
+
+<p>When a mask bit is cleared, the corresponding exception class is permitted to be accepted, subject to other processor and interrupt-controller conditions.</p>
+
+<h3>Illustrative state table</h3>
+<table>
+<tr><th>I bit</th><th>F bit</th><th>IRQ</th><th>FIQ</th></tr>
+<tr><td>0</td><td>0</td><td>Unmasked</td><td>Unmasked</td></tr>
+<tr><td>1</td><td>0</td><td>Masked</td><td>Unmasked</td></tr>
+<tr><td>0</td><td>1</td><td>Unmasked</td><td>Masked</td></tr>
+<tr><td>1</td><td>1</td><td>Masked</td><td>Masked</td></tr>
+</table>
+
+<div class="info-box">
+These bits control processor exception acceptance. They do not replace peripheral interrupt enables or VIC source configuration.
+</div>
+</section>
+
+<section>
+<h2>7. Interrupt Masking During Exception Entry</h2>
+<p>ARM7 automatically changes processor mode and interrupt mask state during exception entry.</p>
+
+<table>
+<tr><th>Exception</th><th>Entry Mode</th><th>Mask Behavior</th></tr>
+<tr><td>IRQ</td><td>IRQ mode</td><td>IRQ mask bit is set.</td></tr>
+<tr><td>FIQ</td><td>FIQ mode</td><td>FIQ and IRQ mask bits are set.</td></tr>
+<tr><td>SWI</td><td>Supervisor mode</td><td>IRQ mask bit is set.</td></tr>
+</table>
+
+<p>This behavior helps prevent immediate re-entry of the same exception class during handler entry.</p>
+
+<p>A handler that wants nested interrupts must deliberately manage the processor's interrupt mask state and preserve the required context.</p>
+
+<div class="warning-box">
+Clearing an interrupt mask inside an exception handler without a correct context-saving and nesting design can cause corrupted return state, unexpected re-entry, or stack problems.
+</div>
+</section>
+
+<section>
+<h2>8. Interrupt Nesting and Masking Relationship</h2>
+<p>Interrupt nesting is possible only when the relevant interrupt requests are eligible for acceptance.</p>
+
+<p>Consider the following example:</p>
+
+<table>
+<tr><th>Step</th><th>Event</th><th>Masking State</th></tr>
+<tr><td>1</td><td>UART IRQ accepted.</td><td>IRQ masked on exception entry.</td></tr>
+<tr><td>2</td><td>UART handler saves required context.</td><td>IRQ remains masked.</td></tr>
+<tr><td>3</td><td>Handler deliberately permits selected nesting.</td><td>IRQ mask is adjusted according to design.</td></tr>
+<tr><td>4</td><td>Eligible higher-priority event becomes pending.</td><td>Processor can accept it if all conditions permit.</td></tr>
+<tr><td>5</td><td>Nested handler executes.</td><td>Its own exception-entry rules apply.</td></tr>
+<tr><td>6</td><td>Nested handler returns.</td><td>Previous handler state is restored.</td></tr>
+</table>
+
+<p>In a processor without programmable priority thresholds, the handler may need to use source-level masking or other software techniques to control which requests can nest.</p>
+</section>
+
+<section>
+<h2>9. Critical Sections</h2>
+<p>A critical section is a portion of code that must execute without conflicting concurrent access to shared resources.</p>
+
+<p>In some embedded systems, a short critical section is protected by masking interrupts.</p>
+
+<h3>Example</h3>
+<pre><code>Disable_Interrupts();
+
+shared_counter++;
+
+Enable_Interrupts();</code></pre>
+
+<p>The purpose is to prevent an interrupt from observing or modifying shared state during the update.</p>
+
+<div class="warning-box">
+This simple example is not safe as a general-purpose implementation if interrupts were already disabled before entering the critical section. Unconditionally enabling interrupts afterward could incorrectly change the previous state.
+</div>
+</section>
+
+<section>
+<h2>10. Preserving the Previous Interrupt State</h2>
+<p>A safer critical-section design saves the previous interrupt state and restores it after the protected operation.</p>
+
+<h3>Conceptual pseudocode</h3>
+<pre><code>previous_state = Save_Interrupt_State();
+
+Disable_Required_Interrupts();
+
+Update_Shared_Data();
+
+Restore_Interrupt_State(previous_state);</code></pre>
+
+<p>This approach avoids unintentionally enabling interrupts that were already disabled by an outer critical section.</p>
+
+<p>It also supports nested critical-section designs when implemented correctly for the processor architecture.</p>
+
+<div class="info-box">
+The actual implementation must use appropriate atomic operations or processor instructions. The pseudocode above is not a drop-in ARM7 or FreeRTOS implementation.
+</div>
+</section>
+
+<section>
+<h2>11. Selective Masking Using the LPC2129 VIC</h2>
+<p>The LPC2129 Vectored Interrupt Controller provides registers for enabling and disabling individual interrupt sources.</p>
+
+<table>
+<tr><th>Register</th><th>Function</th></tr>
+<tr><td>VICIntEnable</td><td>Enables selected interrupt sources.</td></tr>
+<tr><td>VICIntEnClr</td><td>Disables selected interrupt sources.</td></tr>
+<tr><td>VICIntSelect</td><td>Selects IRQ or FIQ routing for interrupt sources.</td></tr>
+<tr><td>VICIRQStatus</td><td>Reports enabled pending IRQ sources.</td></tr>
+<tr><td>VICFIQStatus</td><td>Reports enabled pending FIQ sources.</td></tr>
+</table>
+
+<h3>Conceptual example</h3>
+<pre><code>#include &lt;LPC21xx.h&gt;
+
+#define TIMER0_INTERRUPT (1U &lt;&lt; 4)
+
+// Disable Timer 0 interrupt source
+VICIntEnClr = TIMER0_INTERRUPT;
+
+// Enable Timer 0 interrupt source
+VICIntEnable = TIMER0_INTERRUPT;</code></pre>
+
+<p>The example illustrates source-level VIC control. The correct interrupt-source bit must be verified against the LPC2129 documentation and the actual project configuration.</p>
+
+<div class="warning-box">
+Disabling a VIC source is not the same as disabling the timer peripheral itself. The peripheral may continue running and may retain a pending interrupt condition.
+</div>
+</section>
+
+<section>
+<h2>12. Interrupt Masking vs Peripheral Interrupt Disable</h2>
+<table>
+<tr><th>Operation</th><th>Effect</th></tr>
+<tr><td>Processor IRQ masking</td><td>Prevents the processor from accepting IRQ exceptions.</td></tr>
+<tr><td>VIC source disable</td><td>Prevents a selected source from being presented as an enabled interrupt through the VIC.</td></tr>
+<tr><td>Peripheral interrupt disable</td><td>Prevents a peripheral event from generating its configured interrupt request.</td></tr>
+<tr><td>Clear peripheral status flag</td><td>Acknowledges or removes the stored event condition when supported by the peripheral.</td></tr>
+</table>
+
+<p>These operations are different and should not be treated as interchangeable.</p>
+</section>
+
+<section>
+<h2>13. Problems Caused by Excessive Interrupt Masking</h2>
+<ul>
+<li>Increased interrupt latency.</li>
+<li>Missed deadlines in time-critical applications.</li>
+<li>UART receive-buffer overrun.</li>
+<li>Lost external events if the source does not retain pending requests.</li>
+<li>Delayed timer service.</li>
+<li>Increased task response time.</li>
+<li>Reduced system responsiveness.</li>
+</ul>
+
+<p>For example, if a UART receives data while its interrupt is masked, the hardware receive buffer may fill. Additional incoming data can be lost if software does not service the peripheral before the buffer capacity is exceeded.</p>
+</section>
+
+<section>
+<h2>14. Interrupt Masking in RTOS</h2>
+<p>An RTOS may use short critical sections to protect kernel data structures and shared state.</p>
+
+<p>Typical mechanisms include:</p>
+<ul>
+<li>Interrupt disable and restore operations.</li>
+<li>Architecture-specific critical-section macros.</li>
+<li>Scheduler suspension.</li>
+<li>Mutexes for task-level shared resources.</li>
+<li>Atomic operations for suitable data types and processor support.</li>
+</ul>
+
+<table>
+<tr><th>Mechanism</th><th>Typical Purpose</th></tr>
+<tr><td>Interrupt masking</td><td>Prevent selected interrupt handlers from executing during a short critical operation.</td></tr>
+<tr><td>Mutex</td><td>Protect a shared resource between tasks.</td></tr>
+<tr><td>Scheduler suspension</td><td>Temporarily prevent task switching while interrupts may remain enabled.</td></tr>
+<tr><td>Atomic operation</td><td>Perform a supported indivisible data operation.</td></tr>
+</table>
+
+<div class="warning-box">
+Scheduler suspension is not equivalent to disabling interrupts. An ISR can still execute during scheduler suspension unless the processor interrupt state is separately changed.
+</div>
+</section>
+
+<section>
+<h2>15. FreeRTOS Critical Sections</h2>
+<p>FreeRTOS provides critical-section mechanisms such as:</p>
+
+<pre><code>taskENTER_CRITICAL();
+
+/* Short protected operation */
+
+taskEXIT_CRITICAL();</code></pre>
+
+<p>The exact behavior depends on the selected FreeRTOS port. Some ports use interrupt masking, while others use architecture-specific mechanisms.</p>
+
+<p>For ISR context, certain ports provide separate ISR critical-section macros. These must be used only according to the relevant port documentation.</p>
+
+<div class="warning-box">
+Do not assume that FreeRTOS critical sections always disable every interrupt. Some ports protect only a defined interrupt-priority range. Never apply Cortex-M BASEPRI assumptions to ARM7TDMI-S.
+</div>
+</section>
+
+<section>
+<h2>16. Worked Numerical Problem 1 – Masking Delay</h2>
+<p>An IRQ request occurs at 100 µs. IRQ masking is removed at 112 µs. Exception entry and vector dispatch take another 3 µs.</p>
+
+<h3>Solution</h3>
+<div class="formula">Masking Delay = 112 − 100 = 12 µs</div>
+<div class="formula">Interrupt Latency = 12 + 3 = 15 µs</div>
+
+<p><strong>Answer:</strong> Interrupt latency is 15 µs under the stated assumptions.</p>
+</section>
+
+<section>
+<h2>17. Worked Numerical Problem 2 – Selective Interrupt Masking</h2>
+<p>A controller has three interrupt sources. The UART source is disabled at the VIC, while the timer and ADC sources remain enabled.</p>
+
+<table>
+<tr><th>Interrupt</th><th>VIC Source State</th><th>Expected Behavior</th></tr>
+<tr><td>UART</td><td>Disabled</td><td>Not presented as an enabled VIC interrupt source.</td></tr>
+<tr><td>Timer</td><td>Enabled</td><td>Can be presented for IRQ/FIQ handling according to routing and processor masks.</td></tr>
+<tr><td>ADC</td><td>Enabled</td><td>Can be presented for IRQ/FIQ handling according to routing and processor masks.</td></tr>
+</table>
+
+<p><strong>Answer:</strong> Disabling the UART source does not automatically disable timer or ADC interrupts. Their operation depends on their own peripheral, VIC, and processor configurations.</p>
+</section>
+
+<section>
+<h2>18. Worked Numerical Problem 3 – Critical Section Duration</h2>
+<p>A critical section begins at 20 µs and ends at 28 µs. A maskable interrupt request occurs at 23 µs. After interrupts are restored, the processor requires 2 µs to enter the ISR.</p>
+
+<h3>Solution</h3>
+<div class="formula">Masking Delay = 28 − 23 = 5 µs</div>
+<div class="formula">Interrupt Latency = 5 + 2 = 7 µs</div>
+
+<p><strong>Answer:</strong> Interrupt latency is 7 µs.</p>
+</section>
+
+<section>
+<h2>19. Practical Activity – Study Masking Behavior</h2>
+<p>Use Keil uVision and an LPC2129 register-level project to study interrupt configuration.</p>
+
+<h3>Suggested procedure</h3>
+<ol>
+<li>Open an LPC2129 project configured for a timer interrupt.</li>
+<li>Inspect the timer interrupt-enable and status registers.</li>
+<li>Inspect the VIC interrupt-enable and selection registers.</li>
+<li>Examine the CPSR I and F mask bits in the debugger.</li>
+<li>Study the effect of setting or clearing interrupt masks in a controlled test project.</li>
+<li>Inspect pending interrupt status where the simulator supports it.</li>
+<li>Verify that the handler acknowledges the peripheral event correctly.</li>
+<li>Restore the original interrupt state after the protected operation.</li>
+</ol>
+
+<div class="warning-box">
+Do not modify CPSR interrupt bits casually in a running application. Incorrect masking or exception-return behavior can make the processor unresponsive to interrupts.
+</div>
+</section>
+
+<section>
+<h2>20. Review Questions</h2>
+<ol>
+<li>What is interrupt masking?</li>
+<li>Why is interrupt masking used?</li>
+<li>Differentiate global and selective interrupt masking.</li>
+<li>What are the I and F bits in ARM7 CPSR?</li>
+<li>What happens to IRQ and FIQ during ARM7 exception entry?</li>
+<li>How does interrupt masking affect nesting?</li>
+<li>What is a critical section?</li>
+<li>Why should the previous interrupt state be restored?</li>
+<li>Differentiate processor IRQ masking and VIC source disabling.</li>
+<li>What is the purpose of VICIntEnClr?</li>
+<li>How is scheduler suspension different from interrupt masking?</li>
+<li>Why should FreeRTOS critical sections be kept short?</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Lesson Summary</h2>
+<ul>
+<li>Interrupt masking controls acceptance of selected interrupt requests.</li>
+<li>Global masking affects a processor-defined interrupt class.</li>
+<li>Selective masking controls individual interrupt sources.</li>
+<li>ARM7 CPSR contains separate IRQ and FIQ mask bits.</li>
+<li>Interrupt masking influences interrupt nesting and latency.</li>
+<li>Critical sections protect sensitive operations.</li>
+<li>Preserving and restoring the previous interrupt state avoids unintended changes.</li>
+<li>LPC2129 VIC source control is different from processor-level interrupt masking.</li>
+<li>RTOS critical sections must be short and port-specific.</li>
+<li>Scheduler suspension does not necessarily disable interrupts.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L05_Nested_Interrupts_and_Priority.html">← Previous Lesson</a>
+<a href="index.html">Chapter 07</a>
+<a href="L07_Deferred_Interrupt_Processing.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
