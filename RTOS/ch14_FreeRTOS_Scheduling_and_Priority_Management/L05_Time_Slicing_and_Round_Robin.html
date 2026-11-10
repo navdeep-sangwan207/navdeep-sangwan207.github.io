@@ -1,1 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Time Slicing and Round-Robin Scheduling | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:29px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Time Slicing and Round-Robin Scheduling</h1>
+<p>Equal-Priority Task Scheduling and Processor Time Sharing</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 14</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+Time slicing allows multiple Ready tasks at the
+same priority to share processor execution time.
+It is commonly associated with round-robin
+scheduling in multitasking operating systems.
+</p>
+<ul>
+<li>Understand time slicing in an RTOS.</li>
+<li>Learn round-robin scheduling.</li>
+<li>Understand equal-priority task execution.</li>
+<li>Study the role of the RTOS tick interrupt.</li>
+<li>Understand configUSE_TIME_SLICING.</li>
+<li>Compare time slicing with priority preemption.</li>
+<li>Analyze task execution timelines.</li>
+<li>Implement a basic FreeRTOS time-slicing example.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Time Slicing</h2>
+<p>
+Time slicing is a scheduling technique in which
+the processor's execution time is shared among
+eligible tasks of the same priority.
+</p>
+<p>
+In a typical preemptive FreeRTOS configuration,
+when multiple tasks of equal priority remain
+Ready, the scheduler can rotate execution among
+them at tick boundaries.
+</p>
+<h3>Example</h3>
+<table>
+<tr><th>Task</th><th>Priority</th><th>State</th></tr>
+<tr><td>Task A</td><td>2</td><td>Ready</td></tr>
+<tr><td>Task B</td><td>2</td><td>Ready</td></tr>
+<tr><td>Task C</td><td>2</td><td>Ready</td></tr>
+</table>
+<p>
+All three tasks have equal priority. Time slicing
+can give each task an opportunity to execute
+while they remain Ready.
+</p>
+</section>
+
+<section>
+<h2>3. What Is a Time Slice?</h2>
+<p>
+A time slice is the interval associated with a
+scheduler rotation opportunity. In a typical
+FreeRTOS system using tick-based time slicing,
+the scheduling decision can occur at a tick
+interrupt.
+</p>
+<p>
+For example, if the RTOS tick rate is 1000 Hz:
+</p>
+<pre><code>Tick frequency = 1000 Hz
+
+Tick period = 1 / 1000 second
+
+Tick period = 1 millisecond</code></pre>
+<p>
+A tick represents a nominal time interval used
+by the kernel. It does not mean every task
+receives exactly one millisecond of CPU time
+in every situation.
+</p>
+<div class="note">
+The actual execution interval of a task depends
+on tick configuration, higher-priority tasks,
+interrupts, blocking, scheduler behavior and
+the processor port.
+</div>
+</section>
+
+<section>
+<h2>4. Introduction to Round-Robin Scheduling</h2>
+<p>
+Round-robin scheduling gives tasks an
+opportunity to execute in a repeating order.
+When a task's turn ends, the next eligible
+task receives processor time.
+</p>
+<h3>Example</h3>
+<pre><code>Task A
+  |
+  v
+Task B
+  |
+  v
+Task C
+  |
+  v
+Task A
+  |
+  v
+Task B
+  |
+  v
+Task C
+  |
+  v
+Repeat</code></pre>
+<p>
+This example represents equal-priority tasks
+sharing processor time. A higher-priority Ready
+task can still take precedence in a priority-based
+preemptive scheduler.
+</p>
+</section>
+
+<section>
+<h2>5. Time-Slicing Execution Diagram</h2>
+<p>
+Assume three equal-priority tasks remain Ready
+and the scheduler rotates them at successive
+tick boundaries.
+</p>
+<pre><code>Time:       0       1       2       3       4
+            |-------|-------|-------|-------|
+
+Task A:     RUN     READY   READY   RUN     READY
+Task B:     READY   RUN     READY   READY   RUN
+Task C:     READY   READY   RUN     READY   READY
+
+RUN   = Running
+READY = Ready</code></pre>
+<p>
+The diagram illustrates a possible rotation.
+Exact ordering depends on the kernel's ready-list
+handling and the timing of task state changes.
+</p>
+</section>
+
+<section>
+<h2>6. Time Slicing in FreeRTOS</h2>
+<p>
+FreeRTOS provides a configuration option for
+time slicing:
+</p>
+<pre><code>#define configUSE_TIME_SLICING 1</code></pre>
+<p>
+When enabled in a preemptive configuration,
+the scheduler can rotate execution among
+equal-priority Ready tasks at tick interrupts.
+</p>
+<p>
+When disabled, the tick does not perform the
+normal equal-priority time-slicing rotation.
+Tasks can still change state through blocking,
+yielding and other scheduling events.
+</p>
+<h3>Related Configuration</h3>
+<pre><code>#define configUSE_PREEMPTION    1
+#define configUSE_TIME_SLICING  1
+#define configTICK_RATE_HZ      1000</code></pre>
+<div class="note">
+Time slicing is associated with preemptive
+scheduling in the standard FreeRTOS kernel.
+Check the selected kernel version and port
+documentation for exact behavior.
+</div>
+</section>
+
+<section>
+<h2>7. Time Slicing vs Higher-Priority Preemption</h2>
+<p>
+Time slicing and priority-based preemption are
+different scheduling mechanisms.
+</p>
+<table>
+<tr><th>Feature</th><th>Time Slicing</th><th>Higher-Priority Preemption</th></tr>
+<tr><td>Tasks involved</td><td>Normally equal-priority Ready tasks.</td><td>A higher-priority Ready task and a lower-priority Running task.</td></tr>
+<tr><td>Purpose</td><td>Share processor time among peers.</td><td>Give precedence to higher-priority work.</td></tr>
+<tr><td>Typical trigger</td><td>Tick-based scheduling rotation.</td><td>A higher-priority task becomes Ready.</td></tr>
+<tr><td>Priority relationship</td><td>Equal priorities.</td><td>Different priorities.</td></tr>
+<tr><td>Configuration</td><td>configUSE_TIME_SLICING.</td><td>configUSE_PREEMPTION.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>8. Role of the RTOS Tick Interrupt</h2>
+<p>
+The RTOS tick interrupt provides periodic timing
+events to the kernel. It supports task delays,
+time measurement and scheduling operations.
+</p>
+<h3>Tick Operation</h3>
+<ol>
+<li>A hardware timer generates a periodic interrupt.</li>
+<li>The FreeRTOS tick handler updates kernel time.</li>
+<li>Tasks whose delay periods have expired may become Ready.</li>
+<li>The scheduler evaluates the eligible tasks.</li>
+<li>A context switch may occur if required.</li>
+</ol>
+<div class="warning">
+A tick interrupt does not automatically cause
+a task switch every time. A switch depends on
+the scheduling policy and the task states.
+</div>
+</section>
+
+<section>
+<h2>9. Equal-Priority Task Creation Example</h2>
+<p>
+The following example creates three tasks at
+the same priority. Each task performs a small
+operation and then delays.
+</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+volatile unsigned long countA = 0;
+volatile unsigned long countB = 0;
+volatile unsigned long countC = 0;
+
+void TaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        countA++;
+
+        /* Allow other tasks to run */
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+void TaskB(void *pvParameters)
+{
+    for (;;)
+    {
+        countB++;
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+void TaskC(void *pvParameters)
+{
+    for (;;)
+    {
+        countC++;
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+int main(void)
+{
+    BaseType_t resultA;
+    BaseType_t resultB;
+    BaseType_t resultC;
+
+    resultA = xTaskCreate(
+        TaskA,
+        "TaskA",
+        256,
+        NULL,
+        2,
+        NULL
+    );
+
+    resultB = xTaskCreate(
+        TaskB,
+        "TaskB",
+        256,
+        NULL,
+        2,
+        NULL
+    );
+
+    resultC = xTaskCreate(
+        TaskC,
+        "TaskC",
+        256,
+        NULL,
+        2,
+        NULL
+    );
+
+    if ((resultA == pdPASS) &&
+        (resultB == pdPASS) &&
+        (resultC == pdPASS))
+    {
+        vTaskStartScheduler();
+    }
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Explanation</h3>
+<ul>
+<li>Three tasks are created.</li>
+<li>All tasks use priority 2.</li>
+<li>Each task increments its own counter.</li>
+<li>Each task blocks for approximately 10 milliseconds.</li>
+<li>While one task is Blocked, another Ready task can execute.</li>
+</ul>
+<p>
+Because the tasks deliberately block, this example
+demonstrates equal-priority task sharing and
+blocking behavior. It does not isolate tick-driven
+time slicing by itself.
+</p>
+</section>
+
+<section>
+<h2>10. Practical Example – Observing Tick-Based Rotation</h2>
+<p><strong>Objective:</strong> Observe how equal-priority Ready tasks share processor time.</p>
+<h3>Example Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+volatile unsigned long taskACount = 0;
+volatile unsigned long taskBCount = 0;
+
+void TaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        taskACount++;
+
+        /* Deliberately remain Ready.
+           Observe using a debugger or trace tool. */
+    }
+}
+
+void TaskB(void *pvParameters)
+{
+    for (;;)
+    {
+        taskBCount++;
+
+        /* Deliberately remain Ready.
+           Observe using a debugger or trace tool. */
+    }
+}
+
+int main(void)
+{
+    BaseType_t resultA;
+    BaseType_t resultB;
+
+    resultA = xTaskCreate(
+        TaskA,
+        "TaskA",
+        256,
+        NULL,
+        2,
+        NULL
+    );
+
+    resultB = xTaskCreate(
+        TaskB,
+        "TaskB",
+        256,
+        NULL,
+        2,
+        NULL
+    );
+
+    if ((resultA == pdPASS) &&
+        (resultB == pdPASS))
+    {
+        vTaskStartScheduler();
+    }
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Procedure</h3>
+<ol>
+<li>Enable preemptive scheduling.</li>
+<li>Enable time slicing.</li>
+<li>Build and run on a verified FreeRTOS target or port.</li>
+<li>Inspect taskACount and taskBCount using a debugger or trace tool.</li>
+<li>Observe which task is Running at successive scheduling intervals.</li>
+<li>Disable time slicing and repeat the experiment.</li>
+<li>Compare the execution behavior.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+With time slicing enabled, both continuously
+Ready equal-priority tasks should receive
+processor time through scheduler rotation.
+With time slicing disabled, the tick alone
+does not perform the normal equal-priority
+rotation. Other scheduling events can still
+cause a task switch.
+</p>
+<div class="warning">
+This example contains intentional busy loops
+for observing scheduler behavior. It consumes
+processor time and should be used only as a
+short controlled experiment, not as a production
+application design.
+</div>
+</section>
+
+<section>
+<h2>11. What Happens When a Task Blocks?</h2>
+<p>
+Time slicing applies to tasks that are eligible
+to execute. If a task blocks while waiting for
+a delay, queue, semaphore or event, it is
+removed from the Ready state.
+</p>
+<p>
+The scheduler selects another Ready task,
+which may have the same priority or a lower
+priority if no higher-priority task is Ready.
+</p>
+<pre><code>Task A: Running
+Task B: Ready
+
+Task A calls vTaskDelay()
+
+Task A: Blocked
+Task B: Running
+
+Task A delay expires
+
+Task A: Ready
+Task B: Running or Ready
+Scheduler selects according to priority
+and scheduling policy.</code></pre>
+</section>
+
+<section>
+<h2>12. Advantages of Time Slicing</h2>
+<ul>
+<li>Shares processor time among equal-priority tasks.</li>
+<li>Prevents one continuously Ready task from monopolizing the processor under normal time-slicing operation.</li>
+<li>Supports responsive multitasking.</li>
+<li>Provides a simple way to schedule peer tasks.</li>
+<li>Can improve fairness among tasks at the same priority.</li>
+</ul>
+<h3>Limitations</h3>
+<ul>
+<li>Context switching introduces overhead.</li>
+<li>Tick frequency affects timing granularity and interrupt overhead.</li>
+<li>Time slicing does not guarantee equal CPU usage.</li>
+<li>Higher-priority tasks can still delay lower-priority tasks.</li>
+<li>Shared resources still require synchronization.</li>
+</ul>
+</section>
+
+<section>
+<h2>13. Time Slicing and Real-Time Performance</h2>
+<p>
+Time slicing improves processor sharing among
+equal-priority tasks, but it is not a complete
+real-time scheduling solution.
+</p>
+<p>
+For real-time applications, engineers must
+consider:
+</p>
+<ul>
+<li>Task periods and deadlines.</li>
+<li>Worst-case execution time.</li>
+<li>Blocking time and resource contention.</li>
+<li>Interrupt interference.</li>
+<li>Context-switch overhead.</li>
+<li>Tick rate and timing resolution.</li>
+<li>Response-time and schedulability analysis.</li>
+</ul>
+<div class="note">
+A task can receive regular CPU time and still
+miss its deadline. Time slicing does not replace
+real-time scheduling analysis.
+</div>
+</section>
+
+<section>
+<h2>14. Important Notes for LPC2129 and Keil</h2>
+<p>
+The LPC2129 uses an ARM7TDMI-S processor.
+A real FreeRTOS experiment requires a compatible
+ARM7 port, correct tick interrupt setup and
+working context-switch integration.
+</p>
+<ul>
+<li>Do not use Cortex-M-specific FreeRTOS port files.</li>
+<li>Verify the selected port's tick handler.</li>
+<li>Verify context-switch behavior at tick interrupts.</li>
+<li>Confirm compiler, startup and linker integration.</li>
+<li>Confirm Keil simulator support before expecting task rotation.</li>
+</ul>
+<div class="warning">
+The examples are generic FreeRTOS code. They
+are not guaranteed to run on the LPC2129
+Keil simulator without a verified ARM7 port.
+</div>
+</section>
+
+<section>
+<h2>15. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is time slicing?</li>
+<li>What is round-robin scheduling?</li>
+<li>Which tasks normally participate in time slicing?</li>
+<li>What is a time slice?</li>
+<li>Which configuration controls FreeRTOS time slicing?</li>
+<li>What is the purpose of the RTOS tick interrupt?</li>
+<li>How is time slicing different from priority preemption?</li>
+<li>What happens when a task blocks?</li>
+<li>Does time slicing guarantee equal CPU usage?</li>
+<li>Does time slicing guarantee real-time deadlines?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain time slicing with a suitable timing diagram.</li>
+<li>Explain round-robin scheduling.</li>
+<li>Describe the role of configUSE_TIME_SLICING.</li>
+<li>Compare time slicing and higher-priority preemption.</li>
+<li>Explain how the RTOS tick supports scheduling.</li>
+<li>Discuss the advantages and limitations of time slicing.</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Lesson Summary</h2>
+<ul>
+<li>Time slicing shares processor time among equal-priority Ready tasks.</li>
+<li>Round-robin scheduling rotates execution among eligible peer tasks.</li>
+<li>configUSE_TIME_SLICING controls the normal FreeRTOS time-slicing behavior.</li>
+<li>The RTOS tick supports time-based scheduling decisions.</li>
+<li>Blocked tasks do not participate in Ready-task rotation.</li>
+<li>Higher-priority Ready tasks still take precedence.</li>
+<li>Time slicing does not guarantee equal CPU usage or deadline satisfaction.</li>
+</ul>
+</section>
+
+<section>
+<h2>17. Practice Assignment</h2>
+<ol>
+<li>Create two equal-priority FreeRTOS tasks.</li>
+<li>Keep both tasks continuously Ready for a short controlled test.</li>
+<li>Enable time slicing and observe task rotation.</li>
+<li>Disable time slicing and compare the result.</li>
+<li>Change one task to a higher priority and observe preemption.</li>
+<li>Modify the tick rate and study the effect on timing granularity.</li>
+<li>Draw a timeline showing three equal-priority tasks.</li>
+<li>Explain why a task that blocks is not part of Ready-task rotation.</li>
+<li>Discuss context-switch overhead.</li>
+<li>Explain why time slicing alone cannot guarantee deadlines.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L04_Higher_Priority_Task_Preemption.html">← Previous Lesson</a>
+<a href="index.html">Chapter 14 Index</a>
+<a href="L06_Idle_Task_and_Idle_Hook.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
