@@ -1,1 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>xTaskCreate() Function | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:29px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>xTaskCreate() Function</h1>
+<p>Task Creation, Parameters, Return Values and Dynamic Memory Allocation</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+The xTaskCreate() function is one of the fundamental
+FreeRTOS APIs. It creates a new task dynamically,
+allocates the required task memory through the
+configured allocation mechanism and makes the task
+available to the scheduler.
+</p>
+<ul>
+<li>Understand the purpose of xTaskCreate().</li>
+<li>Learn its function prototype and parameters.</li>
+<li>Understand task stack depth and priority.</li>
+<li>Interpret the function return value.</li>
+<li>Store and use a created task handle.</li>
+<li>Understand dynamic memory allocation during task creation.</li>
+<li>Identify common task creation failures.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to xTaskCreate()</h2>
+<p>
+FreeRTOS applications commonly use xTaskCreate()
+to create tasks at runtime. The application supplies
+a task function, name, stack depth, parameter pointer
+and priority. The kernel creates the task and can
+return its handle.
+</p>
+<pre><code>BaseType_t xTaskCreate(
+    TaskFunction_t pvTaskCode,
+    const char * const pcName,
+    configSTACK_DEPTH_TYPE usStackDepth,
+    void *pvParameters,
+    UBaseType_t uxPriority,
+    TaskHandle_t *pxCreatedTask
+);</code></pre>
+<div class="note">
+The exact declaration can vary across FreeRTOS
+versions. Older versions commonly use
+configSTACK_DEPTH_TYPE-compatible parameters
+expressed as uint16_t. Always check the headers
+of the kernel release used by the project.
+</div>
+</section>
+
+<section>
+<h2>3. Parameters of xTaskCreate()</h2>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>pvTaskCode</code></td><td>Pointer to the task function that will execute.</td></tr>
+<tr><td><code>pcName</code></td><td>Human-readable task name, mainly useful for debugging and task identification.</td></tr>
+<tr><td><code>usStackDepth</code></td><td>Requested stack depth, expressed in StackType_t elements (commonly called stack words), not bytes.</td></tr>
+<tr><td><code>pvParameters</code></td><td>Pointer to data passed to the task function. Use NULL if no parameter is needed.</td></tr>
+<tr><td><code>uxPriority</code></td><td>Task priority. Valid application priorities range from 0 through configMAX_PRIORITIES - 1.</td></tr>
+<tr><td><code>pxCreatedTask</code></td><td>Pointer to a TaskHandle_t variable where the created task handle is stored. NULL can be supplied if the handle is not required.</td></tr>
+</table>
+
+<h3>Understanding the Stack Depth</h3>
+<p>
+The stack is private execution memory used by a task
+for function calls, local variables, saved registers
+and other execution state. The requested depth is
+measured in stack elements rather than bytes.
+</p>
+<pre><code>Stack memory in bytes =
+    Stack depth * sizeof(StackType_t)</code></pre>
+<p>
+For example, if StackType_t is 4 bytes and a task
+requests 256 stack elements:
+</p>
+<pre><code>256 * 4 = 1024 bytes</code></pre>
+<div class="warning">
+The actual size of StackType_t depends on the selected
+FreeRTOS port and processor architecture. Do not
+assume every target uses 4-byte stack elements.
+</div>
+</section>
+
+<section>
+<h2>4. Understanding Task Priority</h2>
+<p>
+FreeRTOS normally uses a fixed-priority scheduler.
+A task with a higher priority than a Ready task
+can preempt it when preemption is enabled and the
+scheduler is running.
+</p>
+<table>
+<tr><th>Priority</th><th>Typical Interpretation</th></tr>
+<tr><td>0</td><td>Lowest application priority; idle task also uses the lowest priority.</td></tr>
+<tr><td>1</td><td>Low-priority application task.</td></tr>
+<tr><td>2</td><td>Medium-priority application task.</td></tr>
+<tr><td>3</td><td>Higher-priority application task.</td></tr>
+<tr><td>configMAX_PRIORITIES - 1</td><td>Highest configured task priority.</td></tr>
+</table>
+<p>
+The application must choose priorities according to
+timing requirements, task dependencies and resource
+blocking. A higher priority does not automatically
+make a task more important in every system design.
+</p>
+</section>
+
+<section>
+<h2>5. Return Value of xTaskCreate()</h2>
+<p>
+xTaskCreate() returns a value of type BaseType_t.
+The application should always check this result.
+</p>
+<table>
+<tr><th>Return Value</th><th>Meaning</th></tr>
+<tr><td><code>pdPASS</code></td><td>Task creation succeeded.</td></tr>
+<tr><td><code>errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY</code></td><td>Required memory could not be allocated in versions/configurations that define this error value.</td></tr>
+</table>
+<p>
+In common FreeRTOS releases, the failure result is
+pdFAIL. Check the exact API documentation and
+definitions in the selected kernel version.
+</p>
+<pre><code>BaseType_t result;
+
+result = xTaskCreate(
+    SensorTask,
+    "Sensor",
+    256,
+    NULL,
+    2,
+    NULL
+);
+
+if (result == pdPASS)
+{
+    /* Task creation succeeded */
+}
+else
+{
+    /* Task creation failed */
+}</code></pre>
+</section>
+
+<section>
+<h2>6. Creating a Simple Task</h2>
+<p><strong>Example:</strong> Create a task that periodically performs a monitoring operation.</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+void MonitorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Monitoring operation */
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+int main(void)
+{
+    BaseType_t result;
+
+    result = xTaskCreate(
+        MonitorTask,
+        "Monitor",
+        256,
+        NULL,
+        2,
+        NULL
+    );
+
+    if (result == pdPASS)
+    {
+        vTaskStartScheduler();
+    }
+
+    for (;;)
+    {
+        /* Reached if scheduler could not start
+           or task creation failed */
+    }
+}</code></pre>
+<h3>Program Explanation</h3>
+<ol>
+<li>Include the FreeRTOS kernel and task headers.</li>
+<li>Define the task function MonitorTask().</li>
+<li>The task executes its monitoring operation inside an infinite loop.</li>
+<li>vTaskDelay() blocks the task for approximately one second in tick-based time.</li>
+<li>xTaskCreate() requests creation of the Monitor task.</li>
+<li>vTaskStartScheduler() starts normal task scheduling after successful creation.</li>
+</ol>
+<div class="note">
+This is a generic FreeRTOS application example.
+It requires a correctly selected processor port,
+startup code, heap implementation, configuration
+and hardware/compiler integration.
+</div>
+</section>
+
+<section>
+<h2>7. Creating Multiple Tasks</h2>
+<p>
+An RTOS application usually contains multiple tasks.
+Each task can perform a separate function, such as
+sensor monitoring, communication or control.
+</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Read or process sensor data */
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void CommunicationTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Communication processing */
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+int main(void)
+{
+    BaseType_t result1;
+    BaseType_t result2;
+
+    result1 = xTaskCreate(
+        SensorTask, "Sensor", 256,
+        NULL, 3, NULL
+    );
+
+    result2 = xTaskCreate(
+        CommunicationTask, "Comm", 256,
+        NULL, 2, NULL
+    );
+
+    if ((result1 == pdPASS) &&
+        (result2 == pdPASS))
+    {
+        vTaskStartScheduler();
+    }
+
+    for (;;)
+    {
+        /* Error handling */
+    }
+}</code></pre>
+<h3>Expected Scheduling Behavior</h3>
+<ul>
+<li>SensorTask has priority 3.</li>
+<li>CommunicationTask has priority 2.</li>
+<li>When both are Ready, SensorTask has higher priority.</li>
+<li>When SensorTask blocks, CommunicationTask can execute.</li>
+<li>The scheduler selects tasks according to their states and priorities.</li>
+</ul>
+</section>
+
+<section>
+<h2>8. Dynamic Memory Allocation During Task Creation</h2>
+<p>
+The standard xTaskCreate() API uses the FreeRTOS
+memory allocation mechanism to obtain memory for
+the task's internal control structure and stack.
+The selected heap implementation determines how
+memory is managed.
+</p>
+<p>
+The task's stack and control structure are allocated
+separately by the kernel's task-creation machinery.
+The exact allocation strategy depends on the
+FreeRTOS implementation and configuration.
+</p>
+<h3>Relevant Configuration Options</h3>
+<table>
+<tr><th>Configuration</th><th>Purpose</th></tr>
+<tr><td><code>configSUPPORT_DYNAMIC_ALLOCATION</code></td><td>Enables dynamic allocation support.</td></tr>
+<tr><td><code>configSUPPORT_STATIC_ALLOCATION</code></td><td>Enables static allocation support.</td></tr>
+<tr><td><code>configTOTAL_HEAP_SIZE</code></td><td>Configures heap size for heap implementations that use this setting.</td></tr>
+<tr><td><code>configAPPLICATION_ALLOCATED_HEAP</code></td><td>Allows an application-provided heap array in supported configurations.</td></tr>
+</table>
+<div class="warning">
+configTOTAL_HEAP_SIZE is not a universal setting
+for every FreeRTOS heap implementation. For example,
+heap_3 wraps the C library allocation functions.
+</div>
+</section>
+
+<section>
+<h2>9. Task Creation Failure</h2>
+<p>
+Task creation can fail if the configured memory
+allocator cannot provide the required memory.
+Other project integration errors can prevent the
+application from building or starting correctly.
+</p>
+<h3>Common Causes</h3>
+<ul>
+<li>Insufficient FreeRTOS heap memory.</li>
+<li>Excessive stack depth requested for tasks.</li>
+<li>Too many dynamically allocated kernel objects.</li>
+<li>Incorrect heap or allocation configuration.</li>
+<li>Incorrect task function declaration.</li>
+<li>Missing or incompatible FreeRTOS port files.</li>
+</ul>
+<h3>Basic Failure Handling</h3>
+<pre><code>BaseType_t result;
+
+result = xTaskCreate(
+    MonitorTask,
+    "Monitor",
+    256,
+    NULL,
+    2,
+    NULL
+);
+
+if (result != pdPASS)
+{
+    /* Record the failure */
+    /* Enter a safe error-handling state */
+}</code></pre>
+<p>
+In a production system, failure handling should
+be designed deliberately. It may include diagnostic
+logging, a safe-state transition or a controlled
+restart, depending on system requirements.
+</p>
+</section>
+
+<section>
+<h2>10. xTaskCreate() Versus xTaskCreateStatic()</h2>
+<p>
+FreeRTOS supports both dynamic and static task
+creation when the corresponding configuration
+options are enabled.
+</p>
+<table>
+<tr><th>Feature</th><th>xTaskCreate()</th><th>xTaskCreateStatic()</th></tr>
+<tr><td>Allocation</td><td>Kernel allocator obtains task memory.</td><td>Application supplies task memory.</td></tr>
+<tr><td>Stack memory</td><td>Allocated dynamically.</td><td>Supplied through a StackType_t array.</td></tr>
+<tr><td>TCB memory</td><td>Allocated dynamically.</td><td>Supplied through a StaticTask_t object.</td></tr>
+<tr><td>Return value</td><td>BaseType_t success/failure.</td><td>TaskHandle_t handle, or NULL on failure in the documented API.</td></tr>
+<tr><td>Configuration</td><td>Requires dynamic allocation support.</td><td>Requires static allocation support.</td></tr>
+</table>
+
+<h3>Static Task Creation Example</h3>
+<pre><code>static StaticTask_t sensorTCB;
+
+static StackType_t sensorStack[256];
+
+TaskHandle_t sensorHandle;
+
+sensorHandle = xTaskCreateStatic(
+    SensorTask,
+    "Sensor",
+    256,
+    NULL,
+    2,
+    sensorStack,
+    &sensorTCB
+);
+
+if (sensorHandle == NULL)
+{
+    /* Handle creation failure */
+}</code></pre>
+<p>
+The stack array and StaticTask_t object must remain
+valid for the entire lifetime of the task. This
+example assumes static allocation is enabled and
+the API declaration matches the selected kernel.
+</p>
+</section>
+
+<section>
+<h2>11. Stack Sizing and Monitoring</h2>
+<p>
+Choosing a task stack size requires consideration
+of function call depth, local variables, interrupt
+context requirements of the port, compiler behavior
+and library usage.
+</p>
+<h3>Stack Monitoring API</h3>
+<pre><code>UBaseType_t uxTaskGetStackHighWaterMark(
+    TaskHandle_t xTask
+);</code></pre>
+<p>
+This API reports the minimum remaining stack space
+observed since the task started, measured in
+StackType_t elements. It can help identify tasks
+that may have been allocated too much or too little
+stack.
+</p>
+<div class="warning">
+A high-water mark is an observed measurement, not
+proof that every possible execution path is safe.
+Exercise worst-case code paths and use appropriate
+stack-overflow detection where supported.
+</div>
+</section>
+
+<section>
+<h2>12. Important Design Considerations</h2>
+<ul>
+<li>Choose stack depth based on measured and analyzed requirements.</li>
+<li>Use meaningful task names for debugging.</li>
+<li>Assign priorities based on timing and dependency analysis.</li>
+<li>Check every xTaskCreate() return value.</li>
+<li>Use task handles when later task control is required.</li>
+<li>Keep task parameter data valid for as long as the task needs it.</li>
+<li>Plan memory allocation and failure handling before deployment.</li>
+<li>Do not assume a successful task creation guarantees the scheduler will start successfully.</li>
+<li>Ensure the selected FreeRTOS port and compiler are compatible with the target processor.</li>
+</ul>
+</section>
+
+<section>
+<h2>13. Practical Activity – Create Two Tasks</h2>
+<p><strong>Objective:</strong> Create two tasks with different priorities and verify their scheduling behavior.</p>
+<h3>Procedure</h3>
+<ol>
+<li>Write two task functions: SensorTask and CommunicationTask.</li>
+<li>Create SensorTask with priority 3.</li>
+<li>Create CommunicationTask with priority 2.</li>
+<li>Check the return value of both task creation calls.</li>
+<li>Start the scheduler only if both tasks are created successfully.</li>
+<li>Use suitable blocking delays in both task loops.</li>
+<li>Observe task execution using a supported debugger or trace tool.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+Both tasks should be created successfully when
+sufficient memory and a valid FreeRTOS port are
+available. The scheduler should select Ready tasks
+according to the configured priorities and scheduling
+policy.
+</p>
+</section>
+
+<section>
+<h2>14. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is the purpose of xTaskCreate()?</li>
+<li>What is the return type of xTaskCreate()?</li>
+<li>What does pvTaskCode represent?</li>
+<li>What is the purpose of pcName?</li>
+<li>Is usStackDepth measured in bytes?</li>
+<li>What does pvParameters pass to the task?</li>
+<li>What is the purpose of uxPriority?</li>
+<li>What does pxCreatedTask store?</li>
+<li>What does pdPASS indicate?</li>
+<li>How does xTaskCreateStatic() differ from xTaskCreate()?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain the xTaskCreate() function and all its parameters.</li>
+<li>Describe dynamic memory allocation during task creation.</li>
+<li>Explain the causes and handling of task creation failure.</li>
+<li>Compare dynamic and static task creation.</li>
+<li>Write a program to create two tasks with different priorities.</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Lesson Summary</h2>
+<ul>
+<li>xTaskCreate() dynamically creates a FreeRTOS task.</li>
+<li>The task function defines the task's execution behavior.</li>
+<li>Stack depth is specified in stack elements, not bytes.</li>
+<li>Task priority determines scheduling precedence among Ready tasks.</li>
+<li>pxCreatedTask can receive the new task's handle.</li>
+<li>pdPASS indicates successful task creation.</li>
+<li>Dynamic task creation depends on the configured memory allocator.</li>
+<li>xTaskCreateStatic() uses application-supplied memory.</li>
+<li>Stack sizing and allocation failure handling are important design responsibilities.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+<a href="L02_TaskFunction_and_TaskHandle.html">← Previous Lesson</a>
+<a href="index.html">Chapter 13 Index</a>
+<a href="L04_vTaskDelete_Function.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
