@@ -1,1 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Queue Programming Examples | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:28px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>FreeRTOS Queue Programming Examples</h1>
+<p>Integrated Programs, Data Transfer, Synchronization and Practical Applications</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 15</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+This lesson combines the queue concepts
+covered throughout this chapter into
+practical FreeRTOS programming examples.
+The examples demonstrate how queues
+support data transfer and coordination
+between independently scheduled tasks.
+</p>
+<ul>
+<li>Review queue creation and management.</li>
+<li>Implement producer-consumer communication.</li>
+<li>Transfer structures through queues.</li>
+<li>Understand multiple-task communication.</li>
+<li>Implement sensor-data processing architecture.</li>
+<li>Apply queue operations in an ISR-to-task design.</li>
+<li>Identify queue errors and debugging methods.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. FreeRTOS Queue API Quick Reference</h2>
+<table>
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>xQueueCreate()</td><td>Create a queue dynamically.</td></tr>
+<tr><td>xQueueCreateStatic()</td><td>Create a queue using application-provided storage.</td></tr>
+<tr><td>vQueueDelete()</td><td>Delete a queue.</td></tr>
+<tr><td>xQueueSend()</td><td>Send an item to the back of a queue.</td></tr>
+<tr><td>xQueueSendToFront()</td><td>Send an item to the front of a queue.</td></tr>
+<tr><td>xQueueReceive()</td><td>Receive and remove the front item.</td></tr>
+<tr><td>xQueuePeek()</td><td>Inspect the front item without removing it.</td></tr>
+<tr><td>xQueueReset()</td><td>Clear the queued items.</td></tr>
+<tr><td>uxQueueMessagesWaiting()</td><td>Get the current number of queued items.</td></tr>
+<tr><td>uxQueueSpacesAvailable()</td><td>Get the number of available queue spaces.</td></tr>
+<tr><td>xQueueSendFromISR()</td><td>Send an item from interrupt context.</td></tr>
+<tr><td>xQueueReceiveFromISR()</td><td>Receive an item from interrupt context.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>3. Example 1 – Basic Integer Queue Communication</h2>
+<p><strong>Objective:</strong> Create a queue and transfer integer values between two tasks.</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+QueueHandle_t dataQueue;
+
+void SenderTask(void *pvParameters)
+{
+    int value = 10;
+
+    for (;;)
+    {
+        if (xQueueSend(
+                dataQueue,
+                &value,
+                pdMS_TO_TICKS(100)
+            ) == pdPASS)
+        {
+            /* Item sent */
+        }
+
+        value += 10;
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void ReceiverTask(void *pvParameters)
+{
+    int receivedValue;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                dataQueue,
+                &receivedValue,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Process receivedValue */
+        }
+    }
+}
+
+int main(void)
+{
+    dataQueue = xQueueCreate(
+        5,
+        sizeof(int)
+    );
+
+    if (dataQueue == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(
+        SenderTask,
+        "Sender",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        NULL
+    );
+
+    xTaskCreate(
+        ReceiverTask,
+        "Receiver",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        NULL
+    );
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Expected Result</h3>
+<p>
+The sender generates values such as 10,
+20, 30 and 40. The receiver obtains them
+in FIFO order. The actual processing
+sequence depends on scheduling and queue
+availability.
+</p>
+</section>
+
+<section>
+<h2>4. Example 2 – Sending a Structure Through a Queue</h2>
+<p><strong>Objective:</strong> Transfer multiple related sensor fields as one queue item.</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+typedef struct
+{
+    int sensorID;
+    int temperature;
+    int humidity;
+} SensorData_t;
+
+QueueHandle_t sensorQueue;
+
+void SensorTask(void *pvParameters)
+{
+    SensorData_t data;
+
+    for (;;)
+    {
+        data.sensorID = 1;
+        data.temperature = 28;
+        data.humidity = 65;
+
+        xQueueSend(
+            sensorQueue,
+            &data,
+            pdMS_TO_TICKS(100)
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void ProcessingTask(void *pvParameters)
+{
+    SensorData_t receivedData;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                sensorQueue,
+                &receivedData,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Process sensor fields */
+        }
+    }
+}
+
+int main(void)
+{
+    sensorQueue = xQueueCreate(
+        5,
+        sizeof(SensorData_t)
+    );
+
+    if (sensorQueue == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(
+        SensorTask,
+        "Sensor",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        NULL
+    );
+
+    xTaskCreate(
+        ProcessingTask,
+        "Process",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        NULL
+    );
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Expected Result</h3>
+<p>
+The sensor task sends a structure containing
+sensor ID, temperature and humidity. The
+processing task receives a copy of the
+complete structure.
+</p>
+</section>
+
+<section>
+<h2>5. Example 3 – Multiple Producers and One Consumer</h2>
+<p><strong>Objective:</strong> Transfer messages from two producer tasks to one consumer task.</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+typedef struct
+{
+    int sourceID;
+    int value;
+} Message_t;
+
+QueueHandle_t messageQueue;
+
+void Producer1(void *pvParameters)
+{
+    Message_t message;
+
+    message.sourceID = 1;
+
+    for (;;)
+    {
+        message.value++;
+
+        xQueueSend(
+            messageQueue,
+            &message,
+            pdMS_TO_TICKS(100)
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(300));
+    }
+}
+
+void Producer2(void *pvParameters)
+{
+    Message_t message;
+
+    message.sourceID = 2;
+
+    for (;;)
+    {
+        message.value += 2;
+
+        xQueueSend(
+            messageQueue,
+            &message,
+            pdMS_TO_TICKS(100)
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void ConsumerTask(void *pvParameters)
+{
+    Message_t received;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                messageQueue,
+                &received,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Process sourceID and value */
+        }
+    }
+}
+
+int main(void)
+{
+    messageQueue = xQueueCreate(
+        10,
+        sizeof(Message_t)
+    );
+
+    if (messageQueue == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(
+        Producer1,
+        "Producer1",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        NULL
+    );
+
+    xTaskCreate(
+        Producer2,
+        "Producer2",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        NULL
+    );
+
+    xTaskCreate(
+        ConsumerTask,
+        "Consumer",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        3,
+        NULL
+    );
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Expected Result</h3>
+<p>
+Both producers send messages to the same
+queue. The consumer receives messages in
+the order they enter the queue. The
+sourceID field identifies the producer.
+</p>
+</section>
+
+<section>
+<h2>6. Example 4 – Sensor Monitoring and Processing System</h2>
+<p><strong>Objective:</strong> Demonstrate a simple sensor-data pipeline using separate tasks.</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+typedef struct
+{
+    int channel;
+    int adcValue;
+} ADCMessage_t;
+
+QueueHandle_t adcQueue;
+
+void ADCAcquisitionTask(void *pvParameters)
+{
+    ADCMessage_t sample;
+
+    for (;;)
+    {
+        sample.channel = 0;
+
+        /*
+         * Illustrative sample value.
+         * Replace with actual ADC driver
+         * code on supported hardware.
+         */
+        sample.adcValue = 512;
+
+        xQueueSend(
+            adcQueue,
+            &sample,
+            pdMS_TO_TICKS(50)
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void ADCProcessingTask(void *pvParameters)
+{
+    ADCMessage_t sample;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                adcQueue,
+                &sample,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Convert and process sample */
+        }
+    }
+}
+
+int main(void)
+{
+    adcQueue = xQueueCreate(
+        10,
+        sizeof(ADCMessage_t)
+    );
+
+    if (adcQueue == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(
+        ADCAcquisitionTask,
+        "ADC",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        3,
+        NULL
+    );
+
+    xTaskCreate(
+        ADCProcessingTask,
+        "Process",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        NULL
+    );
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Expected Result</h3>
+<p>
+The acquisition task sends ADC sample
+records to the queue. The processing task
+receives and processes them independently.
+The value 512 is illustrative, not a
+measurement from physical LPC2129 hardware.
+</p>
+</section>
+
+<section>
+<h2>7. Example 5 – Queue Communication With Timeout</h2>
+<p><strong>Objective:</strong> Handle queue-full and queue-empty conditions using finite timeouts.</p>
+<pre><code>void ProducerTask(void *pvParameters)
+{
+    int value = 1;
+    BaseType_t status;
+
+    for (;;)
+    {
+        status = xQueueSend(
+            dataQueue,
+            &value,
+            pdMS_TO_TICKS(200)
+        );
+
+        if (status == pdPASS)
+        {
+            /* Send successful */
+        }
+        else
+        {
+            /* Timeout or queue remained full */
+        }
+
+        value++;
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void ConsumerTask(void *pvParameters)
+{
+    int receivedValue;
+    BaseType_t status;
+
+    for (;;)
+    {
+        status = xQueueReceive(
+            dataQueue,
+            &receivedValue,
+            pdMS_TO_TICKS(500)
+        );
+
+        if (status == pdPASS)
+        {
+            /* Process receivedValue */
+        }
+        else
+        {
+            /* No item arrived before timeout */
+        }
+    }
+}</code></pre>
+<p>
+Finite timeouts allow tasks to recover from
+missing data or a full queue rather than
+waiting indefinitely.
+</p>
+</section>
+
+<section>
+<h2>8. Example 6 – Queue Communication From an ISR</h2>
+<p><strong>Objective:</strong> Transfer a small event record from interrupt context to a task.</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+typedef struct
+{
+    unsigned int eventCode;
+} EventMessage_t;
+
+QueueHandle_t eventQueue;
+
+void EventTask(void *pvParameters)
+{
+    EventMessage_t message;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                eventQueue,
+                &message,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Process message.eventCode */
+        }
+    }
+}
+
+/* Illustrative ISR body */
+void ApplicationISR(void)
+{
+    BaseType_t xHigherPriorityTaskWoken =
+        pdFALSE;
+
+    EventMessage_t message;
+
+    message.eventCode = 100;
+
+    if (xQueueSendFromISR(
+            eventQueue,
+            &message,
+            &xHigherPriorityTaskWoken
+        ) != pdPASS)
+    {
+        /* Record queue overflow */
+    }
+
+    portYIELD_FROM_ISR(
+        xHigherPriorityTaskWoken
+    );
+}</code></pre>
+<div class="warning">
+The ISR declaration and yield macro are
+port-specific. Verify the actual FreeRTOS
+port's interrupt integration before using
+this example. The ISR must obey the port's
+interrupt-priority restrictions.
+</div>
+</section>
+
+<section>
+<h2>9. Example 7 – Queue Status Monitoring</h2>
+<p><strong>Objective:</strong> Monitor the number of queued items and available spaces.</p>
+<pre><code>void QueueStatusTask(void *pvParameters)
+{
+    UBaseType_t itemCount;
+    UBaseType_t freeSpaces;
+
+    for (;;)
+    {
+        itemCount =
+            uxQueueMessagesWaiting(dataQueue);
+
+        freeSpaces =
+            uxQueueSpacesAvailable(dataQueue);
+
+        /*
+         * Inspect itemCount and freeSpaces
+         * using debugger or application
+         * monitoring facilities.
+         */
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}</code></pre>
+<div class="note">
+Queue status functions provide snapshots.
+In a concurrent application, another task
+may change the queue immediately after the
+status is read. Always check the actual
+send or receive result.
+</div>
+</section>
+
+<section>
+<h2>10. Example 8 – Queue Peek and Reset</h2>
+<p><strong>Objective:</strong> Inspect the next queue item and clear queued data when required.</p>
+<pre><code>void QueueMaintenanceTask(void *pvParameters)
+{
+    int nextValue;
+    BaseType_t status;
+
+    for (;;)
+    {
+        status = xQueuePeek(
+            dataQueue,
+            &nextValue,
+            0
+        );
+
+        if (status == pdPASS)
+        {
+            /* Inspect nextValue */
+        }
+
+        /*
+         * Perform reset only as part of
+         * a coordinated application action.
+         */
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}</code></pre>
+<p>
+A reset operation should be performed only
+when the application has established that
+discarding pending items is safe. It should
+not be added to a periodic maintenance task
+without a defined requirement.
+</p>
+</section>
+
+<section>
+<h2>11. Example 9 – Queue Set With Two Queues</h2>
+<p><strong>Objective:</strong> Wait for data from either of two queues using a queue set.</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+QueueHandle_t queueA;
+QueueHandle_t queueB;
+QueueSetHandle_t queueSet;
+
+void MonitorTask(void *pvParameters)
+{
+    QueueSetMemberHandle_t selected;
+    int value;
+
+    for (;;)
+    {
+        selected = xQueueSelectFromSet(
+            queueSet,
+            portMAX_DELAY
+        );
+
+        if (selected == queueA)
+        {
+            if (xQueueReceive(
+                    queueA,
+                    &value,
+                    0
+                ) == pdPASS)
+            {
+                /* Process queue A data */
+            }
+        }
+        else if (selected == queueB)
+        {
+            if (xQueueReceive(
+                    queueB,
+                    &value,
+                    0
+                ) == pdPASS)
+            {
+                /* Process queue B data */
+            }
+        }
+    }
+}
+
+void CreateQueueSet(void)
+{
+    queueA = xQueueCreate(5, sizeof(int));
+    queueB = xQueueCreate(5, sizeof(int));
+
+    if ((queueA == NULL) || (queueB == NULL))
+    {
+        return;
+    }
+
+    queueSet = xQueueCreateSet(10);
+
+    if (queueSet == NULL)
+    {
+        return;
+    }
+
+    xQueueAddToSet(queueA, queueSet);
+    xQueueAddToSet(queueB, queueSet);
+}</code></pre>
+<p>
+The example demonstrates the selection
+pattern. A complete application should
+check the return values of queue-set
+membership operations and create the
+monitoring task after successful setup.
+</p>
+</section>
+
+<section>
+<h2>12. Queue Debugging Techniques</h2>
+<p>
+Queue-related problems may arise from
+incorrect queue configuration, insufficient
+capacity, incorrect item size or task
+synchronization errors.
+</p>
+<table>
+<tr><th>Debugging Check</th><th>What to Inspect</th></tr>
+<tr><td>Queue creation</td><td>Check whether the returned handle is NULL.</td></tr>
+<tr><td>Queue item size</td><td>Verify the size used during creation.</td></tr>
+<tr><td>Queue capacity</td><td>Check queue length against producer and consumer rates.</td></tr>
+<tr><td>Send result</td><td>Check whether xQueueSend() returns pdPASS.</td></tr>
+<tr><td>Receive result</td><td>Check whether xQueueReceive() returns pdPASS.</td></tr>
+<tr><td>Task state</td><td>Inspect whether a task is Blocked, Ready or Running.</td></tr>
+<tr><td>Queue contents</td><td>Inspect item count where debugger support permits.</td></tr>
+<tr><td>Memory usage</td><td>Inspect heap and stack usage where supported.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>13. Queue Design and Sizing</h2>
+<p>
+Queue capacity should be selected according
+to the maximum expected backlog rather than
+an arbitrary value.
+</p>
+<p><strong>Basic sizing idea:</strong></p>
+<pre><code>Queue Capacity
+    >= Maximum expected pending items
+
+Approximate backlog
+    = Arrival rate x Consumer delay
+
+Additional capacity
+    = Burst margin</code></pre>
+<p>
+For example, if a producer can generate
+20 items per second and the consumer may
+be delayed for 0.5 seconds, approximately
+10 items may accumulate during that delay.
+Additional capacity may be required for
+bursts and scheduling variation.
+</p>
+<div class="warning">
+This is a preliminary sizing estimate,
+not a formal guarantee. Consider worst-case
+arrival bursts, service rates, blocking,
+and the application's data-loss policy.
+</div>
+</section>
+
+<section>
+<h2>14. Queue Programming Best Practices</h2>
+<ul>
+<li>Use meaningful queue and task names.</li>
+<li>Check all queue creation and task creation results.</li>
+<li>Use correct item sizes and data types.</li>
+<li>Choose blocking times deliberately.</li>
+<li>Define a policy for queue-full conditions.</li>
+<li>Use structures for related fields when appropriate.</li>
+<li>Define memory ownership when passing pointers.</li>
+<li>Use FromISR APIs only in interrupt context.</li>
+<li>Keep ISR processing short.</li>
+<li>Do not use queue status snapshots as a substitute for checking operation results.</li>
+<li>Coordinate queue reset and deletion with all users.</li>
+<li>Consider static allocation in systems with strict memory requirements.</li>
+</ul>
+</section>
+
+<section>
+<h2>15. Practical Mini Project – Sensor Data Acquisition and Processing</h2>
+<p><strong>Objective:</strong> Design a small multitasking sensor-monitoring system using FreeRTOS queues.</p>
+<h3>System Architecture</h3>
+<pre><code>       Sensor Acquisition Task
+                 |
+                 | SensorData_t
+                 v
+          +-------------+
+          | Sensor Queue|
+          +-------------+
+                 |
+                 v
+        Data Processing Task
+                 |
+                 | Processed Data
+                 v
+          +-------------+
+          | Output Queue|
+          +-------------+
+                 |
+                 v
+           Display Task</code></pre>
+<h3>Required Tasks</h3>
+<table>
+<tr><th>Task</th><th>Responsibility</th></tr>
+<tr><td>Acquisition Task</td><td>Collect or simulate sensor readings.</td></tr>
+<tr><td>Processing Task</td><td>Validate and process received samples.</td></tr>
+<tr><td>Display Task</td><td>Consume processed data for display or logging.</td></tr>
+</table>
+<h3>Development Steps</h3>
+<ol>
+<li>Define sensor and processed-data structures.</li>
+<li>Create the required queues.</li>
+<li>Implement the acquisition task.</li>
+<li>Implement the processing task.</li>
+<li>Implement the display or logging task.</li>
+<li>Check every send and receive result.</li>
+<li>Test queue-full and queue-empty behavior.</li>
+<li>Measure task timing and inspect memory usage.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+The acquisition task sends samples to the
+processing task through a queue. The
+processing task forwards valid results to
+the output queue. The display task receives
+the processed information independently.
+</p>
+</section>
+
+<section>
+<h2>16. Practical Experiment</h2>
+<p><strong>Objective:</strong> Compare queue behavior under different producer and consumer rates.</p>
+<h3>Procedure</h3>
+<ol>
+<li>Create a queue with a small capacity, such as five items.</li>
+<li>Configure a producer task to send data periodically.</li>
+<li>Configure a consumer task with a longer processing delay.</li>
+<li>Observe whether the queue becomes full.</li>
+<li>Record failed send operations.</li>
+<li>Reduce the consumer delay and repeat.</li>
+<li>Increase the queue capacity and compare results.</li>
+<li>Use the debugger to inspect queue counts and task states.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+When the producer generates data faster
+than the consumer processes it, the queue
+backlog increases. If the queue reaches
+capacity, a non-blocking send fails or a
+blocking send waits according to its timeout.
+</p>
+</section>
+
+<section>
+<h2>17. Common Queue Programming Errors</h2>
+<table>
+<tr><th>Error</th><th>Recommended Solution</th></tr>
+<tr><td>Queue handle is NULL</td><td>Check creation and available memory.</td></tr>
+<tr><td>Incorrect item size</td><td>Use the correct data type size.</td></tr>
+<tr><td>Queue remains full</td><td>Improve consumer service or revise capacity.</td></tr>
+<tr><td>Queue remains empty</td><td>Check producer execution and send results.</td></tr>
+<tr><td>Unexpected data values</td><td>Check item types, pointer lifetime and buffer handling.</td></tr>
+<tr><td>Lost interrupt events</td><td>Check ISR queue-send results and overflow strategy.</td></tr>
+<tr><td>Task does not process data</td><td>Inspect task state, priority and scheduling.</td></tr>
+<tr><td>Invalid queue handle</td><td>Coordinate deletion and prevent use-after-delete.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>18. LPC2129 and Keil Simulator Considerations</h2>
+<ul>
+<li>LPC2129 uses an ARM7TDMI-S processor.</li>
+<li>Verify the exact FreeRTOS ARM7 port and Keil compiler integration.</li>
+<li>Check whether the selected kernel version supports the APIs used in each example.</li>
+<li>Use simulated or controlled data values for queue exercises.</li>
+<li>Inspect queue handles, copied values and task states where debugger support permits.</li>
+<li>Do not assume real ADC, UART, timer or external interrupt signals are available in the simulator.</li>
+</ul>
+<div class="warning">
+These are generic FreeRTOS programming
+examples. They are not verified LPC2129
+Keil simulator projects. Confirm port,
+compiler, startup and linker compatibility
+before attempting a complete build.
+</div>
+</section>
+
+<section>
+<h2>19. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is a FreeRTOS queue?</li>
+<li>Which function creates a queue?</li>
+<li>What is the purpose of xQueueSend()?</li>
+<li>What is the purpose of xQueueReceive()?</li>
+<li>How are structures transferred through queues?</li>
+<li>What is the difference between queue data and pointer data?</li>
+<li>How can multiple producer tasks use one queue?</li>
+<li>How does a queue handle a full condition?</li>
+<li>What is the purpose of xQueueSendFromISR()?</li>
+<li>How can queue status be monitored?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Develop a producer-consumer program using integer data.</li>
+<li>Explain structure-based queue communication with a program.</li>
+<li>Develop a multiple-producer and single-consumer application.</li>
+<li>Explain ISR-to-task communication using a queue.</li>
+<li>Explain queue-set programming with two queues.</li>
+<li>Discuss queue capacity calculation and debugging.</li>
+<li>Design a sensor acquisition and processing system using queues.</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Chapter 15 – Final Summary</h2>
+<ul>
+<li>Queues provide buffered communication between tasks.</li>
+<li>Queue items can contain integers, structures or pointer values.</li>
+<li>Queue operations support blocking and non-blocking behavior.</li>
+<li>Peek inspects data without removing it.</li>
+<li>Reset clears queued items without deleting the queue.</li>
+<li>Queue sets allow tasks to wait on multiple supported queue and semaphore members.</li>
+<li>FromISR APIs support interrupt-context queue operations.</li>
+<li>Queue capacity must account for bursts and consumer delays.</li>
+<li>Reliable queue design requires correct memory ownership and error handling.</li>
+</ul>
+</section>
+
+<section>
+<h2>21. Chapter 15 – Final Practical Assignment</h2>
+<ol>
+<li>Create a queue for integer values and transfer data between two tasks.</li>
+<li>Write a program to transfer a structure through a queue.</li>
+<li>Implement two producers and one consumer.</li>
+<li>Demonstrate queue-full and queue-empty conditions.</li>
+<li>Implement queue peek and reset operations.</li>
+<li>Create a queue set containing two queues.</li>
+<li>Demonstrate ISR-to-task queue communication using the correct port APIs.</li>
+<li>Monitor queue length and available spaces.</li>
+<li>Develop a sensor-data acquisition and processing mini project.</li>
+<li>Document queue capacity, memory usage, timing and error-handling decisions.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L09_Queue_Communication_From_ISR.html">← Previous Lesson</a>
+<a href="index.html">Chapter 15 Index</a>
+<a href="../ch16_FreeRTOS_Semaphores_and_Mutexes/index.html">Next Chapter →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
