@@ -1,1 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>xQueueSend and xQueueReceive | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:28px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>xQueueSend() and xQueueReceive()</h1>
+<p>Sending and Receiving Data Between FreeRTOS Tasks</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 15</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+FreeRTOS queues provide a structured method
+for exchanging data between tasks and between
+interrupt service routines and tasks.
+This lesson explains how data is inserted
+into and removed from a queue.
+</p>
+<ul>
+<li>Understand queue send and receive operations.</li>
+<li>Study xQueueSend() and xQueueReceive().</li>
+<li>Understand queue handles and item copying.</li>
+<li>Study blocking and non-blocking operations.</li>
+<li>Understand queue-full and queue-empty conditions.</li>
+<li>Learn how tasks communicate through queues.</li>
+<li>Identify the correct APIs for ISR communication.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Queue Communication Overview</h2>
+<p>
+A queue acts as a temporary data-storage
+mechanism between independent tasks.
+A sending task inserts an item into the queue,
+and a receiving task retrieves an item.
+</p>
+<pre><code>       Sender Task
+            |
+            | xQueueSend()
+            v
+      +-------------+
+      | FreeRTOS    |
+      | Queue       |
+      | FIFO Buffer |
+      +-------------+
+            |
+            | xQueueReceive()
+            v
+       Receiver Task</code></pre>
+<p>
+A normal FreeRTOS queue follows FIFO
+(First In, First Out) behavior when items
+are sent to the back and received from the
+front.
+</p>
+</section>
+
+<section>
+<h2>3. xQueueSend() Function</h2>
+<p>
+The <code>xQueueSend()</code> function
+copies an item into a queue.
+It normally inserts the item at the back
+of the queue.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xQueueSend(
+    QueueHandle_t xQueue,
+    const void *pvItemToQueue,
+    TickType_t xTicksToWait
+);</code></pre>
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>xQueue</td><td>Handle of the queue receiving the item.</td></tr>
+<tr><td>pvItemToQueue</td><td>Pointer to the data item to copy into the queue.</td></tr>
+<tr><td>xTicksToWait</td><td>Maximum time the calling task waits if the queue is full.</td></tr>
+</table>
+<h3>Return Value</h3>
+<table>
+<tr><th>Return Value</th><th>Meaning</th></tr>
+<tr><td>pdPASS</td><td>The item was successfully sent.</td></tr>
+<tr><td>errQUEUE_FULL</td><td>The item could not be sent within the allowed wait time.</td></tr>
+</table>
+<p>
+The return type is BaseType_t. Check the
+result instead of assuming that every send
+operation succeeds.
+</p>
+</section>
+
+<section>
+<h2>4. xQueueSend() Example</h2>
+<pre><code>#include "FreeRTOS.h"
+#include "queue.h"
+
+QueueHandle_t dataQueue;
+
+void SenderTask(void *pvParameters)
+{
+    int sensorValue = 250;
+
+    for (;;)
+    {
+        if (xQueueSend(
+                dataQueue,
+                &sensorValue,
+                0
+            ) == pdPASS)
+        {
+            /* Item successfully queued */
+        }
+        else
+        {
+            /* Queue was full */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}</code></pre>
+<p>
+The sender task attempts to insert the
+integer value into the queue. A wait time
+of zero means that it does not wait when
+the queue is full.
+</p>
+</section>
+
+<section>
+<h2>5. xQueueReceive() Function</h2>
+<p>
+The <code>xQueueReceive()</code> function
+removes an item from a queue and copies
+that item into the receiving task's
+destination memory.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xQueueReceive(
+    QueueHandle_t xQueue,
+    void *pvBuffer,
+    TickType_t xTicksToWait
+);</code></pre>
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>xQueue</td><td>Handle of the queue from which data is received.</td></tr>
+<tr><td>pvBuffer</td><td>Pointer to the destination memory where the received item is copied.</td></tr>
+<tr><td>xTicksToWait</td><td>Maximum time the calling task waits if the queue is empty.</td></tr>
+</table>
+<h3>Return Value</h3>
+<table>
+<tr><th>Return Value</th><th>Meaning</th></tr>
+<tr><td>pdPASS</td><td>An item was successfully received.</td></tr>
+<tr><td>errQUEUE_EMPTY</td><td>No item became available within the allowed wait time.</td></tr>
+</table>
+<p>
+The item is removed from the queue after
+a successful receive operation.
+</p>
+</section>
+
+<section>
+<h2>6. xQueueReceive() Example</h2>
+<pre><code>#include "FreeRTOS.h"
+#include "queue.h"
+
+QueueHandle_t dataQueue;
+
+void ReceiverTask(void *pvParameters)
+{
+    int receivedValue;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                dataQueue,
+                &receivedValue,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Process receivedValue */
+        }
+    }
+}</code></pre>
+<p>
+The receiver task waits for an item to become
+available. Once an item is received, it is
+copied into receivedValue and removed from
+the queue.
+</p>
+<div class="note">
+An indefinite wait using portMAX_DELAY
+depends on the relevant FreeRTOS configuration,
+including INCLUDE_vTaskSuspend for the
+traditional indefinite-blocking behavior.
+</div>
+</section>
+
+<section>
+<h2>7. Blocking and Non-Blocking Operations</h2>
+<p>
+The xTicksToWait parameter determines how
+long a task waits when the queue cannot
+immediately complete the requested operation.
+</p>
+<table>
+<tr><th>Wait Value</th><th>Behavior</th></tr>
+<tr><td>0</td><td>Do not wait. Return immediately if the operation cannot be completed.</td></tr>
+<tr><td>Finite tick value</td><td>Wait up to the specified number of ticks.</td></tr>
+<tr><td>portMAX_DELAY</td><td>Wait indefinitely when supported by the configuration.</td></tr>
+</table>
+<h3>Blocking Send</h3>
+<p>
+If the queue is full, the sending task can
+enter the Blocked state while waiting for
+space to become available.
+</p>
+<h3>Blocking Receive</h3>
+<p>
+If the queue is empty, the receiving task
+can enter the Blocked state while waiting
+for data.
+</p>
+</section>
+
+<section>
+<h2>8. Queue Full and Queue Empty Conditions</h2>
+<h3>Queue Full</h3>
+<p>
+A queue is full when it contains the maximum
+number of items defined during creation.
+A send operation cannot insert another item
+until space becomes available.
+</p>
+<h3>Queue Empty</h3>
+<p>
+A queue is empty when it contains no items.
+A receive operation cannot retrieve an item
+until data is inserted.
+</p>
+<pre><code>Queue Capacity = 4
+
+Initially:
++---+---+---+---+
+|   |   |   |   |
++---+---+---+---+
+Queue Empty
+
+After four sends:
++---+---+---+---+
+|10 |20 |30 |40 |
++---+---+---+---+
+Queue Full
+
+After one receive:
++---+---+---+---+
+|20 |30 |40 |   |
++---+---+---+---+
+One Free Position</code></pre>
+</section>
+
+<section>
+<h2>9. FIFO Operation</h2>
+<p>
+FIFO means First In, First Out. When items
+are sent to the back of a queue, the oldest
+queued item is normally received first.
+</p>
+<table>
+<tr><th>Operation</th><th>Queue Contents</th></tr>
+<tr><td>Initially</td><td>Empty</td></tr>
+<tr><td>Send 10</td><td>10</td></tr>
+<tr><td>Send 20</td><td>10, 20</td></tr>
+<tr><td>Send 30</td><td>10, 20, 30</td></tr>
+<tr><td>Receive</td><td>10 is returned; queue contains 20, 30.</td></tr>
+<tr><td>Receive</td><td>20 is returned; queue contains 30.</td></tr>
+</table>
+<p>
+FreeRTOS also provides other queue insertion
+operations, such as sending to the front.
+These are covered in the following lessons.
+</p>
+</section>
+
+<section>
+<h2>10. Sending and Receiving Different Data Types</h2>
+<p>
+A queue can store fixed-size items such as
+integers, floating-point values, structures
+and pointer values.
+The queue's item size must match the size
+of the item being copied.
+</p>
+<h3>Integer Data</h3>
+<pre><code>int temperature = 28;
+
+xQueueSend(
+    dataQueue,
+    &temperature,
+    0
+);</code></pre>
+<h3>Structure Data</h3>
+<pre><code>typedef struct
+{
+    int temperature;
+    int humidity;
+} SensorData;
+
+SensorData sensor = {28, 65};
+
+xQueueSend(
+    sensorQueue,
+    &sensor,
+    0
+);</code></pre>
+<p>
+For a structure queue, create the queue with
+<code>sizeof(SensorData)</code> and receive
+into a valid SensorData object.
+</p>
+<h3>Pointer Data</h3>
+<p>
+If a queue is created to hold pointers,
+FreeRTOS copies the pointer value, not the
+memory pointed to by that pointer.
+The application must manage buffer ownership
+and lifetime carefully.
+</p>
+</section>
+
+<section>
+<h2>11. Complete Task-to-Task Communication Example</h2>
+<p>
+The following example demonstrates a sender
+task transmitting an integer to a receiver
+task using a FreeRTOS queue.
+</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+QueueHandle_t sensorQueue;
+
+void SensorTask(void *pvParameters)
+{
+    int sensorValue = 0;
+
+    for (;;)
+    {
+        sensorValue += 10;
+
+        if (xQueueSend(
+                sensorQueue,
+                &sensorValue,
+                pdMS_TO_TICKS(100)
+            ) != pdPASS)
+        {
+            /* Handle queue send failure */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void DisplayTask(void *pvParameters)
+{
+    int receivedValue;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                sensorQueue,
+                &receivedValue,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Process receivedValue */
+        }
+    }
+}
+
+int main(void)
+{
+    sensorQueue = xQueueCreate(
+        5,
+        sizeof(int)
+    );
+
+    if (sensorQueue == NULL)
+    {
+        for (;;)
+        {
+            /* Queue creation failure */
+        }
+    }
+
+    xTaskCreate(
+        SensorTask,
+        "Sensor",
+         configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        NULL
+    );
+
+    xTaskCreate(
+        DisplayTask,
+        "Display",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        NULL
+    );
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Program Explanation</h3>
+<ol>
+<li>A queue is created with five integer positions.</li>
+<li>SensorTask generates an integer value.</li>
+<li>xQueueSend() copies the value into the queue.</li>
+<li>DisplayTask waits for an item.</li>
+<li>xQueueReceive() copies the item into receivedValue.</li>
+<li>The receiver processes the received value.</li>
+</ol>
+<div class="warning">
+This is generic FreeRTOS application code.
+The stack-depth argument is expressed in
+StackType_t elements in the traditional
+xTaskCreate() API. The exact build also
+requires a compatible port, startup code,
+heap implementation and configuration.
+</div>
+</section>
+
+<section>
+<h2>12. Queue Send and Receive from ISR</h2>
+<p>
+Interrupt Service Routines must use the
+appropriate FromISR APIs instead of the
+ordinary task-context queue functions.
+</p>
+<pre><code>BaseType_t xQueueSendFromISR(
+    QueueHandle_t xQueue,
+    const void *pvItemToQueue,
+    BaseType_t *pxHigherPriorityTaskWoken
+);
+
+BaseType_t xQueueReceiveFromISR(
+    QueueHandle_t xQueue,
+    void *pvBuffer,
+    BaseType_t *pxHigherPriorityTaskWoken
+);</code></pre>
+<p>
+These operations do not block. They attempt
+to complete immediately and report success
+or failure.
+</p>
+<ul>
+<li>Use xQueueSendFromISR() to send data from an ISR.</li>
+<li>Use xQueueReceiveFromISR() to receive data from an ISR where appropriate.</li>
+<li>Check the return value.</li>
+<li>Use the port's ISR-yield mechanism when a higher-priority task is unblocked.</li>
+<li>Keep ISR processing short.</li>
+</ul>
+<div class="warning">
+The exact ISR-yield macro and interrupt-priority
+rules depend on the selected FreeRTOS port.
+Do not assume Cortex-M interrupt-priority
+rules apply to the LPC2129 ARM7 processor.
+</div>
+</section>
+
+<section>
+<h2>13. Common Programming Mistakes</h2>
+<table>
+<tr><th>Mistake</th><th>Correction</th></tr>
+<tr><td>Using an invalid queue handle</td><td>Check queue creation before using it.</td></tr>
+<tr><td>Incorrect item size</td><td>Use the correct sizeof() expression.</td></tr>
+<tr><td>Ignoring return values</td><td>Check pdPASS or failure status.</td></tr>
+<tr><td>Using an excessive wait time</td><td>Choose a timeout based on system requirements.</td></tr>
+<tr><td>Using task APIs inside an ISR</td><td>Use the appropriate FromISR API.</td></tr>
+<tr><td>Assuming pointer data is copied</td><td>Remember that only the pointer value is copied.</td></tr>
+<tr><td>Deleting a queue while in use</td><td>Coordinate shutdown of all queue users first.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>14. Practical Experiment</h2>
+<p><strong>Objective:</strong> Demonstrate communication between two tasks using a FreeRTOS queue.</p>
+<h3>Procedure</h3>
+<ol>
+<li>Create a queue for five integer values.</li>
+<li>Create a sender task.</li>
+<li>Create a receiver task.</li>
+<li>Generate values in the sender task.</li>
+<li>Send values using xQueueSend().</li>
+<li>Receive values using xQueueReceive().</li>
+<li>Inspect the received values using the debugger or an available trace mechanism.</li>
+<li>Check queue operation return values.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+The receiver obtains the values successfully
+in FIFO order when they are sent to the back
+of the queue and received from the front.
+If the queue becomes full or empty, the
+configured blocking behavior applies.
+</p>
+</section>
+
+<section>
+<h2>15. LPC2129 and Keil Simulator Considerations</h2>
+<ul>
+<li>LPC2129 uses an ARM7TDMI-S processor.</li>
+<li>Verify that the selected FreeRTOS release has a compatible ARM7 port and compiler integration.</li>
+<li>Check the queue APIs against the selected kernel headers.</li>
+<li>Use the Keil debugger to inspect program variables and execution where supported.</li>
+<li>Do not assume that the simulator provides complete hardware interrupt or peripheral behavior.</li>
+<li>Use a verified target or host test environment for full RTOS validation.</li>
+</ul>
+</section>
+
+<section>
+<h2>16. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is xQueueSend()?</li>
+<li>What is xQueueReceive()?</li>
+<li>What is the purpose of pvItemToQueue?</li>
+<li>What is the purpose of pvBuffer?</li>
+<li>What does xTicksToWait specify?</li>
+<li>What is a blocking queue operation?</li>
+<li>What happens when a queue is full?</li>
+<li>What happens when a queue is empty?</li>
+<li>What does FIFO mean?</li>
+<li>Why are FromISR functions required inside an ISR?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain xQueueSend() with syntax and example.</li>
+<li>Explain xQueueReceive() with syntax and example.</li>
+<li>Describe blocking and non-blocking queue operations.</li>
+<li>Explain FIFO queue behavior with an example.</li>
+<li>Write a program for task-to-task communication.</li>
+<li>Explain queue communication from an ISR.</li>
+<li>Discuss common queue programming errors.</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+<ul>
+<li>xQueueSend() inserts an item into a queue by copying it.</li>
+<li>xQueueReceive() retrieves and removes an item.</li>
+<li>Queue items have a fixed size defined at creation.</li>
+<li>Normal send-to-back and receive-from-front operations provide FIFO behavior.</li>
+<li>xTicksToWait controls blocking time.</li>
+<li>Zero wait means immediate return if the operation cannot complete.</li>
+<li>Queue send and receive operations return a status.</li>
+<li>Pointer queues copy pointer values, not pointed-to objects.</li>
+<li>ISRs must use suitable FromISR APIs.</li>
+<li>Queue users must be stopped before the queue is deleted.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Practice Assignment</h2>
+<ol>
+<li>Write the syntax of xQueueSend().</li>
+<li>Write the syntax of xQueueReceive().</li>
+<li>Explain all parameters of both functions.</li>
+<li>Write a program to send and receive five integer values.</li>
+<li>Explain blocking and non-blocking operations.</li>
+<li>Demonstrate FIFO behavior with three values.</li>
+<li>Write a task-to-task communication program.</li>
+<li>Explain the difference between task-context and ISR queue APIs.</li>
+<li>What happens if a sender sends data faster than the receiver processes it?</li>
+<li>Explain why queue capacity and timeout selection matter in real-time systems.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L02_Queue_Creation_and_Deletion.html">← Previous Lesson</a>
+<a href="index.html">Chapter 15 Index</a>
+<a href="L04_Queue_Full_and_Queue_Empty_Conditions.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
