@@ -1,1 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memory and Stack Analysis Exercises | RTOS &amp; FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Memory and Stack Analysis Exercises</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 18: Memory Management and RTOS Debugging</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 18</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Calculate task stack memory requirements.</li>
+<li>Interpret stack high-water-mark measurements.</li>
+<li>Estimate FreeRTOS heap utilization.</li>
+<li>Analyze internal and external fragmentation.</li>
+<li>Compare static and dynamic memory allocation.</li>
+<li>Identify memory leaks and invalid memory operations.</li>
+<li>Analyze heap statistics and allocation failures.</li>
+<li>Develop a memory-monitoring and debugging strategy.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Memory Analysis Fundamentals</h2>
+<p>An RTOS application uses several types of memory during execution.</p>
+
+<table>
+<tr><th>Memory Region</th><th>Purpose</th></tr>
+<tr><td>Flash / ROM</td><td>Stores program instructions and constant data.</td></tr>
+<tr><td>Static RAM</td><td>Stores global variables, static objects and other runtime data.</td></tr>
+<tr><td>Heap</td><td>Provides dynamically allocated memory.</td></tr>
+<tr><td>Task Stack</td><td>Stores function-call data, local variables and execution context.</td></tr>
+<tr><td>Interrupt Stack</td><td>Stores interrupt-related execution data where the architecture uses a separate stack.</td></tr>
+</table>
+
+<div class="diagram">
+             MICROCONTROLLER MEMORY
+                      |
+              +-------+-------+
+              |               |
+            FLASH             RAM
+              |               |
+        Program code     +----+----+
+        Constants        |         |
+                       STATIC     DYNAMIC
+                       MEMORY     MEMORY
+                                  |
+                            +-----+-----+
+                            |           |
+                           HEAP      TASK STACKS
+</div>
+
+<p>The exact memory layout depends on the processor architecture, compiler, linker script and RTOS port.</p>
+</section>
+
+<section>
+<h2>3. Exercise 1 – Task Stack Size Calculation</h2>
+<p><strong>Problem:</strong> A FreeRTOS task is created with a stack depth of 256 elements. Assume the selected port uses a 4-byte <code>StackType_t</code>.</p>
+
+<h3>Solution</h3>
+<pre><code>Stack Depth = 256 elements
+
+Size of StackType_t = 4 bytes
+
+Stack Memory = 256 × 4
+             = 1024 bytes
+             = 1 KB</code></pre>
+
+<p><strong>Answer:</strong> The task stack allocation is 1024 bytes.</p>
+
+<div class="note">The stack-depth parameter in FreeRTOS task-creation APIs is expressed in stack elements, not universally in bytes. Always check the selected port's <code>StackType_t</code> size.</div>
+</section>
+
+<section>
+<h2>4. Exercise 2 – Total Task Stack Memory</h2>
+<p><strong>Problem:</strong> An application creates four tasks with the following stack depths. Assume each stack element is 4 bytes.</p>
+
+<table>
+<tr><th>Task</th><th>Stack Depth</th></tr>
+<tr><td>SensorTask</td><td>256</td></tr>
+<tr><td>ControlTask</td><td>512</td></tr>
+<tr><td>CommTask</td><td>384</td></tr>
+<tr><td>MonitorTask</td><td>128</td></tr>
+</table>
+
+<h3>Solution</h3>
+<pre><code>SensorTask  = 256 × 4 = 1024 bytes
+ControlTask = 512 × 4 = 2048 bytes
+CommTask    = 384 × 4 = 1536 bytes
+MonitorTask = 128 × 4 =  512 bytes
+
+Total = 1024 + 2048 + 1536 + 512
+      = 5120 bytes
+      = 5 KB</code></pre>
+
+<p><strong>Answer:</strong> The four task stacks require 5 KB in total.</p>
+
+<p>This calculation excludes TCBs, queue storage, other kernel objects and application memory.</p>
+</section>
+
+<section>
+<h2>5. Exercise 3 – Stack High-Water-Mark Analysis</h2>
+<p><strong>Problem:</strong> A task has a stack depth of 300 elements. Its measured high-water mark is 75 elements. Assume each stack element is 4 bytes.</p>
+
+<h3>Solution</h3>
+<pre><code>Allocated Stack = 300 elements
+
+Minimum Unused Stack = 75 elements
+
+Maximum Observed Stack Usage =
+    300 - 75
+  = 225 elements
+
+Observed Usage in Bytes =
+    225 × 4
+  = 900 bytes
+
+Minimum Unused Stack in Bytes =
+    75 × 4
+  = 300 bytes</code></pre>
+
+<p><strong>Answer:</strong></p>
+<ul>
+<li>Maximum observed stack usage: 900 bytes.</li>
+<li>Minimum observed unused stack: 300 bytes.</li>
+</ul>
+
+<div class="warning">A high-water mark reflects execution paths actually observed. It does not prove that untested paths, exceptional conditions or future workloads cannot use more stack.</div>
+</section>
+
+<section>
+<h2>6. Exercise 4 – Heap Utilization Calculation</h2>
+<p><strong>Problem:</strong> Assume a heap implementation has a known configured capacity of 32 KB. The reported free heap is 12 KB.</p>
+
+<h3>Solution</h3>
+<pre><code>Total Heap = 32 KB
+Free Heap  = 12 KB
+
+Used Heap = 32 - 12
+          = 20 KB
+
+Utilization = (20 / 32) × 100
+            = 62.5%</code></pre>
+
+<p><strong>Answer:</strong></p>
+<ul>
+<li>Used heap: 20 KB.</li>
+<li>Free heap: 12 KB.</li>
+<li>Heap utilization: 62.5%.</li>
+</ul>
+
+<div class="note">This calculation assumes the allocator's free-space measurement is comparable to the stated heap capacity. Do not treat it as a universal calculation for every heap implementation.</div>
+</section>
+
+<section>
+<h2>7. Exercise 5 – Minimum-Ever Free Heap</h2>
+<p><strong>Problem:</strong> During execution, the following free-heap measurements are recorded:</p>
+
+<table>
+<tr><th>Measurement</th><th>Free Heap</th></tr>
+<tr><td>Initial</td><td>18 KB</td></tr>
+<tr><td>After Task Creation</td><td>14 KB</td></tr>
+<tr><td>After Queue Creation</td><td>11 KB</td></tr>
+<tr><td>After Temporary Allocation</td><td>7 KB</td></tr>
+<tr><td>After Memory Release</td><td>12 KB</td></tr>
+</table>
+
+<h3>Solution</h3>
+<pre><code>Minimum Free Heap =
+    minimum(18, 14, 11, 7, 12)
+
+Minimum Free Heap = 7 KB</code></pre>
+
+<p><strong>Answer:</strong> The minimum-ever free heap observed is 7 KB.</p>
+
+<p>The current free heap is 12 KB, but the system previously reached a lower value of 7 KB.</p>
+</section>
+
+<section>
+<h2>8. Exercise 6 – External Fragmentation</h2>
+<p><strong>Problem:</strong> A heap contains three separate free blocks:</p>
+<ul>
+<li>Block A = 128 bytes.</li>
+<li>Block B = 256 bytes.</li>
+<li>Block C = 512 bytes.</li>
+</ul>
+
+<h3>Solution</h3>
+<pre><code>Total Free Memory = 128 + 256 + 512
+                  = 896 bytes
+
+Largest Free Block = 512 bytes</code></pre>
+
+<p>Suppose the application requests a contiguous block of 600 bytes.</p>
+
+<pre><code>Requested Size = 600 bytes
+Largest Block  = 512 bytes
+
+600 &gt; 512
+
+Allocation cannot be satisfied
+by any individual free block.</code></pre>
+
+<p><strong>Answer:</strong> The allocation may fail even though total free memory is 896 bytes.</p>
+</section>
+
+<section>
+<h2>9. Exercise 7 – Internal Fragmentation</h2>
+<p><strong>Problem:</strong> An allocator rounds a 21-byte request up to a 24-byte allocation unit.</p>
+
+<h3>Solution</h3>
+<pre><code>Requested Memory = 21 bytes
+Allocated Memory = 24 bytes
+
+Internal Fragmentation =
+    24 - 21
+  = 3 bytes</code></pre>
+
+<p><strong>Answer:</strong> Internal fragmentation is 3 bytes.</p>
+
+<p>This is an illustrative allocation-unit example. Actual allocator alignment and block overhead depend on the implementation.</p>
+</section>
+
+<section>
+<h2>10. Exercise 8 – Identify a Memory Leak</h2>
+<p><strong>Problem:</strong> Study the following code.</p>
+
+<pre><code>void ProcessData(void)
+{
+    uint8_t *buffer;
+
+    buffer = pvPortMalloc(128);
+
+    if (buffer != NULL)
+    {
+        buffer[0] = 0x55;
+    }
+}</code></pre>
+
+<p><strong>Question:</strong> What is the problem?</p>
+
+<h3>Solution</h3>
+<p>The allocated memory is never released. When the function returns, the local pointer disappears, but the allocated heap block remains allocated.</p>
+
+<h3>Corrected Code</h3>
+<pre><code>void ProcessData(void)
+{
+    uint8_t *buffer;
+
+    buffer = pvPortMalloc(128);
+
+    if (buffer != NULL)
+    {
+        buffer[0] = 0x55;
+
+        /* Complete all buffer operations */
+
+        vPortFree(buffer);
+        buffer = NULL;
+    }
+}</code></pre>
+
+<p><strong>Answer:</strong> The original code contains a memory leak because it does not release the allocated block.</p>
+</section>
+
+<section>
+<h2>11. Exercise 9 – Detecting an Invalid Free</h2>
+<p><strong>Problem:</strong> Analyze the following code.</p>
+
+<pre><code>uint8_t *buffer;
+
+buffer = pvPortMalloc(100);
+
+if (buffer != NULL)
+{
+    vPortFree(buffer);
+
+    vPortFree(buffer);
+}</code></pre>
+
+<p><strong>Question:</strong> Why is this code unsafe?</p>
+
+<h3>Solution</h3>
+<p>The same allocation is released twice. This is a double-free error and can corrupt allocator data structures or cause unpredictable behavior.</p>
+
+<h3>Corrected Code</h3>
+<pre><code>uint8_t *buffer;
+
+buffer = pvPortMalloc(100);
+
+if (buffer != NULL)
+{
+    vPortFree(buffer);
+    buffer = NULL;
+}</code></pre>
+
+<div class="warning">Setting this pointer to NULL helps prevent reuse through this particular pointer, but it does not update other aliases that may still point to the released block.</div>
+</section>
+
+<section>
+<h2>12. Exercise 10 – Static vs Dynamic Allocation</h2>
+<p><strong>Problem:</strong> Compare two methods of creating a task.</p>
+
+<h3>Dynamic Allocation</h3>
+<pre><code>TaskHandle_t taskHandle;
+
+BaseType_t result;
+
+result = xTaskCreate(
+    SensorTask,
+    "Sensor",
+    256,
+    NULL,
+    2,
+    &amp;taskHandle
+);</code></pre>
+
+<h3>Static Allocation</h3>
+<pre><code>static StaticTask_t taskControlBlock;
+
+static StackType_t taskStack[256];
+
+TaskHandle_t taskHandle;
+
+taskHandle = xTaskCreateStatic(
+    SensorTask,
+    "Sensor",
+    256,
+    NULL,
+    2,
+    taskStack,
+    &amp;taskControlBlock
+);</code></pre>
+
+<table>
+<tr><th>Dynamic</th><th>Static</th></tr>
+<tr><td>Kernel obtains required memory from the selected allocator.</td><td>Application supplies the stack and TCB storage.</td></tr>
+<tr><td>Creation may fail because of insufficient heap.</td><td>Creation depends on valid supplied storage and configuration.</td></tr>
+<tr><td>Memory is managed through the selected heap implementation.</td><td>Memory allocation is determined by the application.</td></tr>
+<tr><td>Useful when runtime object creation is required.</td><td>Useful for predictable memory planning.</td></tr>
+</table>
+
+<div class="note">Static task creation requires the appropriate static-allocation configuration and a compatible FreeRTOS version and port.</div>
+</section>
+
+<section>
+<h2>13. Exercise 11 – Select a Suitable Heap Implementation</h2>
+<p><strong>Problem:</strong> Match each application requirement with a suitable FreeRTOS heap implementation.</p>
+
+<table>
+<tr><th>Requirement</th><th>Possible Choice</th><th>Reason</th></tr>
+<tr><td>Allocate memory but never free it.</td><td>heap_1</td><td>Allocation-only behavior.</td></tr>
+<tr><td>Allocate and free without coalescing.</td><td>heap_2</td><td>Supports freeing but does not coalesce adjacent free blocks.</td></tr>
+<tr><td>Use C library malloc/free.</td><td>heap_3</td><td>Wraps the C library allocation functions.</td></tr>
+<tr><td>Allocate, free and coalesce adjacent blocks.</td><td>heap_4</td><td>Supports coalescing within its managed heap region.</td></tr>
+<tr><td>Manage multiple non-contiguous memory regions.</td><td>heap_5</td><td>Supports multiple configured heap regions.</td></tr>
+</table>
+
+<p>Heap selection must also consider timing, RAM layout, allocator behavior and application requirements.</p>
+</section>
+
+<section>
+<h2>14. Exercise 12 – Run-Time Statistics</h2>
+<p><strong>Problem:</strong> An RTOS application reports the following accumulated run-time values.</p>
+
+<table>
+<tr><th>Task</th><th>Run Time</th></tr>
+<tr><td>SensorTask</td><td>2500</td></tr>
+<tr><td>ControlTask</td><td>5000</td></tr>
+<tr><td>CommTask</td><td>1500</td></tr>
+<tr><td>Idle</td><td>1000</td></tr>
+</table>
+
+<h3>Solution</h3>
+<pre><code>Total = 2500 + 5000 + 1500 + 1000
+      = 10000
+
+SensorTask = (2500 / 10000) × 100
+           = 25%
+
+ControlTask = (5000 / 10000) × 100
+            = 50%
+
+CommTask = (1500 / 10000) × 100
+         = 15%
+
+Idle = (1000 / 10000) × 100
+     = 10%</code></pre>
+
+<p><strong>Answer:</strong> ControlTask has the highest measured execution-time share at 50%.</p>
+</section>
+
+<section>
+<h2>15. Exercise 13 – Diagnose a Stack Overflow</h2>
+<p><strong>Problem:</strong> A task repeatedly crashes when processing large data packets.</p>
+
+<p>Investigation reveals:</p>
+<ul>
+<li>The task has a small stack allocation.</li>
+<li>The task uses large local arrays.</li>
+<li>The task calls several nested functions.</li>
+<li>The stack high-water mark is very low.</li>
+</ul>
+
+<h3>Possible Root Causes</h3>
+<ol>
+<li>Large local arrays consume significant stack memory.</li>
+<li>Nested function calls increase stack usage.</li>
+<li>The allocated stack may be insufficient for worst-case execution paths.</li>
+</ol>
+
+<h3>Corrective Actions</h3>
+<ul>
+<li>Increase stack allocation based on measured and analyzed requirements.</li>
+<li>Move large buffers to suitable static or managed memory.</li>
+<li>Reduce unnecessary local variables.</li>
+<li>Review function-call depth.</li>
+<li>Enable supported stack-overflow checks.</li>
+<li>Test error-handling and maximum-size packet paths.</li>
+</ul>
+</section>
+
+<section>
+<h2>16. Exercise 14 – Memory Monitoring Program</h2>
+<p><strong>Objective:</strong> Monitor current and minimum-ever free heap in a FreeRTOS application.</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+void MemoryMonitorTask(void *pvParameters)
+{
+    size_t freeHeap;
+    size_t minimumFreeHeap;
+
+    for (;;)
+    {
+        freeHeap = xPortGetFreeHeapSize();
+
+        minimumFreeHeap =
+            xPortGetMinimumEverFreeHeapSize();
+
+        /*
+          Inspect these variables in the debugger
+          or report them using a suitable diagnostic
+          interface.
+        */
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}</code></pre>
+
+<h3>Expected Result</h3>
+<ul>
+<li><code>freeHeap</code> contains the current free heap measurement.</li>
+<li><code>minimumFreeHeap</code> contains the minimum free heap observed since heap initialization.</li>
+<li>The monitoring task repeats the measurement every two seconds.</li>
+</ul>
+
+<div class="warning">The two monitoring functions are not supported by every allocator. Confirm the selected heap implementation provides them before compiling.</div>
+</section>
+
+<section>
+<h2>17. Exercise 15 – Stack Monitoring Program</h2>
+<p><strong>Objective:</strong> Read the stack high-water mark of a task.</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+TaskHandle_t sensorTaskHandle = NULL;
+
+void CheckTaskStack(void)
+{
+    UBaseType_t minimumUnusedStack;
+
+    if (sensorTaskHandle != NULL)
+    {
+        minimumUnusedStack =
+            uxTaskGetStackHighWaterMark(
+                sensorTaskHandle
+            );
+
+        /*
+          Inspect minimumUnusedStack in
+          the debugger.
+        */
+    }
+}</code></pre>
+
+<h3>Expected Result</h3>
+<p>The variable <code>minimumUnusedStack</code> contains the minimum unused stack observed for the selected task, expressed in stack elements.</p>
+</section>
+
+<section>
+<h2>18. Exercise 16 – Memory Ownership Analysis</h2>
+<p><strong>Problem:</strong> A producer task allocates a buffer and sends its pointer through a queue.</p>
+
+<pre><code>uint8_t *buffer;
+
+buffer = pvPortMalloc(128);
+
+if (buffer != NULL)
+{
+    xQueueSend(bufferQueue,
+               &amp;buffer,
+               portMAX_DELAY);
+}</code></pre>
+
+<p><strong>Question:</strong> What must the application define?</p>
+
+<h3>Solution</h3>
+<p>A queue containing pointers copies the pointer value, not the data stored at that address. The application therefore needs an explicit ownership and lifetime protocol.</p>
+
+<p>A safe design should define:</p>
+<ul>
+<li>Which task owns the buffer before queue submission.</li>
+<li>Which task owns the buffer after successful submission.</li>
+<li>What happens if queue submission fails.</li>
+<li>Which task releases the buffer.</li>
+<li>How the application prevents access after release.</li>
+</ul>
+
+<h3>Illustrative Corrected Pattern</h3>
+<pre><code>uint8_t *buffer;
+
+buffer = pvPortMalloc(128);
+
+if (buffer != NULL)
+{
+    if (xQueueSend(bufferQueue,
+                   &amp;buffer,
+                   pdMS_TO_TICKS(100)) != pdPASS)
+    {
+        /* Transfer did not occur.
+           Producer still owns the buffer. */
+
+        vPortFree(buffer);
+    }
+    else
+    {
+        /* Ownership transferred according
+           to the application's queue protocol. */
+        buffer = NULL;
+    }
+}</code></pre>
+
+<div class="note">The consumer must release the buffer when processing is complete, or return it to a defined pool. A queue operation alone does not manage the pointed-to object's lifetime.</div>
+</section>
+
+<section>
+<h2>19. Chapter 18 Revision Questions</h2>
+<ol>
+<li>What are the major memory regions in an embedded RTOS application?</li>
+<li>What is the difference between heap and stack?</li>
+<li>How is task stack memory calculated?</li>
+<li>What is the purpose of a task stack high-water mark?</li>
+<li>How does static allocation differ from dynamic allocation?</li>
+<li>Explain the differences between FreeRTOS heap_1 to heap_5.</li>
+<li>What is a memory leak?</li>
+<li>Differentiate internal and external fragmentation.</li>
+<li>Why can a large allocation fail when total free memory appears sufficient?</li>
+<li>What is the purpose of <code>xPortGetFreeHeapSize()</code>?</li>
+<li>What is the purpose of <code>xPortGetMinimumEverFreeHeapSize()</code>?</li>
+<li>What causes stack overflow?</li>
+<li>How can a memory leak be detected?</li>
+<li>What is a double-free error?</li>
+<li>Why is buffer ownership important when passing pointers through queues?</li>
+<li>What are FreeRTOS run-time statistics?</li>
+<li>What is the difference between trace analysis and run-time statistics?</li>
+<li>How can breakpoints help debug an RTOS application?</li>
+<li>Why can breakpoints affect real-time behavior?</li>
+<li>What is the purpose of <code>configASSERT()</code>?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Chapter 18 Practical Assessment</h2>
+<p>Complete the following activities to assess your understanding of memory management and debugging.</p>
+
+<table>
+<tr><th>Assessment Activity</th><th>Expected Skill</th></tr>
+<tr><td>Calculate memory for five task stacks.</td><td>Stack-size calculation.</td></tr>
+<tr><td>Measure a task high-water mark.</td><td>Stack monitoring.</td></tr>
+<tr><td>Monitor free and minimum-ever heap.</td><td>Heap monitoring.</td></tr>
+<tr><td>Analyze a fragmented heap example.</td><td>Fragmentation analysis.</td></tr>
+<tr><td>Identify a memory leak in sample code.</td><td>Dynamic-memory debugging.</td></tr>
+<tr><td>Inspect task states using debugger facilities.</td><td>Task debugging.</td></tr>
+<tr><td>Analyze queue and semaphore failures.</td><td>Synchronization debugging.</td></tr>
+<tr><td>Interpret a run-time statistics report.</td><td>CPU-time analysis.</td></tr>
+<tr><td>Inspect a trace timeline.</td><td>Execution analysis.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>21. Chapter 18 Completion Checklist</h2>
+<ul>
+<li>Understand RTOS memory architecture.</li>
+<li>Understand static and dynamic memory allocation.</li>
+<li>Understand FreeRTOS heap_1 to heap_5.</li>
+<li>Calculate task stack requirements.</li>
+<li>Understand stack overflow detection.</li>
+<li>Calculate heap utilization.</li>
+<li>Understand memory fragmentation.</li>
+<li>Monitor heap usage and stack usage.</li>
+<li>Understand FreeRTOS run-time statistics.</li>
+<li>Understand trace facilities and visualization.</li>
+<li>Apply debugging techniques to task and memory problems.</li>
+<li>Complete the memory and stack analysis exercises.</li>
+</ul>
+</section>
+
+<section>
+<h2>22. Chapter 18 Summary</h2>
+<p>This chapter covered memory architecture, static and dynamic allocation, FreeRTOS heap implementations, task stack management, stack overflow detection, heap monitoring, memory fragmentation, run-time statistics, trace facilities and debugging techniques.</p>
+
+<p>These concepts are essential for developing reliable embedded applications with predictable memory usage and effective fault diagnosis.</p>
+</section>
+
+<section class="lesson-nav">
+<a href="L09_FreeRTOS_Debugging_Techniques.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="../ch19_Advanced_Real_Time_System_Concepts/index.html">Next Chapter →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 18 – Memory Management and RTOS Debugging</p>
+</footer>
+
+</body>
+</html>
