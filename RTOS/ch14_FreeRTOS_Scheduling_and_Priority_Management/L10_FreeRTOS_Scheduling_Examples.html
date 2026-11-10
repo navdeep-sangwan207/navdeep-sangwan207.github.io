@@ -1,1 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Scheduling Examples | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:28px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>FreeRTOS Scheduling Examples</h1>
+<p>Task Execution, Priority Analysis and Scheduling Practice</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 14</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+This lesson combines the scheduling concepts
+covered in the previous lessons through
+practical examples. It focuses on task
+priorities, preemption, time slicing, blocking,
+task delays and scheduling decisions.
+</p>
+<ul>
+<li>Understand task execution order.</li>
+<li>Analyze Ready, Running and Blocked states.</li>
+<li>Study higher-priority task preemption.</li>
+<li>Study equal-priority time slicing.</li>
+<li>Analyze task delays and periodic execution.</li>
+<li>Understand task starvation.</li>
+<li>Practice scheduling calculations and timelines.</li>
+<li>Develop a basic FreeRTOS multitasking application.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Scheduling Rules Used in These Examples</h2>
+<p>
+The examples assume a single-core FreeRTOS
+system using the standard fixed-priority
+scheduler.
+</p>
+<ul>
+<li>The scheduler selects the highest-priority Ready task.</li>
+<li>A Running task can be preempted by a higher-priority Ready task when preemption is enabled.</li>
+<li>Equal-priority Ready tasks can share processor time when time slicing is enabled.</li>
+<li>A task enters Blocked state when waiting for a delay, queue, semaphore or another event.</li>
+<li>A task becomes Ready when its wait condition is satisfied.</li>
+<li>The Idle Task runs when no higher-priority task is Ready.</li>
+</ul>
+<div class="note">
+A task becoming Ready does not mean it executes
+immediately in every configuration. Scheduling
+depends on task priority, scheduler state,
+interrupt handling and the selected port.
+</div>
+</section>
+
+<section>
+<h2>3. Example 1 – Two Tasks with Different Priorities</h2>
+<p>
+Consider two tasks:
+</p>
+<table>
+<tr><th>Task</th><th>Priority</th><th>Behavior</th></tr>
+<tr><td>Task A</td><td>2</td><td>Runs for a short period and blocks.</td></tr>
+<tr><td>Task B</td><td>1</td><td>Runs when Task A is Blocked.</td></tr>
+</table>
+<h3>Execution Logic</h3>
+<pre><code>void TaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform high-priority operation */
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void TaskB(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform low-priority operation */
+
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}</code></pre>
+<h3>Scheduling Behavior</h3>
+<ol>
+<li>Task A is Ready and has the higher priority.</li>
+<li>Task A executes first.</li>
+<li>Task A calls vTaskDelay() and becomes Blocked.</li>
+<li>Task B becomes the highest-priority Ready task and executes.</li>
+<li>When Task A's delay expires, it becomes Ready.</li>
+<li>Task A preempts Task B when preemptive scheduling permits.</li>
+</ol>
+</section>
+
+<section>
+<h2>4. Example 2 – Three Tasks with Different Priorities</h2>
+<p>
+Consider the following task configuration:
+</p>
+<table>
+<tr><th>Task</th><th>Priority</th><th>Delay</th></tr>
+<tr><td>Task A</td><td>3</td><td>100 ms</td></tr>
+<tr><td>Task B</td><td>2</td><td>200 ms</td></tr>
+<tr><td>Task C</td><td>1</td><td>300 ms</td></tr>
+</table>
+<p>
+At scheduler startup, all three tasks are
+Ready. Task A executes first because it has
+the highest priority. As each task blocks,
+the next-highest-priority Ready task can run.
+</p>
+<h3>Initial Execution Order</h3>
+<pre><code>Task A (Priority 3)
+       |
+       | Blocks
+       v
+Task B (Priority 2)
+       |
+       | Blocks
+       v
+Task C (Priority 1)
+       |
+       | Blocks
+       v
+Idle Task (if no other task is Ready)</code></pre>
+<div class="note">
+This diagram shows the initial scheduling
+sequence, not a complete repeating timeline.
+Actual execution depends on each task's release
+times and delay expirations.
+</div>
+</section>
+
+<section>
+<h2>5. Example 3 – Equal-Priority Tasks</h2>
+<p>
+Two tasks are created with the same priority.
+</p>
+<table>
+<tr><th>Task</th><th>Priority</th></tr>
+<tr><td>Task A</td><td>2</td></tr>
+<tr><td>Task B</td><td>2</td></tr>
+</table>
+<p>
+When both tasks remain continuously Ready and
+time slicing is enabled, the scheduler can
+rotate between them at tick boundaries.
+</p>
+<pre><code>void TaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Task A operation */
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+void TaskB(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Task B operation */
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}</code></pre>
+<p>
+Because these tasks block periodically, their
+execution also depends on when they become
+Ready. Equal priority alone does not guarantee
+an exact alternating sequence.
+</p>
+</section>
+
+<section>
+<h2>6. Example 4 – Higher-Priority Task Preemption</h2>
+<p>
+Suppose Task A is Running at priority 1.
+An event occurs that makes Task B Ready at
+priority 3.
+</p>
+<table>
+<tr><th>Time</th><th>Event</th><th>Running Task</th></tr>
+<tr><td>T0</td><td>Task A is executing.</td><td>Task A</td></tr>
+<tr><td>T1</td><td>Task B becomes Ready.</td><td>Task B after preemption</td></tr>
+<tr><td>T2</td><td>Task B completes its operation and blocks.</td><td>Task A can resume</td></tr>
+</table>
+<h3>Concept</h3>
+<pre><code>Task A:  RUNNING ----------- READY/RUNNING
+                         ^
+                         |
+Task B:                  READY -- RUNNING -- BLOCKED
+                         |
+                  Higher-priority event</code></pre>
+<p>
+This is the fundamental behavior of
+preemptive fixed-priority scheduling.
+The exact switching point depends on the
+kernel API, interrupt handling and port.
+</p>
+</section>
+
+<section>
+<h2>7. Example 5 – Task Delay and Scheduling</h2>
+<p>
+The function <code>vTaskDelay()</code> blocks
+the calling task for a specified number of
+ticks.
+</p>
+<pre><code>void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Read sensor */
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}</code></pre>
+<p>
+If the tick rate is 1000 Hz, one tick is
+nominally 1 ms. A 100 ms delay therefore
+corresponds to 100 ticks, subject to tick
+resolution and the conversion macro.
+</p>
+<h3>Important Difference</h3>
+<table>
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>vTaskDelay()</td><td>Blocks the calling task for a relative number of ticks.</td></tr>
+<tr><td>vTaskDelayUntil()</td><td>Schedules periodic wake-ups using a previous wake-time reference and fixed increment.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>8. Example 6 – Periodic Task Scheduling</h2>
+<p>
+For periodic activities, use
+<code>vTaskDelayUntil()</code> to maintain a
+nominal periodic schedule.
+</p>
+<pre><code>void PeriodicTask(void *pvParameters)
+{
+    TickType_t lastWakeTime;
+    const TickType_t period =
+        pdMS_TO_TICKS(100);
+
+    lastWakeTime = xTaskGetTickCount();
+
+    for (;;)
+    {
+        /* Perform periodic operation */
+
+        vTaskDelayUntil(
+            &lastWakeTime,
+            period
+        );
+    }
+}</code></pre>
+<p>
+The task uses the previous scheduled wake time
+rather than simply delaying for a relative
+period after finishing its work.
+This helps reduce cumulative timing drift.
+</p>
+<div class="warning">
+vTaskDelayUntil() does not guarantee that the
+task will meet its deadline. Execution time,
+higher-priority interference, blocking and
+interrupt latency must still be analyzed.
+</div>
+</section>
+
+<section>
+<h2>9. Example 7 – Task Starvation</h2>
+<p>
+Starvation occurs when a Ready task does not
+receive processor time because higher-priority
+tasks continuously occupy the processor.
+</p>
+<table>
+<tr><th>Task</th><th>Priority</th><th>Behavior</th></tr>
+<tr><td>Task A</td><td>4</td><td>Continuously Ready.</td></tr>
+<tr><td>Task B</td><td>2</td><td>Ready and waiting.</td></tr>
+<tr><td>Task C</td><td>1</td><td>Ready and waiting.</td></tr>
+</table>
+<p>
+If Task A never blocks or yields and remains
+Ready, lower-priority tasks may starve.
+Equal-priority time slicing does not solve
+starvation caused by a continuously Ready
+higher-priority task.
+</p>
+<h3>Possible Solutions</h3>
+<ul>
+<li>Use appropriate task priorities.</li>
+<li>Block tasks while waiting for events.</li>
+<li>Use queues, semaphores and notifications.</li>
+<li>Keep CPU-intensive work bounded.</li>
+<li>Analyze processor utilization and response time.</li>
+</ul>
+</section>
+
+<section>
+<h2>10. Example 8 – Queue-Based Task Scheduling</h2>
+<p>
+A sensor task sends measurements to a display
+task through a FreeRTOS queue.
+The queue separates data production from
+data processing.
+</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+typedef struct
+{
+    int temperature;
+    int humidity;
+} SensorData;
+
+QueueHandle_t sensorQueue;
+
+void SensorTask(void *pvParameters)
+{
+    SensorData data;
+
+    for (;;)
+    {
+        data.temperature = 28;
+        data.humidity = 65;
+
+        xQueueSend(
+            sensorQueue,
+            &data,
+            portMAX_DELAY
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void DisplayTask(void *pvParameters)
+{
+    SensorData receivedData;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                sensorQueue,
+                &receivedData,
+                portMAX_DELAY) == pdPASS)
+        {
+            /* Process received sensor data */
+        }
+    }
+}
+
+int main(void)
+{
+    BaseType_t sensorResult;
+    BaseType_t displayResult;
+
+    sensorQueue = xQueueCreate(
+        5,
+        sizeof(SensorData)
+    );
+
+    if (sensorQueue != NULL)
+    {
+        sensorResult = xTaskCreate(
+            SensorTask,
+            "Sensor",
+            256,
+            NULL,
+            2,
+            NULL
+        );
+
+        displayResult = xTaskCreate(
+            DisplayTask,
+            "Display",
+            256,
+            NULL,
+            2,
+            NULL
+        );
+
+        if ((sensorResult == pdPASS) &&
+            (displayResult == pdPASS))
+        {
+            vTaskStartScheduler();
+        }
+    }
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Explanation</h3>
+<ul>
+<li>The queue stores up to five SensorData items.</li>
+<li>xQueueSend() copies the structure into the queue.</li>
+<li>xQueueReceive() copies an item into the receiving task's variable.</li>
+<li>The display task blocks while the queue is empty.</li>
+<li>The sensor task blocks periodically for 1000 ms.</li>
+<li>Both tasks have equal priority, so their execution depends on readiness and scheduling events.</li>
+</ul>
+<div class="note">
+The example checks task creation and queue
+creation. A production application should also
+define a clear policy for queue-full conditions
+and handle scheduler-start failure where
+applicable.
+</div>
+</section>
+
+<section>
+<h2>11. Example 9 – Scheduling Configuration</h2>
+<p>
+The following macros define a common
+preemptive scheduling configuration with
+equal-priority time slicing.
+</p>
+<pre><code>#define configUSE_PREEMPTION       1
+#define configUSE_TIME_SLICING     1
+#define configTICK_RATE_HZ         1000
+#define configMAX_PRIORITIES       5</code></pre>
+<table>
+<tr><th>Macro</th><th>Meaning</th></tr>
+<tr><td>configUSE_PREEMPTION</td><td>Enables preemptive scheduling.</td></tr>
+<tr><td>configUSE_TIME_SLICING</td><td>Enables normal tick-based equal-priority rotation in the preemptive scheduler.</td></tr>
+<tr><td>configTICK_RATE_HZ</td><td>Sets the configured RTOS tick frequency.</td></tr>
+<tr><td>configMAX_PRIORITIES</td><td>Sets the number of available task priority levels.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>12. Scheduling Analysis – Worked Example</h2>
+<p>
+Consider three independent periodic tasks on
+a single processor. Assume preemptive
+fixed-priority scheduling, zero blocking,
+negligible context-switch overhead and
+Rate Monotonic priority assignment.
+</p>
+<table>
+<tr><th>Task</th><th>Execution Time (C)</th><th>Period (T)</th><th>Priority</th></tr>
+<tr><td>T1</td><td>1 ms</td><td>4 ms</td><td>Highest</td></tr>
+<tr><td>T2</td><td>1 ms</td><td>5 ms</td><td>Middle</td></tr>
+<tr><td>T3</td><td>2 ms</td><td>10 ms</td><td>Lowest</td></tr>
+</table>
+<h3>CPU Utilization</h3>
+<p>
+\[
+U = \frac{1}{4}+\frac{1}{5}+\frac{2}{10}
+\]
+</p>
+<p>
+\[
+U = 0.25+0.20+0.20=0.65
+\]
+</p>
+<p>
+Total processor utilization is 65%.
+</p>
+<h3>Response-Time Analysis</h3>
+<p>
+For this task set, use the fixed-priority
+response-time recurrence:
+</p>
+<p>
+\[
+R_i=C_i+\sum_{j\in hp(i)}
+\left\lceil\frac{R_i}{T_j}\right\rceil C_j
+\]
+</p>
+<p>
+For T1, there are no higher-priority tasks:
+</p>
+<p>
+\[
+R_1=C_1=1\text{ ms}
+\]
+</p>
+<p>
+For T2, T1 is the only higher-priority task:
+</p>
+<p>
+\[
+R_2=1+\left\lceil\frac{R_2}{4}\right\rceil(1)
+\]
+</p>
+<p>
+The converged response time is:
+</p>
+<p>\[
+R_2=2\text{ ms}
+\]</p>
+<p>
+For T3, T1 and T2 are higher priority:
+</p>
+<p>
+\[
+R_3=2+
+\left\lceil\frac{R_3}{4}\right\rceil(1)+
+\left\lceil\frac{R_3}{5}\right\rceil(1)
+\]
+</p>
+<p>
+Iteration gives:
+</p>
+<ul>
+<li>First estimate: R3 = 2 + 1 + 1 = 4 ms.</li>
+<li>Next estimate: R3 = 2 + 1 + 1 = 4 ms.</li>
+</ul>
+<p>
+Therefore, R3 = 4 ms.
+</p>
+<table>
+<tr><th>Task</th><th>Worst-Case Response Time</th><th>Deadline</th><th>Result</th></tr>
+<tr><td>T1</td><td>1 ms</td><td>4 ms</td><td>Pass</td></tr>
+<tr><td>T2</td><td>2 ms</td><td>5 ms</td><td>Pass</td></tr>
+<tr><td>T3</td><td>4 ms</td><td>10 ms</td><td>Pass</td></tr>
+</table>
+<div class="note">
+Under the stated assumptions, all three tasks
+meet their implicit deadlines. A complete
+engineering analysis must include blocking,
+release jitter, execution-time variation and
+other relevant overheads where applicable.
+</div>
+</section>
+
+<section>
+<h2>13. Practical Scheduling Exercises</h2>
+<h3>Exercise 1</h3>
+<p>
+Task A has priority 3, Task B has priority 2
+and Task C has priority 1. All tasks are Ready.
+Which task executes first?
+</p>
+<p><strong>Answer:</strong> Task A.</p>
+<h3>Exercise 2</h3>
+<p>
+Task B is Running. A higher-priority Task A
+becomes Ready. What happens in preemptive
+scheduling?
+</p>
+<p><strong>Answer:</strong> Task A can preempt Task B at an appropriate scheduling point.</p>
+<h3>Exercise 3</h3>
+<p>
+Two equal-priority tasks remain Ready. What
+does configUSE_TIME_SLICING control?
+</p>
+<p><strong>Answer:</strong> Normal tick-based rotation between equal-priority Ready tasks in the preemptive scheduler.</p>
+<h3>Exercise 4</h3>
+<p>
+A task calls vTaskDelay(100). Does it
+necessarily execute immediately after 100 ticks?
+</p>
+<p><strong>Answer:</strong> No. It becomes Ready when the delay expires, but another higher-priority Ready task may execute first.</p>
+<h3>Exercise 5</h3>
+<p>
+Why can a low-priority task starve?
+</p>
+<p><strong>Answer:</strong> Higher-priority tasks may continuously occupy the processor without blocking or yielding.</p>
+</section>
+
+<section>
+<h2>14. Common Scheduling Mistakes</h2>
+<table>
+<tr><th>Mistake</th><th>Correct Understanding</th></tr>
+<tr><td>Assuming every task runs immediately after becoming Ready.</td><td>The highest-priority Ready task is selected.</td></tr>
+<tr><td>Using very high priorities for every task.</td><td>Priorities should reflect timing requirements.</td></tr>
+<tr><td>Using busy loops for periodic tasks.</td><td>Use blocking delays or event-driven waits.</td></tr>
+<tr><td>Assuming vTaskDelay() guarantees a deadline.</td><td>Delay controls blocking, not deadline compliance.</td></tr>
+<tr><td>Assuming equal priority means guaranteed alternating execution.</td><td>Actual behavior depends on readiness and scheduling events.</td></tr>
+<tr><td>Ignoring queue capacity.</td><td>Define queue-full handling and data-loss policy.</td></tr>
+<tr><td>Ignoring stack and execution-time requirements.</td><td>Measure and analyze resource usage.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>15. LPC2129 and Keil Simulator Considerations</h2>
+<p>
+The LPC2129 uses the ARM7TDMI-S processor.
+The examples in this lesson use generic
+FreeRTOS APIs and require a compatible port
+before they can be executed on that target.
+</p>
+<ul>
+<li>Verify an ARM7-compatible FreeRTOS port.</li>
+<li>Verify the compiler and startup configuration.</li>
+<li>Verify the tick interrupt and context-switch implementation.</li>
+<li>Check the simulator's support for the required port.</li>
+<li>Use debugger or trace tools to inspect task states when supported.</li>
+<li>Do not assume Cortex-M NVIC behavior on LPC2129.</li>
+</ul>
+<div class="warning">
+The code examples are educational FreeRTOS
+examples, not verified LPC2129 Keil simulator
+projects. Their execution requires a supported
+kernel port and correct project integration.
+</div>
+</section>
+
+<section>
+<h2>16. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is the role of the FreeRTOS scheduler?</li>
+<li>Which task runs first when several tasks are Ready?</li>
+<li>What is task preemption?</li>
+<li>What is equal-priority time slicing?</li>
+<li>What happens when a task calls vTaskDelay()?</li>
+<li>What is periodic task scheduling?</li>
+<li>What is task starvation?</li>
+<li>Why are queues useful in multitasking applications?</li>
+<li>What is CPU utilization?</li>
+<li>What is response-time analysis?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain scheduling of tasks with different priorities.</li>
+<li>Explain equal-priority scheduling with an example.</li>
+<li>Describe higher-priority task preemption.</li>
+<li>Compare vTaskDelay() and vTaskDelayUntil().</li>
+<li>Explain task starvation and its prevention.</li>
+<li>Develop a queue-based sensor and display application.</li>
+<li>Solve a fixed-priority response-time analysis problem.</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+<ul>
+<li>FreeRTOS uses a fixed-priority scheduler in its standard configuration.</li>
+<li>The highest-priority Ready task is selected.</li>
+<li>Preemption allows higher-priority Ready tasks to interrupt lower-priority task execution at appropriate scheduling points.</li>
+<li>Time slicing allows eligible equal-priority Ready tasks to share processor time.</li>
+<li>Blocking APIs allow tasks to wait efficiently.</li>
+<li>Periodic tasks can use vTaskDelayUntil().</li>
+<li>Starvation can occur when higher-priority tasks continuously occupy the processor.</li>
+<li>Queues provide structured communication between tasks.</li>
+<li>Scheduling analysis helps evaluate timing feasibility.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Practice Assignment</h2>
+<ol>
+<li>Create three tasks with priorities 3, 2 and 1.</li>
+<li>Draw their initial scheduling sequence.</li>
+<li>Explain higher-priority task preemption.</li>
+<li>Write two equal-priority task functions.</li>
+<li>Compare time slicing enabled and disabled.</li>
+<li>Write a periodic task using vTaskDelayUntil().</li>
+<li>Explain task starvation with a practical example.</li>
+<li>Develop a sensor-to-display queue communication program.</li>
+<li>Calculate CPU utilization for three periodic tasks.</li>
+<li>Perform response-time analysis for a fixed-priority task set.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L09_Scheduler_Suspension_and_Resumption.html">← Previous Lesson</a>
+<a href="index.html">Chapter 14 Index</a>
+<a href="../ch15_FreeRTOS_Queue_Management/index.html">Next Chapter →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
