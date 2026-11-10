@@ -1,1 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Event Groups and Timer Programming – Practical Exercises</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 15px}
+header h1{font-size:28px;margin-bottom:8px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 7px rgba(0,0,0,.08)}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h2{color:#174ea6;font-size:22px;border-bottom:2px solid #d8e6fa;padding-bottom:8px;margin-bottom:15px}
+h3{color:#1765b1;margin:17px 0 9px;font-size:18px}
+p{margin:9px 0}
+ul,ol{padding-left:25px;margin:10px 0}
+li{margin:6px 0}
+pre{background:#172338;color:#e6edf7;padding:17px;border-radius:8px;overflow-x:auto;margin:13px 0;font-size:13px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0;display:block;overflow-x:auto}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;min-width:135px}
+th{background:#eaf2ff;color:#174ea6}
+.note{background:#eaf3ff;border-left:4px solid #2878d7;padding:13px;margin:14px 0;border-radius:5px}
+.warning{background:#fff5e6;border-left:4px solid #e69a24;padding:13px;margin:14px 0;border-radius:5px}
+.example{background:#effaf2;border-left:4px solid #269653;padding:13px;margin:14px 0;border-radius:5px}
+.objectives{background:#eef5ff;padding:17px 22px;border-radius:8px}
+.navigation{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:600px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 17: FreeRTOS Event Groups and Software Timers</h1>
+<p>Lesson 10 – Event Groups and Timer Programming: Practical Exercises</p>
+</header>
+
+<nav>
+<a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+<a href="index.html">Chapter Index</a>
+<a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>Lesson Overview</h2>
+<p>
+This lesson combines FreeRTOS event groups, software timers,
+timer callbacks, and task notifications through integrated
+programming examples. It focuses on applying the concepts
+introduced in the previous lessons to practical embedded
+software designs.
+</p>
+<div class="objectives">
+<h3>Learning Objectives</h3>
+<ul>
+<li>Combine multiple event conditions using event groups.</li>
+<li>Use software timers to generate periodic events.</li>
+<li>Coordinate tasks using event bits.</li>
+<li>Use timer callbacks to signal application tasks.</li>
+<li>Understand command queue and callback limitations.</li>
+<li>Debug common event-group and timer programming errors.</li>
+<li>Design a small event-driven monitoring application.</li>
+</ul>
+</div>
+</section>
+
+<section>
+<h2>1. Revision of Event Groups</h2>
+<p>
+An event group is a synchronization object containing multiple
+event bits. Tasks can set, clear, and wait for selected bits.
+</p>
+
+<table>
+<tr><th>API</th><th>Purpose</th></tr>
+<tr><td><code>xEventGroupCreate()</code></td><td>Create an event group dynamically.</td></tr>
+<tr><td><code>xEventGroupSetBits()</code></td><td>Set selected event bits.</td></tr>
+<tr><td><code>xEventGroupClearBits()</code></td><td>Clear selected event bits.</td></tr>
+<tr><td><code>xEventGroupWaitBits()</code></td><td>Wait for one or more event conditions.</td></tr>
+<tr><td><code>xEventGroupGetBits()</code></td><td>Read the current event-bit snapshot.</td></tr>
+</table>
+
+<h3>Example Event Bits</h3>
+<pre><code>#define EVENT_SENSOR_READY   (1U &lt;&lt; 0)
+#define EVENT_DATA_READY     (1U &lt;&lt; 1)
+#define EVENT_COMM_READY     (1U &lt;&lt; 2)</code></pre>
+
+<p>
+Each bit represents an application-defined condition. Event
+groups carry condition information, not a data queue or event
+counter. Repeatedly setting an already-set bit does not count
+multiple occurrences.
+</p>
+</section>
+
+<section>
+<h2>2. Revision of Software Timers</h2>
+<p>
+A software timer allows an application to execute a callback
+after a configured period.
+</p>
+
+<table>
+<tr><th>Timer Type</th><th>Behavior</th></tr>
+<tr><td>One-shot</td><td>Expires once and becomes inactive.</td></tr>
+<tr><td>Auto-reload</td><td>Expires repeatedly while active.</td></tr>
+</table>
+
+<h3>Timer Creation</h3>
+<pre><code>xTimerCreate(
+    "TimerName",
+    pdMS_TO_TICKS(1000),
+    pdTRUE,
+    NULL,
+    TimerCallback
+);</code></pre>
+
+<p>
+The timer is created but not started. The application must
+submit a start command using <code>xTimerStart()</code>.
+</p>
+</section>
+
+<section>
+<h2>3. Integrated Application Architecture</h2>
+<p>
+Consider a monitoring system with three conditions:
+sensor initialization, data availability, and communication
+readiness. A periodic software timer generates a monitoring
+event. A monitoring task waits until all required conditions
+are satisfied.
+</p>
+
+<pre><code>          Software Timer
+                |
+                v
+         Timer Callback
+                |
+                v
+        Set TIMER EVENT BIT
+                |
+                v
+          Event Group
+                |
+       +--------+--------+
+       |        |        |
+       v        v        v
+    Sensor    Data    Communication
+    Ready    Ready       Ready
+       |        |          |
+       +--------+----------+
+                |
+                v
+       Monitoring Task
+                |
+                v
+       Application Processing</code></pre>
+
+<div class="note">
+This is a conceptual architecture. In the program below, the
+timer callback sets an event bit and the worker task waits for
+the timer event together with the other application conditions.
+</div>
+</section>
+
+<section>
+<h2>4. Program 1 – Event Group with Multiple Conditions</h2>
+
+<h3>Objective</h3>
+<p>
+Create an event group and make a task wait until sensor and
+communication conditions are both ready.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "event_groups.h"
+
+#define SENSOR_READY_BIT   (1U &lt;&lt; 0)
+#define COMM_READY_BIT     (1U &lt;&lt; 1)
+
+static EventGroupHandle_t xSystemEvents;
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Simulate sensor initialization */
+        xEventGroupSetBits(
+            xSystemEvents,
+            SENSOR_READY_BIT
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void CommunicationTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Simulate communication initialization */
+        xEventGroupSetBits(
+            xSystemEvents,
+            COMM_READY_BIT
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(1500));
+    }
+}
+
+void MonitorTask(void *pvParameters)
+{
+    EventBits_t result;
+
+    for (;;)
+    {
+        result = xEventGroupWaitBits(
+            xSystemEvents,
+            SENSOR_READY_BIT | COMM_READY_BIT,
+            pdFALSE,
+            pdTRUE,
+            portMAX_DELAY
+        );
+
+        if ((result &amp;
+             (SENSOR_READY_BIT | COMM_READY_BIT)) ==
+             (SENSOR_READY_BIT | COMM_READY_BIT))
+        {
+            /* Both conditions are satisfied */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+int main(void)
+{
+    xSystemEvents = xEventGroupCreate();
+
+    if (xSystemEvents == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTaskCreate(
+        SensorTask, "Sensor",
+        configMINIMAL_STACK_SIZE,
+        NULL, 2, NULL) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTaskCreate(
+        CommunicationTask, "Communication",
+        configMINIMAL_STACK_SIZE,
+        NULL, 2, NULL) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTaskCreate(
+        MonitorTask, "Monitor",
+        configMINIMAL_STACK_SIZE,
+        NULL, 3, NULL) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<h3>Program Explanation</h3>
+<ol>
+<li>Create an event group.</li>
+<li>Create sensor and communication tasks.</li>
+<li>Each task sets its corresponding event bit.</li>
+<li>The monitoring task waits for both bits.</li>
+<li>When both conditions are satisfied, monitoring can proceed.</li>
+</ol>
+
+<div class="warning">
+The example keeps both bits set after initialization. It therefore
+models persistent readiness conditions, not individual recurring
+sensor or communication events. Use queues or notifications when
+each occurrence must be recorded separately.
+</div>
+</section>
+
+<section>
+<h2>5. Program 2 – Software Timer Sets an Event Bit</h2>
+
+<h3>Objective</h3>
+<p>
+Create an auto-reload timer. Its callback sets an event bit
+when the timer expires. A worker task waits for that event.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "event_groups.h"
+#include "timers.h"
+
+#define TIMER_EVENT_BIT (1U &lt;&lt; 0)
+
+static EventGroupHandle_t xEvents;
+static TimerHandle_t xTimer;
+
+void TimerCallback(TimerHandle_t xTimerHandle)
+{
+    /* Callback executes in timer service task context */
+    xEventGroupSetBits(
+        xEvents,
+        TIMER_EVENT_BIT
+    );
+}
+
+void WorkerTask(void *pvParameters)
+{
+    EventBits_t bits;
+
+    for (;;)
+    {
+        bits = xEventGroupWaitBits(
+            xEvents,
+            TIMER_EVENT_BIT,
+            pdTRUE,
+            pdFALSE,
+            portMAX_DELAY
+        );
+
+        if ((bits &amp; TIMER_EVENT_BIT) != 0)
+        {
+            /* Process the timer event */
+        }
+    }
+}
+
+int main(void)
+{
+    xEvents = xEventGroupCreate();
+
+    if (xEvents == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTaskCreate(
+        WorkerTask,
+        "Worker",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        NULL
+    ) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTimer = xTimerCreate(
+        "MonitorTimer",
+        pdMS_TO_TICKS(2000),
+        pdTRUE,
+        NULL,
+        TimerCallback
+    );
+
+    if (xTimer == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTimerStart(xTimer, 0) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<h3>Program Explanation</h3>
+<ol>
+<li>Create an event group.</li>
+<li>Create a worker task.</li>
+<li>Create a two-second auto-reload timer.</li>
+<li>Start the timer.</li>
+<li>When the timer expires, its callback sets the event bit.</li>
+<li>The worker task becomes Ready when the event condition is met.</li>
+<li>The worker clears the event bit on successful exit from the wait.</li>
+<li>The timer repeats while active.</li>
+</ol>
+
+<div class="note">
+The callback runs in the timer service task, so
+<code>xEventGroupSetBits()</code> is a task-context API here.
+Do not replace it with an ISR API merely because the callback
+is triggered by timer expiry.
+</div>
+</section>
+
+<section>
+<h2>6. Program 3 – Multiple Event Bits with Timer Control</h2>
+
+<h3>Objective</h3>
+<p>
+Use an event group to represent three application conditions:
+sensor ready, communication ready, and periodic timer event.
+The monitoring task waits until all three conditions are set.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "event_groups.h"
+#include "timers.h"
+
+#define SENSOR_READY_BIT   (1U &lt;&lt; 0)
+#define COMM_READY_BIT     (1U &lt;&lt; 1)
+#define TIMER_EVENT_BIT    (1U &lt;&lt; 2)
+
+#define ALL_EVENTS (SENSOR_READY_BIT | \
+                    COMM_READY_BIT  | \
+                    TIMER_EVENT_BIT)
+
+static EventGroupHandle_t xEvents;
+static TimerHandle_t xTimer;
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Simulated sensor-ready condition */
+        xEventGroupSetBits(
+            xEvents,
+            SENSOR_READY_BIT
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
+
+void CommunicationTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Simulated communication-ready condition */
+        xEventGroupSetBits(
+            xEvents,
+            COMM_READY_BIT
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
+
+void TimerCallback(TimerHandle_t xTimerHandle)
+{
+    xEventGroupSetBits(
+        xEvents,
+        TIMER_EVENT_BIT
+    );
+}
+
+void MonitorTask(void *pvParameters)
+{
+    EventBits_t bits;
+
+    for (;;)
+    {
+        bits = xEventGroupWaitBits(
+            xEvents,
+            ALL_EVENTS,
+            pdTRUE,
+            pdTRUE,
+            portMAX_DELAY
+        );
+
+        if ((bits &amp; ALL_EVENTS) == ALL_EVENTS)
+        {
+            /* All three conditions were satisfied */
+        }
+    }
+}
+
+int main(void)
+{
+    xEvents = xEventGroupCreate();
+
+    if (xEvents == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTaskCreate(
+        SensorTask, "Sensor",
+        configMINIMAL_STACK_SIZE,
+        NULL, 2, NULL) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTaskCreate(
+        CommunicationTask, "Comm",
+        configMINIMAL_STACK_SIZE,
+        NULL, 2, NULL) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTaskCreate(
+        MonitorTask, "Monitor",
+        configMINIMAL_STACK_SIZE,
+        NULL, 3, NULL) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTimer = xTimerCreate(
+        "Periodic",
+        pdMS_TO_TICKS(2000),
+        pdTRUE,
+        NULL,
+        TimerCallback
+    );
+
+    if (xTimer == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTimerStart(xTimer, 0) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<h3>Program Explanation</h3>
+<ol>
+<li>Define three event bits.</li>
+<li>Create the event group.</li>
+<li>Create sensor, communication, and monitoring tasks.</li>
+<li>Create and start the periodic timer.</li>
+<li>Sensor and communication tasks set their readiness bits.</li>
+<li>The timer callback sets the timer event bit.</li>
+<li>The monitoring task waits until all three bits are set.</li>
+<li>With clear-on-exit enabled, the selected bits are cleared when the wait condition is satisfied.</li>
+</ol>
+
+<div class="warning">
+This example demonstrates event synchronization. The sensor
+and communication tasks set their readiness bits repeatedly,
+but the bits represent persistent conditions and can coalesce.
+For a production design, define whether each bit means
+"initialized", "currently ready", or "new event received".
+Use queues or counting notifications when individual events
+must not be lost.
+</div>
+</section>
+
+<section>
+<h2>7. Timer Command Queue and Failure Handling</h2>
+<p>
+Timer commands are submitted asynchronously to the timer
+service task. A successful API return means the command was
+accepted into the command queue; it does not mean the command
+has already been processed.
+</p>
+
+<h3>Example</h3>
+<pre><code>BaseType_t status;
+
+status = xTimerStart(
+    xTimer,
+    pdMS_TO_TICKS(100)
+);
+
+if (status == pdPASS)
+{
+    /* Start command was queued successfully */
+}
+else
+{
+    /* Command could not be queued */
+}</code></pre>
+
+<p>
+The wait parameter specifies how long the calling task may
+wait for space in the timer command queue. It is not the
+timer period and does not control callback execution time.
+</p>
+
+<h3>Design Considerations</h3>
+<ul>
+<li>Choose sufficient timer command queue capacity.</li>
+<li>Check every timer command return value.</li>
+<li>Consider bursts of commands from multiple tasks.</li>
+<li>Keep callbacks short to prevent service-task delays.</li>
+<li>Define recovery behavior when a command cannot be queued.</li>
+</ul>
+</section>
+
+<section>
+<h2>8. Event Groups vs Queues vs Task Notifications</h2>
+<table>
+<tr><th>Feature</th><th>Event Groups</th><th>Queues</th><th>Task Notifications</th></tr>
+<tr><td>Primary purpose</td><td>Synchronize conditions</td><td>Transfer data/messages</td><td>Signal or transfer small values to a task</td></tr>
+<tr><td>Multiple conditions</td><td>Yes, using bits</td><td>Application-defined messages</td><td>Notification values and bits</td></tr>
+<tr><td>Data storage</td><td>Event bits only</td><td>Queued items</td><td>Notification state/value</td></tr>
+<tr><td>Multiple receivers</td><td>Multiple tasks can wait</td><td>Tasks compete to receive items</td><td>Each notification index targets a task</td></tr>
+<tr><td>Typical use</td><td>Wait for system readiness</td><td>Sensor samples and commands</td><td>Wake a specific worker task</td></tr>
+</table>
+</section>
+
+<section>
+<h2>9. Common Problems and Troubleshooting</h2>
+<table>
+<tr><th>Problem</th><th>Possible Cause</th><th>Solution</th></tr>
+<tr><td>Task waits indefinitely</td><td>Required event bit is never set.</td><td>Verify all event-producing paths.</td></tr>
+<tr><td>Timer callback does not execute</td><td>Timer not started or timer service not configured.</td><td>Check timer creation, start result, and configuration.</td></tr>
+<tr><td>Timer command fails</td><td>Timer command queue is full.</td><td>Check return values and review queue capacity.</td></tr>
+<tr><td>Other callbacks are delayed</td><td>One callback takes too long.</td><td>Delegate work to application tasks.</td></tr>
+<tr><td>Expected events are missing</td><td>Repeated event bits coalesce.</td><td>Use a queue or counting mechanism.</td></tr>
+<tr><td>Unexpected task wake-up</td><td>Wait-any condition or shared bits used incorrectly.</td><td>Review wait mask and clear-on-exit behavior.</td></tr>
+<tr><td>Application behaves inconsistently</td><td>Shared condition bits are cleared by another waiter.</td><td>Review multi-task event-bit ownership.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>10. Advanced Design Exercise – Sensor Monitoring System</h2>
+<p>
+Design an embedded monitoring application with the following
+requirements:
+</p>
+<ol>
+<li>A sensor task periodically obtains a sample.</li>
+<li>A queue transfers the sample to a processing task.</li>
+<li>A communication task reports processed data.</li>
+<li>An event group represents initialization and communication readiness.</li>
+<li>A software timer generates a periodic maintenance event.</li>
+<li>The timer callback signals a maintenance task.</li>
+<li>The maintenance task performs lengthy maintenance outside the callback.</li>
+<li>All queue, timer, and task creation failures are handled.</li>
+</ol>
+
+<h3>Suggested Architecture</h3>
+<pre><code>Sensor Task
+    |
+    v
+Sensor Data Queue
+    |
+    v
+Processing Task
+    |
+    v
+Communication Task
+
+Event Group:
+  SENSOR_READY
+  COMM_READY
+
+Software Timer
+    |
+    v
+Timer Callback
+    |
+    v
+Maintenance Notification
+    |
+    v
+Maintenance Task</code></pre>
+
+<h3>Design Questions</h3>
+<ul>
+<li>Which task owns the sensor data buffer?</li>
+<li>Should the queue store samples or pointers?</li>
+<li>Which readiness bits should the communication task wait for?</li>
+<li>Should the timer be one-shot or auto-reload?</li>
+<li>How will timer command queue failures be handled?</li>
+<li>How will the system prevent a slow maintenance operation from delaying timer callbacks?</li>
+</ul>
+</section>
+
+<section>
+<h2>11. Assessment Questions</h2>
+<ol>
+<li>What is an event group in FreeRTOS?</li>
+<li>What is the difference between wait-any and wait-all?</li>
+<li>What does clear-on-exit mean?</li>
+<li>What is the purpose of a software timer?</li>
+<li>Differentiate one-shot and auto-reload timers.</li>
+<li>What is a timer callback function?</li>
+<li>In which task context does a timer callback execute?</li>
+<li>What is the role of the timer service task?</li>
+<li>What is the purpose of the timer command queue?</li>
+<li>Does <code>pdPASS</code> from <code>xTimerStart()</code> guarantee that the timer has already started?</li>
+<li>Why should timer callbacks be short?</li>
+<li>When should a queue be preferred over an event group?</li>
+<li>How can a timer callback notify an application task?</li>
+<li>Why can event bits fail to represent every repeated event?</li>
+<li>How would you debug a timer that does not expire as expected?</li>
+</ol>
+</section>
+
+<section>
+<h2>12. Practical Exercises</h2>
+<ol>
+<li>Create an event group with four application-defined event bits.</li>
+<li>Write a task that waits for any two specified bits.</li>
+<li>Write a task that waits for all specified bits.</li>
+<li>Use clear-on-exit to reset selected event conditions.</li>
+<li>Create a one-shot software timer for a timeout event.</li>
+<li>Create an auto-reload timer for periodic monitoring.</li>
+<li>Use one callback function for two different timers.</li>
+<li>Identify timers using timer IDs.</li>
+<li>Notify an application task from a timer callback.</li>
+<li>Build a small event-driven monitoring application.</li>
+</ol>
+</section>
+
+<section>
+<h2>13. Important Technical Notes</h2>
+<ul>
+<li>Event groups represent conditions, not message storage.</li>
+<li>Repeatedly setting an already-set bit does not count repeated events.</li>
+<li>Multiple tasks can wait on the same event group.</li>
+<li>Clear-on-exit can affect what other waiting tasks observe.</li>
+<li>Software timers use the RTOS tick count.</li>
+<li>Timer callbacks run in timer service task context.</li>
+<li>Timer API commands are generally processed asynchronously.</li>
+<li>Timer callbacks should not block.</li>
+<li>Use queues or notifications to delegate application work.</li>
+<li>Software timers are not a replacement for precision hardware timers.</li>
+</ul>
+</section>
+
+<section>
+<h2>14. Chapter 17 Summary</h2>
+<p>
+This chapter covered FreeRTOS event groups and software timers.
+Event groups allow tasks to synchronize using event bits, while
+software timers provide time-based application events.
+The timer service task manages timer commands and executes
+callbacks. Correct use of these mechanisms requires attention
+to callback execution time, queue capacity, scheduling, and
+event ownership.
+</p>
+<h3>Chapter Learning Outcomes</h3>
+<ul>
+<li>Create and manage event groups.</li>
+<li>Set, clear, and wait for event bits.</li>
+<li>Use wait-any and wait-all synchronization.</li>
+<li>Create and control software timers.</li>
+<li>Write timer callback functions.</li>
+<li>Understand timer service task configuration.</li>
+<li>Combine event groups and timers in application designs.</li>
+</ul>
+</section>
+
+<div class="navigation">
+<a href="L09_Timer_Service_Task.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="../ch18_RTOS_Memory_Management_and_Debugging/index.html">Next Chapter →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 17 – FreeRTOS Event Groups and Software Timers</p>
+</footer>
+
+</body>
+</html>
