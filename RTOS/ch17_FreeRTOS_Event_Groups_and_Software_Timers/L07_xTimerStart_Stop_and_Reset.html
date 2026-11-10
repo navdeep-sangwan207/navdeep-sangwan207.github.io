@@ -1,1 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Timer Start, Stop and Reset Functions</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 15px}
+header h1{font-size:28px;margin-bottom:8px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 7px rgba(0,0,0,.08)}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h2{color:#174ea6;font-size:22px;border-bottom:2px solid #d8e6fa;padding-bottom:8px;margin-bottom:15px}
+h3{color:#1765b1;margin:17px 0 9px;font-size:18px}
+p{margin:9px 0}
+ul,ol{padding-left:25px;margin:10px 0}
+li{margin:6px 0}
+pre{background:#172338;color:#e6edf7;padding:17px;border-radius:8px;overflow-x:auto;margin:13px 0;font-size:13px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0;display:block;overflow-x:auto}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;min-width:135px}
+th{background:#eaf2ff;color:#174ea6}
+.note{background:#eaf3ff;border-left:4px solid #2878d7;padding:13px;margin:14px 0;border-radius:5px}
+.warning{background:#fff5e6;border-left:4px solid #e69a24;padding:13px;margin:14px 0;border-radius:5px}
+.example{background:#effaf2;border-left:4px solid #269653;padding:13px;margin:14px 0;border-radius:5px}
+.objectives{background:#eef5ff;padding:17px 22px;border-radius:8px}
+.navigation{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:600px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 17: FreeRTOS Event Groups and Software Timers</h1>
+<p>Lesson 07 – Starting, Stopping and Resetting Software Timers</p>
+</header>
+
+<nav>
+<a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+<a href="index.html">Chapter Index</a>
+<a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>Lesson Overview</h2>
+<p>
+After creating a software timer, an application must control its
+operation. FreeRTOS provides timer API functions to start, stop,
+reset, and change the period of a timer.
+</p>
+<p>
+These functions submit commands to the timer service task through
+the timer command queue. Understanding their behavior is important
+for implementing reliable timeout and periodic operations.
+</p>
+<div class="objectives">
+<h3>Learning Objectives</h3>
+<ul>
+<li>Understand <code>xTimerStart()</code>.</li>
+<li>Understand <code>xTimerStop()</code>.</li>
+<li>Understand <code>xTimerReset()</code>.</li>
+<li>Understand <code>xTimerChangePeriod()</code>.</li>
+<li>Learn the role of the command queue and block time.</li>
+<li>Understand timer command return values.</li>
+<li>Develop a timer-control application.</li>
+</ul>
+</div>
+</section>
+
+<section>
+<h2>1. Timer Control Functions</h2>
+<p>
+FreeRTOS provides several functions for controlling a timer after
+it has been created.
+</p>
+<table>
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td><code>xTimerStart()</code></td><td>Starts a dormant timer.</td></tr>
+<tr><td><code>xTimerStop()</code></td><td>Stops an active timer.</td></tr>
+<tr><td><code>xTimerReset()</code></td><td>Restarts the timer period from the command's processing time.</td></tr>
+<tr><td><code>xTimerChangePeriod()</code></td><td>Changes the timer period and starts or restarts its countdown.</td></tr>
+<tr><td><code>xTimerDelete()</code></td><td>Requests deletion of a timer.</td></tr>
+</table>
+
+<div class="note">
+These task-context APIs submit commands to the timer command queue.
+The timer service task processes the commands later. A successful
+return indicates that the command was accepted into the queue,
+not necessarily that the timer state has already changed.
+</div>
+</section>
+
+<section>
+<h2>2. xTimerStart() Function</h2>
+<p>
+The <code>xTimerStart()</code> function submits a command to start
+a timer. It is used to activate a newly created timer or start a
+timer that is currently stopped.
+</p>
+
+<h3>Function Prototype</h3>
+<pre><code>BaseType_t xTimerStart(
+    TimerHandle_t xTimer,
+    TickType_t xTicksToWait
+);</code></pre>
+
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>xTimer</code></td><td>Handle of the timer to start.</td></tr>
+<tr><td><code>xTicksToWait</code></td><td>Maximum time the calling task waits for space in the timer command queue.</td></tr>
+</table>
+
+<h3>Return Value</h3>
+<ul>
+<li><code>pdPASS</code>: Start command successfully entered the timer command queue.</li>
+<li><code>pdFAIL</code>: Command could not be queued within the allowed time.</li>
+</ul>
+
+<h3>Example</h3>
+<pre><code>if (xTimerStart(xStatusTimer, 0) == pdPASS)
+{
+    /* Start command accepted */
+}
+else
+{
+    /* Timer command queue was unavailable */
+}</code></pre>
+
+<p>
+A block time of zero means the task does not wait for queue space.
+</p>
+</section>
+
+<section>
+<h2>3. xTimerStop() Function</h2>
+<p>
+The <code>xTimerStop()</code> function submits a command to stop
+an active timer. A stopped timer does not generate further
+expirations until it is started again.
+</p>
+
+<h3>Function Prototype</h3>
+<pre><code>BaseType_t xTimerStop(
+    TimerHandle_t xTimer,
+    TickType_t xTicksToWait
+);</code></pre>
+
+<h3>Example</h3>
+<pre><code>if (xTimerStop(xStatusTimer, 0) == pdPASS)
+{
+    /* Stop command accepted */
+}
+else
+{
+    /* Handle queue submission failure */
+}</code></pre>
+
+<h3>Applications</h3>
+<ul>
+<li>Stop a communication timeout after receiving a valid response.</li>
+<li>Stop periodic monitoring when a system enters maintenance mode.</li>
+<li>Stop a temporary notification timer after the required action.</li>
+</ul>
+
+<div class="warning">
+A callback already executing cannot be cancelled by merely
+submitting a stop command. The command affects timer processing
+when it is handled by the timer service task.
+</div>
+</section>
+
+<section>
+<h2>4. xTimerReset() Function</h2>
+<p>
+The <code>xTimerReset()</code> function restarts the timer's
+countdown. The timer's expiry is recalculated from the time at
+which the reset command is processed by the timer service task.
+</p>
+
+<h3>Function Prototype</h3>
+<pre><code>BaseType_t xTimerReset(
+    TimerHandle_t xTimer,
+    TickType_t xTicksToWait
+);</code></pre>
+
+<h3>Example</h3>
+<pre><code>if (xTimerReset(xCommunicationTimer, 0) == pdPASS)
+{
+    /* Reset command accepted */
+}</code></pre>
+
+<h3>Example – Communication Timeout</h3>
+<p>
+Assume a communication timeout timer has a period of five seconds.
+Whenever valid data is received, the application resets the timer.
+</p>
+
+<pre><code>void OnValidDataReceived(void)
+{
+    xTimerReset(xCommunicationTimer, 0);
+}</code></pre>
+
+<p>
+If the timer expires without another reset, its callback can notify
+the application that communication has timed out.
+</p>
+
+<div class="note">
+Resetting a timer does not change its configured period. It
+restarts the countdown using the existing period. The timer
+command queue processing time, rather than the exact time the
+application called the function, determines the reset point.
+</div>
+</section>
+
+<section>
+<h2>5. xTimerChangePeriod() Function</h2>
+<p>
+The <code>xTimerChangePeriod()</code> function changes a timer's
+period. Processing the command also starts or restarts the timer
+using the new period.
+</p>
+
+<h3>Function Prototype</h3>
+<pre><code>BaseType_t xTimerChangePeriod(
+    TimerHandle_t xTimer,
+    TickType_t xNewPeriod,
+    TickType_t xTicksToWait
+);</code></pre>
+
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>xTimer</code></td><td>Timer handle.</td></tr>
+<tr><td><code>xNewPeriod</code></td><td>New timer period in ticks; it must be nonzero.</td></tr>
+<tr><td><code>xTicksToWait</code></td><td>Maximum time to wait for command queue space.</td></tr>
+</table>
+
+<h3>Example</h3>
+<pre><code>if (xTimerChangePeriod(
+        xStatusTimer,
+        pdMS_TO_TICKS(2000),
+        0) == pdPASS)
+{
+    /* New period command accepted */
+}</code></pre>
+
+<p>
+This example requests a new two-second period. When the command
+is processed, the timer countdown uses the new period.
+</p>
+</section>
+
+<section>
+<h2>6. xTimerDelete() Function</h2>
+<p>
+The <code>xTimerDelete()</code> function submits a command to
+delete a timer object.
+</p>
+
+<h3>Function Prototype</h3>
+<pre><code>BaseType_t xTimerDelete(
+    TimerHandle_t xTimer,
+    TickType_t xTicksToWait
+);</code></pre>
+
+<h3>Example</h3>
+<pre><code>if (xTimerDelete(xStatusTimer, 0) == pdPASS)
+{
+    /* Delete command accepted */
+    xStatusTimer = NULL;
+}</code></pre>
+
+<div class="warning">
+The command is processed asynchronously. Do not assume the timer
+has already been deleted merely because the command was accepted.
+Coordinate access to the handle so that other tasks do not submit
+commands using a timer that is being deleted.
+</div>
+</section>
+
+<section>
+<h2>7. Understanding xTicksToWait</h2>
+<p>
+The <code>xTicksToWait</code> parameter specifies how long the
+calling task is prepared to wait for space in the timer command
+queue. It does not specify the timer period or the timer's
+expiry time.
+</p>
+
+<table>
+<tr><th>Value</th><th>Meaning</th></tr>
+<tr><td>0</td><td>Do not block if the command queue is full.</td></tr>
+<tr><td>Finite value</td><td>Wait for the specified number of ticks for queue space.</td></tr>
+<tr><td><code>portMAX_DELAY</code></td><td>Request the longest supported wait; indefinite blocking depends on configuration.</td></tr>
+</table>
+
+<h3>Example</h3>
+<pre><code>BaseType_t result;
+
+result = xTimerStart(
+    xStatusTimer,
+    pdMS_TO_TICKS(100)
+);
+
+if (result == pdPASS)
+{
+    /* Command accepted */
+}
+else
+{
+    /* Queue submission failed */
+}</code></pre>
+
+<div class="note">
+Do not use a long queue block time from a task that must meet a
+strict response deadline without considering the possible delay.
+Choose the queue wait time according to the application's
+scheduling requirements.
+</div>
+</section>
+
+<section>
+<h2>8. Timer Command Queue</h2>
+<p>
+Timer control functions generally communicate with the timer
+service task through a command queue.
+</p>
+
+<pre><code>Application Task
+      |
+      | xTimerStart()
+      | xTimerStop()
+      | xTimerReset()
+      | xTimerChangePeriod()
+      v
+Timer Command Queue
+      |
+      v
+Timer Service Task
+      |
+      v
+Timer State Updated</code></pre>
+
+<p>
+If the command queue is full, a command may fail when the
+specified block time is insufficient to obtain queue space.
+</p>
+
+<h3>Important Configuration</h3>
+<pre><code>#define configUSE_TIMERS          1
+#define configTIMER_QUEUE_LENGTH  10</code></pre>
+
+<p>
+The queue length should be selected according to the expected
+number and frequency of timer commands.
+</p>
+</section>
+
+<section>
+<h2>9. Complete Program – Communication Timeout Control</h2>
+
+<h3>Objective</h3>
+<p>
+Create a five-second one-shot communication timeout timer.
+Start it when communication begins, reset it whenever valid
+data is received, and stop it when communication completes.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "timers.h"
+
+static TimerHandle_t xCommunicationTimer;
+
+void CommunicationTimeoutCallback(TimerHandle_t xTimer)
+{
+    /* Notify the application that communication timed out */
+}
+
+void CommunicationTask(void *pvParameters)
+{
+    /* Start the timeout period */
+    if (xTimerStart(xCommunicationTimer, 0) != pdPASS)
+    {
+        /* Handle command submission failure */
+    }
+
+    for (;;)
+    {
+        /*
+         * Application-specific communication handling
+         *
+         * When valid data is received:
+         * xTimerReset(xCommunicationTimer, 0);
+         *
+         * When communication completes:
+         * xTimerStop(xCommunicationTimer, 0);
+         */
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+int main(void)
+{
+    xCommunicationTimer = xTimerCreate(
+        "CommTimeout",
+        pdMS_TO_TICKS(5000),
+        pdFALSE,
+        NULL,
+        CommunicationTimeoutCallback
+    );
+
+    if (xCommunicationTimer == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTaskCreate(
+        CommunicationTask,
+        "Communication",
+        configMINIMAL_STACK_SIZE,
+        NULL,
+        2,
+        NULL
+    ) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<h3>Program Explanation</h3>
+<ol>
+<li>Create a one-shot timer with a five-second period.</li>
+<li>Define the timeout callback.</li>
+<li>Create the communication task.</li>
+<li>Start the timer when communication begins.</li>
+<li>Reset the timer when valid communication data arrives.</li>
+<li>Stop the timer when communication completes.</li>
+<li>If the timer expires, the callback notifies the application.</li>
+</ol>
+
+<div class="warning">
+The communication receive logic is intentionally represented
+as an application-specific placeholder. In a complete project,
+use a queue, task notification, or another suitable mechanism to
+deliver received-data events to the communication task. Do not
+perform lengthy communication processing inside the timer callback.
+</div>
+</section>
+
+<section>
+<h2>10. Comparison of Timer Control Functions</h2>
+<table>
+<tr><th>Function</th><th>Main Operation</th><th>Period Changed?</th></tr>
+<tr><td><code>xTimerStart()</code></td><td>Starts a timer.</td><td>No</td></tr>
+<tr><td><code>xTimerStop()</code></td><td>Stops a timer.</td><td>No</td></tr>
+<tr><td><code>xTimerReset()</code></td><td>Restarts its countdown.</td><td>No</td></tr>
+<tr><td><code>xTimerChangePeriod()</code></td><td>Changes period and starts/restarts countdown.</td><td>Yes</td></tr>
+<tr><td><code>xTimerDelete()</code></td><td>Requests timer deletion.</td><td>Not applicable</td></tr>
+</table>
+</section>
+
+<section>
+<h2>11. Common Programming Errors</h2>
+<table>
+<tr><th>Error</th><th>Correction</th></tr>
+<tr><td>Assuming a command executes immediately</td><td>Remember that the timer service task processes queued commands.</td></tr>
+<tr><td>Ignoring a failed command submission</td><td>Check the returned <code>BaseType_t</code>.</td></tr>
+<tr><td>Confusing reset with change-period</td><td>Reset keeps the existing period; change-period uses a new period.</td></tr>
+<tr><td>Using zero as a new period</td><td>Specify a positive period.</td></tr>
+<tr><td>Assuming stop cancels an executing callback</td><td>Account for callback execution and command processing.</td></tr>
+<tr><td>Using a timer handle after deletion</td><td>Coordinate ownership and invalidate application references safely.</td></tr>
+<tr><td>Ignoring timer command queue capacity</td><td>Configure sufficient queue capacity and handle failures.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>12. Review Questions</h2>
+<ol>
+<li>What is the purpose of <code>xTimerStart()</code>?</li>
+<li>What does <code>xTimerStop()</code> do?</li>
+<li>How does <code>xTimerReset()</code> differ from <code>xTimerChangePeriod()</code>?</li>
+<li>What is the purpose of <code>xTimerDelete()</code>?</li>
+<li>What does <code>xTicksToWait</code> represent?</li>
+<li>What happens if the timer command queue is full?</li>
+<li>What does <code>pdPASS</code> indicate?</li>
+<li>Does a successful command submission guarantee immediate execution?</li>
+<li>Why is a communication timeout a useful software timer application?</li>
+<li>Why must timer handles be managed carefully during deletion?</li>
+</ol>
+</section>
+
+<section>
+<h2>13. Practical Assignment</h2>
+<ol>
+<li>Create a five-second one-shot timer.</li>
+<li>Write code to start and stop the timer.</li>
+<li>Reset the timer whenever a simulated data event occurs.</li>
+<li>Change its period from five seconds to two seconds.</li>
+<li>Check every timer API return value.</li>
+<li>Explain the purpose of the timer command queue.</li>
+<li>Describe what happens if several tasks submit timer commands simultaneously.</li>
+<li>Design a communication timeout controller using a software timer.</li>
+</ol>
+</section>
+
+<section>
+<h2>14. Lesson Summary</h2>
+<ul>
+<li><code>xTimerStart()</code> starts a timer.</li>
+<li><code>xTimerStop()</code> stops a timer.</li>
+<li><code>xTimerReset()</code> restarts the countdown using the existing period.</li>
+<li><code>xTimerChangePeriod()</code> changes the period and restarts the countdown.</li>
+<li><code>xTimerDelete()</code> requests deletion.</li>
+<li><code>xTicksToWait</code> controls waiting for command queue space.</li>
+<li>Timer commands are processed by the timer service task.</li>
+<li>Check the return value of every timer command.</li>
+<li>Successful queue submission does not mean the command has already executed.</li>
+</ul>
+</section>
+
+<div class="navigation">
+<a href="L06_xTimerCreate_Function.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L08_Timer_Callback_Functions.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 17 – FreeRTOS Event Groups and Software Timers</p>
+</footer>
+
+</body>
+</html>
