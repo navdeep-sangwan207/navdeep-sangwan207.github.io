@@ -1,1 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Queue Communication Between Tasks | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:28px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Queue Communication Between Tasks</h1>
+<p>Reliable Data Exchange and Synchronization in FreeRTOS Applications</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 15</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+Queues are one of the most important
+communication mechanisms in FreeRTOS.
+They allow independent tasks to exchange
+data without directly sharing and modifying
+the same application variables.
+</p>
+<ul>
+<li>Understand task-to-task communication.</li>
+<li>Study producer-consumer architecture.</li>
+<li>Understand queue-based data transfer.</li>
+<li>Learn blocking and non-blocking communication.</li>
+<li>Study communication between multiple producers and consumers.</li>
+<li>Understand data ownership and queue item copying.</li>
+<li>Develop practical queue communication programs.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Is Task-to-Task Communication?</h2>
+<p>
+In a multitasking system, different tasks
+perform different operations. One task may
+collect sensor data while another task
+processes or displays that data.
+These tasks need a communication mechanism
+to exchange information.
+</p>
+<p>
+Task-to-task communication is the exchange
+of information or synchronization events
+between independently scheduled tasks.
+</p>
+<h3>Example</h3>
+<ul>
+<li>Sensor Task: Reads temperature values.</li>
+<li>Processing Task: Performs calculations.</li>
+<li>Display Task: Displays processed values.</li>
+</ul>
+<pre><code>+-------------+       +-------------+
+| Sensor Task | ----> | Processing  |
+|             | Queue | Task        |
++-------------+       +-------------+
+                            |
+                            | Queue
+                            v
+                      +-------------+
+                      | Display Task|
+                      +-------------+</code></pre>
+</section>
+
+<section>
+<h2>3. Why Are Queues Used for Task Communication?</h2>
+<p>
+A shared global variable can be used for
+simple data exchange, but it may create
+race conditions when multiple tasks access
+the same data.
+A FreeRTOS queue provides a structured
+communication mechanism with built-in
+synchronization and optional blocking.
+</p>
+<table>
+<tr><th>Feature</th><th>Shared Variable</th><th>FreeRTOS Queue</th></tr>
+<tr><td>Data storage</td><td>Application-managed variable.</td><td>Kernel-managed queue storage.</td></tr>
+<tr><td>Data transfer</td><td>Tasks read/write shared memory.</td><td>Items copied using queue APIs.</td></tr>
+<tr><td>Synchronization</td><td>Must be designed separately.</td><td>Queue operations coordinate access.</td></tr>
+<tr><td>Multiple pending items</td><td>Requires additional design.</td><td>Supported up to queue capacity.</td></tr>
+<tr><td>Blocking behavior</td><td>Not provided by a variable.</td><td>Senders and receivers can block.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. Producer-Consumer Architecture</h2>
+<p>
+The producer-consumer model is a common
+task communication architecture.
+A producer generates data and places it
+into a queue. A consumer retrieves the
+data and processes it.
+</p>
+<pre><code>       PRODUCER TASK
+             |
+             | xQueueSend()
+             v
+      +--------------+
+      | FreeRTOS     |
+      | Queue        |
+      +--------------+
+             |
+             | xQueueReceive()
+             v
+       CONSUMER TASK</code></pre>
+<h3>Producer Task</h3>
+<ul>
+<li>Generates application data.</li>
+<li>Sends data into the queue.</li>
+<li>Can block if the queue is full.</li>
+</ul>
+<h3>Consumer Task</h3>
+<ul>
+<li>Waits for data from the queue.</li>
+<li>Receives and processes items.</li>
+<li>Can block if the queue is empty.</li>
+</ul>
+</section>
+
+<section>
+<h2>5. Queue Creation for Task Communication</h2>
+<p>
+Before two tasks can communicate through
+a queue, the application must create the
+queue and share its handle with both tasks.
+</p>
+<pre><code>#include "FreeRTOS.h"
+#include "queue.h"
+
+QueueHandle_t dataQueue;
+
+void CreateCommunicationQueue(void)
+{
+    dataQueue = xQueueCreate(
+        10,
+        sizeof(int)
+    );
+
+    if (dataQueue == NULL)
+    {
+        /* Handle allocation failure */
+    }
+}</code></pre>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>10</td><td>Maximum number of items stored in the queue.</td></tr>
+<tr><td>sizeof(int)</td><td>Size of each queue item in bytes.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>6. Sending Data from a Producer Task</h2>
+<p>
+A producer task uses
+<code>xQueueSend()</code> to place an item
+into a queue.
+The queue copies the specified item into
+its own storage.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xQueueSend(
+    QueueHandle_t xQueue,
+    const void *pvItemToQueue,
+    TickType_t xTicksToWait
+);</code></pre>
+<h3>Example</h3>
+<pre><code>void ProducerTask(void *pvParameters)
+{
+    int sensorValue = 100;
+
+    for (;;)
+    {
+        if (xQueueSend(
+                dataQueue,
+                &sensorValue,
+                pdMS_TO_TICKS(100)
+            ) == pdPASS)
+        {
+            /* Data sent successfully */
+        }
+        else
+        {
+            /* Queue remained full */
+        }
+
+        sensorValue++;
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}</code></pre>
+</section>
+
+<section>
+<h2>7. Receiving Data in a Consumer Task</h2>
+<p>
+A consumer task uses
+<code>xQueueReceive()</code> to retrieve
+an item from the queue.
+The received item is copied into the
+application buffer and removed from the
+queue.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xQueueReceive(
+    QueueHandle_t xQueue,
+    void *pvBuffer,
+    TickType_t xTicksToWait
+);</code></pre>
+<h3>Example</h3>
+<pre><code>void ConsumerTask(void *pvParameters)
+{
+    int receivedValue;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                dataQueue,
+                &receivedValue,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Process receivedValue */
+        }
+    }
+}</code></pre>
+<p>
+The consumer blocks while the queue is
+empty, subject to the configured wait
+behavior. When data becomes available,
+the task can become Ready.
+</p>
+</section>
+
+<section>
+<h2>8. Complete Producer-Consumer Program</h2>
+<p>
+This example demonstrates two tasks
+communicating through a queue. The producer
+sends integer values, and the consumer
+receives and processes them.
+</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+QueueHandle_t dataQueue;
+
+void ProducerTask(void *pvParameters)
+{
+    int value = 1;
+
+    for (;;)
+    {
+        if (xQueueSend(
+                dataQueue,
+                &value,
+                pdMS_TO_TICKS(100)
+            ) == pdPASS)
+        {
+            /* Value sent */
+        }
+
+        value++;
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void ConsumerTask(void *pvParameters)
+{
+    int receivedValue;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                dataQueue,
+                &receivedValue,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Process receivedValue */
+        }
+    }
+}
+
+int main(void)
+{
+    dataQueue = xQueueCreate(
+        5,
+        sizeof(int)
+    );
+
+    if (dataQueue == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTaskCreate(
+            ProducerTask,
+            "Producer",
+            configMINIMAL_STACK_SIZE,
+            NULL,
+            2,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTaskCreate(
+            ConsumerTask,
+            "Consumer",
+            configMINIMAL_STACK_SIZE,
+            NULL,
+            2,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Program Explanation</h3>
+<ol>
+<li>A queue is created with five integer positions.</li>
+<li>The producer task generates integer values.</li>
+<li>The producer sends each value into the queue.</li>
+<li>The consumer waits for an available item.</li>
+<li>The consumer receives and processes the item.</li>
+<li>The queue provides the data-transfer mechanism between tasks.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+The producer generates values such as
+1, 2, 3, 4 and so on. The consumer receives
+the queued values in FIFO order and processes
+them. The exact execution timing depends on
+task priorities, scheduling and system load.
+</p>
+</section>
+
+<section>
+<h2>9. FIFO Communication Between Tasks</h2>
+<p>
+FreeRTOS queues normally operate in
+First-In, First-Out order when items are
+sent to the back and received from the front.
+</p>
+<pre><code>Producer sends:
+
+10 -> 20 -> 30
+
+Queue:
++----+----+----+
+| 10 | 20 | 30 |
++----+----+----+
+  ^
+  |
+Next item received
+
+Consumer receives:
+
+10 -> 20 -> 30</code></pre>
+<p>
+The receiving task obtains the oldest
+queued item first when using normal FIFO
+send and receive operations.
+</p>
+</section>
+
+<section>
+<h2>10. Communication Between Multiple Producers and One Consumer</h2>
+<p>
+A single queue can be shared by multiple
+producer tasks. Each producer sends items
+to the same queue, and one consumer receives
+them.
+</p>
+<pre><code>+----------------+
+| Producer Task 1|
++----------------+
+        |
+        |
+        v
+   +----------+
+   |          |
+   |  Queue   | -----> Consumer Task
+   |          |
+   +----------+
+        ^
+        |
++----------------+
+| Producer Task 2|
++----------------+</code></pre>
+<p>
+The queue serializes its own operations.
+However, the application must still define
+how to identify the source of each message
+if that information matters.
+</p>
+<h3>Message Structure Example</h3>
+<pre><code>typedef struct
+{
+    int sourceID;
+    int data;
+} Message_t;</code></pre>
+<p>
+A producer can send a complete structure.
+The consumer receives the structure and
+uses sourceID to identify the producer.
+</p>
+</section>
+
+<section>
+<h2>11. Communication Between One Producer and Multiple Consumers</h2>
+<p>
+A queue can also be shared by multiple
+consumer tasks.
+When an item is received, it is removed
+from the queue and delivered to one
+receiving task.
+</p>
+<pre><code>              Producer
+                 |
+                 v
+             +-------+
+             | Queue |
+             +-------+
+              /     \
+             v       v
+        Consumer  Consumer
+          Task 1    Task 2</code></pre>
+<div class="note">
+A normal FreeRTOS queue distributes items
+among competing consumers. It does not
+broadcast every item to all consumers.
+For broadcast behavior, use separate queues,
+an event group, or another suitable design.
+</div>
+</section>
+
+<section>
+<h2>12. Blocking and Non-Blocking Communication</h2>
+<p>
+Queue operations can be configured to wait
+for a specified number of ticks when the
+queue is full or empty.
+</p>
+<table>
+<tr><th>Wait Value</th><th>Behavior</th></tr>
+<tr><td>0</td><td>Return immediately if the operation cannot complete.</td></tr>
+<tr><td>Finite tick value</td><td>Wait up to the specified number of ticks.</td></tr>
+<tr><td>portMAX_DELAY</td><td>Wait indefinitely where supported by the configuration.</td></tr>
+</table>
+<h3>Non-Blocking Send</h3>
+<pre><code>xQueueSend(
+    dataQueue,
+    &value,
+    0
+);</code></pre>
+<h3>Blocking Receive</h3>
+<pre><code>xQueueReceive(
+    dataQueue,
+    &receivedValue,
+    portMAX_DELAY
+);</code></pre>
+</section>
+
+<section>
+<h2>13. Sending Structures Through Queues</h2>
+<p>
+Queues can transfer structures, not only
+individual integer values. The queue item
+size must match the structure size.
+</p>
+<h3>Structure Definition</h3>
+<pre><code>typedef struct
+{
+    int temperature;
+    int humidity;
+    int sensorID;
+} SensorData_t;</code></pre>
+<h3>Queue Creation</h3>
+<pre><code>QueueHandle_t sensorQueue;
+
+sensorQueue = xQueueCreate(
+    5,
+    sizeof(SensorData_t)
+);</code></pre>
+<h3>Sending Structure</h3>
+<pre><code>SensorData_t sensorData;
+
+sensorData.temperature = 28;
+sensorData.humidity = 65;
+sensorData.sensorID = 1;
+
+xQueueSend(
+    sensorQueue,
+    &sensorData,
+    0
+);</code></pre>
+<h3>Receiving Structure</h3>
+<pre><code>SensorData_t receivedData;
+
+if (xQueueReceive(
+        sensorQueue,
+        &receivedData,
+        portMAX_DELAY
+    ) == pdPASS)
+{
+    /* Use receivedData fields */
+}</code></pre>
+<div class="note">
+The queue copies the complete structure.
+For structures containing pointers, only
+the pointer values are copied. The pointed-to
+objects require a separate lifetime and
+ownership strategy.
+</div>
+</section>
+
+<section>
+<h2>14. Queue Communication Using Pointer Items</h2>
+<p>
+A queue can also store pointers to data
+objects. This can reduce copying of large
+data structures, but it introduces
+additional memory-management requirements.
+</p>
+<pre><code>typedef struct
+{
+    int sensorValue;
+    int sensorID;
+} SensorData_t;
+
+QueueHandle_t pointerQueue;
+
+/* Queue stores pointers */
+pointerQueue = xQueueCreate(
+    5,
+    sizeof(SensorData_t *)
+);</code></pre>
+<h3>Sending a Pointer</h3>
+<pre><code>SensorData_t *dataPtr;
+
+xQueueSend(
+    pointerQueue,
+    &dataPtr,
+    0
+);</code></pre>
+<h3>Receiving a Pointer</h3>
+<pre><code>SensorData_t *receivedPtr;
+
+if (xQueueReceive(
+        pointerQueue,
+        &receivedPtr,
+        portMAX_DELAY
+    ) == pdPASS)
+{
+    /* Access the pointed-to object */
+}</code></pre>
+<div class="warning">
+The queue copies the pointer, not the
+pointed-to structure. Ensure that the object
+remains valid until the receiver finishes
+using it. Define who owns and releases the
+memory, and avoid sending pointers to
+short-lived local variables.
+</div>
+</section>
+
+<section>
+<h2>15. Queue Communication vs Direct Shared Memory</h2>
+<table>
+<tr><th>Feature</th><th>Queue Communication</th><th>Shared Memory</th></tr>
+<tr><td>Data transfer</td><td>Copies items through queue APIs.</td><td>Tasks access common memory.</td></tr>
+<tr><td>Synchronization</td><td>Built into queue operations.</td><td>Must be designed explicitly.</td></tr>
+<tr><td>Data buffering</td><td>Multiple items can be pending.</td><td>Requires application-managed buffering.</td></tr>
+<tr><td>Memory overhead</td><td>Queue storage and control structures.</td><td>Shared data storage and synchronization objects.</td></tr>
+<tr><td>Best suited for</td><td>Message and data exchange.</td><td>Large shared data with carefully managed access.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>16. Best Practices for Queue-Based Communication</h2>
+<ul>
+<li>Choose queue length according to producer rate and consumer response time.</li>
+<li>Choose an item size that matches the actual data structure.</li>
+<li>Always check xQueueSend() and xQueueReceive() return values.</li>
+<li>Use blocking operations when appropriate instead of continuous polling.</li>
+<li>Keep queue items reasonably small where practical.</li>
+<li>Use a defined ownership protocol when sending pointers.</li>
+<li>Use separate queues when independent consumers need every message.</li>
+<li>Do not assume a queue broadcasts messages.</li>
+<li>Use FromISR APIs when communicating from interrupt context.</li>
+<li>Define queue-full and queue-empty recovery behavior.</li>
+</ul>
+</section>
+
+<section>
+<h2>17. Practical Experiment</h2>
+<p><strong>Objective:</strong> Implement communication between two FreeRTOS tasks using a queue.</p>
+<h3>Procedure</h3>
+<ol>
+<li>Create a queue for integer values.</li>
+<li>Create a producer task.</li>
+<li>Create a consumer task.</li>
+<li>Send values from the producer task.</li>
+<li>Receive values in the consumer task.</li>
+<li>Use a finite timeout for the send operation.</li>
+<li>Use a blocking receive operation.</li>
+<li>Observe task states and queue contents using available debugging tools.</li>
+<li>Repeat the experiment with a structure as the queue item.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+The producer sends data to the queue and
+the consumer retrieves it in FIFO order.
+When the queue is empty, the consumer can
+block until data arrives. When the queue
+is full, the producer can wait or handle
+the failed send according to its timeout.
+</p>
+</section>
+
+<section>
+<h2>18. Common Programming Mistakes</h2>
+<table>
+<tr><th>Mistake</th><th>Correction</th></tr>
+<tr><td>Incorrect queue item size</td><td>Use the correct sizeof expression.</td></tr>
+<tr><td>Ignoring queue creation failure</td><td>Check for NULL before using the handle.</td></tr>
+<tr><td>Ignoring send or receive failure</td><td>Check the returned status.</td></tr>
+<tr><td>Assuming queue sends broadcast data</td><td>Use separate queues or another broadcast design.</td></tr>
+<tr><td>Sending pointers to local variables</td><td>Ensure the pointed-to memory remains valid.</td></tr>
+<tr><td>Using task APIs from an ISR</td><td>Use the corresponding FromISR API.</td></tr>
+<tr><td>Making the queue too small</td><td>Account for bursts and consumer delays.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>19. LPC2129 and Keil Simulator Considerations</h2>
+<ul>
+<li>LPC2129 uses the ARM7TDMI-S processor core.</li>
+<li>Verify the selected FreeRTOS ARM7 port and Keil compiler integration.</li>
+<li>Check queue and task API availability in the selected kernel version.</li>
+<li>Use debugger variables to inspect values and task execution where supported.</li>
+<li>Do not assume that external sensor, UART or other physical peripheral behavior is simulated automatically.</li>
+</ul>
+<div class="warning">
+The examples are generic FreeRTOS programs.
+They are not verified LPC2129 Keil simulator
+projects. Confirm the exact port, compiler,
+startup code and linker configuration first.
+</div>
+</section>
+
+<section>
+<h2>20. Lesson Summary</h2>
+<ul>
+<li>Task-to-task communication allows independent tasks to exchange information.</li>
+<li>FreeRTOS queues provide buffered communication.</li>
+<li>Producer tasks send data using xQueueSend().</li>
+<li>Consumer tasks receive data using xQueueReceive().</li>
+<li>Queue operations copy fixed-size items.</li>
+<li>Queues support integer values, structures and pointer values.</li>
+<li>Normal queues distribute items among competing consumers; they do not broadcast.</li>
+<li>Blocking time controls how long a task waits for queue space or data.</li>
+<li>Pointer-based communication requires careful memory ownership.</li>
+</ul>
+</section>
+
+<section>
+<h2>21. Practice Assignment</h2>
+<ol>
+<li>Define task-to-task communication.</li>
+<li>Explain the producer-consumer model.</li>
+<li>Why are queues preferred over unprotected shared variables for many communication tasks?</li>
+<li>Write the syntax of xQueueSend() and xQueueReceive().</li>
+<li>Develop a producer-consumer program using integer data.</li>
+<li>Explain communication between multiple producers and one consumer.</li>
+<li>Explain why a normal queue does not broadcast every message to all consumers.</li>
+<li>Write a program to send a structure through a queue.</li>
+<li>Explain pointer-based queue communication and its memory-management risks.</li>
+<li>List best practices for reliable task-to-task communication.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L07_Queue_Sets.html">← Previous Lesson</a>
+<a href="index.html">Chapter 15 Index</a>
+<a href="L09_Queue_Communication_From_ISR.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
