@@ -1,1 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sensor Monitoring Using FreeRTOS | NS Learning Hub</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Sensor Monitoring Using FreeRTOS</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 20: Practical Projects and Interview Preparation</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 20</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Understand sensor-monitoring architecture in an RTOS application.</li>
+<li>Divide sensor acquisition and data processing into separate tasks.</li>
+<li>Use periodic task execution for sensor sampling.</li>
+<li>Understand ADC-based sensor measurement.</li>
+<li>Transfer measurements between tasks using a FreeRTOS queue.</li>
+<li>Use <code>xQueueSend()</code> and <code>xQueueReceive()</code>.</li>
+<li>Apply basic threshold detection and fault handling.</li>
+<li>Understand sampling interval, measurement latency and data loss.</li>
+<li>Design a modular embedded sensor-monitoring application.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Project Introduction</h2>
+<p>Sensor monitoring is a common embedded application. A microcontroller periodically reads sensor information, processes the measurements and reports the results.</p>
+
+<p>This project uses FreeRTOS to separate sensor acquisition from data processing.</p>
+
+<h3>Example Application</h3>
+<p>A temperature-monitoring system periodically reads a temperature sensor, transfers the measurement through a queue and checks whether the temperature exceeds a configured threshold.</p>
+
+<table>
+<tr><th>Component</th><th>Responsibility</th></tr>
+<tr><td>Sensor</td><td>Provides a physical measurement.</td></tr>
+<tr><td>ADC driver</td><td>Converts an analog voltage into a digital value, where required.</td></tr>
+<tr><td>Sensor Task</td><td>Samples the sensor periodically.</td></tr>
+<tr><td>FreeRTOS Queue</td><td>Transfers measurement data between tasks.</td></tr>
+<tr><td>Processing Task</td><td>Checks measurements and detects threshold violations.</td></tr>
+<tr><td>Output Driver</td><td>Reports status through UART, display or another interface.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>3. System Architecture</h2>
+<div class="diagram">
+          TEMPERATURE SENSOR
+                  |
+                  v
+             ADC DRIVER
+                  |
+                  v
+          SENSOR ACQUISITION TASK
+                  |
+            SENSOR DATA
+                  |
+                  v
+            FREERTOS QUEUE
+                  |
+                  v
+          DATA PROCESSING TASK
+                  |
+          +-------+-------+
+          |               |
+          v               v
+      NORMAL RANGE    HIGH TEMPERATURE
+          |               |
+          v               v
+      STATUS LOG      WARNING / ALARM
+</div>
+
+<p>The sensor task is responsible for acquisition. The processing task is responsible for interpreting the measurement. The queue separates these responsibilities.</p>
+</section>
+
+<section>
+<h2>4. Why Use Multiple Tasks?</h2>
+<p>A single-loop implementation can perform sensor acquisition, processing and reporting sequentially. However, this can make the application difficult to extend and schedule.</p>
+
+<h3>Advantages of Task Separation</h3>
+<ul>
+<li>Sensor sampling has its own execution period.</li>
+<li>Processing does not need to be embedded inside the acquisition routine.</li>
+<li>Communication is handled through a defined queue interface.</li>
+<li>Additional tasks can be added for logging or display updates.</li>
+<li>Task priorities can be selected according to application requirements.</li>
+</ul>
+
+<div class="note">Multiple tasks improve modularity, but they also introduce scheduling, synchronization, stack and communication requirements. They do not automatically make a system faster or more deterministic.</div>
+</section>
+
+<section>
+<h2>5. Understanding Sensor Acquisition</h2>
+<p>A sensor converts a physical quantity into an electrical signal or digital measurement.</p>
+
+<h3>Common Sensor Types</h3>
+<table>
+<tr><th>Sensor</th><th>Measured Quantity</th><th>Typical Interface</th></tr>
+<tr><td>LM35</td><td>Temperature</td><td>Analog voltage</td></tr>
+<tr><td>NTC thermistor</td><td>Temperature</td><td>Analog voltage through a divider</td></tr>
+<tr><td>LDR</td><td>Light intensity</td><td>Analog voltage through a divider</td></tr>
+<tr><td>Pressure sensor</td><td>Pressure</td><td>Analog or digital</td></tr>
+<tr><td>Digital temperature sensor</td><td>Temperature</td><td>I2C, SPI or another digital interface</td></tr>
+</table>
+
+<h3>Analog Measurement Flow</h3>
+<ol>
+<li>The sensor produces an analog voltage.</li>
+<li>The ADC samples the input voltage.</li>
+<li>The ADC produces a digital count.</li>
+<li>The application converts the count into engineering units.</li>
+<li>The processing task evaluates the measurement.</li>
+</ol>
+</section>
+
+<section>
+<h2>6. ADC Conversion Basics</h2>
+<p>An ideal unipolar N-bit ADC has \(2^N\) quantization codes.</p>
+
+<p>For an ADC with a 10-bit resolution:</p>
+<ul>
+<li>Number of codes = 1024.</li>
+<li>Digital output range = 0 to 1023.</li>
+<li>For a 3.3 V reference, the ideal code width is approximately 3.3/1024 volts.</li>
+</ul>
+
+<h3>Approximate ADC Voltage Conversion</h3>
+<pre><code>Voltage = (ADC_Count * Vref) / 1023.0</code></pre>
+
+<p>Here, 1023 is the maximum code for a 10-bit ADC. The exact voltage interpretation depends on the ADC transfer function, reference voltage, input range and calibration.</p>
+
+<h3>Example</h3>
+<p>Suppose:</p>
+<ul>
+<li>ADC resolution = 10 bits.</li>
+<li>Reference voltage = 3.3 V.</li>
+<li>ADC count = 512.</li>
+</ul>
+
+<p>Approximate input voltage:</p>
+<pre><code>Voltage = (512 * 3.3) / 1023
+        = 1.6516 V approximately</code></pre>
+
+<div class="note">This is an idealized conversion. Real ADC measurements have quantization error, offset error, gain error, noise and reference-voltage uncertainty.</div>
+</section>
+
+<section>
+<h2>7. Temperature Conversion Example</h2>
+<p>For an LM35 sensor, the nominal output scale is 10 mV per degree Celsius.</p>
+
+<pre><code>Temperature_C = Sensor_Voltage / 0.010</code></pre>
+
+<p>For example, if the measured voltage is 0.28 V:</p>
+<pre><code>Temperature_C = 0.28 / 0.010
+              = 28 C</code></pre>
+
+<div class="warning">This conversion assumes an LM35-type sensor and its nominal transfer characteristic. It is not suitable for an NTC thermistor or an arbitrary temperature sensor. Verify the actual sensor datasheet and calibration.</div>
+</section>
+
+<section>
+<h2>8. FreeRTOS Queue for Sensor Data</h2>
+<p>A queue allows one task to send measurement data and another task to receive it.</p>
+
+<h3>Queue Creation</h3>
+<pre><code>QueueHandle_t sensorQueue;
+
+sensorQueue = xQueueCreate(
+    5,
+    sizeof(SensorData_t)
+);</code></pre>
+
+<p>The example creates a queue with five measurement slots.</p>
+
+<h3>Send Measurement</h3>
+<pre><code>xQueueSend(
+    sensorQueue,
+    &amp;sensorData,
+    0
+);</code></pre>
+
+<h3>Receive Measurement</h3>
+<pre><code>xQueueReceive(
+    sensorQueue,
+    &amp;receivedData,
+    portMAX_DELAY
+);</code></pre>
+
+<p>FreeRTOS queues copy fixed-size items into and out of queue storage. This example sends a structure by value through the queue.</p>
+</section>
+
+<section>
+<h2>9. Sensor Data Structure</h2>
+<p>A structure can carry a measurement and its associated metadata.</p>
+
+<pre><code>typedef struct
+{
+    uint16_t adcCount;
+    float voltage;
+    float temperature;
+    uint32_t sampleNumber;
+} SensorData_t;</code></pre>
+
+<table>
+<tr><th>Member</th><th>Purpose</th></tr>
+<tr><td><code>adcCount</code></td><td>Raw ADC measurement.</td></tr>
+<tr><td><code>voltage</code></td><td>Converted sensor voltage.</td></tr>
+<tr><td><code>temperature</code></td><td>Calculated temperature.</td></tr>
+<tr><td><code>sampleNumber</code></td><td>Measurement sequence number.</td></tr>
+</table>
+
+<p>The queue copies the complete structure. The receiving task gets its own copy of the queued measurement.</p>
+</section>
+
+<section>
+<h2>10. Complete FreeRTOS Sensor Monitoring Program</h2>
+<p><strong>Objective:</strong> Periodically acquire a simulated temperature measurement, send it through a queue and process the received data.</p>
+
+<div class="note">This example uses a simulated ADC reading so that the RTOS task and queue logic can be studied independently of physical sensor hardware. Replace the simulated function with a target-specific ADC driver for a real project.</div>
+
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "stdint.h"
+#include "stdio.h"
+
+/* Sensor data structure */
+typedef struct
+{
+    uint16_t adcCount;
+    float voltage;
+    float temperature;
+    uint32_t sampleNumber;
+} SensorData_t;
+
+/* Queue handle */
+static QueueHandle_t sensorQueue = NULL;
+
+/* Sample counter */
+static uint32_t sampleCounter = 0;
+
+/* Function declarations */
+static void SensorTask(void *pvParameters);
+static void ProcessingTask(void *pvParameters);
+
+/* Simulated ADC function */
+static uint16_t ADC_ReadTemperature(void)
+{
+    /*
+     * Demonstration value.
+     * Replace with actual ADC driver.
+     */
+    static uint16_t simulatedCount = 434;
+
+    simulatedCount += 2;
+
+    if (simulatedCount > 620)
+    {
+        simulatedCount = 434;
+    }
+
+    return simulatedCount;
+}
+
+/* Sensor acquisition task */
+static void SensorTask(void *pvParameters)
+{
+    SensorData_t sensorData;
+
+    TickType_t lastWakeTime = xTaskGetTickCount();
+
+    (void) pvParameters;
+
+    for (;;)
+    {
+        /* Read ADC */
+        sensorData.adcCount = ADC_ReadTemperature();
+
+        /* Convert ADC count into voltage */
+        sensorData.voltage =
+            ((float)sensorData.adcCount * 3.3f) / 1023.0f;
+
+        /*
+         * LM35 nominal scale:
+         * 10 mV per degree Celsius.
+         */
+        sensorData.temperature =
+            sensorData.voltage / 0.010f;
+
+        /* Increment sequence number */
+        sensorData.sampleNumber = ++sampleCounter;
+
+        /* Send complete structure to queue */
+        if (xQueueSend(
+                sensorQueue,
+                &amp;sensorData,
+                0
+            ) != pdPASS)
+        {
+            /* Queue full: record or handle dropped sample */
+        }
+
+        /* Periodic sampling interval */
+        vTaskDelayUntil(
+            &amp;lastWakeTime,
+            pdMS_TO_TICKS(1000)
+        );
+    }
+}
+
+/* Data processing task */
+static void ProcessingTask(void *pvParameters)
+{
+    SensorData_t receivedData;
+
+    (void) pvParameters;
+
+    for (;;)
+    {
+        /* Wait for the next measurement */
+        if (xQueueReceive(
+                sensorQueue,
+                &amp;receivedData,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Process received measurement */
+            if (receivedData.temperature >= 40.0f)
+            {
+                /*
+                 * High-temperature condition.
+                 * Replace with application alarm logic.
+                 */
+                printf(
+                    "WARNING: High Temperature = %.2f C\r\n",
+                    (double)receivedData.temperature
+                );
+            }
+            else
+            {
+                printf(
+                    "Sample %lu | ADC = %u | Voltage = %.3f V | Temperature = %.2f C\r\n",
+                    (unsigned long)receivedData.sampleNumber,
+                    (unsigned int)receivedData.adcCount,
+                    (double)receivedData.voltage,
+                    (double)receivedData.temperature
+                );
+            }
+        }
+    }
+}
+
+int main(void)
+{
+    /* Create queue with five measurement slots */
+    sensorQueue = xQueueCreate(
+        5,
+        sizeof(SensorData_t)
+    );
+
+    if (sensorQueue == NULL)
+    {
+        for (;;)
+        {
+            /* Queue creation failed */
+        }
+    }
+
+    /* Create sensor acquisition task */
+    if (xTaskCreate(
+            SensorTask,
+            "SensorTask",
+            256,
+            NULL,
+            2,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+            /* Sensor task creation failed */
+        }
+    }
+
+    /* Create processing task */
+    if (xTaskCreate(
+            ProcessingTask,
+            "ProcessingTask",
+            256,
+            NULL,
+            3,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+            /* Processing task creation failed */
+        }
+    }
+
+    /* Start scheduler */
+    vTaskStartScheduler();
+
+    /* Reached if scheduler startup fails */
+    for (;;)
+    {
+    }
+}</code></pre>
+</section>
+
+<section>
+<h2>11. Program Explanation</h2>
+
+<h3>Step 1 – Define Sensor Structure</h3>
+<pre><code>typedef struct
+{
+    uint16_t adcCount;
+    float voltage;
+    float temperature;
+    uint32_t sampleNumber;
+} SensorData_t;</code></pre>
+<p>The structure groups the measurement and its metadata into one queue item.</p>
+
+<h3>Step 2 – Create Queue</h3>
+<pre><code>sensorQueue = xQueueCreate(
+    5,
+    sizeof(SensorData_t)
+);</code></pre>
+<p>The queue stores five structures. Check the returned handle before using it.</p>
+
+<h3>Step 3 – Read Sensor</h3>
+<pre><code>sensorData.adcCount = ADC_ReadTemperature();</code></pre>
+<p>The demonstration ADC function returns a simulated digital count. In a real system, use the ADC driver for the selected MCU.</p>
+
+<h3>Step 4 – Convert ADC Count</h3>
+<pre><code>sensorData.voltage =
+    ((float)sensorData.adcCount * 3.3f) / 1023.0f;
+
+sensorData.temperature =
+    sensorData.voltage / 0.010f;</code></pre>
+<p>The voltage is calculated using a 3.3 V reference and the temperature is calculated using the nominal LM35 scale.</p>
+
+<h3>Step 5 – Send Data to Queue</h3>
+<pre><code>xQueueSend(
+    sensorQueue,
+    &amp;sensorData,
+    0
+);</code></pre>
+<p>The acquisition task sends a copy of the structure. A zero wait time means it does not block if the queue is full.</p>
+
+<h3>Step 6 – Receive and Process Data</h3>
+<pre><code>xQueueReceive(
+    sensorQueue,
+    &amp;receivedData,
+    portMAX_DELAY
+);</code></pre>
+<p>The processing task blocks until a measurement becomes available.</p>
+
+<h3>Step 7 – Check Threshold</h3>
+<pre><code>if (receivedData.temperature >= 40.0f)
+{
+    /* High-temperature condition */
+}</code></pre>
+<p>The example uses 40°C as an illustrative threshold. Actual alarm thresholds must come from the application's requirements and sensor characteristics.</p>
+</section>
+
+<section>
+<h2>12. Understanding vTaskDelayUntil()</h2>
+<p>The sensor task uses <code>vTaskDelayUntil()</code> to maintain a nominal periodic sampling schedule.</p>
+
+<pre><code>TickType_t lastWakeTime = xTaskGetTickCount();
+
+vTaskDelayUntil(
+    &amp;lastWakeTime,
+    pdMS_TO_TICKS(1000)
+);</code></pre>
+
+<p>For a 1000 ms interval, the task follows a nominal one-second release pattern, subject to tick resolution and scheduler behavior.</p>
+
+<h3>Difference Between Delay APIs</h3>
+<table>
+<tr><th>API</th><th>Behavior</th></tr>
+<tr><td><code>vTaskDelay()</code></td><td>Blocks for a relative number of ticks from the call.</td></tr>
+<tr><td><code>vTaskDelayUntil()</code></td><td>Uses a previous wake-time reference to maintain a periodic schedule.</td></tr>
+</table>
+
+<div class="warning">Periodic scheduling does not guarantee that sampling or processing finishes before a deadline. Execution time, higher-priority tasks, interrupt load and blocking must also be considered.</div>
+</section>
+
+<section>
+<h2>13. Understanding Queue Full Condition</h2>
+<p>The example uses a queue with five measurement slots.</p>
+
+<p>If the sensor task sends measurements faster than the processing task receives them, the queue may become full.</p>
+
+<h3>Possible Queue Policies</h3>
+<table>
+<tr><th>Policy</th><th>Typical Use</th></tr>
+<tr><td>Reject new sample</td><td>Preserve older queued samples.</td></tr>
+<tr><td>Block producer</td><td>Apply backpressure when delayed sampling is acceptable.</td></tr>
+<tr><td>Overwrite latest value</td><td>Keep the newest state when intermediate samples are not required; commonly use a queue of length one.</td></tr>
+<tr><td>Increase queue capacity</td><td>Absorb a known burst or temporary processing delay.</td></tr>
+<tr><td>Record overflow</td><td>Detect that the application is not keeping up.</td></tr>
+</table>
+
+<p>Queue capacity should be selected using the maximum expected burst, producer rate and worst-case consumer delay.</p>
+</section>
+
+<section>
+<h2>14. Sensor Sampling Rate</h2>
+<p>Sampling rate is the number of measurements acquired per second.</p>
+
+<pre><code>Sampling Frequency = 1 / Sampling Period</code></pre>
+
+<p>Examples:</p>
+<table>
+<tr><th>Sampling Period</th><th>Sampling Frequency</th></tr>
+<tr><td>1000 ms</td><td>1 Hz</td></tr>
+<tr><td>500 ms</td><td>2 Hz</td></tr>
+<tr><td>100 ms</td><td>10 Hz</td></tr>
+<tr><td>10 ms</td><td>100 Hz</td></tr>
+</table>
+
+<p>The correct sampling frequency depends on the sensor bandwidth, physical process, required response time and signal-processing requirements.</p>
+</section>
+
+<section>
+<h2>15. Sensor Filtering</h2>
+<p>Real sensor measurements may contain noise. Filtering can reduce short-term fluctuations.</p>
+
+<h3>Moving Average Filter</h3>
+<p>A simple moving average calculates the mean of the most recent N samples.</p>
+
+\[
+y[n]=\frac{1}{N}\sum_{k=0}^{N-1}x[n-k]
+\]
+
+<p>For four samples:</p>
+<pre><code>Filtered Value =
+    (Sample1 + Sample2 + Sample3 + Sample4) / 4</code></pre>
+
+<h3>Benefits</h3>
+<ul>
+<li>Reduces some random measurement noise.</li>
+<li>Smooths displayed values.</li>
+<li>Can reduce false threshold transitions.</li>
+</ul>
+
+<h3>Limitations</h3>
+<ul>
+<li>Adds delay to the measurement response.</li>
+<li>May hide short-duration peaks.</li>
+<li>Requires buffer or sample-history management.</li>
+<li>Does not remove every type of interference.</li>
+</ul>
+</section>
+
+<section>
+<h2>16. Threshold Detection and Hysteresis</h2>
+<p>A simple threshold may cause an alarm to switch repeatedly when the measurement fluctuates near the threshold.</p>
+
+<h3>Example with Hysteresis</h3>
+<ul>
+<li>Set alarm when temperature reaches or exceeds 40°C.</li>
+<li>Clear alarm when temperature falls below 38°C.</li>
+</ul>
+
+<pre><code>if (temperature >= 40.0f)
+{
+    alarmActive = 1;
+}
+else if (temperature < 38.0f)
+{
+    alarmActive = 0;
+}</code></pre>
+
+<p>The two different thresholds create a hysteresis band and reduce rapid switching near the alarm boundary.</p>
+</section>
+
+<section>
+<h2>17. Adding a Dedicated Alarm Task</h2>
+<p>A larger application can separate acquisition, processing and alarm handling.</p>
+
+<div class="diagram">
+       SENSOR TASK
+            |
+            v
+        SENSOR QUEUE
+            |
+            v
+     PROCESSING TASK
+            |
+       ALARM EVENT
+            |
+            v
+        ALARM TASK
+            |
+       BUZZER / RELAY
+</div>
+
+<p>The processing task can notify the alarm task through an event group, task notification or a separate queue. The selection depends on whether the alarm requires event bits, counts or structured data.</p>
+</section>
+
+<section>
+<h2>18. Task Priority Selection</h2>
+<p>Task priorities should reflect response requirements, not simply the order in which tasks were created.</p>
+
+<table>
+<tr><th>Task</th><th>Example Priority</th><th>Reason</th></tr>
+<tr><td>Sensor acquisition</td><td>2</td><td>Maintains required sampling schedule.</td></tr>
+<tr><td>Data processing</td><td>3</td><td>Processes available measurements promptly.</td></tr>
+<tr><td>Display or logging</td><td>1</td><td>Non-critical reporting activity.</td></tr>
+</table>
+
+<div class="note">These are illustrative priority values, not universal recommendations. The correct assignment depends on task deadlines, execution times, blocking, interrupt load and the configured priority range.</div>
+</section>
+
+<section>
+<h2>19. Improving the Project</h2>
+<p>Consider the following enhancements for a production-quality design:</p>
+<ul>
+<li>Replace simulated ADC values with a hardware ADC driver.</li>
+<li>Use calibrated sensor conversion equations.</li>
+<li>Check ADC conversion and sensor fault status.</li>
+<li>Track queue-send failures and sequence-number gaps.</li>
+<li>Implement a suitable filtering method.</li>
+<li>Add threshold hysteresis.</li>
+<li>Separate alarm handling from data acquisition.</li>
+<li>Use a watchdog strategy based on meaningful task progress.</li>
+<li>Measure task execution time and response time.</li>
+<li>Validate the system under maximum expected load.</li>
+</ul>
+</section>
+
+<section>
+<h2>20. Practical Exercise 1 – Add a Second Sensor</h2>
+<p><strong>Objective:</strong> Monitor temperature and light intensity in the same application.</p>
+<ul>
+<li>Add a second ADC acquisition function.</li>
+<li>Extend the data structure with a light measurement.</li>
+<li>Send both readings through the queue.</li>
+<li>Process both values in the processing task.</li>
+<li>Report temperature and light status separately.</li>
+</ul>
+<p><strong>Expected result:</strong> One queue item contains both sensor measurements and their associated metadata.</p>
+</section>
+
+<section>
+<h2>21. Practical Exercise 2 – Change the Sampling Rate</h2>
+<p><strong>Objective:</strong> Configure periodic sampling at 100 ms.</p>
+<pre><code>vTaskDelayUntil(
+    &amp;lastWakeTime,
+    pdMS_TO_TICKS(100)
+);</code></pre>
+<ul>
+<li>Change the sampling interval from 1000 ms to 100 ms.</li>
+<li>Observe the measurement sequence numbers.</li>
+<li>Check whether the queue becomes full.</li>
+<li>Compare producer and consumer rates.</li>
+</ul>
+<p><strong>Expected result:</strong> A nominal 10 Hz sampling schedule, subject to tick resolution and task execution behavior.</p>
+</section>
+
+<section>
+<h2>22. Practical Exercise 3 – Add Moving Average Filtering</h2>
+<p><strong>Objective:</strong> Smooth noisy sensor readings.</p>
+<ul>
+<li>Maintain a fixed-size sample buffer.</li>
+<li>Calculate the average of the latest four readings.</li>
+<li>Send both raw and filtered measurements to the processing task.</li>
+<li>Compare their response to a sudden measurement change.</li>
+</ul>
+<p><strong>Expected result:</strong> A smoother output with a measurable response delay.</p>
+</section>
+
+<section>
+<h2>23. Practical Exercise 4 – Queue Overflow Detection</h2>
+<p><strong>Objective:</strong> Detect when the processing task cannot keep up with sensor acquisition.</p>
+<ul>
+<li>Keep the queue capacity small.</li>
+<li>Temporarily slow the processing task.</li>
+<li>Check the return value of <code>xQueueSend()</code>.</li>
+<li>Maintain a dropped-sample counter.</li>
+<li>Restore the normal processing rate and inspect sequence numbers.</li>
+</ul>
+<p><strong>Expected result:</strong> Queue overflow becomes observable instead of silently ignored.</p>
+</section>
+
+<section>
+<h2>24. Common Problems and Troubleshooting</h2>
+<table>
+<tr><th>Problem</th><th>Possible Cause</th><th>Solution</th></tr>
+<tr><td>Queue creation fails</td><td>Insufficient heap or invalid allocation setup.</td><td>Check FreeRTOS memory configuration.</td></tr>
+<tr><td>No measurements received</td><td>Producer task not running or wrong queue handle.</td><td>Inspect task creation and queue usage.</td></tr>
+<tr><td>Queue becomes full</td><td>Consumer cannot keep up.</td><td>Review sampling rate and processing time.</td></tr>
+<tr><td>Incorrect temperature</td><td>Wrong sensor conversion formula.</td><td>Verify sensor type and calibration.</td></tr>
+<tr><td>Unstable readings</td><td>Noise, reference variation or sensor wiring.</td><td>Review hardware and filtering.</td></tr>
+<tr><td>Sampling interval varies</td><td>Tick resolution, execution overruns or interference.</td><td>Measure timing and review scheduling.</td></tr>
+<tr><td>Alarm rapidly toggles</td><td>Measurement fluctuates around threshold.</td><td>Apply hysteresis or suitable filtering.</td></tr>
+<tr><td>Task stack overflow</td><td>Insufficient stack allocation.</td><td>Measure stack use and increase allocation if needed.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>25. Keil µVision and LPC2129 Simulator Notes</h2>
+<p>The LPC2129 contains a 10-bit ADC with four analog input channels. The ADC input pins and peripheral configuration must match the device datasheet.</p>
+
+<h3>Relevant LPC2129 ADC Information</h3>
+<table>
+<tr><th>Feature</th><th>Information</th></tr>
+<tr><td>ADC resolution</td><td>10 bits</td></tr>
+<tr><td>ADC channels</td><td>4</td></tr>
+<tr><td>AIN0</td><td>P0.27</td></tr>
+<tr><td>AIN1</td><td>P0.28</td></tr>
+<tr><td>AIN2</td><td>P0.29</td></tr>
+<tr><td>AIN3</td><td>P0.30</td></tr>
+<tr><td>Digital output range</td><td>0 to 1023</td></tr>
+</table>
+
+<h3>Suggested Simulator Activities</h3>
+<ul>
+<li>Study the ADC control and data registers.</li>
+<li>Inspect the digital count used by the application.</li>
+<li>Set breakpoints in the acquisition task.</li>
+<li>Inspect the measurement structure before queue transmission.</li>
+<li>Observe queue send and receive operations.</li>
+<li>Inspect the threshold comparison in the processing task.</li>
+<li>Observe task scheduling and Blocked/Ready transitions.</li>
+</ul>
+
+<div class="warning">Keil simulator support for the LPC2129 ADC and the selected FreeRTOS ARM7 port must be verified. A simulated ADC count or software test value is not proof of a physical sensor measurement. Real sensor validation requires compatible hardware and calibration.</div>
+</section>
+
+<section>
+<h2>26. Interview Questions</h2>
+<ol>
+<li>What is sensor monitoring in an embedded system?</li>
+<li>Why separate sensor acquisition and processing into different tasks?</li>
+<li>What is the purpose of an ADC?</li>
+<li>How is ADC resolution calculated?</li>
+<li>What is the difference between analog and digital sensors?</li>
+<li>What is a FreeRTOS queue?</li>
+<li>How does FreeRTOS transfer data through a queue?</li>
+<li>Does a queue copy its data items?</li>
+<li>What happens when a queue becomes full?</li>
+<li>What is the difference between <code>vTaskDelay()</code> and <code>vTaskDelayUntil()</code>?</li>
+<li>What is sampling frequency?</li>
+<li>What is a moving average filter?</li>
+<li>What is threshold detection?</li>
+<li>Why is hysteresis used in alarm systems?</li>
+<li>How do you detect lost sensor samples?</li>
+<li>How should task priorities be selected?</li>
+<li>What is the difference between raw and filtered data?</li>
+<li>How can sensor measurement faults be detected?</li>
+<li>Why is queue capacity important?</li>
+<li>How would you extend the project to monitor multiple sensors?</li>
+</ol>
+</section>
+
+<section>
+<h2>27. Lesson Summary</h2>
+<ul>
+<li>Sensor acquisition and processing can be separated into FreeRTOS tasks.</li>
+<li>An ADC converts analog input voltage into a digital count.</li>
+<li>A queue transfers structured measurement data between tasks.</li>
+<li>FreeRTOS queues copy fixed-size data items.</li>
+<li><code>vTaskDelayUntil()</code> supports nominal periodic task scheduling.</li>
+<li>Queue overflow must be detected and handled deliberately.</li>
+<li>Sampling rate depends on application and sensor requirements.</li>
+<li>Filtering can reduce noise but introduces delay.</li>
+<li>Hysteresis helps prevent rapid alarm switching.</li>
+<li>Real hardware requires target-specific drivers, calibration and validation.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L05_Mutex_Based_Shared_Resource_Project.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L07_UART_Communication_Using_FreeRTOS.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 20 – Practical Projects and Interview Preparation</p>
+</footer>
+
+</body>
+</html>
