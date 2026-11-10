@@ -1,1 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top Half and Bottom Half Concepts | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+.formula{background:#f3f5f7;padding:15px;border-radius:7px;text-align:center;font-weight:bold;margin:15px 0;font-family:monospace;overflow-x:auto}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Top Half and Bottom Half Concepts</h1>
+<p>Chapter 07 – Interrupt Management in RTOS | Lesson 08</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 07</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>Interrupt handling is an important part of real-time operating systems. When a hardware device generates an interrupt, the processor executes an Interrupt Service Routine (ISR).</p>
+
+<p>Some interrupt operations must be performed immediately, while other operations may require more processing time. Executing every operation inside the ISR can increase interrupt latency and affect the response of other interrupt sources.</p>
+
+<p>To solve this problem, operating systems divide interrupt-related work into two conceptual stages:</p>
+
+<ul>
+<li><strong>Top half:</strong> Immediate interrupt handling.</li>
+<li><strong>Bottom half:</strong> Deferred interrupt-related processing.</li>
+</ul>
+
+<div class="info-box">
+The top-half and bottom-half terminology is commonly associated with Linux kernel interrupt handling. It is also useful as a general conceptual model when designing ISR-to-task communication in an RTOS.
+</div>
+</section>
+
+<section>
+<h2>2. What Is the Top Half?</h2>
+<p>The top half is the immediate interrupt handler executed when an interrupt is accepted by the processor.</p>
+
+<p>Its primary responsibility is to perform essential operations that cannot safely be postponed.</p>
+
+<h3>Typical top-half responsibilities</h3>
+<ul>
+<li>Identify the interrupt source.</li>
+<li>Read peripheral status registers.</li>
+<li>Capture essential data.</li>
+<li>Acknowledge or clear the interrupt condition as required.</li>
+<li>Protect or transfer captured information.</li>
+<li>Schedule or signal deferred processing.</li>
+</ul>
+
+<p>The top half should be short, efficient, and predictable.</p>
+
+<div class="warning-box">
+An interrupt handler should not perform lengthy calculations, wait for a resource, or execute operations that may sleep.
+</div>
+</section>
+
+<section>
+<h2>3. What Is the Bottom Half?</h2>
+<p>The bottom half performs interrupt-related processing that does not need to execute immediately inside the hardware ISR.</p>
+
+<p>It runs later in an appropriate deferred execution context.</p>
+
+<h3>Typical bottom-half responsibilities</h3>
+<ul>
+<li>Process received communication data.</li>
+<li>Parse packets and commands.</li>
+<li>Calculate application-level results.</li>
+<li>Update application data structures.</li>
+<li>Perform logging and diagnostic operations.</li>
+<li>Notify other application components.</li>
+</ul>
+
+<p>The exact execution context depends on the operating system and deferred-work mechanism.</p>
+</section>
+
+<section>
+<h2>4. Top Half vs Bottom Half</h2>
+
+<table>
+<tr><th>Feature</th><th>Top Half</th><th>Bottom Half</th></tr>
+<tr><td>Execution</td><td>Immediate interrupt context.</td><td>Deferred execution context.</td></tr>
+<tr><td>Timing requirement</td><td>Usually urgent.</td><td>Less urgent than immediate hardware servicing.</td></tr>
+<tr><td>Execution duration</td><td>Short and bounded.</td><td>Can perform longer processing.</td></tr>
+<tr><td>Blocking</td><td>Cannot block or sleep.</td><td>Depends on execution context.</td></tr>
+<tr><td>Data handling</td><td>Captures essential information.</td><td>Processes captured information.</td></tr>
+<tr><td>Typical example</td><td>Read UART receive register.</td><td>Parse received message.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5. Top-Half and Bottom-Half Architecture</h2>
+
+<pre><code>         Hardware Peripheral
+                  |
+                  v
+           Interrupt Request
+                  |
+                  v
+          +---------------+
+          |   TOP HALF    |
+          |     ISR       |
+          +---------------+
+                  |
+          +-------+--------+
+          |                |
+          v                v
+     Read Status       Capture Data
+          |                |
+          +-------+--------+
+                  |
+                  v
+         Acknowledge Event
+                  |
+                  v
+        Schedule Deferred Work
+                  |
+                  v
+          +---------------+
+          |  BOTTOM HALF  |
+          | Deferred Task |
+          +---------------+
+                  |
+                  v
+          Process Captured Data
+                  |
+                  v
+          Update Application</code></pre>
+
+<p>This architecture separates immediate hardware servicing from longer application processing.</p>
+</section>
+
+<section>
+<h2>6. Why Separate Top Half and Bottom Half?</h2>
+
+<h3>6.1 Reduced interrupt latency</h3>
+<p>Shorter ISRs reduce the time during which other interrupt sources may be delayed by the current handler.</p>
+
+<h3>6.2 Better system responsiveness</h3>
+<p>Time-sensitive interrupt sources can receive service without waiting for lengthy application processing inside another ISR.</p>
+
+<h3>6.3 Improved code organization</h3>
+<p>Hardware-specific interrupt handling remains separate from application-level processing.</p>
+
+<h3>6.4 Easier maintenance</h3>
+<p>Communication parsing, calculations, and application logic can be modified without unnecessarily increasing ISR complexity.</p>
+
+<h3>6.5 Better synchronization design</h3>
+<p>Deferred processing can use task-level synchronization mechanisms such as mutexes, queues, and task notifications where appropriate.</p>
+</section>
+
+<section>
+<h2>7. Top Half and Bottom Half in Linux</h2>
+<p>Linux kernel drivers commonly divide interrupt handling into an immediate primary handler and one or more deferred mechanisms.</p>
+
+<table>
+<tr><th>Mechanism</th><th>Execution Context</th><th>Can Sleep?</th><th>Purpose</th></tr>
+<tr><td>Hard IRQ handler</td><td>Hard interrupt context.</td><td>No</td><td>Immediate interrupt servicing.</td></tr>
+<tr><td>Softirq</td><td>Softirq context.</td><td>No</td><td>Deferred kernel processing.</td></tr>
+<tr><td>Tasklet</td><td>Softirq-based context.</td><td>No</td><td>Historically used for simpler deferred processing; deprecated in modern Linux.</td></tr>
+<tr><td>Workqueue</td><td>Kernel worker-thread context.</td><td>Yes, where permitted</td><td>Deferred work requiring process context.</td></tr>
+<tr><td>Threaded IRQ</td><td>Kernel thread context.</td><td>Yes, where permitted</td><td>Moves substantial interrupt processing into a schedulable thread.</td></tr>
+</table>
+
+<div class="info-box">
+Softirqs and workqueues are not interchangeable. Softirqs execute in non-sleepable context, while workqueues execute in process context and can perform operations that may sleep.
+</div>
+</section>
+
+<section>
+<h2>8. Softirq in Linux</h2>
+<p>A softirq is a Linux kernel mechanism used to execute deferred work outside the immediate hard interrupt handler.</p>
+
+<p>Softirqs are commonly used for high-volume or performance-sensitive kernel processing.</p>
+
+<h3>Examples of softirq usage</h3>
+<ul>
+<li>Network packet processing.</li>
+<li>Timer-related processing.</li>
+<li>Block I/O-related deferred work.</li>
+</ul>
+
+<p>Softirq execution is not equivalent to a normal application thread. It cannot sleep and must follow softirq-context restrictions.</p>
+</section>
+
+<section>
+<h2>9. Workqueues in Linux</h2>
+<p>A workqueue schedules deferred work for execution by kernel worker threads.</p>
+
+<p>Workqueues are suitable when deferred operations require process context, including operations that may sleep.</p>
+
+<h3>Typical workqueue operations</h3>
+<ul>
+<li>Prepare a work item.</li>
+<li>Initialize the work item.</li>
+<li>Queue the work for execution.</li>
+<li>Kernel worker thread executes the callback.</li>
+<li>Complete or reschedule the work as required.</li>
+</ul>
+
+<p>Workqueue processing is asynchronous. Queueing work does not guarantee immediate execution.</p>
+</section>
+
+<section>
+<h2>10. Threaded Interrupts in Linux</h2>
+<p>A threaded IRQ divides interrupt processing between a primary handler and a threaded handler.</p>
+
+<ul>
+<li>The primary handler executes in hard interrupt context.</li>
+<li>It identifies and acknowledges the event as appropriate.</li>
+<li>It returns a result indicating that threaded handling is required.</li>
+<li>The kernel schedules the threaded handler.</li>
+<li>The threaded handler performs the remaining work in thread context.</li>
+</ul>
+
+<p>Threaded interrupts are useful when substantial processing must be associated closely with a particular interrupt source.</p>
+</section>
+
+<section>
+<h2>11. Top Half and Bottom Half in FreeRTOS</h2>
+<p>FreeRTOS does not use Linux's softirq, tasklet, or workqueue APIs. A common FreeRTOS design uses an ISR to notify a task.</p>
+
+<p>The ISR performs immediate hardware servicing and signals the task using an ISR-safe API.</p>
+
+<h3>Typical mechanisms</h3>
+<table>
+<tr><th>Mechanism</th><th>Purpose</th></tr>
+<tr><td>Binary semaphore</td><td>Signal an event to a task.</td></tr>
+<tr><td>Counting semaphore</td><td>Count repeated events.</td></tr>
+<tr><td>Queue</td><td>Transfer data or messages.</td></tr>
+<tr><td>Task notification</td><td>Efficiently signal a particular task.</td></tr>
+</table>
+
+<div class="info-box">
+In a FreeRTOS application, the deferred task acts as the bottom-half processing context in this conceptual architecture.
+</div>
+</section>
+
+<section>
+<h2>12. FreeRTOS Example – Top Half and Bottom Half</h2>
+<p>The following example illustrates an ISR notifying a task through a direct task notification.</p>
+
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+TaskHandle_t xProcessingTaskHandle;
+
+void Hardware_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Top half:
+       1. Read peripheral status.
+       2. Capture essential data.
+       3. Acknowledge the interrupt.
+    */
+
+    vTaskNotifyGiveFromISR(
+        xProcessingTaskHandle,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void ProcessingTask(void *pvParameters)
+{
+    for (;;)
+    {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        /* Bottom half:
+           Perform longer application processing.
+        */
+        Process_Application_Event();
+    }
+}</code></pre>
+
+<h3>Explanation</h3>
+<ol>
+<li>The hardware generates an interrupt.</li>
+<li>The ISR executes the top-half operations.</li>
+<li>The ISR notifies the processing task.</li>
+<li>The ISR returns.</li>
+<li>The scheduler may run the notified task if scheduling rules permit.</li>
+<li>The task performs deferred processing.</li>
+</ol>
+
+<div class="warning-box">
+This is a conceptual FreeRTOS example. The actual ISR vector, hardware acknowledgement, interrupt-priority rules, and yield mechanism depend on the selected processor port. It is not a verified LPC2129 FreeRTOS implementation.
+</div>
+</section>
+
+<section>
+<h2>13. Example – UART Top Half and Bottom Half</h2>
+<p>Consider a UART communication system that receives a command from a PC.</p>
+
+<h3>Top-half operations</h3>
+<ol>
+<li>Detect UART receive interrupt.</li>
+<li>Read the received byte.</li>
+<li>Store the byte in a queue or receive buffer.</li>
+<li>Acknowledge the interrupt condition as required.</li>
+<li>Notify the communication task.</li>
+</ol>
+
+<h3>Bottom-half operations</h3>
+<ol>
+<li>Read the received byte from the queue.</li>
+<li>Assemble the complete command.</li>
+<li>Validate the command format.</li>
+<li>Check the checksum if applicable.</li>
+<li>Execute the requested application operation.</li>
+<li>Prepare a response.</li>
+</ol>
+
+<pre><code>UART Hardware
+      |
+      v
+UART Receive Interrupt
+      |
+      v
+Read UART Data Register
+      |
+      v
+Store Byte in Queue
+      |
+      v
+Notify Communication Task
+      |
+      v
+Communication Task
+      |
+      v
+Assemble Complete Command
+      |
+      v
+Validate and Execute Command
+      |
+      v
+Prepare Response</code></pre>
+</section>
+
+<section>
+<h2>14. Choosing the Correct Deferred Mechanism</h2>
+
+<table>
+<tr><th>Requirement</th><th>Suitable Mechanism</th></tr>
+<tr><td>Signal one task that an event occurred</td><td>Task notification or binary semaphore.</td></tr>
+<tr><td>Count repeated event occurrences</td><td>Counting semaphore or counting notification.</td></tr>
+<tr><td>Transfer received bytes</td><td>Queue or appropriately synchronized ring buffer.</td></tr>
+<tr><td>Process large packets</td><td>Buffer or descriptor queue with defined ownership.</td></tr>
+<tr><td>Perform an operation that may sleep in Linux</td><td>Workqueue or threaded IRQ.</td></tr>
+<tr><td>Perform high-priority non-sleepable Linux deferred work</td><td>Softirq where appropriate.</td></tr>
+</table>
+
+<p>The mechanism should be selected based on data volume, event frequency, latency requirements, execution context, and synchronization requirements.</p>
+</section>
+
+<section>
+<h2>15. Timing Considerations</h2>
+<p>Separating the top half and bottom half reduces the amount of work performed in interrupt context. However, the deferred task introduces its own scheduling delay.</p>
+
+<div class="formula">Deferred Task Response = Task Waiting Time + Task Execution Time</div>
+
+<p>The complete event-to-processing time must also account for the initial interrupt servicing and communication overhead.</p>
+
+<p>For a simplified event-to-completion measurement:</p>
+
+<div class="formula">Total Time = ISR Processing + Deferred Scheduling Delay + Task Processing</div>
+
+<p>This expression is useful for conceptual analysis when the intervals are defined without overlap.</p>
+
+<div class="warning-box">
+A short ISR does not automatically guarantee that the application meets its deadline. The deferred task must also receive sufficient priority, CPU time, and resources.
+</div>
+</section>
+
+<section>
+<h2>16. Worked Numerical Problem 1 – ISR Time Reduction</h2>
+<p>A hardware interrupt originally performs the following operations:</p>
+
+<table>
+<tr><th>Operation</th><th>Execution Time</th></tr>
+<tr><td>Read status register</td><td>2 µs</td></tr>
+<tr><td>Capture data</td><td>3 µs</td></tr>
+<tr><td>Validate packet</td><td>15 µs</td></tr>
+<tr><td>Update application state</td><td>10 µs</td></tr>
+</table>
+
+<h3>Original ISR execution time</h3>
+<div class="formula">2 + 3 + 15 + 10 = 30 µs</div>
+
+<h3>New top-half execution time</h3>
+<p>Only the status read and data capture remain in the ISR.</p>
+<div class="formula">2 + 3 = 5 µs</div>
+
+<h3>Reduction</h3>
+<div class="formula">30 − 5 = 25 µs</div>
+<div class="formula">Reduction = (25 / 30) × 100 = 83.33%</div>
+
+<p><strong>Answer:</strong> The ISR duration is reduced by 25 µs, or approximately 83.33%. The remaining 25 µs of processing still has to execute in the deferred context.</p>
+</section>
+
+<section>
+<h2>17. Worked Numerical Problem 2 – Event Processing Delay</h2>
+<p>An interrupt occurs at 100 µs. The top half completes at 106 µs. The deferred task begins at 114 µs and finishes at 134 µs.</p>
+
+<h3>Solution</h3>
+<div class="formula">Top-Half Duration = 106 − 100 = 6 µs</div>
+<div class="formula">Scheduling Delay = 114 − 106 = 8 µs</div>
+<div class="formula">Task Execution = 134 − 114 = 20 µs</div>
+<div class="formula">Total Event-to-Completion = 134 − 100 = 34 µs</div>
+
+<p><strong>Answer:</strong> The event is fully processed 34 µs after the interrupt occurs.</p>
+</section>
+
+<section>
+<h2>18. Worked Numerical Problem 3 – Queue Buffer Capacity</h2>
+<p>A communication peripheral receives 200 bytes per second. The deferred task may be unable to execute for 150 ms. Assume a constant arrival rate.</p>
+
+<h3>Solution</h3>
+<div class="formula">Required Buffer Capacity = Arrival Rate × Delay</div>
+<div class="formula">= 200 × 0.15 = 30 bytes</div>
+
+<p><strong>Answer:</strong> At least 30 bytes are needed under the stated assumptions. Additional capacity is advisable for bursts, scheduling variation, and processing delays.</p>
+</section>
+
+<section>
+<h2>19. Common Mistakes</h2>
+<ul>
+<li>Performing all processing inside the top half.</li>
+<li>Calling a blocking function from interrupt context.</li>
+<li>Confusing Linux softirqs with FreeRTOS tasks.</li>
+<li>Assuming all bottom-half mechanisms can sleep.</li>
+<li>Ignoring data-buffer ownership.</li>
+<li>Failing to handle queue overflow.</li>
+<li>Assuming a notified task executes immediately.</li>
+<li>Ignoring deferred-task priority and deadline requirements.</li>
+</ul>
+</section>
+
+<section>
+<h2>20. Practical Activity – Design a Two-Stage Interrupt Handler</h2>
+<p>Design a UART-based command receiver using a top-half ISR and a bottom-half processing task.</p>
+
+<h3>Implementation plan</h3>
+<ol>
+<li>Identify the UART interrupt source.</li>
+<li>Design a short ISR that captures received data.</li>
+<li>Choose a queue or ring buffer for the received bytes.</li>
+<li>Notify the processing task.</li>
+<li>Implement packet assembly in the task.</li>
+<li>Validate the packet and process the command.</li>
+<li>Define behavior for buffer overflow and invalid packets.</li>
+<li>Measure event-to-completion time in a suitable test environment.</li>
+</ol>
+
+<h3>Expected design</h3>
+<pre><code>       UART Interrupt
+              |
+              v
+       +--------------+
+       |  Top Half    |
+       |  Short ISR   |
+       +--------------+
+              |
+              v
+       Capture and Queue Data
+              |
+              v
+       Notify Processing Task
+              |
+              v
+       +--------------+
+       | Bottom Half  |
+       |  RTOS Task   |
+       +--------------+
+              |
+              v
+       Validate Command
+              |
+              v
+       Execute Operation</code></pre>
+
+<p>For a Keil simulator-only exercise, focus on software structure, queue logic, and task synchronization. Do not assume the simulator reproduces physical UART reception or real hardware timing.</p>
+</section>
+
+<section>
+<h2>21. Review Questions</h2>
+<ol>
+<li>What is the top half of interrupt handling?</li>
+<li>What is the bottom half?</li>
+<li>Why should the top half be short?</li>
+<li>Differentiate top-half and bottom-half execution contexts.</li>
+<li>What is a Linux softirq?</li>
+<li>Why can a softirq not sleep?</li>
+<li>What is the purpose of a Linux workqueue?</li>
+<li>What is a threaded interrupt?</li>
+<li>How does FreeRTOS implement deferred interrupt processing?</li>
+<li>Why are task notifications useful?</li>
+<li>How does deferred scheduling affect response time?</li>
+<li>Why must buffer ownership be defined?</li>
+</ol>
+</section>
+
+<section>
+<h2>22. Lesson Summary</h2>
+<ul>
+<li>The top half performs immediate interrupt handling.</li>
+<li>The bottom half performs deferred processing.</li>
+<li>Short top halves help reduce interrupt interference.</li>
+<li>Linux provides softirqs, workqueues, and threaded IRQs.</li>
+<li>Softirqs cannot sleep, while workqueue callbacks execute in worker-thread context.</li>
+<li>FreeRTOS commonly uses ISR-safe communication APIs to notify tasks.</li>
+<li>Queues are suitable for transferring data; notifications and semaphores are useful for signaling.</li>
+<li>Deferred execution adds scheduling delay that must be included in timing analysis.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L07_Deferred_Interrupt_Processing.html">← Previous Lesson</a>
+<a href="index.html">Chapter 07</a>
+<a href="L09_Interrupt_to_Task_Communication.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
