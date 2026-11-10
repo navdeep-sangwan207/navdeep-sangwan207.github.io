@@ -1,1 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS xSemaphoreTake and xSemaphoreGive</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 15px}
+header h1{font-size:28px;margin-bottom:8px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 7px rgba(0,0,0,.08)}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h2{color:#174ea6;font-size:22px;border-bottom:2px solid #d8e6fa;padding-bottom:8px;margin-bottom:15px}
+h3{color:#1765b1;margin:17px 0 9px;font-size:18px}
+p{margin:9px 0}
+ul,ol{padding-left:25px;margin:10px 0}
+li{margin:6px 0}
+pre{background:#172338;color:#e6edf7;padding:17px;border-radius:8px;overflow-x:auto;margin:13px 0;font-size:13px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0;display:block;overflow-x:auto}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;min-width:135px}
+th{background:#eaf2ff;color:#174ea6}
+.note{background:#eaf3ff;border-left:4px solid #2878d7;padding:13px;margin:14px 0;border-radius:5px}
+.warning{background:#fff5e6;border-left:4px solid #e69a24;padding:13px;margin:14px 0;border-radius:5px}
+.example{background:#effaf2;border-left:4px solid #269653;padding:13px;margin:14px 0;border-radius:5px}
+.objectives{background:#eef5ff;padding:17px 22px;border-radius:8px}
+.navigation{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:600px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 16: FreeRTOS Semaphores and Mutexes</h1>
+<p>Lesson 06 – xSemaphoreTake() and xSemaphoreGive()</p>
+</header>
+
+<nav>
+<a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+<a href="index.html">Chapter Index</a>
+<a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>Lesson Overview</h2>
+<p>
+Semaphores are synchronization objects used to coordinate tasks,
+signal events, and control access to shared resources. FreeRTOS
+provides <code>xSemaphoreTake()</code> and
+<code>xSemaphoreGive()</code> as fundamental operations for
+semaphore handling.
+</p>
+<p>
+The take operation obtains a token or mutex ownership, while the
+give operation releases a token or relinquishes mutex ownership.
+Their exact behavior depends on the type of synchronization object.
+</p>
+<div class="objectives">
+<h3>Learning Objectives</h3>
+<ul>
+<li>Understand the purpose of take and give operations.</li>
+<li>Learn the API syntax and parameters.</li>
+<li>Understand blocking time and timeout behavior.</li>
+<li>Interpret return values.</li>
+<li>Use binary and counting semaphores correctly.</li>
+<li>Understand mutex ownership rules.</li>
+<li>Differentiate task-context and ISR-context APIs.</li>
+<li>Develop task synchronization programs.</li>
+</ul>
+</div>
+</section>
+
+<section>
+<h2>1. Introduction to Take and Give Operations</h2>
+<p>
+A semaphore maintains a synchronization state. A task uses the
+take operation to obtain a token. Another task or an event source
+can use the give operation to make a token available.
+</p>
+<pre><code>Task A                         Task B
+  |                              |
+  |---- Take Semaphore           |
+  |                              |
+  |                         Give Semaphore
+  |                              |
+  |<------- Task A unblocked -----|
+  |                              |
+  |---- Continue execution       |</code></pre>
+<p>
+For a mutex, the take operation establishes ownership and the give
+operation releases ownership. A mutex is therefore not interchangeable
+with an ordinary event-signaling semaphore.
+</p>
+</section>
+
+<section>
+<h2>2. xSemaphoreTake() Function</h2>
+<p>
+The <code>xSemaphoreTake()</code> function attempts to obtain a
+semaphore token or acquire a mutex.
+</p>
+<h3>Function Syntax</h3>
+<pre><code>BaseType_t xSemaphoreTake(
+    SemaphoreHandle_t xSemaphore,
+    TickType_t xTicksToWait
+);</code></pre>
+
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>xSemaphore</td><td>Handle of the semaphore or mutex to take.</td></tr>
+<tr><td>xTicksToWait</td><td>Maximum number of RTOS ticks to wait if the object is unavailable.</td></tr>
+</table>
+
+<h3>Return Value</h3>
+<table>
+<tr><th>Return value</th><th>Meaning</th></tr>
+<tr><td><code>pdTRUE</code></td><td>The semaphore was successfully taken.</td></tr>
+<tr><td><code>pdFALSE</code></td><td>The semaphore could not be taken within the permitted wait time.</td></tr>
+</table>
+
+<h3>Operation</h3>
+<ol>
+<li>The task calls <code>xSemaphoreTake()</code>.</li>
+<li>If a token is available, it is obtained immediately.</li>
+<li>If no token is available and the wait time is zero, the call returns immediately.</li>
+<li>If waiting is permitted, the task enters the Blocked state.</li>
+<li>When a token becomes available, the task can become Ready.</li>
+<li>If the timeout expires first, the call returns <code>pdFALSE</code>.</li>
+</ol>
+
+<div class="note">
+A task becoming Ready does not mean it executes immediately.
+The scheduler selects it according to priority and scheduling rules.
+</div>
+</section>
+
+<section>
+<h2>3. Understanding xTicksToWait</h2>
+<p>
+The second parameter controls how long a task can wait for the
+semaphore.
+</p>
+<table>
+<tr><th>Value</th><th>Behavior</th></tr>
+<tr><td><code>0</code></td><td>Do not wait. Return immediately if unavailable.</td></tr>
+<tr><td>Finite tick value</td><td>Wait for at most the specified number of ticks.</td></tr>
+<tr><td><code>portMAX_DELAY</code></td><td>Request an indefinite wait where supported by the configuration.</td></tr>
+</table>
+
+<h3>Example: No Waiting</h3>
+<pre><code>if (xSemaphoreTake(xSemaphore, 0) == pdTRUE)
+{
+    /* Token obtained immediately */
+}
+else
+{
+    /* No token was available */
+}</code></pre>
+
+<h3>Example: Finite Timeout</h3>
+<pre><code>if (xSemaphoreTake(
+        xSemaphore,
+        pdMS_TO_TICKS(100)) == pdTRUE)
+{
+    /* Semaphore obtained */
+}
+else
+{
+    /* Timeout or unavailable */
+}</code></pre>
+
+<h3>Example: Indefinite Wait</h3>
+<pre><code>if (xSemaphoreTake(
+        xSemaphore,
+        portMAX_DELAY) == pdTRUE)
+{
+    /* Continue after successful take */
+}</code></pre>
+
+<div class="warning">
+The meaning of <code>portMAX_DELAY</code> as an indefinite wait
+depends on the selected FreeRTOS configuration, including
+<code>INCLUDE_vTaskSuspend</code> in configurations that use it.
+</div>
+</section>
+
+<section>
+<h2>4. xSemaphoreGive() Function</h2>
+<p>
+The <code>xSemaphoreGive()</code> function gives a semaphore token
+or releases a mutex owned by the calling task.
+</p>
+
+<h3>Function Syntax</h3>
+<pre><code>BaseType_t xSemaphoreGive(
+    SemaphoreHandle_t xSemaphore
+);</code></pre>
+
+<h3>Parameter</h3>
+<p>
+<code>xSemaphore</code> is the handle of the semaphore or mutex
+to be given.
+</p>
+
+<h3>Return Value</h3>
+<table>
+<tr><th>Return value</th><th>Meaning</th></tr>
+<tr><td><code>pdTRUE</code></td><td>The give operation succeeded.</td></tr>
+<tr><td><code>pdFALSE</code></td><td>The operation could not be completed.</td></tr>
+</table>
+
+<h3>Operation</h3>
+<ul>
+<li>For a binary semaphore, a token is made available if it is empty.</li>
+<li>For a counting semaphore, the count increases if it is below its maximum.</li>
+<li>For a mutex, the owning task releases the mutex.</li>
+<li>If the operation makes a waiting task eligible to run, scheduling may switch to that task according to the kernel rules.</li>
+</ul>
+
+<pre><code>if (xSemaphoreGive(xSemaphore) == pdTRUE)
+{
+    /* Give operation successful */
+}
+else
+{
+    /* Give operation unsuccessful */
+}</code></pre>
+</section>
+
+<section>
+<h2>5. Take and Give with a Binary Semaphore</h2>
+<p>
+A binary semaphore can hold either zero or one token.
+</p>
+<table>
+<tr><th>Operation</th><th>Count</th><th>State</th></tr>
+<tr><td>Initial state</td><td>0</td><td>Empty</td></tr>
+<tr><td>Give</td><td>1</td><td>Available</td></tr>
+<tr><td>Take</td><td>0</td><td>Empty</td></tr>
+<tr><td>Give again</td><td>1</td><td>Available</td></tr>
+</table>
+
+<h3>Example</h3>
+<pre><code>SemaphoreHandle_t xBinarySemaphore;
+
+void ConsumerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xBinarySemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Process one signaled event */
+        }
+    }
+}
+
+void ProducerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform or detect an event */
+
+        xSemaphoreGive(xBinarySemaphore);
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}</code></pre>
+
+<div class="note">
+A binary semaphore stores at most one pending token. Repeated
+give operations while it is already full do not accumulate
+additional events. Use a counting semaphore or queue when every
+event must be retained.
+</div>
+</section>
+
+<section>
+<h2>6. Take and Give with a Counting Semaphore</h2>
+<p>
+A counting semaphore can store multiple tokens, up to its configured
+maximum count.
+</p>
+<h3>Example</h3>
+<pre><code>SemaphoreHandle_t xCountingSemaphore;
+
+void ConsumerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xCountingSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Process one counted event */
+        }
+    }
+}
+
+void ProducerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* An event occurs */
+
+        if (xSemaphoreGive(xCountingSemaphore) != pdTRUE)
+        {
+            /* Maximum count may have been reached */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}</code></pre>
+
+<h3>Example Count Sequence</h3>
+<table>
+<tr><th>Operation</th><th>Count</th></tr>
+<tr><td>Initial count</td><td>0</td></tr>
+<tr><td>First give</td><td>1</td></tr>
+<tr><td>Second give</td><td>2</td></tr>
+<tr><td>Third give</td><td>3</td></tr>
+<tr><td>First take</td><td>2</td></tr>
+<tr><td>Second take</td><td>1</td></tr>
+<tr><td>Third take</td><td>0</td></tr>
+</table>
+
+<p>
+A counting semaphore tracks the number of available tokens.
+It does not store event payloads such as sensor readings or message
+contents. Use a queue when the actual data must be transferred.
+</p>
+</section>
+
+<section>
+<h2>7. Take and Give with a Mutex</h2>
+<p>
+A mutex protects a shared resource by allowing one task at a time
+to own it.
+</p>
+<pre><code>SemaphoreHandle_t xMutex;
+
+void TaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Access shared resource */
+
+            xSemaphoreGive(xMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}</code></pre>
+
+<h3>Important Mutex Rules</h3>
+<ul>
+<li>The task that successfully takes the mutex becomes its owner.</li>
+<li>The owner must release the mutex.</li>
+<li>A different task must not give the mutex on behalf of the owner.</li>
+<li>Mutexes cannot be taken or given from an ISR.</li>
+<li>FreeRTOS mutexes support priority inheritance.</li>
+</ul>
+
+<div class="warning">
+Do not use a mutex as a general event-signaling object. A binary
+semaphore is usually more appropriate when one task or ISR signals
+an event to another task.
+</div>
+</section>
+
+<section>
+<h2>8. Blocking and Task State Transitions</h2>
+<p>
+When a task cannot obtain a semaphore and specifies a nonzero
+wait time, it can enter the Blocked state.
+</p>
+<pre><code>          Task calls xSemaphoreTake()
+                       |
+                       v
+             Is token available?
+                  /       \
+                Yes        No
+                |           |
+                v           v
+          Take succeeds   Is wait time zero?
+                            /       \
+                          Yes        No
+                          |           |
+                          v           v
+                    Return false   Block task
+                                      |
+                                      v
+                              Token becomes available?
+                                  /        \
+                                Yes        No
+                                |           |
+                                v           v
+                             Ready      Timeout
+                                           |
+                                           v
+                                      Return false</code></pre>
+
+<p>
+The task may be unblocked when another task gives the semaphore.
+If multiple tasks are waiting, the kernel's scheduling and
+priority rules determine which waiting task receives the token.
+</p>
+</section>
+
+<section>
+<h2>9. Difference Between Take and Give</h2>
+<table>
+<tr><th>Feature</th><th>xSemaphoreTake()</th><th>xSemaphoreGive()</th></tr>
+<tr><td>Purpose</td><td>Obtain token or mutex ownership</td><td>Release token or mutex ownership</td></tr>
+<tr><td>Wait parameter</td><td>Yes</td><td>No</td></tr>
+<tr><td>Can block?</td><td>Yes, when called from task context with a nonzero wait</td><td>No</td></tr>
+<tr><td>Return type</td><td>BaseType_t</td><td>BaseType_t</td></tr>
+<tr><td>Success result</td><td><code>pdTRUE</code></td><td><code>pdTRUE</code></td></tr>
+<tr><td>Failure result</td><td><code>pdFALSE</code></td><td><code>pdFALSE</code></td></tr>
+</table>
+</section>
+
+<section>
+<h2>10. ISR-Specific Take and Give APIs</h2>
+<p>
+Interrupt Service Routines must not use task-context APIs that
+can block. FreeRTOS provides ISR-specific semaphore functions.
+</p>
+
+<h3>Give from ISR</h3>
+<pre><code>BaseType_t xSemaphoreGiveFromISR(
+    SemaphoreHandle_t xSemaphore,
+    BaseType_t *pxHigherPriorityTaskWoken
+);</code></pre>
+
+<h3>Take from ISR</h3>
+<pre><code>BaseType_t xSemaphoreTakeFromISR(
+    SemaphoreHandle_t xSemaphore,
+    BaseType_t *pxHigherPriorityTaskWoken
+);</code></pre>
+
+<p>
+These ISR operations are non-blocking. They are intended for
+semaphore types and use cases supported by the selected FreeRTOS
+version and port.
+</p>
+
+<h3>Example: Giving a Binary Semaphore from an ISR</h3>
+<pre><code>void Peripheral_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Acknowledge the peripheral interrupt first. */
+
+    xSemaphoreGiveFromISR(
+        xBinarySemaphore,
+        &amp;xHigherPriorityTaskWoken
+    );
+
+    /* Request a context switch using the port's ISR-yield
+       mechanism when required. */
+}</code></pre>
+
+<div class="warning">
+The exact ISR-yield macro is port-specific. Do not copy a
+Cortex-M-specific interrupt-priority or yield configuration
+into an ARM7 project without checking its FreeRTOS port.
+</div>
+</section>
+
+<section>
+<h2>11. Practical Example: Event Notification</h2>
+<h3>Objective</h3>
+<p>
+To synchronize a producer task and a consumer task using a
+binary semaphore.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xEventSemaphore;
+
+void ProducerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Simulate event detection */
+
+        if (xSemaphoreGive(xEventSemaphore) != pdTRUE)
+        {
+            /* A token may already be pending */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void ConsumerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xEventSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Process event */
+        }
+    }
+}
+
+int main(void)
+{
+    xEventSemaphore = xSemaphoreCreateBinary();
+
+    if (xEventSemaphore == NULL)
+    {
+        for (;;);
+    }
+
+    xTaskCreate(ProducerTask,
+                "Producer",
+                256,
+                NULL,
+                2,
+                NULL);
+
+    xTaskCreate(ConsumerTask,
+                "Consumer",
+                256,
+                NULL,
+                2,
+                NULL);
+
+    vTaskStartScheduler();
+
+    for (;;);
+}</code></pre>
+
+<h3>Expected Result</h3>
+<ul>
+<li>The consumer waits for the semaphore.</li>
+<li>The producer periodically gives the semaphore.</li>
+<li>A successful give can unblock the consumer.</li>
+<li>The consumer processes the notification.</li>
+<li>The consumer waits again for the next token.</li>
+</ul>
+
+<div class="note">
+This example demonstrates event notification only. If the
+producer must deliver a different data value for every event,
+use a queue or another data-transfer mechanism.
+</div>
+</section>
+
+<section>
+<h2>12. Common Programming Errors</h2>
+<ol>
+<li><strong>Ignoring return values:</strong> Always check whether
+the take or give operation succeeded.</li>
+<li><strong>Using the wrong handle:</strong> Pass a valid,
+successfully created semaphore handle.</li>
+<li><strong>Blocking inside an ISR:</strong> Use ISR-specific APIs.</li>
+<li><strong>Using a mutex in an ISR:</strong> Mutexes are task-context
+synchronization objects.</li>
+<li><strong>Incorrect timeout conversion:</strong> Use
+<code>pdMS_TO_TICKS()</code> when converting milliseconds.</li>
+<li><strong>Assuming binary semaphore counts events:</strong>
+Repeated gives can coalesce into one pending token.</li>
+<li><strong>Giving a mutex from the wrong task:</strong>
+Only its owner should release it.</li>
+<li><strong>Forgetting to release a mutex:</strong> This can
+leave other tasks blocked indefinitely.</li>
+<li><strong>Assuming Ready means Running:</strong> A higher-priority
+task or scheduling rule may determine when it executes.</li>
+</ol>
+</section>
+
+<section>
+<h2>13. Practical Experiment</h2>
+<h3>Objective</h3>
+<p>
+Observe the behavior of semaphore take and give operations
+using two FreeRTOS tasks.
+</p>
+
+<h3>Procedure</h3>
+<ol>
+<li>Create a binary semaphore.</li>
+<li>Create a producer task and a consumer task.</li>
+<li>Make the consumer call <code>xSemaphoreTake()</code>
+with <code>portMAX_DELAY</code>.</li>
+<li>Make the producer call <code>xSemaphoreGive()</code>
+periodically.</li>
+<li>Check the return values of both operations.</li>
+<li>Observe the task states using an available debugger
+or trace facility.</li>
+<li>Repeat using a finite timeout instead of
+<code>portMAX_DELAY</code>.</li>
+</ol>
+
+<h3>Expected Result</h3>
+<ul>
+<li>The consumer blocks while no token is available.</li>
+<li>The producer makes a token available.</li>
+<li>The consumer becomes Ready and later executes.</li>
+<li>With a finite timeout, the consumer returns from the take
+operation if the timeout expires before a token arrives.</li>
+</ul>
+
+<div class="warning">
+<strong>LPC2129 / Keil uVision note:</strong> Running this
+experiment requires a compatible FreeRTOS ARM7 port and
+appropriate compiler integration. LPC2129 uses ARM7TDMI-S,
+not Cortex-M. Verify the port and simulator support before
+assuming that the program will execute successfully.
+</div>
+</section>
+
+<section>
+<h2>14. Review Questions</h2>
+<ol>
+<li>What is the purpose of <code>xSemaphoreTake()</code>?</li>
+<li>What is the purpose of <code>xSemaphoreGive()</code>?</li>
+<li>What does <code>xTicksToWait</code> represent?</li>
+<li>What happens when the wait time is zero?</li>
+<li>What does <code>portMAX_DELAY</code> mean?</li>
+<li>What are the possible return values of take and give?</li>
+<li>How does a binary semaphore behave after a successful give?</li>
+<li>How does a counting semaphore differ from a binary semaphore?</li>
+<li>Why must a mutex be released by its owning task?</li>
+<li>Why are ISR-specific semaphore APIs required?</li>
+<li>Why is a queue preferable when an event carries data?</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Lesson Summary</h2>
+<ul>
+<li><code>xSemaphoreTake()</code> obtains a semaphore token or mutex ownership.</li>
+<li><code>xSemaphoreGive()</code> releases a token or mutex ownership.</li>
+<li>The take API includes a maximum wait time in ticks.</li>
+<li>A task can block while waiting for a token.</li>
+<li><code>pdTRUE</code> indicates success and <code>pdFALSE</code> indicates failure.</li>
+<li>Binary semaphores retain at most one pending token.</li>
+<li>Counting semaphores retain tokens up to their maximum count.</li>
+<li>Mutex ownership and priority inheritance distinguish mutexes
+from ordinary semaphores.</li>
+<li>ISR-specific APIs are required in interrupt context.</li>
+<li>Queues should be used when event payloads must be transferred.</li>
+</ul>
+</section>
+
+<section>
+<h2>16. Assignment</h2>
+<ol>
+<li>Write a program using <code>xSemaphoreTake()</code>
+and <code>xSemaphoreGive()</code>.</li>
+<li>Modify the program to use a 100-tick timeout.</li>
+<li>Explain the difference between zero wait and indefinite wait.</li>
+<li>Write a producer-consumer example using a counting semaphore.</li>
+<li>Explain why a binary semaphore can lose event counts.</li>
+<li>Write an ISR notification example using
+<code>xSemaphoreGiveFromISR()</code>.</li>
+<li>Compare semaphore operations with mutex operations.</li>
+<li>Explain how a task moves between Blocked, Ready,
+and Running states while waiting for a semaphore.</li>
+</ol>
+</section>
+
+<div class="navigation">
+<a href="L05_Semaphore_Creation_and_Deletion.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L07_Semaphore_Communication_From_ISR.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 16 – FreeRTOS Semaphores and Mutexes</p>
+</footer>
+
+</body>
+</html>
