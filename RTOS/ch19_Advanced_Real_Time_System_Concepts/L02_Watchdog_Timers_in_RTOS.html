@@ -1,1 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Watchdog Timers in RTOS | RTOS &amp; FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Watchdog Timers in RTOS</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 19: Advanced Real-Time System Concepts</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 19</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Explain the purpose of a watchdog timer.</li>
+<li>Differentiate hardware and software watchdogs.</li>
+<li>Understand watchdog timeout and refresh operations.</li>
+<li>Calculate a suitable watchdog timeout.</li>
+<li>Explain windowed watchdog operation.</li>
+<li>Understand task-level watchdog supervision.</li>
+<li>Integrate watchdog supervision with an RTOS design.</li>
+<li>Identify common watchdog design mistakes.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Watchdog Timers</h2>
+<p>A watchdog timer is a monitoring mechanism that detects when software fails to perform an expected operation within a specified time.</p>
+
+<p>It is commonly used in embedded systems to recover from conditions such as:</p>
+<ul>
+<li>Software deadlock.</li>
+<li>Infinite loops.</li>
+<li>Unexpected task blocking.</li>
+<li>Control-task failure.</li>
+<li>Processor execution getting stuck.</li>
+<li>Failure to complete a required processing cycle.</li>
+</ul>
+
+<p>A watchdog typically requires the application to periodically refresh, service or kick the timer. If the expected refresh does not occur before timeout, the watchdog triggers a configured response.</p>
+
+<div class="diagram">
+          APPLICATION
+               |
+         NORMAL EXECUTION
+               |
+        REFRESH WATCHDOG
+               |
+        RESTART COUNTDOWN
+               |
+       APPLICATION FAILURE?
+          /          \
+        NO            YES
+        |              |
+   KEEP RUNNING    TIMEOUT OCCURS
+                       |
+                RESET OR FAULT ACTION
+</div>
+</section>
+
+<section>
+<h2>3. Why Is a Watchdog Needed?</h2>
+<p>Embedded systems may operate continuously for long periods. A software fault can prevent normal execution even if the processor and power supply remain active.</p>
+
+<h3>Example: Industrial Temperature Controller</h3>
+<p>Consider a controller that reads a temperature sensor and controls a cooling fan.</p>
+
+<table>
+<tr><th>Condition</th><th>Possible System Behavior</th></tr>
+<tr><td>Normal execution</td><td>Temperature is read and fan control is updated.</td></tr>
+<tr><td>Control task deadlock</td><td>Fan command may no longer be updated.</td></tr>
+<tr><td>Communication task stuck</td><td>Remote monitoring may stop receiving data.</td></tr>
+<tr><td>Unexpected infinite loop</td><td>Application may stop making progress.</td></tr>
+<tr><td>Watchdog timeout</td><td>Hardware may reset the processor or trigger another configured response.</td></tr>
+</table>
+
+<div class="warning">A watchdog reset does not automatically guarantee a safe physical state. Outputs, actuators and external hardware must be designed to enter a safe condition independently where required.</div>
+</section>
+
+<section>
+<h2>4. Types of Watchdog Timers</h2>
+
+<h3>4.1 Hardware Watchdog</h3>
+<p>A hardware watchdog is implemented inside a microcontroller or as a separate external circuit.</p>
+
+<ul>
+<li>Runs independently of normal application execution.</li>
+<li>Uses a hardware timer or oscillator.</li>
+<li>Can detect certain processor software failures.</li>
+<li>May reset the processor when the timeout expires.</li>
+</ul>
+
+<h3>4.2 Software Watchdog</h3>
+<p>A software watchdog is implemented using an RTOS timer, task or software counter.</p>
+
+<ul>
+<li>Monitors task activity.</li>
+<li>Detects missed software deadlines.</li>
+<li>Can identify stalled application modules.</li>
+<li>Can initiate recovery procedures.</li>
+</ul>
+
+<table>
+<tr><th>Hardware Watchdog</th><th>Software Watchdog</th></tr>
+<tr><td>Uses independent hardware timing.</td><td>Depends on software execution and scheduling.</td></tr>
+<tr><td>Can reset the processor.</td><td>Usually reports or handles application-level faults.</td></tr>
+<tr><td>Can remain active when application code is stuck.</td><td>May stop working if its monitoring task cannot execute.</td></tr>
+<tr><td>Hardware-specific configuration.</td><td>Implemented using RTOS or application mechanisms.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5. Basic Hardware Watchdog Operation</h2>
+<p>A basic watchdog counts toward a timeout. The application periodically refreshes it before the timeout expires.</p>
+
+<div class="diagram">
+        WATCHDOG INITIALIZATION
+                  |
+            LOAD TIMEOUT
+                  |
+             START TIMER
+                  |
+          APPLICATION EXECUTES
+                  |
+           VALID REFRESH?
+              /      \
+            YES       NO
+             |         |
+         RELOAD      TIMEOUT
+         COUNTER       |
+             |         v
+             |       RESET
+             |
+        CONTINUE
+</div>
+
+<h3>5.1 Important Operations</h3>
+<table>
+<tr><th>Operation</th><th>Description</th></tr>
+<tr><td>Initialize</td><td>Configure watchdog clock, timeout and response.</td></tr>
+<tr><td>Start</td><td>Enable watchdog counting.</td></tr>
+<tr><td>Refresh / Kick</td><td>Reload or service the watchdog before timeout.</td></tr>
+<tr><td>Timeout</td><td>Indicates that the expected refresh was not received in time.</td></tr>
+<tr><td>Reset</td><td>Hardware may reset the processor if configured to do so.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>6. Watchdog Timeout Calculation</h2>
+<p>The watchdog timeout must be longer than the maximum legitimate interval between valid refresh operations, including scheduling delays and timing tolerances.</p>
+
+<h3>Example</h3>
+<p>Assume:</p>
+<ul>
+<li>Control cycle execution: 40 ms.</li>
+<li>Maximum expected scheduling delay: 15 ms.</li>
+<li>Additional engineering margin: 25 ms.</li>
+</ul>
+
+<pre><code>Minimum Design Timeout =
+    40 + 15 + 25
+
+Minimum Design Timeout = 80 ms</code></pre>
+
+<p>A nominal watchdog timeout greater than 80 ms may be selected after accounting for hardware tolerance, worst-case timing and the system's fault-detection requirements.</p>
+
+<div class="note">Do not choose a watchdog timeout only from average execution time. Use a justified worst-case timing budget and verify it under the required operating conditions.</div>
+</section>
+
+<section>
+<h2>7. Watchdog Refresh</h2>
+<p>Refreshing the watchdog tells the watchdog hardware that the application has reached an expected point in its execution.</p>
+
+<h3>Illustrative Hardware-Specific Interface</h3>
+<pre><code>void WatchdogRefresh(void)
+{
+    /*
+      Write the hardware-specific refresh
+      sequence to the watchdog register.
+    */
+}</code></pre>
+
+<p>The actual register sequence, key values and timing rules depend on the microcontroller.</p>
+
+<h3>Correct Refresh Strategy</h3>
+<ul>
+<li>Refresh only after required system operations have completed.</li>
+<li>Check critical task health before refreshing.</li>
+<li>Use a defined supervision period.</li>
+<li>Record watchdog reset causes where hardware supports it.</li>
+<li>Do not refresh unconditionally from an unrelated timer interrupt.</li>
+</ul>
+
+<div class="warning">If a periodic interrupt refreshes the watchdog regardless of application health, a deadlocked control task may remain undetected because the interrupt can continue running.</div>
+</section>
+
+<section>
+<h2>8. Windowed Watchdog Timer</h2>
+<p>A windowed watchdog accepts refresh operations only during a specified time window.</p>
+
+<p>Refreshing too early or too late can trigger a watchdog fault.</p>
+
+<div class="diagram">
+      REFRESH TIME AXIS
+
+      |---------|-------------|---------|
+      START     OPEN          CLOSE     TIMEOUT
+                WINDOW        WINDOW
+
+      Too early  Valid refresh  Too late
+          X          OK            X
+</div>
+
+<h3>Example</h3>
+<p>Assume a watchdog accepts refresh between 20 ms and 80 ms after the previous valid refresh.</p>
+
+<table>
+<tr><th>Refresh Time</th><th>Result</th></tr>
+<tr><td>10 ms</td><td>Too early – invalid.</td></tr>
+<tr><td>35 ms</td><td>Valid refresh.</td></tr>
+<tr><td>65 ms</td><td>Valid refresh.</td></tr>
+<tr><td>90 ms</td><td>Too late – timeout condition.</td></tr>
+</table>
+
+<h3>Why Use a Windowed Watchdog?</h3>
+<ul>
+<li>Detects excessively early refresh operations.</li>
+<li>Can reveal unexpected execution paths.</li>
+<li>Helps detect some timing-control faults.</li>
+<li>Provides stronger supervision than a simple timeout watchdog in suitable designs.</li>
+</ul>
+
+<div class="note">The exact window boundaries and fault behavior are defined by the watchdog hardware. Some devices use different timing conventions.</div>
+</section>
+
+<section>
+<h2>9. Software Watchdog in an RTOS</h2>
+<p>An RTOS application may contain several tasks. A software watchdog supervisor checks whether important tasks are making progress.</p>
+
+<h3>Example Task Architecture</h3>
+<div class="diagram">
+             RTOS APPLICATION
+                    |
+       +------------+------------+
+       |            |            |
+   SENSOR TASK  CONTROL TASK  COMM TASK
+       |            |            |
+   HEARTBEAT     HEARTBEAT    HEARTBEAT
+       |            |            |
+       +------------+------------+
+                    |
+             SUPERVISOR TASK
+                    |
+          CHECK EXPECTED ACTIVITY
+                    |
+           +--------+--------+
+           |                 |
+        HEALTHY            FAILURE
+           |                 |
+      SERVICE HW WD      FAULT RESPONSE
+</div>
+
+<p>Each monitored task reports progress. The supervisor checks whether all required tasks have reported within their expected monitoring intervals.</p>
+</section>
+
+<section>
+<h2>10. Task Heartbeat Monitoring</h2>
+<p>A heartbeat is a signal indicating that a task has reached a defined point in its execution.</p>
+
+<h3>Illustrative FreeRTOS Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include &lt;stdint.h&gt;
+
+volatile uint32_t sensorHeartbeat = 0;
+volatile uint32_t controlHeartbeat = 0;
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Read and validate sensor data. */
+
+        sensorHeartbeat++;
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void ControlTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform control processing. */
+
+        controlHeartbeat++;
+
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}</code></pre>
+
+<p>The supervisor can observe heartbeat changes over a monitoring interval.</p>
+
+<div class="warning">A heartbeat counter incremented unconditionally at the beginning of a task loop does not prove that the task completed its critical work. Place progress reporting after the operations that must be verified.</div>
+</section>
+
+<section>
+<h2>11. Software Watchdog Supervisor Example</h2>
+<p><strong>Objective:</strong> Demonstrate basic task-progress monitoring using a supervisor task.</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include &lt;stdint.h&gt;
+#include &lt;stdbool.h&gt;
+
+volatile uint32_t sensorHeartbeat = 0;
+volatile uint32_t controlHeartbeat = 0;
+
+static uint32_t previousSensorHeartbeat = 0;
+static uint32_t previousControlHeartbeat = 0;
+
+void SupervisorTask(void *pvParameters)
+{
+    bool sensorHealthy;
+    bool controlHealthy;
+
+    for (;;)
+    {
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        sensorHealthy =
+            (sensorHeartbeat != previousSensorHeartbeat);
+
+        controlHealthy =
+            (controlHeartbeat != previousControlHeartbeat);
+
+        previousSensorHeartbeat = sensorHeartbeat;
+        previousControlHeartbeat = controlHeartbeat;
+
+        if (sensorHealthy && controlHealthy)
+        {
+            /*
+              In a real system, service the
+              hardware watchdog only after
+              all required health checks pass.
+            */
+        }
+        else
+        {
+            /*
+              Record the fault and initiate
+              the defined fault response.
+            */
+        }
+    }
+}</code></pre>
+
+<h3>Expected Behavior</h3>
+<ul>
+<li>The supervisor waits for its monitoring interval.</li>
+<li>It checks whether both heartbeat counters have changed.</li>
+<li>If both have progressed, the monitored tasks pass this basic check.</li>
+<li>If either has not progressed, a fault is recorded.</li>
+</ul>
+
+<div class="warning">This is a teaching example, not a production-ready watchdog. A single counter change does not prove timely completion, correct output or correct execution. Use atomic or RTOS-protected data access as required by the target architecture. A robust design also needs per-task deadlines, stale-heartbeat handling, startup grace periods and a safe recovery policy.</div>
+</section>
+
+<section>
+<h2>12. Watchdog Integration with FreeRTOS</h2>
+<p>FreeRTOS does not automatically configure or service a microcontroller's hardware watchdog. The application must integrate the watchdog driver with the task architecture.</p>
+
+<h3>Recommended Architecture</h3>
+<ol>
+<li>Initialize the hardware watchdog according to the device manual.</li>
+<li>Create the critical application tasks.</li>
+<li>Define what constitutes successful progress for each task.</li>
+<li>Have each task report progress after completing its required work.</li>
+<li>Run a supervisor task at an appropriate priority.</li>
+<li>Check task health and timing constraints.</li>
+<li>Refresh the hardware watchdog only when the required conditions are satisfied.</li>
+<li>Use a defined response when a monitored task fails.</li>
+<li>Capture reset cause and diagnostic information after recovery.</li>
+</ol>
+
+<h3>Illustrative Pseudocode</h3>
+<pre><code>void WatchdogSupervisorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (AllCriticalTasksHealthy() &&
+            TimingConstraintsSatisfied())
+        {
+            HardwareWatchdogRefresh();
+        }
+        else
+        {
+            RecordSystemFault();
+
+            /*
+              Do not report a healthy system.
+              Apply the defined fault policy.
+            */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}</code></pre>
+
+<p>Functions such as <code>AllCriticalTasksHealthy()</code> and <code>HardwareWatchdogRefresh()</code> are application- and hardware-specific placeholders.</p>
+</section>
+
+<section>
+<h2>13. Watchdog and Task Priority</h2>
+<p>The supervisor task must receive enough CPU time to perform its checks without unnecessarily interfering with critical application tasks.</p>
+
+<table>
+<tr><th>Task</th><th>Example Priority</th><th>Purpose</th></tr>
+<tr><td>ControlTask</td><td>4</td><td>Performs time-critical control processing.</td></tr>
+<tr><td>SensorTask</td><td>3</td><td>Acquires and validates sensor data.</td></tr>
+<tr><td>SupervisorTask</td><td>2</td><td>Checks task health and watchdog conditions.</td></tr>
+<tr><td>CommunicationTask</td><td>1</td><td>Handles non-critical communication.</td></tr>
+</table>
+
+<p>These priority values are illustrative. The correct priority assignment depends on task deadlines, execution times, blocking and system scheduling analysis.</p>
+
+<div class="note">A high-priority supervisor can itself interfere with application deadlines. Watchdog supervision must be included in the system's timing and schedulability analysis.</div>
+</section>
+
+<section>
+<h2>14. Watchdog Reset and Fault Diagnosis</h2>
+<p>When a watchdog reset occurs, the application should identify the reset source and collect useful diagnostic information where possible.</p>
+
+<h3>Useful Diagnostic Information</h3>
+<ul>
+<li>Reset-cause register.</li>
+<li>Last known application state.</li>
+<li>Fault code.</li>
+<li>Task health status.</li>
+<li>Last successful control-cycle timestamp or counter.</li>
+<li>Relevant error counters.</li>
+<li>Persistent fault log, if available and safe to use.</li>
+</ul>
+
+<h3>Recovery Sequence</h3>
+<div class="diagram">
+         PROCESSOR RESET
+                |
+        READ RESET CAUSE
+                |
+        INITIALIZE HARDWARE
+                |
+        VALIDATE CONFIGURATION
+                |
+        RESTORE SAFE OUTPUTS
+                |
+        START APPLICATION
+                |
+        SELF-TEST AND MONITOR
+                |
+        NORMAL OPERATION
+</div>
+
+<p>Startup logic should avoid repeatedly restarting into the same unsafe failure condition. A system may need a latched fault state, restricted operating mode or maintenance intervention.</p>
+</section>
+
+<section>
+<h2>15. Common Watchdog Design Mistakes</h2>
+<table>
+<tr><th>Mistake</th><th>Why It Is Dangerous</th></tr>
+<tr><td>Refreshing watchdog unconditionally</td><td>Can hide a stalled critical task.</td></tr>
+<tr><td>Timeout too short</td><td>Can cause resets during legitimate processing.</td></tr>
+<tr><td>Timeout too long</td><td>Delays detection and recovery.</td></tr>
+<tr><td>Monitoring only one task</td><td>Other critical tasks may fail unnoticed.</td></tr>
+<tr><td>Heartbeat without progress validation</td><td>A task may report activity without completing useful work.</td></tr>
+<tr><td>Ignoring startup time</td><td>Can cause resets before initialization completes.</td></tr>
+<tr><td>No reset-cause logging</td><td>Makes intermittent faults difficult to diagnose.</td></tr>
+<tr><td>Unbounded retry loops</td><td>Can prevent watchdog supervision from progressing.</td></tr>
+<tr><td>Assuming reset means safe outputs</td><td>External hardware may retain unsafe states.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>16. Practical Exercise – Watchdog Timeout Calculation</h2>
+<p><strong>Problem:</strong> A real-time control application has the following timing requirements:</p>
+
+<table>
+<tr><th>Parameter</th><th>Value</th></tr>
+<tr><td>Maximum control processing time</td><td>30 ms</td></tr>
+<tr><td>Maximum scheduling delay</td><td>10 ms</td></tr>
+<tr><td>Maximum communication blocking allowance</td><td>5 ms</td></tr>
+<tr><td>Additional timing margin</td><td>25 ms</td></tr>
+</table>
+
+<h3>Solution</h3>
+<pre><code>Required Timing Budget =
+    30 + 10 + 5 + 25
+
+Required Timing Budget = 70 ms</code></pre>
+
+<p>A watchdog timeout must be selected to accommodate the justified worst-case interval between valid refresh operations. The final value must also satisfy the system's maximum fault-detection time.</p>
+</section>
+
+<section>
+<h2>17. Practical Exercise – Detect a Stalled Task</h2>
+<p><strong>Problem:</strong> A control task should complete one control cycle every 100 ms. The supervisor observes no new completion report for 300 ms.</p>
+
+<h3>Questions</h3>
+<ol>
+<li>What condition should the supervisor identify?</li>
+<li>Should it continue refreshing the watchdog?</li>
+<li>What diagnostic information should be recorded?</li>
+</ol>
+
+<h3>Suggested Answer</h3>
+<ol>
+<li>The control task has failed its expected progress deadline.</li>
+<li>The supervisor should not report the system as healthy. It should follow the defined fault policy, which may allow the hardware watchdog to expire.</li>
+<li>Record the task identifier, last completion time, fault code, system state and relevant sensor or communication status.</li>
+</ol>
+</section>
+
+<section>
+<h2>18. Interview Questions</h2>
+<ol>
+<li>What is a watchdog timer?</li>
+<li>Why is a watchdog used in embedded systems?</li>
+<li>Differentiate hardware and software watchdogs.</li>
+<li>What is watchdog refresh?</li>
+<li>What happens when a watchdog timeout occurs?</li>
+<li>How do you calculate a watchdog timeout?</li>
+<li>What is a windowed watchdog?</li>
+<li>What is task heartbeat monitoring?</li>
+<li>How can a software watchdog supervise multiple RTOS tasks?</li>
+<li>Why should watchdog refresh depend on task health?</li>
+<li>What is the difference between a task heartbeat and a task completion report?</li>
+<li>How can a watchdog reset cause be diagnosed?</li>
+<li>Can a watchdog guarantee that a system is safe?</li>
+<li>Why are unbounded retry loops dangerous?</li>
+<li>Does FreeRTOS automatically service the hardware watchdog?</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Lesson Summary</h2>
+<ul>
+<li>A watchdog detects failure to perform expected activity within a defined time.</li>
+<li>Hardware watchdogs can operate independently of application task execution.</li>
+<li>Software watchdogs monitor application-level progress.</li>
+<li>Watchdog timeout selection must consider worst-case timing and fault-detection requirements.</li>
+<li>Windowed watchdogs detect both early and late refresh operations.</li>
+<li>RTOS supervisors can monitor the health of multiple tasks.</li>
+<li>Heartbeat reports should represent meaningful task progress.</li>
+<li>Watchdog servicing should be conditional on required system health checks.</li>
+<li>Reset-cause logging and safe startup behavior improve fault diagnosis.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L01_Real_Time_System_Reliability_and_Fault_Tolerance.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L03_Low_Power_RTOS_Design.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 19 – Advanced Real-Time System Concepts</p>
+</footer>
+
+</body>
+</html>
