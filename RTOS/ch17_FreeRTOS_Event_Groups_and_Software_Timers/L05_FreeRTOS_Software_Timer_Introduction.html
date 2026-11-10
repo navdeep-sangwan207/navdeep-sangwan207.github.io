@@ -1,1 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Introduction to FreeRTOS Software Timers</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 15px}
+header h1{font-size:28px;margin-bottom:8px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 7px rgba(0,0,0,.08)}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h2{color:#174ea6;font-size:22px;border-bottom:2px solid #d8e6fa;padding-bottom:8px;margin-bottom:15px}
+h3{color:#1765b1;margin:17px 0 9px;font-size:18px}
+p{margin:9px 0}
+ul,ol{padding-left:25px;margin:10px 0}
+li{margin:6px 0}
+pre{background:#172338;color:#e6edf7;padding:17px;border-radius:8px;overflow-x:auto;margin:13px 0;font-size:13px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0;display:block;overflow-x:auto}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;min-width:135px}
+th{background:#eaf2ff;color:#174ea6}
+.note{background:#eaf3ff;border-left:4px solid #2878d7;padding:13px;margin:14px 0;border-radius:5px}
+.warning{background:#fff5e6;border-left:4px solid #e69a24;padding:13px;margin:14px 0;border-radius:5px}
+.example{background:#effaf2;border-left:4px solid #269653;padding:13px;margin:14px 0;border-radius:5px}
+.objectives{background:#eef5ff;padding:17px 22px;border-radius:8px}
+.navigation{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:600px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 17: FreeRTOS Event Groups and Software Timers</h1>
+<p>Lesson 05 – Introduction to FreeRTOS Software Timers</p>
+</header>
+
+<nav>
+<a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+<a href="index.html">Chapter Index</a>
+<a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>Lesson Overview</h2>
+<p>
+A software timer is a FreeRTOS kernel object that allows an
+application to schedule a function to execute after a specified
+number of RTOS ticks. A timer can be configured to expire once
+or repeatedly.
+</p>
+<p>
+Software timers are useful for periodic monitoring, delayed
+actions, timeout handling, status updates, and other time-based
+application operations without dedicating a separate task to
+each timer.
+</p>
+<div class="objectives">
+<h3>Learning Objectives</h3>
+<ul>
+<li>Understand the concept of a software timer.</li>
+<li>Understand the role of the RTOS tick count.</li>
+<li>Differentiate software timers from hardware timers.</li>
+<li>Understand one-shot and auto-reload timers.</li>
+<li>Learn the timer callback concept.</li>
+<li>Understand the timer service task.</li>
+<li>Identify software timer applications and limitations.</li>
+</ul>
+</div>
+</section>
+
+<section>
+<h2>1. What Is a Software Timer?</h2>
+<p>
+A software timer is managed by the FreeRTOS kernel. When the
+configured period expires, the kernel schedules the timer's
+callback function to execute in the context of the timer service
+task.
+</p>
+<p>
+The timer uses the RTOS tick count to track the passage of time.
+It does not require a separate hardware timer peripheral for
+each software timer.
+</p>
+
+<div class="example">
+<strong>Example:</strong>
+A controller must check its communication status every five
+seconds. A software timer can invoke a callback every five seconds
+to notify an application task to perform the check.
+</div>
+
+<h3>Basic Operation</h3>
+<pre><code>Application creates timer
+          |
+          v
+Timer is started
+          |
+          v
+RTOS tick count advances
+          |
+          v
+Timer period expires
+          |
+          v
+Timer service task processes expiry
+          |
+          v
+Timer callback function executes</code></pre>
+</section>
+
+<section>
+<h2>2. Why Are Software Timers Required?</h2>
+<p>
+Without software timers, developers may create additional tasks
+or use repeated delay operations for time-based actions. A
+software timer provides a centralized kernel mechanism for
+managing multiple timer expirations.
+</p>
+<h3>Typical Requirements</h3>
+<ul>
+<li>Generate periodic status notifications.</li>
+<li>Check communication timeouts.</li>
+<li>Schedule delayed application actions.</li>
+<li>Monitor periodic system conditions.</li>
+<li>Trigger a task to perform maintenance operations.</li>
+<li>Implement retry intervals.</li>
+<li>Generate periodic application events.</li>
+</ul>
+<div class="note">
+A software timer callback should generally notify a task or
+submit a short operation. Long-running processing should be
+performed in an application task.
+</div>
+</section>
+
+<section>
+<h2>3. Software Timer Architecture</h2>
+<p>
+FreeRTOS manages software timers through a dedicated timer
+service task when software timer support is enabled.
+</p>
+<h3>Important Components</h3>
+<table>
+<tr><th>Component</th><th>Purpose</th></tr>
+<tr><td>Software timer object</td><td>Stores the timer's configuration and state.</td></tr>
+<tr><td>Timer period</td><td>Specifies the expiry interval in ticks.</td></tr>
+<tr><td>Timer command queue</td><td>Receives timer commands from tasks and supported ISR APIs.</td></tr>
+<tr><td>Timer service task</td><td>Processes timer commands and expiry events.</td></tr>
+<tr><td>Timer callback</td><td>Application function executed when the timer expires.</td></tr>
+<tr><td>RTOS tick</td><td>Provides the time base used to determine expiry.</td></tr>
+</table>
+
+<h3>Architecture Diagram</h3>
+<pre><code>        Application Task
+               |
+       Timer API Commands
+               |
+               v
+       Timer Command Queue
+               |
+               v
+      Timer Service Task
+               |
+        Timer Management
+               |
+        Timer Expiration
+               |
+               v
+        Callback Function
+               |
+       Application Action</code></pre>
+</section>
+
+<section>
+<h2>4. Software Timer vs Hardware Timer</h2>
+<table>
+<tr><th>Feature</th><th>Software Timer</th><th>Hardware Timer</th></tr>
+<tr><td>Implementation</td><td>Managed by RTOS kernel.</td><td>Implemented by a hardware peripheral.</td></tr>
+<tr><td>Time base</td><td>RTOS tick count.</td><td>Hardware counter or clock.</td></tr>
+<tr><td>Callback context</td><td>Timer service task context.</td><td>Often hardware interrupt context, depending on design.</td></tr>
+<tr><td>Precision</td><td>Limited by tick resolution and scheduling latency.</td><td>Can provide finer hardware timing resolution.</td></tr>
+<tr><td>CPU usage</td><td>Uses CPU time when the timer service task executes.</td><td>Counter may operate independently of CPU execution.</td></tr>
+<tr><td>Typical use</td><td>Application delays and periodic notifications.</td><td>PWM, input capture, precise waveform timing, and hardware events.</td></tr>
+</table>
+
+<div class="warning">
+A FreeRTOS software timer is not a replacement for every
+hardware timer. Precise waveform generation, motor-control PWM,
+and time-critical capture operations normally require appropriate
+hardware peripherals.
+</div>
+</section>
+
+<section>
+<h2>5. Types of FreeRTOS Software Timers</h2>
+<p>
+FreeRTOS provides two commonly used timer modes:
+</p>
+
+<h3>A. One-Shot Timer</h3>
+<p>
+A one-shot timer expires once after its configured period.
+After expiry, it becomes inactive until it is started again.
+</p>
+<pre><code>Timer started
+     |
+     v
+Period expires
+     |
+     v
+Callback executes
+     |
+     v
+Timer becomes inactive</code></pre>
+
+<p><strong>Applications:</strong></p>
+<ul>
+<li>Communication timeout.</li>
+<li>Delayed shutdown request.</li>
+<li>Temporary notification.</li>
+<li>One-time retry delay.</li>
+</ul>
+
+<h3>B. Auto-Reload Timer</h3>
+<p>
+An auto-reload timer automatically reloads its period after
+expiry and continues generating periodic expirations while
+active.
+</p>
+<pre><code>Timer started
+     |
+     v
+Period expires
+     |
+     v
+Callback executes
+     |
+     v
+Timer reloads
+     |
+     v
+Next period begins
+     |
+     +---- Repeat</code></pre>
+
+<p><strong>Applications:</strong></p>
+<ul>
+<li>Periodic system monitoring.</li>
+<li>Regular status reporting.</li>
+<li>Periodic task notification.</li>
+<li>Recurring maintenance operations.</li>
+</ul>
+</section>
+
+<section>
+<h2>6. Timer Period and RTOS Tick</h2>
+<p>
+The timer period is configured in RTOS ticks. The duration
+represented by one tick depends on <code>configTICK_RATE_HZ</code>.
+</p>
+
+<pre><code>#define configTICK_RATE_HZ 1000</code></pre>
+
+<p>
+With a tick rate of 1000 Hz, one tick represents a nominal
+1 millisecond interval.
+</p>
+
+<h3>Milliseconds to Ticks</h3>
+<pre><code>TickType_t timerPeriod;
+
+timerPeriod = pdMS_TO_TICKS(5000);</code></pre>
+
+<p>
+This requests a timer period corresponding to approximately
+five seconds at the configured tick rate.
+</p>
+
+<table>
+<tr><th>Tick Rate</th><th>Nominal Tick Interval</th><th>Approximate Ticks for 1 Second</th></tr>
+<tr><td>100 Hz</td><td>10 ms</td><td>100</td></tr>
+<tr><td>250 Hz</td><td>4 ms</td><td>250</td></tr>
+<tr><td>500 Hz</td><td>2 ms</td><td>500</td></tr>
+<tr><td>1000 Hz</td><td>1 ms</td><td>1000</td></tr>
+</table>
+
+<div class="note">
+Timer expiry is tick-based. Actual callback execution can occur
+later because the timer service task must be scheduled and process
+the expiry. A software timer is not a hard real-time precision
+guarantee.
+</div>
+</section>
+
+<section>
+<h2>7. Timer Callback Function</h2>
+<p>
+A timer callback is an application-defined function that executes
+when a software timer expires.
+</p>
+<h3>General Callback Prototype</h3>
+<pre><code>void TimerCallback(TimerHandle_t xTimer);</code></pre>
+
+<p>
+The callback receives the handle of the timer that expired.
+The application can use this handle to identify the timer or
+retrieve its associated timer ID.
+</p>
+
+<h3>Example Callback</h3>
+<pre><code>void StatusTimerCallback(TimerHandle_t xTimer)
+{
+    /* Perform a short operation */
+    /* Or notify an application task */
+}</code></pre>
+
+<h3>Callback Execution Rules</h3>
+<ul>
+<li>Callbacks execute in timer service task context, not hardware ISR context.</li>
+<li>Keep callbacks short and non-blocking.</li>
+<li>Do not call APIs that block waiting for a resource.</li>
+<li>Do not use <code>vTaskDelay()</code> inside a timer callback.</li>
+<li>Use a queue or task notification to transfer work to another task.</li>
+<li>Remember that a long callback delays processing of other timer commands and callbacks.</li>
+</ul>
+</section>
+
+<section>
+<h2>8. Timer Service Task Configuration</h2>
+<p>
+The timer service task is responsible for processing timer
+commands and executing timer callbacks.
+</p>
+<p>
+The following configuration options are important when
+software timers are enabled:
+</p>
+<pre><code>#define configUSE_TIMERS                 1
+
+#define configTIMER_TASK_PRIORITY        3
+
+#define configTIMER_QUEUE_LENGTH         10
+
+#define configTIMER_TASK_STACK_DEPTH     256</code></pre>
+
+<table>
+<tr><th>Configuration</th><th>Purpose</th></tr>
+<tr><td><code>configUSE_TIMERS</code></td><td>Enables or disables software timer functionality.</td></tr>
+<tr><td><code>configTIMER_TASK_PRIORITY</code></td><td>Sets the timer service task priority.</td></tr>
+<tr><td><code>configTIMER_QUEUE_LENGTH</code></td><td>Sets the capacity of the timer command queue.</td></tr>
+<tr><td><code>configTIMER_TASK_STACK_DEPTH</code></td><td>Sets the timer service task stack depth.</td></tr>
+</table>
+
+<div class="warning">
+The numerical values shown are illustrative configuration
+examples, not universal recommended settings. Choose them based
+on the application, selected port, kernel version, command
+traffic, and callback stack requirements.
+</div>
+</section>
+
+<section>
+<h2>9. Basic Software Timer Example</h2>
+<h3>Objective</h3>
+<p>
+Create a one-shot timer with a five-second period and execute
+a callback when the timer expires.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "timers.h"
+
+static TimerHandle_t xOneShotTimer;
+
+void TimerCallback(TimerHandle_t xTimer)
+{
+    /* Timer expiry notification */
+    /* Keep callback short */
+}
+
+int main(void)
+{
+    xOneShotTimer = xTimerCreate(
+        "OneShot",
+        pdMS_TO_TICKS(5000),
+        pdFALSE,
+        NULL,
+        TimerCallback
+    );
+
+    if (xOneShotTimer == NULL)
+    {
+        for (;;)
+        {
+            /* Timer creation failed */
+        }
+    }
+
+    if (xTimerStart(xOneShotTimer, 0) != pdPASS)
+    {
+        for (;;)
+        {
+            /* Timer start command was not queued */
+        }
+    }
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<h3>Explanation</h3>
+<ol>
+<li>Include the timer header.</li>
+<li>Declare a timer handle.</li>
+<li>Define a callback function.</li>
+<li>Create a one-shot timer with a five-second period.</li>
+<li>Check whether timer creation succeeded.</li>
+<li>Submit the start command to the timer command queue.</li>
+<li>Start the scheduler.</li>
+<li>When the timer expires, the callback executes in timer service task context.</li>
+</ol>
+
+<div class="note">
+This example illustrates the timer API sequence. In a production
+application, start timers from a suitable task after the scheduler
+has started when command processing and error recovery need to be
+managed at runtime.
+</div>
+</section>
+
+<section>
+<h2>10. Important Timer Design Considerations</h2>
+<ul>
+<li>Choose one-shot or auto-reload mode according to the application requirement.</li>
+<li>Convert time intervals using <code>pdMS_TO_TICKS()</code>.</li>
+<li>Ensure the timer service task has adequate stack space and priority.</li>
+<li>Choose sufficient timer command queue capacity.</li>
+<li>Check timer creation and command-submission return values.</li>
+<li>Keep callback execution short.</li>
+<li>Use queues or task notifications for lengthy processing.</li>
+<li>Do not assume a successful timer command submission means the command has already been processed.</li>
+<li>Consider tick resolution and timer-service-task scheduling latency.</li>
+<li>Do not use software timers for precision waveform generation.</li>
+</ul>
+</section>
+
+<section>
+<h2>11. Review Questions</h2>
+<ol>
+<li>What is a FreeRTOS software timer?</li>
+<li>How does a software timer determine its expiry?</li>
+<li>What is the difference between a software timer and a hardware timer?</li>
+<li>What is a one-shot timer?</li>
+<li>What is an auto-reload timer?</li>
+<li>What is the purpose of a timer callback?</li>
+<li>In which context does a timer callback execute?</li>
+<li>What is the role of the timer service task?</li>
+<li>What is the purpose of <code>configTIMER_QUEUE_LENGTH</code>?</li>
+<li>Why should timer callbacks be short?</li>
+<li>Does timer expiry guarantee immediate callback execution?</li>
+<li>Why are software timers unsuitable for precise PWM generation?</li>
+</ol>
+</section>
+
+<section>
+<h2>12. Practical Assignment</h2>
+<ol>
+<li>Explain the operation of a one-shot timer with a diagram.</li>
+<li>Explain the operation of an auto-reload timer with a diagram.</li>
+<li>Calculate the tick count for a 2-second timer at a 500 Hz tick rate.</li>
+<li>Write a callback function that notifies an application task.</li>
+<li>Identify the four major timer configuration options.</li>
+<li>Explain why a long callback can delay other timer operations.</li>
+<li>Design a periodic communication-status monitoring system using a software timer.</li>
+<li>Compare a periodic software timer with a task using <code>vTaskDelayUntil()</code>.</li>
+</ol>
+</section>
+
+<section>
+<h2>13. Lesson Summary</h2>
+<ul>
+<li>Software timers provide time-based operations managed by the FreeRTOS kernel.</li>
+<li>Timer periods are expressed in RTOS ticks.</li>
+<li>One-shot timers expire once.</li>
+<li>Auto-reload timers expire repeatedly.</li>
+<li>Timer callbacks execute in timer service task context.</li>
+<li>The timer service task processes timer commands and expirations.</li>
+<li>Timer command queues have finite capacity.</li>
+<li>Callbacks should be short and non-blocking.</li>
+<li>Software timers are useful for application timing, but not a substitute for precision hardware timers.</li>
+</ul>
+</section>
+
+<div class="navigation">
+<a href="L04_xEventGroupWaitBits_Function.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L06_xTimerCreate_Function.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 17 – FreeRTOS Event Groups and Software Timers</p>
+</footer>
+
+</body>
+</html>
