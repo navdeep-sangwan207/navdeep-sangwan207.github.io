@@ -1,1 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Execution Time and Response Time | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+.formula{background:#f3f5f7;padding:15px;border-radius:7px;text-align:center;font-weight:bold;margin:15px 0;font-family:monospace}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.diagram{background:#f7f9fc;border:1px solid #dce4ef;padding:16px;border-radius:8px;overflow-x:auto}
+.diagram-row{display:flex;align-items:stretch;gap:5px;min-width:620px;margin:12px 0}
+.diagram-block{padding:12px 8px;text-align:center;border-radius:5px;display:flex;align-items:center;justify-content:center;font-weight:600;min-height:48px}
+.wait{background:#fff0c9;flex:3}
+.execute{background:#ccebd7;flex:4}
+.interference{background:#f8d6d6;flex:2}
+.blocked{background:#dce5f7;flex:1}
+.caption{text-align:center;color:#596579;font-size:14px}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Execution Time and Response Time</h1>
+<p>Chapter 06 – Real-Time Scheduling Analysis | Lesson 02</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 06</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>In a real-time system, completing a task is not enough. The task must produce its required result within the specified time limit.</p>
+<p>Two important timing measurements are:</p>
+<ul>
+<li><strong>Execution time:</strong> The time a task actually spends executing on the CPU.</li>
+<li><strong>Response time:</strong> The elapsed time from the task's release until it completes.</li>
+</ul>
+<p>A task can have a short execution time but a long response time because it may wait for CPU access, become blocked by a shared resource, or be interrupted by higher-priority activities.</p>
+
+<div class="info-box">
+<strong>Central concept:</strong> Execution time measures CPU work. Response time measures how long the task takes to deliver its completed result after release.
+</div>
+</section>
+
+<section>
+<h2>2. Execution Time</h2>
+<p>Execution time is the amount of processor time consumed by a task while its instructions are executing.</p>
+
+<h3>2.1 CPU execution time</h3>
+<p>Suppose a task requires 4 milliseconds of CPU processing. If it executes continuously without interruption, its execution time is 4 ms.</p>
+<p>If another task preempts it, the elapsed time between its start and completion becomes longer, but the task's own CPU execution requirement remains 4 ms.</p>
+
+<h3>2.2 Types of execution-time measurements</h3>
+<table>
+<tr><th>Measurement</th><th>Meaning</th></tr>
+<tr><td>Actual execution time</td><td>CPU time consumed during a particular execution.</td></tr>
+<tr><td>Average execution time</td><td>Average CPU time observed across multiple executions.</td></tr>
+<tr><td>Best-case execution time (BCET)</td><td>Shortest execution time under specified conditions.</td></tr>
+<tr><td>Worst-case execution time (WCET)</td><td>A safe upper bound on execution time under stated assumptions.</td></tr>
+</table>
+
+<div class="warning-box">
+<strong>Important:</strong> The longest execution time observed during testing is not automatically the WCET. A valid WCET bound must account for relevant execution paths, processor behavior, memory effects, compiler behavior, and operating conditions.
+</div>
+</section>
+
+<section>
+<h2>3. Waiting Time</h2>
+<p>Waiting time is the time a released task spends ready to execute but not currently receiving CPU time.</p>
+<p>For example, a low-priority task may become ready but remain in the Ready state while a higher-priority task executes.</p>
+
+<ul>
+<li>The task has been released.</li>
+<li>It is eligible to execute.</li>
+<li>The scheduler has not selected it yet.</li>
+<li>It receives no CPU execution during this waiting interval.</li>
+</ul>
+
+<p>Waiting time is different from execution time because the processor is not executing that task during the waiting interval.</p>
+</section>
+
+<section>
+<h2>4. Blocking Time</h2>
+<p>Blocking time occurs when a task cannot continue because it is waiting for an event or resource.</p>
+
+<p>Common reasons include:</p>
+<ul>
+<li>Waiting to acquire a mutex.</li>
+<li>Waiting for data in a message queue.</li>
+<li>Waiting for a semaphore or event.</li>
+<li>Waiting for an I/O operation to complete.</li>
+<li>Waiting for a specified delay or timeout.</li>
+</ul>
+
+<p>In fixed-priority response-time analysis, <strong>blocking due to lower-priority tasks holding shared resources</strong> is especially important. This is often represented by a blocking term, B.</p>
+
+<div class="info-box">
+A task blocked while waiting for a mutex is not executing on the CPU. Its waiting interval contributes to response time, even though it does not contribute to its own CPU execution time.
+</div>
+</section>
+
+<section>
+<h2>5. Preemption and Interference</h2>
+<p>Preemption occurs when the scheduler suspends a currently executing task so that another eligible task can use the CPU.</p>
+
+<p>In a priority-based preemptive RTOS:</p>
+<ul>
+<li>A higher-priority ready task can preempt a lower-priority running task.</li>
+<li>The preempted task normally remains ready to execute again.</li>
+<li>It resumes when the scheduler selects it.</li>
+</ul>
+
+<p><strong>Interference</strong> is the time during which other activities delay the completion of the task being analyzed.</p>
+
+<p>Possible sources include:</p>
+<ul>
+<li>Higher-priority tasks.</li>
+<li>Interrupt service routines.</li>
+<li>Scheduler and context-switch overhead.</li>
+<li>Other processor activities included in the timing model.</li>
+</ul>
+</section>
+
+<section>
+<h2>6. Response Time</h2>
+<p>Response time is the elapsed time between the release of a task and its completion.</p>
+
+<div class="formula">Response Time (R) = Completion Time − Release Time</div>
+
+<p>Let:</p>
+<ul>
+<li><strong>r:</strong> Release time of the task.</li>
+<li><strong>s:</strong> First execution start time.</li>
+<li><strong>f:</strong> Completion time.</li>
+<li><strong>C:</strong> Total CPU execution time consumed by the task.</li>
+</ul>
+
+<p>Then:</p>
+<div class="formula">R = f − r</div>
+<div class="formula">Waiting Before First Execution = s − r</div>
+
+<p>Response time includes all elapsed intervals between release and completion, including CPU execution and relevant delays.</p>
+</section>
+
+<section>
+<h2>7. Response-Time Decomposition</h2>
+<p>For a simplified timing model, response time can be represented as:</p>
+
+<div class="formula">R = C + W + B + I + O</div>
+
+<table>
+<tr><th>Symbol</th><th>Component</th><th>Description</th></tr>
+<tr><td>C</td><td>Execution time</td><td>CPU time consumed by the task itself.</td></tr>
+<tr><td>W</td><td>Ready waiting time</td><td>Time waiting for CPU access while ready.</td></tr>
+<tr><td>B</td><td>Blocking time</td><td>Time waiting for a resource or event.</td></tr>
+<tr><td>I</td><td>Interference</td><td>Time consumed by other tasks or interrupts that delay completion.</td></tr>
+<tr><td>O</td><td>Overhead</td><td>Relevant scheduling, dispatch, or context-switch overhead.</td></tr>
+</table>
+
+<div class="warning-box">
+This is a conceptual decomposition, not a universal equation for every RTOS analysis method. The terms must represent distinct, non-overlapping intervals. If a response-time formula already includes interrupt or scheduling interference, do not add those terms again.
+</div>
+
+<h3>7.1 Timing diagram</h3>
+<div class="diagram">
+<p><strong>Example: Task released at 0 ms and completed at 7 ms</strong></p>
+<div class="diagram-row">
+<div class="diagram-block wait">Ready wait<br>0–3 ms</div>
+<div class="diagram-block execute">Execution<br>3–7 ms</div>
+</div>
+<p class="caption">Release at 0 ms → first execution at 3 ms → completion at 7 ms</p>
+<p><strong>Total response time = 3 ms waiting + 4 ms execution = 7 ms.</strong></p>
+</div>
+</section>
+
+<section>
+<h2>8. Numerical Example 1 – Waiting and Execution Time</h2>
+<p>A task has the following timing information:</p>
+
+<table>
+<tr><th>Parameter</th><th>Value</th></tr>
+<tr><td>Release time</td><td>0 ms</td></tr>
+<tr><td>First execution start</td><td>3 ms</td></tr>
+<tr><td>Execution time</td><td>4 ms</td></tr>
+<tr><td>Completion time</td><td>7 ms</td></tr>
+</table>
+
+<h3>Step 1: Calculate waiting time</h3>
+<div class="formula">Waiting Time = 3 − 0 = 3 ms</div>
+
+<h3>Step 2: Calculate response time</h3>
+<div class="formula">R = 7 − 0 = 7 ms</div>
+
+<h3>Step 3: Verify</h3>
+<div class="formula">R = Waiting Time + Execution Time = 3 + 4 = 7 ms</div>
+
+<p><strong>Result:</strong> The task consumes 4 ms of CPU time but takes 7 ms from release to completion.</p>
+</section>
+
+<section>
+<h2>9. Numerical Example 2 – Blocking and Interference</h2>
+<p>A task requires 5 ms of CPU execution. During its response interval, it experiences 2 ms of resource blocking and 3 ms of interference.</p>
+
+<table>
+<tr><th>Component</th><th>Duration</th></tr>
+<tr><td>Task execution (C)</td><td>5 ms</td></tr>
+<tr><td>Resource blocking (B)</td><td>2 ms</td></tr>
+<tr><td>Interference (I)</td><td>3 ms</td></tr>
+</table>
+
+<h3>Calculation</h3>
+<div class="formula">R = C + B + I</div>
+<div class="formula">R = 5 + 2 + 3 = 10 ms</div>
+
+<p><strong>Result:</strong> The task needs 5 ms of CPU time but its total response time is 10 ms.</p>
+
+<div class="info-box">
+This calculation assumes the three intervals are separate, do not overlap, and that no additional overhead needs to be included.
+</div>
+</section>
+
+<section>
+<h2>10. Numerical Example 3 – Multiple Delay Sources</h2>
+<p>Consider a task with the following timing characteristics:</p>
+<ul>
+<li>Release time = 0 ms.</li>
+<li>Ready waiting time = 2 ms.</li>
+<li>Resource blocking time = 1 ms.</li>
+<li>CPU execution time = 4 ms.</li>
+<li>Preemption/interference time = 2 ms.</li>
+</ul>
+
+<h3>Calculation</h3>
+<div class="formula">R = W + B + C + I</div>
+<div class="formula">R = 2 + 1 + 4 + 2 = 9 ms</div>
+
+<p><strong>Result:</strong> The task completes 9 ms after release, although it requires only 4 ms of CPU execution.</p>
+</section>
+
+<section>
+<h2>11. Worst-Case Response Time</h2>
+<p>Worst-case response time (WCRT) is a safe upper bound on the response time of a task under specified scheduling, workload, resource-sharing, and hardware assumptions.</p>
+
+<p>WCRT analysis is important because a real-time system must be designed to satisfy timing constraints even under demanding conditions.</p>
+
+<div class="formula">Worst-Case Response Time ≤ Relative Deadline</div>
+
+<p>If the calculated safe response-time bound is less than or equal to the task's relative deadline, the task meets its deadline under the assumptions of the analysis.</p>
+
+<table>
+<tr><th>Condition</th><th>Interpretation</th></tr>
+<tr><td>R ≤ D</td><td>Deadline is met under the modeled assumptions.</td></tr>
+<tr><td>R &gt; D</td><td>Deadline cannot be guaranteed by that response-time bound.</td></tr>
+<tr><td>R = D</td><td>Task completes exactly at its deadline.</td></tr>
+</table>
+
+<div class="warning-box">
+An observed response time from a test run is not automatically a proven WCRT. Testing provides measurements for the tested conditions; formal or conservative analysis is needed to establish a safe bound.
+</div>
+</section>
+
+<section>
+<h2>12. Response-Time Analysis in Fixed-Priority Scheduling</h2>
+<p>In fixed-priority preemptive scheduling, a task's response time can be affected by:</p>
+<ul>
+<li>Its own execution requirement.</li>
+<li>Blocking from lower-priority tasks holding shared resources.</li>
+<li>Interference from higher-priority tasks.</li>
+<li>Relevant interrupt and scheduling overhead.</li>
+</ul>
+
+<p>Conceptually, response-time analysis repeatedly estimates how long a task takes to complete while accounting for the higher-priority work that can execute before it finishes.</p>
+
+<p>The detailed fixed-priority response-time recurrence and numerical analysis will be covered in Lesson 08: Response Time Analysis.</p>
+</section>
+
+<section>
+<h2>13. Execution Time vs Response Time vs Turnaround Time</h2>
+<table>
+<tr><th>Parameter</th><th>Definition</th><th>Measurement</th></tr>
+<tr><td>Execution time</td><td>CPU time consumed by a task.</td><td>CPU execution intervals.</td></tr>
+<tr><td>Response time</td><td>Release-to-completion elapsed time.</td><td>Completion − release.</td></tr>
+<tr><td>Turnaround time</td><td>Elapsed time from submission or arrival to completion.</td><td>Completion − submission/arrival.</td></tr>
+<tr><td>Waiting time</td><td>Time spent ready but not executing.</td><td>Ready-state waiting intervals.</td></tr>
+<tr><td>Blocking time</td><td>Time spent unable to proceed while waiting for an event/resource.</td><td>Blocked intervals.</td></tr>
+</table>
+
+<p>Turnaround time is commonly used in general operating-system scheduling. For a real-time task, response time is normally measured from the defined release event to task completion.</p>
+</section>
+
+<section>
+<h2>14. Measuring Task Timing in FreeRTOS</h2>
+<p>In FreeRTOS-based systems, timing measurements can help developers understand task execution and scheduling behavior.</p>
+
+<h3>14.1 Useful measurement techniques</h3>
+<ul>
+<li>Record a timestamp when a task is released or notified.</li>
+<li>Record the timestamp when the task begins executing.</li>
+<li>Record another timestamp when the task completes its required work.</li>
+<li>Use trace hooks or a trace tool to observe task state transitions.</li>
+<li>Repeat measurements under representative system load.</li>
+</ul>
+
+<h3>14.2 Runtime statistics</h3>
+<p>FreeRTOS provides optional runtime-statistics facilities, including <code>vTaskGetRunTimeStats()</code>, when the required configuration and application-provided runtime counter are available.</p>
+
+<p>These statistics report accumulated CPU runtime for tasks. They are useful for analyzing CPU usage, but they do not automatically establish WCET or worst-case response time.</p>
+
+<h3>14.3 Important timing considerations</h3>
+<ul>
+<li>The runtime counter must have suitable resolution and a correctly implemented hardware source.</li>
+<li>Timestamp reads introduce measurement overhead.</li>
+<li>Tick-based timing has resolution limited by the configured tick frequency.</li>
+<li>Use a higher-resolution timer when finer timing measurements are required and supported.</li>
+<li>Test under realistic interrupt load, task load, and resource contention.</li>
+</ul>
+
+<div class="warning-box">
+The availability of a FreeRTOS runtime-statistics API does not prove that a particular MCU/compiler/debugger combination has a working FreeRTOS port. Verify the selected port and timer implementation before using these techniques on hardware.
+</div>
+</section>
+
+<section>
+<h2>15. Timing Analysis Using Keil uVision and LPC2129</h2>
+<p>For LPC2129 experiments in Keil uVision, the simulator can help inspect program execution, CPU registers, memory, and peripheral-register behavior supported by the simulation model.</p>
+
+<p>For the user's LPC2129 clock configuration:</p>
+<table>
+<tr><th>Parameter</th><th>Value</th></tr>
+<tr><td>FOSC</td><td>12 MHz</td></tr>
+<tr><td>CCLK</td><td>60 MHz</td></tr>
+<tr><td>PCLK</td><td>15 MHz</td></tr>
+<tr><td>Timer prescaler PR</td><td>14999</td></tr>
+<tr><td>Timer counter increment</td><td>1 ms, assuming the stated peripheral clock and prescaler configuration</td></tr>
+</table>
+
+<p>A timer can be used to record timestamps around a software operation. For example, if the timer count is read at the start and end of a function, the difference gives an elapsed-time measurement in timer ticks, subject to timer configuration and wraparound handling.</p>
+
+<pre><code>/* Conceptual timer-based elapsed-time measurement */
+
+unsigned int start_time;
+unsigned int end_time;
+unsigned int elapsed_time;
+
+start_time = TIMER0_TC;
+
+/* Execute the operation being measured */
+perform_task_operation();
+
+end_time = TIMER0_TC;
+
+/* Handle counter wraparound in production code */
+elapsed_time = end_time - start_time;</code></pre>
+
+<p><strong>Important:</strong> This is conceptual C code. The timer register name and initialization must match the actual LPC2129 header and project configuration. It is not a complete FreeRTOS application.</p>
+
+<ul>
+<li>Simulator timing is not necessarily identical to physical hardware timing.</li>
+<li>Instruction execution measurements may depend on simulator settings.</li>
+<li>External device delays and electrical behavior are not fully represented by a CPU simulator.</li>
+<li>LPC2129 uses ARM7TDMI-S; do not use Cortex-M-specific DWT cycle-counter examples.</li>
+<li>Do not assume that a FreeRTOS LPC2129/Keil port is available without verifying the actual port.</li>
+</ul>
+</section>
+
+<section>
+<h2>16. Common Mistakes</h2>
+<table>
+<tr><th>Mistake</th><th>Correct understanding</th></tr>
+<tr><td>Execution time equals response time.</td><td>Response time includes execution and all relevant elapsed delays.</td></tr>
+<tr><td>Waiting time is CPU execution.</td><td>Ready waiting means the task is not using the CPU.</td></tr>
+<tr><td>Every delay is resource blocking.</td><td>Blocking, ready waiting, and intentional delays are distinct states or intervals.</td></tr>
+<tr><td>Preemption increases the task's CPU requirement.</td><td>Preemption generally increases elapsed response time, not the task's own execution requirement.</td></tr>
+<tr><td>One measured maximum proves WCET.</td><td>WCET requires a safe bound under stated assumptions.</td></tr>
+<tr><td>Runtime statistics prove deadline compliance.</td><td>Runtime statistics alone do not prove worst-case response-time bounds.</td></tr>
+<tr><td>All timing components can always be added directly.</td><td>Only distinct, non-overlapping intervals should be added in a simple decomposition.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+<ul>
+<li>Execution time is the CPU time required by a task.</li>
+<li>Response time is the elapsed time from release to completion.</li>
+<li>Waiting time occurs when a task is ready but not executing.</li>
+<li>Blocking time occurs when a task waits for a resource or event.</li>
+<li>Preemption and interrupt interference can increase response time.</li>
+<li>Worst-case response time must be bounded against the task deadline.</li>
+<li>Runtime measurements are useful but do not automatically prove WCET or WCRT.</li>
+<li>Keil simulator measurements must not be treated as physical hardware guarantees.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Review Questions</h2>
+<ol>
+<li>Define execution time in a real-time system.</li>
+<li>What is response time?</li>
+<li>Differentiate CPU execution time and elapsed time.</li>
+<li>What is ready waiting time?</li>
+<li>Explain resource blocking with an example.</li>
+<li>How can preemption increase response time?</li>
+<li>What is worst-case response time?</li>
+<li>Why does the longest measured execution time not necessarily represent WCET?</li>
+<li>How is response time compared with a relative deadline?</li>
+<li>Why are FreeRTOS runtime statistics not sufficient to prove deadline compliance?</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Practical Activities</h2>
+<h3>Activity 1 – Calculate response time</h3>
+<p>A task is released at 5 ms, starts execution at 8 ms, and completes at 14 ms.</p>
+<ul>
+<li>Calculate ready waiting time.</li>
+<li>Calculate response time.</li>
+<li>Calculate CPU execution time if the task executes continuously from 8 ms to 14 ms.</li>
+</ul>
+
+<h3>Activity 2 – Analyze interference</h3>
+<p>A task requires 6 ms of CPU execution, experiences 2 ms of blocking, and is delayed by 4 ms of higher-priority interference. Assume the intervals are distinct.</p>
+<ul>
+<li>Calculate its response time.</li>
+<li>If its relative deadline is 15 ms, determine whether the calculated response time meets the deadline.</li>
+</ul>
+
+<h3>Activity 3 – Timing measurement</h3>
+<ul>
+<li>Write a simple C function that performs a known sequence of operations.</li>
+<li>Use a configured LPC2129 timer to record start and end timestamps.</li>
+<li>Calculate elapsed timer ticks.</li>
+<li>Repeat the experiment and compare measurements.</li>
+<li>Explain why simulator measurements cannot establish a physical hardware WCET bound.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="index.html">← Chapter 06</a>
+<a href="L01_Task_Timing_Parameters.html">← Previous Lesson</a>
+<a href="L03_Task_Period_and_Deadline.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
