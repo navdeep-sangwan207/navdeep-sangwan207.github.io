@@ -1,1 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mutex vs Binary Semaphore | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-container{max-width:1100px;margin:30px auto;padding:20px;line-height:1.75;color:#263238}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px;border-radius:12px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+.lesson-nav{display:flex;justify-content:center;flex-wrap:wrap;gap:22px;margin:20px 0}
+.lesson-nav a{color:#174ea6;text-decoration:none;font-weight:600}
+.lesson-container h2{color:#174ea6;border-bottom:2px solid #d6e5fa;padding-bottom:7px;margin-top:32px}
+.lesson-container h3{color:#245b9e;margin-top:22px}
+.lesson-container table{width:100%;border-collapse:collapse;margin:18px 0}
+.lesson-container th,.lesson-container td{border:1px solid #d5dce5;padding:10px;text-align:left}
+.lesson-container th{background:#eaf2ff;color:#174ea6}
+.info-box{background:#eef5ff;border-left:5px solid #2878d7;padding:15px;margin:18px 0;border-radius:5px}
+.warning-box{background:#fff6e8;border-left:5px solid #e6a23c;padding:15px;margin:18px 0;border-radius:5px}
+pre{background:#17212b;color:#e8f0f8;padding:16px;border-radius:8px;overflow-x:auto}
+code{font-family:Consolas,monospace}
+.lesson-buttons{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:35px}
+.lesson-buttons a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+.lesson-footer{text-align:center;margin:35px 0;color:#667}
+@media(max-width:650px){.lesson-container{padding:12px}.lesson-banner h1{font-size:22px}.lesson-container table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header class="lesson-banner">
+<h1>Mutex vs Binary Semaphore</h1>
+<p>Chapter 10 – Mutexes and Resource Management | Lesson 02</p>
+</header>
+
+<nav class="lesson-nav">
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS & FreeRTOS Course</a>
+<a href="index.html">Chapter 10</a>
+</nav>
+
+<main class="lesson-container">
+
+<section>
+<h2>1. Introduction</h2>
+<p>A mutex and a binary semaphore are synchronization mechanisms used in Real-Time Operating Systems. Both can have two logical states, but they serve different purposes.</p>
+
+<ul>
+<li><strong>Mutex:</strong> Primarily provides mutual exclusion to protect a shared resource.</li>
+<li><strong>Binary semaphore:</strong> Primarily provides task synchronization or event signaling.</li>
+</ul>
+
+<p>Although both are implemented using semaphore-related mechanisms in FreeRTOS, their ownership and scheduling behavior are different.</p>
+
+<div class="info-box">
+<strong>Remember:</strong> Use a mutex when a task needs exclusive ownership of a resource. Use a binary semaphore when one execution context needs to signal an event to another.
+</div>
+</section>
+
+<section>
+<h2>2. What Is a Mutex?</h2>
+<p>A mutex (Mutual Exclusion object) allows one task at a time to access a protected shared resource.</p>
+
+<h3>Example: Shared UART</h3>
+<p>Suppose Task A and Task B both need to transmit messages through UART0.</p>
+
+<pre><code>Task A:
+    Take UART mutex
+    Transmit message A
+    Give UART mutex
+
+Task B:
+    Take UART mutex
+    Transmit message B
+    Give UART mutex</code></pre>
+
+<p>If Task A owns the mutex, Task B must wait until Task A releases it.</p>
+
+<h3>Important properties</h3>
+<ul>
+<li>A mutex has an owner.</li>
+<li>Only one task can own it at a time.</li>
+<li>The owning task is responsible for releasing it.</li>
+<li>FreeRTOS mutexes support priority inheritance.</li>
+<li>A mutex cannot be used from an ISR.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. What Is a Binary Semaphore?</h2>
+<p>A binary semaphore is a synchronization object that can represent one pending token or event.</p>
+
+<p>It is commonly used when an ISR or task signals that an event has occurred and another task needs to respond.</p>
+
+<h3>Example: Sensor event notification</h3>
+<pre><code>Sensor Interrupt:
+    Give binary semaphore
+
+Sensor Processing Task:
+    Wait for binary semaphore
+    Process sensor event</code></pre>
+
+<p>When the event is signaled, the waiting task can become Ready.</p>
+
+<h3>Important properties</h3>
+<ul>
+<li>A binary semaphore has no mutex-style owner.</li>
+<li>It can be given by an ISR using an ISR-safe API.</li>
+<li>It can be used to signal events between execution contexts.</li>
+<li>It does not provide priority inheritance.</li>
+<li>Repeated gives while it is already full do not accumulate additional tokens.</li>
+</ul>
+</section>
+
+<section>
+<h2>4. Internal State Comparison</h2>
+
+<h3>Mutex states</h3>
+<pre><code>       +----------------+
+       |    Available   |
+       +----------------+
+                |
+                | Task takes mutex
+                v
+       +----------------+
+       |      Owned     |
+       +----------------+
+                |
+                | Owner gives mutex
+                v
+       +----------------+
+       |    Available   |
+       +----------------+</code></pre>
+
+<h3>Binary semaphore states</h3>
+<pre><code>       +----------------+
+       |     Empty      |
+       +----------------+
+                |
+                | Give / Signal
+                v
+       +----------------+
+       |      Full      |
+       +----------------+
+                |
+                | Take / Wait
+                v
+       +----------------+
+       |     Empty      |
+       +----------------+</code></pre>
+
+<p>The diagrams show the basic logical states. A task waiting for either object may be moved to the Blocked state by the RTOS.</p>
+</section>
+
+<section>
+<h2>5. Mutex vs Binary Semaphore – Detailed Comparison</h2>
+
+<table>
+<tr><th>Feature</th><th>Mutex</th><th>Binary Semaphore</th></tr>
+<tr><td>Main purpose</td><td>Mutual exclusion</td><td>Task synchronization and event signaling</td></tr>
+<tr><td>Ownership</td><td>Has an owning task</td><td>No owner</td></tr>
+<tr><td>Release operation</td><td>Owner releases it</td><td>Another task or an ISR can signal it</td></tr>
+<tr><td>Priority inheritance</td><td>Supported by FreeRTOS mutexes</td><td>Not supported</td></tr>
+<tr><td>ISR usage</td><td>Cannot be used from an ISR</td><td>Can be given from an ISR using an ISR-safe API</td></tr>
+<tr><td>Resource protection</td><td>Suitable for protecting shared resources</td><td>Not a substitute for resource ownership protection</td></tr>
+<tr><td>Event signaling</td><td>Not its intended purpose</td><td>Commonly used for event signaling</td></tr>
+<tr><td>Repeated signals</td><td>Not an event counter</td><td>Signals coalesce when already full</td></tr>
+<tr><td>Typical example</td><td>Protecting shared UART access</td><td>Signaling a sensor interrupt to a task</td></tr>
+</table>
+</section>
+
+<section>
+<h2>6. FreeRTOS API for Mutex</h2>
+
+<h3>Creating a mutex</h3>
+<pre><code>SemaphoreHandle_t xMutex;
+
+xMutex = xSemaphoreCreateMutex();</code></pre>
+
+<h3>Taking a mutex</h3>
+<pre><code>if (xSemaphoreTake(
+        xMutex,
+        portMAX_DELAY) == pdTRUE)
+{
+    AccessSharedResource();
+
+    xSemaphoreGive(xMutex);
+}</code></pre>
+
+<p><code>xSemaphoreTake()</code> requests ownership. If another task owns the mutex, the calling task can wait for it.</p>
+
+<h3>Important points</h3>
+<ul>
+<li>Check that mutex creation succeeds.</li>
+<li>Call the give operation after successful acquisition.</li>
+<li>Do not release a mutex from a different task.</li>
+<li>Do not call mutex take or give from an ISR.</li>
+</ul>
+</section>
+
+<section>
+<h2>7. FreeRTOS API for Binary Semaphore</h2>
+
+<h3>Creating a binary semaphore</h3>
+<pre><code>SemaphoreHandle_t xBinarySemaphore;
+
+xBinarySemaphore = xSemaphoreCreateBinary();</code></pre>
+
+<p>A newly created FreeRTOS binary semaphore is initially empty.</p>
+
+<h3>Task waiting for an event</h3>
+<pre><code>void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xBinarySemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            ProcessSensorEvent();
+        }
+    }
+}</code></pre>
+
+<h3>Signaling from another task</h3>
+<pre><code>xSemaphoreGive(xBinarySemaphore);</code></pre>
+
+<h3>Signaling from an ISR</h3>
+<pre><code>void SensorISR(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Acknowledge the hardware interrupt here */
+
+    xSemaphoreGiveFromISR(
+        xBinarySemaphore,
+        &xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}</code></pre>
+
+<div class="warning-box">
+The ISR example is a generic FreeRTOS pattern. The exact interrupt acknowledgment, ISR-safe API rules and yield macro depend on the selected FreeRTOS port and hardware. Do not assume this code is directly compatible with the LPC2129 Keil simulator.
+</div>
+</section>
+
+<section>
+<h2>8. Practical Example – Mutex for Shared UART</h2>
+<p>Two tasks need to use the same UART transmitter. A mutex prevents their protected transmission operations from overlapping.</p>
+
+<h3>Program structure</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xUARTMutex;
+
+void UART_SendMessage(const char *message)
+{
+    /* Replace with the actual UART driver */
+}
+
+void TaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xUARTMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            UART_SendMessage("Message from Task A");
+
+            xSemaphoreGive(xUARTMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void TaskB(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xUARTMutex,
+                portMAX_DELAY) == pdTRUE)
+        {
+            UART_SendMessage("Message from Task B");
+
+            xSemaphoreGive(xUARTMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(700));
+    }
+}
+
+int main(void)
+{
+    xUARTMutex = xSemaphoreCreateMutex();
+
+    if (xUARTMutex == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(TaskA, "TaskA", 256, NULL, 2, NULL);
+    xTaskCreate(TaskB, "TaskB", 256, NULL, 2, NULL);
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<h3>Expected behavior</h3>
+<ul>
+<li>Task A requests the UART mutex before transmitting.</li>
+<li>Task B waits if Task A currently owns the mutex.</li>
+<li>After Task A releases the mutex, Task B can acquire it.</li>
+<li>The two protected transmission operations do not overlap.</li>
+</ul>
+</section>
+
+<section>
+<h2>9. Practical Example – Binary Semaphore for an Interrupt Event</h2>
+<p>Suppose a hardware sensor generates an interrupt when new data becomes available. An ISR can signal a processing task using a binary semaphore.</p>
+
+<h3>Program structure</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xSensorSemaphore;
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                xSensorSemaphore,
+                portMAX_DELAY) == pdTRUE)
+        {
+            /* Read or process sensor data */
+            ProcessSensorEvent();
+        }
+    }
+}
+
+void SensorISR(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Acknowledge sensor interrupt */
+
+    xSemaphoreGiveFromISR(
+        xSensorSemaphore,
+        &xHigherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+int main(void)
+{
+    xSensorSemaphore = xSemaphoreCreateBinary();
+
+    if (xSensorSemaphore == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    xTaskCreate(
+        SensorTask,
+        "SensorTask",
+        256,
+        NULL,
+        3,
+        NULL
+    );
+
+    /* Configure hardware interrupt here */
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<h3>Expected behavior</h3>
+<ol>
+<li>The sensor generates an interrupt.</li>
+<li>The ISR acknowledges the interrupt source.</li>
+<li>The ISR gives the binary semaphore.</li>
+<li>The waiting sensor task becomes Ready.</li>
+<li>The task processes the event when scheduled.</li>
+</ol>
+
+<div class="info-box">
+A binary semaphore stores at most one pending token. If multiple events occur before the task consumes the token, repeated gives can coalesce. Use a counting semaphore, queue or another suitable mechanism when every event must be recorded.
+</div>
+</section>
+
+<section>
+<h2>10. Why Mutexes Have Priority Inheritance</h2>
+<p>Consider three tasks:</p>
+
+<table>
+<tr><th>Task</th><th>Priority</th><th>Role</th></tr>
+<tr><td>Task H</td><td>High</td><td>Needs a shared resource</td></tr>
+<tr><td>Task M</td><td>Medium</td><td>Independent processing</td></tr>
+<tr><td>Task L</td><td>Low</td><td>Currently owns the mutex</td></tr>
+</table>
+
+<p>Task H may become blocked because Task L owns the mutex. Task M can then delay Task L from running and releasing it.</p>
+
+<p>FreeRTOS mutexes support priority inheritance: Task L can temporarily inherit Task H's priority while holding the mutex that blocks Task H.</p>
+
+<p>A binary semaphore does not provide this mutex priority-inheritance behavior.</p>
+
+<p>Priority inheritance is a mitigation mechanism, not a complete solution to all blocking and deadline problems.</p>
+</section>
+
+<section>
+<h2>11. Can a Binary Semaphore Protect a Shared Resource?</h2>
+<p>A binary semaphore can be used to coordinate access in some designs, but it does not provide mutex ownership or priority inheritance.</p>
+
+<p>For example, a task could take a binary semaphore before accessing a shared buffer and give it afterward. However, the design must carefully enforce correct take/give behavior and prevent unrelated contexts from giving it incorrectly.</p>
+
+<p>For ordinary task-level resource protection in FreeRTOS, a mutex is generally the better choice.</p>
+
+<div class="warning-box">
+A binary semaphore given by an ISR is useful for signaling that an event occurred. It does not automatically guarantee that the associated data buffer is protected from being overwritten or modified by another execution context.
+</div>
+</section>
+
+<section>
+<h2>12. Decision Guide – Which One Should You Use?</h2>
+
+<table>
+<tr><th>Requirement</th><th>Recommended mechanism</th></tr>
+<tr><td>Protect shared UART access between tasks</td><td>Mutex</td></tr>
+<tr><td>Protect shared I2C driver state between tasks</td><td>Mutex</td></tr>
+<tr><td>Signal a task when an interrupt occurs</td><td>Binary semaphore or task notification</td></tr>
+<tr><td>Signal that a one-time operation is complete</td><td>Binary semaphore or task notification</td></tr>
+<tr><td>Count multiple pending events</td><td>Counting semaphore or queue</td></tr>
+<tr><td>Transfer structured data between tasks</td><td>Queue</td></tr>
+<tr><td>Protect a shared resource with priority inheritance</td><td>Mutex</td></tr>
+</table>
+</section>
+
+<section>
+<h2>13. Common Mistakes</h2>
+<ul>
+<li>Using a binary semaphore as though it has mutex ownership.</li>
+<li>Using a mutex to signal an ISR event.</li>
+<li>Assuming repeated binary semaphore gives count every event.</li>
+<li>Assuming a binary semaphore provides priority inheritance.</li>
+<li>Assuming a mutex automatically protects data accessed by DMA or hardware.</li>
+<li>Using a semaphore to signal data availability without defining buffer ownership.</li>
+<li>Ignoring the possibility of a missed or coalesced event.</li>
+<li>Holding a mutex while waiting for an event that requires another task to run.</li>
+</ul>
+</section>
+
+<section>
+<h2>14. Review Questions</h2>
+<ol>
+<li>What is the main purpose of a mutex?</li>
+<li>What is the main purpose of a binary semaphore?</li>
+<li>Explain mutex ownership.</li>
+<li>Why does a binary semaphore not have an owner?</li>
+<li>Which FreeRTOS API creates a mutex?</li>
+<li>Which FreeRTOS API creates a binary semaphore?</li>
+<li>What is the initial state of a newly created FreeRTOS binary semaphore?</li>
+<li>Can a binary semaphore be given from an ISR?</li>
+<li>Can a mutex be given from an ISR?</li>
+<li>What is priority inheritance?</li>
+<li>Why does FreeRTOS provide priority inheritance for mutexes?</li>
+<li>Why can repeated binary semaphore signals be lost or coalesced?</li>
+<li>Which mechanism is appropriate for protecting a shared UART between tasks?</li>
+<li>Which mechanism can signal a task from a sensor ISR?</li>
+<li>When should a queue be preferred over a binary semaphore?</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Practical Exercises</h2>
+<ol>
+<li>Create two tasks that access a shared variable using a mutex.</li>
+<li>Modify the program to use a binary semaphore for task synchronization.</li>
+<li>Compare the ownership behavior of both mechanisms.</li>
+<li>Create a sensor-event signaling example using <code>xSemaphoreGiveFromISR()</code>.</li>
+<li>Explain what happens if two events occur before the waiting task takes the binary semaphore.</li>
+<li>Prepare a comparison table for mutex, binary semaphore and counting semaphore.</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Lesson Summary</h2>
+<ul>
+<li>A mutex is primarily used for mutual exclusion and shared-resource protection.</li>
+<li>A binary semaphore is primarily used for task synchronization and event signaling.</li>
+<li>A mutex has ownership; a binary semaphore does not.</li>
+<li>FreeRTOS mutexes support priority inheritance.</li>
+<li>A binary semaphore can be given from an ISR using an ISR-safe API.</li>
+<li>A mutex must not be used from an ISR.</li>
+<li>Repeated binary semaphore signals can coalesce.</li>
+<li>Queues are often more suitable when actual data must be transferred.</li>
+</ul>
+</section>
+
+<div class="lesson-buttons">
+<a href="L01_Introduction_to_Mutexes.html">← Previous Lesson</a>
+<a href="index.html">Chapter 10</a>
+<a href="L03_Shared_Resource_Management.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+</footer>
+
+</body>
+</html>
