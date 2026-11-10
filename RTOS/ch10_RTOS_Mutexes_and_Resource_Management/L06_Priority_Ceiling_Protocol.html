@@ -1,1 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Priority Ceiling Protocol | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+* {
+    box-sizing: border-box;
+}
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f4f7fc;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 15px;
+}
+header h1 {
+    margin: 0 0 8px;
+    font-size: 30px;
+}
+header p {
+    margin: 0;
+    font-size: 16px;
+}
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 13px;
+}
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+section {
+    background: white;
+    margin-bottom: 22px;
+    padding: 24px;
+    border-radius: 10px;
+    box-shadow: 0 2px 9px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8fa;
+    padding-bottom: 8px;
+    margin-top: 0;
+}
+h3 {
+    color: #2165b5;
+    margin-top: 22px;
+}
+p {
+    text-align: justify;
+}
+ul, ol {
+    padding-left: 25px;
+}
+li {
+    margin-bottom: 7px;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+th, td {
+    border: 1px solid #d5deeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th {
+    background: #eaf2ff;
+    color: #174ea6;
+}
+pre {
+    background: #172334;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+}
+code {
+    font-family: Consolas, monospace;
+}
+.note {
+    background: #edf5ff;
+    border-left: 4px solid #2878d7;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.warning {
+    background: #fff6e5;
+    border-left: 4px solid #e5a000;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.example {
+    background: #f5f8fc;
+    border: 1px solid #dce5f1;
+    padding: 16px;
+    border-radius: 8px;
+    margin: 15px 0;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media(max-width:650px) {
+    header h1 {
+        font-size: 24px;
+    }
+    nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    section {
+        padding: 17px;
+    }
+    table {
+        display: block;
+        overflow-x: auto;
+    }
+}
+</style>
+</head>
+<body>
 
+<header>
+    <h1>Priority Ceiling Protocol</h1>
+    <p>RTOS & FreeRTOS – Chapter 10: Mutexes and Resource Management</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../rtos.html">RTOS Course</a>
+    <a href="index.html">Chapter 10</a>
+</nav>
+
+<div class="container">
+
+<section>
+    <h2>1. Learning Objectives</h2>
+    <p>
+        Priority ceiling protocols are resource synchronization techniques
+        used in real-time systems to control priority inversion, bound
+        resource blocking, and, under defined assumptions, prevent deadlocks.
+    </p>
+    <p>After completing this lesson, you will be able to:</p>
+    <ul>
+        <li>Define priority ceiling and resource ceiling.</li>
+        <li>Explain how resource ceiling priorities are assigned.</li>
+        <li>Understand the operation of priority ceiling protocols.</li>
+        <li>Differentiate the original Priority Ceiling Protocol (PCP) and Immediate Ceiling Priority Protocol (ICPP).</li>
+        <li>Analyze resource blocking with numerical examples.</li>
+        <li>Compare priority ceiling with priority inheritance.</li>
+        <li>Understand the limitations of applying formal protocols to FreeRTOS applications.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>2. Introduction to Priority Ceiling</h2>
+    <p>
+        A real-time application may contain multiple tasks that share resources
+        such as memory buffers, communication interfaces, peripheral drivers,
+        and data structures.
+    </p>
+    <p>
+        When a task locks a shared resource, another task may need to wait.
+        Priority ceiling protocols control the scheduling priority associated
+        with resource access so that resource blocking is predictable and
+        priority inversion is limited.
+    </p>
+
+    <h3>What Is a Resource Ceiling?</h3>
+    <p>
+        The <strong>resource ceiling priority</strong> is the highest priority
+        among all tasks that may use a particular shared resource.
+    </p>
+
+    <div class="example">
+        Suppose a shared SPI resource is used by:
+        <ul>
+            <li>Task A – priority 2</li>
+            <li>Task B – priority 4</li>
+            <li>Task C – priority 5</li>
+        </ul>
+        The ceiling priority of the SPI resource is 5, because Task C has the
+        highest priority among the tasks that can access it.
+    </div>
+
+    <div class="note">
+        In this lesson, larger numerical values represent higher task
+        priorities. Some RTOS configurations use different conventions;
+        always check the scheduler's priority ordering.
+    </div>
+</section>
+
+<section>
+    <h2>3. Resource Ceiling Assignment</h2>
+    <p>
+        The ceiling of each resource is determined during system design by
+        identifying all tasks that may lock that resource.
+    </p>
+
+    <h3>Example Task and Resource Table</h3>
+    <table>
+        <tr>
+            <th>Task</th>
+            <th>Priority</th>
+            <th>Shared Resources</th>
+        </tr>
+        <tr>
+            <td>Task A</td>
+            <td>2</td>
+            <td>UART, SPI</td>
+        </tr>
+        <tr>
+            <td>Task B</td>
+            <td>4</td>
+            <td>SPI, I2C</td>
+        </tr>
+        <tr>
+            <td>Task C</td>
+            <td>5</td>
+            <td>UART, I2C</td>
+        </tr>
+        <tr>
+            <td>Task D</td>
+            <td>3</td>
+            <td>UART</td>
+        </tr>
+    </table>
+
+    <h3>Calculated Resource Ceilings</h3>
+    <table>
+        <tr>
+            <th>Resource</th>
+            <th>Tasks Using Resource</th>
+            <th>Ceiling Priority</th>
+        </tr>
+        <tr>
+            <td>UART</td>
+            <td>A (2), C (5), D (3)</td>
+            <td>5</td>
+        </tr>
+        <tr>
+            <td>SPI</td>
+            <td>A (2), B (4)</td>
+            <td>4</td>
+        </tr>
+        <tr>
+            <td>I2C</td>
+            <td>B (4), C (5)</td>
+            <td>5</td>
+        </tr>
+    </table>
+
+    <p>
+        A resource's ceiling is based on the highest-priority task that may
+        access it, not merely the priority of the task currently holding it.
+    </p>
+</section>
+
+<section>
+    <h2>4. Original Priority Ceiling Protocol (PCP)</h2>
+    <p>
+        The original Priority Ceiling Protocol combines resource locking,
+        priority inheritance, and a system ceiling rule.
+    </p>
+    <p>
+        The <strong>system ceiling</strong> is the highest ceiling priority
+        among resources currently locked by tasks other than the requesting
+        task, according to the formal protocol's rules.
+    </p>
+
+    <h3>Basic Operation</h3>
+    <ol>
+        <li>A task requests access to a shared resource.</li>
+        <li>The protocol checks the current system ceiling.</li>
+        <li>The request is permitted only when the protocol's ceiling admission condition is satisfied.</li>
+        <li>If access is denied, the requesting task is blocked.</li>
+        <li>The task responsible for the blocking resource may inherit the blocked task's priority.</li>
+        <li>When the resource is released, the protocol updates the system ceiling and task priorities as required.</li>
+    </ol>
+
+    <div class="note">
+        The original PCP admission rule is more specific than simply asking
+        whether a task has a higher priority than the current resource owner.
+        It considers the system ceiling and the resources held by other tasks.
+    </div>
+
+    <h3>Purpose of PCP</h3>
+    <ul>
+        <li>Control priority inversion.</li>
+        <li>Bound the duration of resource-related blocking under the protocol assumptions.</li>
+        <li>Prevent deadlock under the formal protocol's assumptions.</li>
+        <li>Support schedulability analysis of fixed-priority real-time tasks.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>5. Immediate Ceiling Priority Protocol (ICPP)</h2>
+    <p>
+        The Immediate Ceiling Priority Protocol is also known as the
+        Priority Protect Protocol in some real-time scheduling literature.
+        It raises a task's active priority immediately when the task locks
+        a resource.
+    </p>
+
+    <h3>How ICPP Works</h3>
+    <ol>
+        <li>Each resource is assigned a ceiling priority.</li>
+        <li>A task locks a resource.</li>
+        <li>The task's active priority is immediately raised to the resource's ceiling priority if that is higher than its current priority.</li>
+        <li>The task executes its protected operation at the raised priority.</li>
+        <li>When the resource is unlocked, its active priority is recalculated according to the protocol and any other held resources.</li>
+    </ol>
+
+    <div class="example">
+        <strong>Example:</strong>
+        <p>
+            Task L has priority 2 and locks a UART resource whose ceiling
+            priority is 5. Under ICPP, Task L immediately executes at priority
+            5 while holding that resource, even if no higher-priority task
+            has requested it yet.
+        </p>
+    </div>
+
+    <h3>Important Difference</h3>
+    <p>
+        In original PCP, priority inheritance is associated with blocking
+        caused by resource contention and the system-ceiling admission rule.
+        In ICPP, priority is raised immediately when a resource is locked.
+    </p>
+</section>
+
+<section>
+    <h2>6. Numerical Example of Resource Ceiling</h2>
+
+    <p>Consider three tasks and one shared resource:</p>
+
+    <table>
+        <tr>
+            <th>Task</th>
+            <th>Priority</th>
+            <th>Resource Usage</th>
+        </tr>
+        <tr>
+            <td>Task L</td>
+            <td>1</td>
+            <td>Uses Resource R</td>
+        </tr>
+        <tr>
+            <td>Task M</td>
+            <td>2</td>
+            <td>Does not use Resource R</td>
+        </tr>
+        <tr>
+            <td>Task H</td>
+            <td>3</td>
+            <td>Uses Resource R</td>
+        </tr>
+    </table>
+
+    <p>
+        The resource ceiling of R is 3 because Task H is the highest-priority
+        task that can access it.
+    </p>
+
+    <h3>Illustrative ICPP Execution</h3>
+    <table>
+        <tr>
+            <th>Time</th>
+            <th>Event</th>
+            <th>Task Priority / State</th>
+        </tr>
+        <tr>
+            <td>0 ms</td>
+            <td>Task L locks R.</td>
+            <td>L's active priority rises from 1 to 3.</td>
+        </tr>
+        <tr>
+            <td>1 ms</td>
+            <td>Task M becomes ready.</td>
+            <td>M has priority 2; L remains at 3.</td>
+        </tr>
+        <tr>
+            <td>2 ms</td>
+            <td>Task L continues its protected operation.</td>
+            <td>L executes ahead of M.</td>
+        </tr>
+        <tr>
+            <td>4 ms</td>
+            <td>Task L releases R.</td>
+            <td>L's active priority is recalculated.</td>
+        </tr>
+        <tr>
+            <td>After 4 ms</td>
+            <td>Ready tasks are scheduled.</td>
+            <td>Scheduler selects the highest-priority ready task.</td>
+        </tr>
+    </table>
+
+    <p>
+        The example illustrates immediate priority elevation. Actual task
+        execution and release times depend on the application and scheduler.
+    </p>
+</section>
+
+<section>
+    <h2>7. Priority Ceiling and Deadlock Prevention</h2>
+    <p>
+        Deadlock occurs when tasks wait indefinitely for resources held by
+        one another. A common cause is inconsistent resource acquisition
+        order.
+    </p>
+
+    <h3>Example of Circular Wait</h3>
+    <ul>
+        <li>Task A locks Resource R1.</li>
+        <li>Task B locks Resource R2.</li>
+        <li>Task A requests R2 and waits for Task B.</li>
+        <li>Task B requests R1 and waits for Task A.</li>
+    </ul>
+
+    <p>
+        Neither task can continue. This is a deadlock.
+    </p>
+
+    <h3>How Ceiling Protocols Help</h3>
+    <p>
+        Formal priority ceiling protocols restrict resource admission and
+        priority behavior so that circular wait is prevented under their
+        defined assumptions.
+    </p>
+
+    <div class="warning">
+        Simply assigning a high priority to a mutex owner does not automatically
+        prevent deadlock. A system using ordinary FreeRTOS mutexes does not
+        become a formal PCP or ICPP implementation merely because priority
+        inheritance is enabled.
+    </div>
+</section>
+
+<section>
+    <h2>8. Priority Inheritance vs Priority Ceiling</h2>
+
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Priority Inheritance</th>
+            <th>Priority Ceiling</th>
+        </tr>
+        <tr>
+            <td>Priority adjustment</td>
+            <td>Owner inherits the priority of a blocked higher-priority task.</td>
+            <td>Priority is controlled using the resource's assigned ceiling.</td>
+        </tr>
+        <tr>
+            <td>When priority changes</td>
+            <td>When relevant priority-based blocking occurs.</td>
+            <td>Depends on protocol; ICPP raises priority on resource lock.</td>
+        </tr>
+        <tr>
+            <td>Resource ceiling assignment</td>
+            <td>Not required by basic priority inheritance.</td>
+            <td>Required.</td>
+        </tr>
+        <tr>
+            <td>System ceiling</td>
+            <td>Not part of basic priority inheritance.</td>
+            <td>Used by original PCP.</td>
+        </tr>
+        <tr>
+            <td>Deadlock prevention</td>
+            <td>Does not inherently prevent deadlock.</td>
+            <td>Formal ceiling protocols can prevent deadlock under their assumptions.</td>
+        </tr>
+        <tr>
+            <td>Implementation</td>
+            <td>Available in FreeRTOS mutexes.</td>
+            <td>Requires an implementation of the selected ceiling protocol.</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>9. FreeRTOS and Priority Ceiling</h2>
+    <p>
+        FreeRTOS provides basic priority inheritance through mutexes, but
+        ordinary FreeRTOS mutex APIs do not implement the full original
+        Priority Ceiling Protocol or Immediate Ceiling Priority Protocol.
+    </p>
+
+    <h3>FreeRTOS Mutex Example</h3>
+    <pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t xResourceMutex;
+
+void ResourceTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(xResourceMutex,
+                           portMAX_DELAY) == pdTRUE)
+        {
+            /* Access the shared resource. */
+
+            xSemaphoreGive(xResourceMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+}
+
+int main(void)
+{
+    xResourceMutex = xSemaphoreCreateMutex();
+
+    if (xResourceMutex != NULL)
+    {
+        xTaskCreate(ResourceTask,
+                    "ResourceTask",
+                    256,
+                    NULL,
+                    2,
+                    NULL);
+
+        vTaskStartScheduler();
+    }
+
+    for (;;);
+}</code></pre>
+
+    <p>
+        This code demonstrates ordinary FreeRTOS mutex use. It does not
+        implement a priority ceiling protocol. The application would need
+        additional protocol logic or a kernel that explicitly supports the
+        selected ceiling protocol.
+    </p>
+
+    <div class="note">
+        Do not confuse a FreeRTOS task's configured priority with a resource
+        ceiling. Calling <code>vTaskPrioritySet()</code> manually is not, by
+        itself, an implementation of PCP or ICPP.
+    </div>
+</section>
+
+<section>
+    <h2>10. Embedded System Applications</h2>
+
+    <p>Resource ceiling analysis is useful when multiple tasks share:</p>
+    <ul>
+        <li>UART communication interfaces.</li>
+        <li>SPI-connected displays and memory devices.</li>
+        <li>I2C sensors and peripheral controllers.</li>
+        <li>Shared memory buffers.</li>
+        <li>Actuator-control data structures.</li>
+        <li>Communication protocol state machines.</li>
+    </ul>
+
+    <h3>Example: Shared SPI Bus</h3>
+    <p>
+        Suppose a low-priority logging task and a high-priority control task
+        both use the same SPI bus. The resource ceiling is determined from
+        the highest-priority task that may use the bus.
+    </p>
+    <p>
+        The system designer must account for the time during which the SPI
+        bus is locked, the execution time of each protected operation, and
+        the impact on higher-priority tasks.
+    </p>
+</section>
+
+<section>
+    <h2>11. Design Guidelines</h2>
+    <ul>
+        <li>Identify all tasks that access each shared resource.</li>
+        <li>Assign resource ceilings using the highest-priority eligible task.</li>
+        <li>Document resource ownership and lock ordering.</li>
+        <li>Keep protected operations short and bounded.</li>
+        <li>Include resource blocking in response-time analysis.</li>
+        <li>Avoid unnecessary nested resource locking.</li>
+        <li>Use a consistent lock order when multiple resources are required.</li>
+        <li>Verify that the RTOS actually implements the protocol being assumed.</li>
+        <li>Test worst-case contention rather than relying only on average execution times.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>12. Practical Activity</h2>
+
+    <h3>Activity: Calculate Resource Ceilings</h3>
+    <p><strong>Objective:</strong> Determine resource ceiling priorities for a shared-resource system.</p>
+
+    <p>Consider the following tasks:</p>
+    <table>
+        <tr>
+            <th>Task</th>
+            <th>Priority</th>
+            <th>Resources</th>
+        </tr>
+        <tr>
+            <td>T1</td>
+            <td>1</td>
+            <td>R1, R2</td>
+        </tr>
+        <tr>
+            <td>T2</td>
+            <td>3</td>
+            <td>R1, R3</td>
+        </tr>
+        <tr>
+            <td>T3</td>
+            <td>5</td>
+            <td>R2, R3</td>
+        </tr>
+        <tr>
+            <td>T4</td>
+            <td>4</td>
+            <td>R1</td>
+        </tr>
+    </table>
+
+    <p><strong>Tasks:</strong></p>
+    <ol>
+        <li>Find the ceiling priority of R1.</li>
+        <li>Find the ceiling priority of R2.</li>
+        <li>Find the ceiling priority of R3.</li>
+        <li>Explain why resource ceilings are based on all eligible users.</li>
+        <li>Compare how PCP and ICPP would control access to these resources.</li>
+    </ol>
+
+    <p><strong>Expected results:</strong></p>
+    <table>
+        <tr>
+            <th>Resource</th>
+            <th>Users</th>
+            <th>Ceiling</th>
+        </tr>
+        <tr>
+            <td>R1</td>
+            <td>T1 (1), T2 (3), T4 (4)</td>
+            <td>4</td>
+        </tr>
+        <tr>
+            <td>R2</td>
+            <td>T1 (1), T3 (5)</td>
+            <td>5</td>
+        </tr>
+        <tr>
+            <td>R3</td>
+            <td>T2 (3), T3 (5)</td>
+            <td>5</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>13. Review Questions</h2>
+    <ol>
+        <li>What is a resource ceiling priority?</li>
+        <li>How is a resource ceiling calculated?</li>
+        <li>What is the system ceiling in the original PCP?</li>
+        <li>Explain the operation of the original Priority Ceiling Protocol.</li>
+        <li>What is Immediate Ceiling Priority Protocol?</li>
+        <li>Differentiate PCP and ICPP.</li>
+        <li>How can formal priority ceiling protocols prevent deadlock?</li>
+        <li>Differentiate priority inheritance and priority ceiling.</li>
+        <li>Does a standard FreeRTOS mutex implement the full PCP?</li>
+        <li>Why must resource blocking be considered during response-time analysis?</li>
+        <li>Calculate the ceiling of a resource used by tasks with priorities 2, 4, and 6.</li>
+        <li>Why is consistent resource locking order important?</li>
+    </ol>
+</section>
+
+<section>
+    <h2>14. Lesson Summary</h2>
+    <ul>
+        <li>A resource ceiling is the highest priority of any task that can access that resource.</li>
+        <li>The original PCP uses a system ceiling and priority inheritance rules.</li>
+        <li>ICPP raises a task's active priority immediately when it locks a resource.</li>
+        <li>Formal ceiling protocols can bound blocking and prevent deadlocks under defined assumptions.</li>
+        <li>Priority inheritance and priority ceiling are different synchronization mechanisms.</li>
+        <li>Ordinary FreeRTOS mutexes provide basic priority inheritance, not full PCP or ICPP.</li>
+        <li>Resource locking time must be included in real-time analysis.</li>
+    </ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L05_Priority_Inheritance.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 10</a>
+    <a href="L07_Deadlock_and_Starvation.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+    <p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
