@@ -1,1 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Idle Task and Idle Hook | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:29px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Idle Task and Idle Hook</h1>
+<p>Idle Scheduling, Background Processing and Memory Cleanup</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 14</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+The Idle Task is a special task created automatically
+by the FreeRTOS kernel when the scheduler starts.
+It executes whenever no application task with
+a higher priority is Ready to run.
+</p>
+<ul>
+<li>Understand the purpose of the Idle Task.</li>
+<li>Learn how FreeRTOS creates the Idle Task.</li>
+<li>Understand the Idle Task priority.</li>
+<li>Study Idle Hook functions.</li>
+<li>Learn how deleted task memory is reclaimed.</li>
+<li>Understand idle-time processing.</li>
+<li>Study configuration requirements and restrictions.</li>
+<li>Implement a basic Idle Hook example.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to the Idle Task</h2>
+<p>
+The Idle Task is a system task maintained by
+the FreeRTOS kernel. It provides an execution
+context when no other task is Ready.
+</p>
+<p>
+In a typical FreeRTOS application, the Idle Task
+is automatically created as part of scheduler
+startup. The application does not normally
+create it manually.
+</p>
+<h3>Example</h3>
+<table>
+<tr><th>Task</th><th>Priority</th><th>State</th></tr>
+<tr><td>Sensor Task</td><td>3</td><td>Blocked</td></tr>
+<tr><td>Communication Task</td><td>2</td><td>Blocked</td></tr>
+<tr><td>Display Task</td><td>1</td><td>Blocked</td></tr>
+<tr><td>Idle Task</td><td>0</td><td>Ready</td></tr>
+</table>
+<p>
+When all application tasks are Blocked or
+Suspended, the Idle Task can execute.
+</p>
+</section>
+
+<section>
+<h2>3. Idle Task Priority</h2>
+<p>
+The Idle Task has the lowest task priority in
+the standard FreeRTOS priority scheme.
+Its priority is represented by
+<code>tskIDLE_PRIORITY</code>, normally zero.
+</p>
+<pre><code>#define tskIDLE_PRIORITY 0</code></pre>
+<p>
+Application tasks can be assigned priorities
+above the Idle Task. A Ready application task
+with a higher priority takes precedence.
+</p>
+<table>
+<tr><th>Task</th><th>Example Priority</th></tr>
+<tr><td>High Priority Task</td><td>3</td></tr>
+<tr><td>Medium Priority Task</td><td>2</td></tr>
+<tr><td>Low Priority Task</td><td>1</td></tr>
+<tr><td>Idle Task</td><td>0</td></tr>
+</table>
+<div class="note">
+The numerical values are illustrative. The
+available priority levels depend on
+configMAX_PRIORITIES.
+</div>
+</section>
+
+<section>
+<h2>4. When Does the Idle Task Execute?</h2>
+<p>
+The scheduler selects the highest-priority
+Ready task. The Idle Task executes when no
+other task is Ready at a higher priority.
+</p>
+<h3>Execution Sequence</h3>
+<pre><code>Application Tasks
+       |
+       v
+Are any application tasks Ready?
+       |
+   +---+---+
+   |       |
+  YES      NO
+   |       |
+   v       v
+Run the   Run the
+highest   Idle Task
+priority
+Ready task</code></pre>
+<p>
+An application task may become Ready because
+a delay expires, queue data arrives, a semaphore
+is given or an interrupt wakes it.
+The Idle Task can then be preempted.
+</p>
+</section>
+
+<section>
+<h2>5. Main Responsibilities of the Idle Task</h2>
+<h3>5.1 Background Execution</h3>
+<p>
+The Idle Task provides a task context for
+background processing when application tasks
+are not Ready.
+</p>
+<h3>5.2 Memory Cleanup</h3>
+<p>
+When a dynamically allocated task deletes
+itself, its kernel-allocated task memory is
+typically reclaimed later by the Idle Task.
+</p>
+<h3>5.3 Idle Hook Execution</h3>
+<p>
+If the application enables the Idle Hook, the
+kernel calls the application's hook function
+during Idle Task execution.
+</p>
+<h3>5.4 Power Management Opportunities</h3>
+<p>
+The Idle Task can provide an opportunity for
+low-power processing, but actual power saving
+requires processor-specific support and suitable
+application design.
+</p>
+</section>
+
+<section>
+<h2>6. Task Deletion and Idle Task Memory Cleanup</h2>
+<p>
+A task created dynamically using
+<code>xTaskCreate()</code> normally uses
+kernel-managed memory for its task control
+block and stack.
+</p>
+<p>
+When such a task deletes itself using
+<code>vTaskDelete(NULL)</code>, it is removed
+from the scheduler's task lists. Its dynamically
+allocated memory is typically reclaimed by
+the Idle Task.
+</p>
+<pre><code>void TemporaryTask(void *pvParameters)
+{
+    /* Perform a temporary operation */
+
+    vTaskDelete(NULL);
+
+    /* Execution does not continue here */
+}</code></pre>
+<h3>Memory Reclamation Sequence</h3>
+<ol>
+<li>A dynamically created task starts executing.</li>
+<li>The task completes its operation.</li>
+<li>The task calls vTaskDelete(NULL).</li>
+<li>The kernel removes the task from scheduling.</li>
+<li>The task's dynamically allocated memory is marked for cleanup.</li>
+<li>The Idle Task performs the deferred cleanup.</li>
+</ol>
+<div class="warning">
+The Idle Task must receive processor time for
+this deferred cleanup. A continuously Ready
+higher-priority application task can starve the
+Idle Task and delay memory reclamation.
+</div>
+</section>
+
+<section>
+<h2>7. What Is an Idle Hook?</h2>
+<p>
+An Idle Hook is an application-defined function
+that FreeRTOS calls from the Idle Task when
+the Idle Hook feature is enabled.
+</p>
+<p>
+The standard function name is:
+</p>
+<pre><code>void vApplicationIdleHook(void);</code></pre>
+<p>
+The application provides the function. The
+kernel invokes it during Idle Task execution.
+</p>
+<h3>Configuration</h3>
+<pre><code>#define configUSE_IDLE_HOOK 1</code></pre>
+<p>
+When enabled, the application must provide
+the required hook function implementation.
+</p>
+</section>
+
+<section>
+<h2>8. Idle Hook Function Example</h2>
+<p>
+The following example illustrates a simple
+Idle Hook that updates a counter.
+</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+volatile unsigned long idleCounter = 0;
+
+void vApplicationIdleHook(void)
+{
+    idleCounter++;
+}</code></pre>
+<h3>Explanation</h3>
+<ul>
+<li>The Idle Hook is called while the Idle Task executes.</li>
+<li>Each invocation increments idleCounter.</li>
+<li>The counter can be inspected using a debugger.</li>
+<li>It can provide a rough indication of available idle execution time.</li>
+</ul>
+<div class="note">
+The counter is not a calibrated CPU-load measurement.
+Its value depends on processor speed, compiler
+optimization, tick interrupts and other system
+activity.
+</div>
+</section>
+
+<section>
+<h2>9. Restrictions of an Idle Hook</h2>
+<p>
+An Idle Hook must not interfere with normal
+kernel operation.
+</p>
+<ul>
+<li>Do not call blocking APIs.</li>
+<li>Do not call vTaskDelay() from the Idle Hook.</li>
+<li>Do not wait indefinitely for a semaphore or queue.</li>
+<li>Do not perform long-running operations.</li>
+<li>Do not use APIs that could block the Idle Task.</li>
+<li>Keep processing short and predictable.</li>
+<li>Do not assume the hook executes at a fixed interval.</li>
+</ul>
+<div class="warning">
+The Idle Hook runs in the Idle Task's context.
+If it blocks, it can prevent the Idle Task from
+performing essential background work, including
+deferred task-memory cleanup.
+</div>
+</section>
+
+<section>
+<h2>10. Idle Hook and Application Tasks</h2>
+<p>
+Consider an application with two tasks:
+</p>
+<table>
+<tr><th>Task</th><th>Priority</th><th>Behavior</th></tr>
+<tr><td>SensorTask</td><td>2</td><td>Wakes periodically to read data.</td></tr>
+<tr><td>DisplayTask</td><td>1</td><td>Waits for display data.</td></tr>
+<tr><td>Idle Task</td><td>0</td><td>Runs when no higher-priority task is Ready.</td></tr>
+</table>
+<p>
+When SensorTask and DisplayTask are both
+Blocked, the Idle Task runs and its Idle Hook
+can execute.
+</p>
+<pre><code>Time       T0       T1       T2       T3       T4
+
+Sensor     RUN      BLOCK    BLOCK    RUN      BLOCK
+Display    BLOCK    RUN      BLOCK    BLOCK    BLOCK
+Idle       READY    READY    RUN      READY    RUN
+
+Idle Hook  -        -        EXEC     -        EXEC</code></pre>
+<p>
+This is an illustrative timeline. Actual
+execution depends on task priorities, wakeup
+events and timing.
+</p>
+</section>
+
+<section>
+<h2>11. Idle Task and Low-Power Management</h2>
+<p>
+In battery-powered embedded systems, idle
+periods can be used to reduce power consumption.
+For example, the processor may enter a suitable
+sleep state when no application task needs to run.
+</p>
+<p>
+However, entering a low-power state requires
+careful handling of:
+</p>
+<ul>
+<li>Pending interrupts.</li>
+<li>System tick timing.</li>
+<li>Wake-up sources.</li>
+<li>Peripheral activity.</li>
+<li>Clock configuration.</li>
+<li>Timekeeping after sleep.</li>
+</ul>
+<p>
+A simple Idle Hook does not automatically
+implement safe tickless low-power operation.
+FreeRTOS ports may provide tickless idle support
+through separate configuration and port-specific
+sleep functions.
+</p>
+</section>
+
+<section>
+<h2>12. Idle Hook vs Tickless Idle</h2>
+<table>
+<tr><th>Feature</th><th>Idle Hook</th><th>Tickless Idle</th></tr>
+<tr><td>Purpose</td><td>Application callback during Idle Task execution.</td><td>Reduce periodic tick activity during suitable idle periods.</td></tr>
+<tr><td>Implementation</td><td>Application-defined hook.</td><td>Kernel configuration and port-specific low-power support.</td></tr>
+<tr><td>Power saving</td><td>Possible only if application and hardware implement it safely.</td><td>Designed to support low-power idle operation.</td></tr>
+<tr><td>Timing</td><td>Called while Idle Task executes.</td><td>May suppress ticks during a predicted idle interval.</td></tr>
+</table>
+<h3>Common Configuration</h3>
+<pre><code>#define configUSE_TICKLESS_IDLE 1</code></pre>
+<p>
+The exact supported configuration and sleep
+implementation depend on the selected FreeRTOS
+version and processor port.
+</p>
+</section>
+
+<section>
+<h2>13. Idle Task Starvation</h2>
+<p>
+Idle Task starvation occurs when higher-priority
+tasks remain Ready for long periods and prevent
+the Idle Task from executing.
+</p>
+<h3>Example</h3>
+<pre><code>void HighPriorityTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Continuous CPU-intensive processing */
+    }
+}</code></pre>
+<p>
+If this task is continuously Ready and has
+higher priority than the Idle Task, the Idle
+Task may never receive processor time.
+</p>
+<h3>Consequences</h3>
+<ul>
+<li>Delayed cleanup of dynamically deleted tasks.</li>
+<li>Reduced opportunity for idle-time processing.</li>
+<li>Possible failure of application designs that depend on Idle Hook execution.</li>
+<li>Increased CPU utilization.</li>
+</ul>
+<h3>Prevention</h3>
+<ul>
+<li>Block tasks when they have no work.</li>
+<li>Use suitable task priorities.</li>
+<li>Avoid unnecessary busy loops.</li>
+<li>Keep processing bounded.</li>
+<li>Use periodic delay mechanisms where appropriate.</li>
+</ul>
+</section>
+
+<section>
+<h2>14. Idle Task and Static Memory Allocation</h2>
+<p>
+FreeRTOS can support static memory allocation
+for kernel objects, including the Idle Task,
+when the relevant configuration is enabled.
+</p>
+<pre><code>#define configSUPPORT_STATIC_ALLOCATION 1</code></pre>
+<p>
+In applicable FreeRTOS versions, the application
+may provide the Idle Task's memory through a
+callback such as:
+</p>
+<pre><code>void vApplicationGetIdleTaskMemory(
+    StaticTask_t **ppxIdleTaskTCBBuffer,
+    StackType_t **ppxIdleTaskStackBuffer,
+    configSTACK_DEPTH_TYPE *pulIdleTaskStackSize
+);</code></pre>
+<div class="note">
+The callback signature and stack-depth type
+depend on the FreeRTOS version. Check the
+selected kernel's port and API documentation
+before implementing it.
+</div>
+</section>
+
+<section>
+<h2>15. Practical Example – Idle Hook Counter</h2>
+<p><strong>Objective:</strong> Observe Idle Hook execution when application tasks are not Ready.</p>
+<h3>Example Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+volatile unsigned long idleCounter = 0;
+volatile unsigned long taskCounter = 0;
+
+void ApplicationTask(void *pvParameters)
+{
+    for (;;)
+    {
+        taskCounter++;
+
+        /* Block for a short interval */
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void vApplicationIdleHook(void)
+{
+    idleCounter++;
+}
+
+int main(void)
+{
+    BaseType_t result;
+
+    result = xTaskCreate(
+        ApplicationTask,
+        "Application",
+        256,
+        NULL,
+        1,
+        NULL
+    );
+
+    if (result == pdPASS)
+    {
+        vTaskStartScheduler();
+    }
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Procedure</h3>
+<ol>
+<li>Enable configUSE_IDLE_HOOK in FreeRTOSConfig.h.</li>
+<li>Compile the application with a compatible FreeRTOS port.</li>
+<li>Start the scheduler.</li>
+<li>Inspect idleCounter and taskCounter using a debugger.</li>
+<li>Observe that the application task blocks periodically.</li>
+<li>During eligible idle intervals, the Idle Hook increments idleCounter.</li>
+<li>Compare the counters under different application workloads.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+The application task increments taskCounter
+during its execution. When it blocks and no
+other higher-priority task is Ready, the Idle
+Task executes and idleCounter increases.
+</p>
+</section>
+
+<section>
+<h2>16. Debugging Checklist</h2>
+<ul>
+<li>Verify that the scheduler starts successfully.</li>
+<li>Verify configUSE_IDLE_HOOK is enabled if using the hook.</li>
+<li>Confirm the hook function has the correct name and signature.</li>
+<li>Check whether application tasks are continuously Ready.</li>
+<li>Verify that tasks block when they have no work.</li>
+<li>Inspect dynamically deleted task cleanup behavior.</li>
+<li>Check stack usage and Idle Task stack configuration.</li>
+<li>Keep the Idle Hook short and non-blocking.</li>
+<li>Verify tickless idle configuration separately.</li>
+<li>Check the processor port's low-power implementation.</li>
+</ul>
+</section>
+
+<section>
+<h2>17. Important Notes for LPC2129 and Keil</h2>
+<p>
+The LPC2129 uses an ARM7TDMI-S core. A working
+Idle Task and Idle Hook experiment requires a
+compatible FreeRTOS ARM7 port and a correctly
+configured project.
+</p>
+<ul>
+<li>Verify the ARM7 port before compiling FreeRTOS examples.</li>
+<li>Check the selected kernel version's hook configuration.</li>
+<li>Confirm the Idle Task stack setup.</li>
+<li>Do not assume Cortex-M tickless-idle implementation applies to ARM7.</li>
+<li>Keil simulator support for the selected port must be verified.</li>
+</ul>
+<div class="warning">
+This lesson provides generic FreeRTOS examples.
+It does not establish that the LPC2129 Keil
+simulator project has a working FreeRTOS port.
+</div>
+</section>
+
+<section>
+<h2>18. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is the Idle Task?</li>
+<li>Who creates the Idle Task?</li>
+<li>What is the default Idle Task priority?</li>
+<li>When does the Idle Task execute?</li>
+<li>What is an Idle Hook?</li>
+<li>Which function implements the Idle Hook?</li>
+<li>Which configuration enables the Idle Hook?</li>
+<li>Why must the Idle Hook not block?</li>
+<li>How does the Idle Task help reclaim dynamically deleted task memory?</li>
+<li>What is Idle Task starvation?</li>
+<li>What is tickless idle?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain the role and responsibilities of the Idle Task.</li>
+<li>Explain the Idle Hook with a suitable program.</li>
+<li>Describe task deletion and deferred memory cleanup.</li>
+<li>Explain Idle Task starvation and its consequences.</li>
+<li>Compare Idle Hook and tickless idle.</li>
+<li>Discuss static allocation of the Idle Task.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Lesson Summary</h2>
+<ul>
+<li>FreeRTOS automatically creates the Idle Task during scheduler startup.</li>
+<li>The Idle Task has the lowest priority in the standard priority scheme.</li>
+<li>It executes when no higher-priority task is Ready.</li>
+<li>It performs deferred cleanup of dynamically deleted task memory.</li>
+<li>The Idle Hook is an application-defined callback.</li>
+<li>The Idle Hook must remain short and non-blocking.</li>
+<li>Tickless idle is a separate low-power mechanism.</li>
+<li>Idle Task starvation can delay memory cleanup.</li>
+</ul>
+</section>
+
+<section>
+<h2>20. Practice Assignment</h2>
+<ol>
+<li>Create an application task that blocks periodically.</li>
+<li>Implement an Idle Hook counter.</li>
+<li>Observe the counter using a debugger.</li>
+<li>Run the application with different task workloads.</li>
+<li>Study how a continuously Ready task affects Idle Task execution.</li>
+<li>Explain why the Idle Hook must not block.</li>
+<li>Study deferred memory cleanup after task deletion.</li>
+<li>Compare static and dynamic task allocation.</li>
+<li>Research tickless idle support for the selected processor port.</li>
+<li>Prepare a report explaining the Idle Task's role in an RTOS.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="L05_Time_Slicing_and_Round_Robin.html">← Previous Lesson</a>
+<a href="index.html">Chapter 14 Index</a>
+<a href="L07_Tick_Interrupt_and_Tick_Rate.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
