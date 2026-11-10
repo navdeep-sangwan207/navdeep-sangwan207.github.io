@@ -1,1 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vTaskSuspend() and vTaskResume() | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:29px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>vTaskSuspend() and vTaskResume()</h1>
+<p>Task Suspension, Resumption and Task-State Management</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+FreeRTOS provides task suspension and resumption
+APIs to control whether a task is eligible for
+execution. These functions are useful when an
+application needs to temporarily stop a task and
+later allow it to execute again.
+</p>
+<ul>
+<li>Understand the purpose of vTaskSuspend().</li>
+<li>Understand the purpose of vTaskResume().</li>
+<li>Learn the Suspended task state.</li>
+<li>Understand task handles in suspension APIs.</li>
+<li>Differentiate suspension from blocking and deletion.</li>
+<li>Learn how to suspend and resume another task.</li>
+<li>Understand task self-suspension.</li>
+<li>Learn ISR-safe resumption using xTaskResumeFromISR().</li>
+<li>Identify common design risks and safer alternatives.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Task Suspension</h2>
+<p>
+A task may need to stop executing temporarily
+without being deleted. For example, a communication
+task may be suspended while a system enters a
+maintenance mode and resumed when normal operation
+is restored.
+</p>
+<p>
+FreeRTOS provides two commonly used task-control
+functions:
+</p>
+<pre><code>void vTaskSuspend(TaskHandle_t xTaskToSuspend);
+
+void vTaskResume(TaskHandle_t xTaskToResume);</code></pre>
+<table>
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td><code>vTaskSuspend()</code></td><td>Places the specified task into the Suspended state.</td></tr>
+<tr><td><code>vTaskResume()</code></td><td>Removes the specified task from the Suspended state and makes it Ready.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>3. Understanding the Suspended State</h2>
+<p>
+A suspended task is not eligible to execute.
+Unlike a task in the Blocked state, it does not
+automatically become Ready when a delay or timeout
+expires.
+</p>
+<p>
+A suspended task must be explicitly resumed using
+an appropriate task-control API.
+</p>
+<h3>Conceptual State Transition</h3>
+<pre><code>          vTaskSuspend()
+Ready / Running ----------------> Suspended
+                                      |
+                                      |
+                                vTaskResume()
+                                      |
+                                      v
+                                    Ready</code></pre>
+<p>
+When a suspended task becomes Ready, the scheduler
+selects it according to the normal scheduling
+rules. It does not necessarily execute immediately.
+</p>
+</section>
+
+<section>
+<h2>4. vTaskSuspend() Function</h2>
+<p>
+The vTaskSuspend() function suspends a task
+identified by its handle.
+</p>
+<h3>Syntax</h3>
+<pre><code>void vTaskSuspend(TaskHandle_t xTaskToSuspend);</code></pre>
+<h3>Parameter</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>xTaskToSuspend</code></td><td>Handle of the task to suspend. NULL specifies the calling task itself.</td></tr>
+</table>
+<h3>Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+TaskHandle_t sensorHandle = NULL;
+
+void SensorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform sensor monitoring */
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void ControlTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Application control operation */
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+
+        if (sensorHandle != NULL)
+        {
+            vTaskSuspend(sensorHandle);
+        }
+    }
+}
+
+int main(void)
+{
+    if (xTaskCreate(
+            SensorTask,
+            "Sensor",
+            256,
+            NULL,
+            2,
+            &sensorHandle) == pdPASS)
+    {
+        xTaskCreate(
+            ControlTask,
+            "Control",
+            256,
+            NULL,
+            3,
+            NULL
+        );
+
+        vTaskStartScheduler();
+    }
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Explanation</h3>
+<ol>
+<li>SensorTask is created and its handle is stored.</li>
+<li>ControlTask performs its application operation.</li>
+<li>ControlTask calls vTaskSuspend() using sensorHandle.</li>
+<li>SensorTask enters the Suspended state.</li>
+<li>SensorTask cannot execute again until it is resumed.</li>
+</ol>
+</section>
+
+<section>
+<h2>5. vTaskResume() Function</h2>
+<p>
+The vTaskResume() function removes a task from
+the Suspended state and makes it Ready.
+</p>
+<h3>Syntax</h3>
+<pre><code>void vTaskResume(TaskHandle_t xTaskToResume);</code></pre>
+<h3>Parameter</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>xTaskToResume</code></td><td>Handle of the task to resume. It must identify a valid task.</td></tr>
+</table>
+<h3>Example</h3>
+<pre><code>void ResumeSensorTask(void)
+{
+    if (sensorHandle != NULL)
+    {
+        vTaskResume(sensorHandle);
+    }
+}</code></pre>
+<p>
+After resumption, the task becomes Ready. If it
+has a higher priority than the currently running
+task, preemption may occur according to the
+scheduler configuration.
+</p>
+<div class="note">
+vTaskResume() does not guarantee that the task
+runs immediately. It makes the task eligible
+for scheduling.
+</div>
+</section>
+
+<section>
+<h2>6. Complete Suspend and Resume Example</h2>
+<p>
+The following conceptual application uses a manager
+task to suspend and resume a monitoring task.
+</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+TaskHandle_t monitorHandle = NULL;
+
+void MonitorTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform monitoring operation */
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void ManagerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Allow monitoring for some time */
+        vTaskDelay(pdMS_TO_TICKS(5000));
+
+        /* Suspend monitoring */
+        vTaskSuspend(monitorHandle);
+
+        /* Perform maintenance interval */
+        vTaskDelay(pdMS_TO_TICKS(2000));
+
+        /* Resume monitoring */
+        vTaskResume(monitorHandle);
+    }
+}
+
+int main(void)
+{
+    if (xTaskCreate(
+            MonitorTask,
+            "Monitor",
+            256,
+            NULL,
+            2,
+            &monitorHandle) == pdPASS)
+    {
+        if (xTaskCreate(
+                ManagerTask,
+                "Manager",
+                256,
+                NULL,
+                3,
+                NULL) == pdPASS)
+        {
+            vTaskStartScheduler();
+        }
+    }
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Execution Sequence</h3>
+<ol>
+<li>Both tasks are created.</li>
+<li>MonitorTask periodically performs monitoring.</li>
+<li>ManagerTask waits for five seconds.</li>
+<li>ManagerTask suspends MonitorTask.</li>
+<li>ManagerTask waits for two seconds.</li>
+<li>ManagerTask resumes MonitorTask.</li>
+<li>The sequence repeats.</li>
+</ol>
+<div class="warning">
+This example assumes ManagerTask is the only task
+that controls monitorHandle. In a production design,
+coordinate access to task handles and define what
+should happen if the monitored task is already
+suspended or deleted.
+</div>
+</section>
+
+<section>
+<h2>7. Self-Suspension of a Task</h2>
+<p>
+A task can suspend itself by passing NULL to
+vTaskSuspend().
+</p>
+<pre><code>void WorkerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform an operation */
+
+        /* Suspend the calling task */
+        vTaskSuspend(NULL);
+
+        /* Execution continues here after resumption */
+    }
+}</code></pre>
+<p>
+The task remains suspended until another task
+resumes it using its valid task handle.
+After resumption, execution continues after the
+vTaskSuspend(NULL) call.
+</p>
+</section>
+
+<section>
+<h2>8. Resuming a Task from an ISR</h2>
+<p>
+An interrupt service routine must use APIs designed
+for interrupt context. The ordinary vTaskResume()
+function must not be called from an ISR.
+</p>
+<p>
+FreeRTOS provides xTaskResumeFromISR() for this
+purpose in supported ports.
+</p>
+<pre><code>BaseType_t xTaskResumeFromISR(
+    TaskHandle_t xTaskToResume
+);</code></pre>
+<p>
+The return value indicates whether resuming the
+task caused a context switch to be required at
+the end of the ISR.
+</p>
+<h3>Conceptual ISR Example</h3>
+<pre><code>void Peripheral_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* Acknowledge the peripheral interrupt */
+
+    xTaskResumeFromISR(monitorHandle);
+
+    /*
+       Use the port's documented ISR-yield
+       mechanism where required.
+    */
+}</code></pre>
+<div class="warning">
+The exact ISR-yield macro and interrupt-priority
+rules depend on the FreeRTOS port. The example
+shows the API concept, not a complete hardware
+interrupt implementation.
+</div>
+</section>
+
+<section>
+<h2>9. Important Limitation: Resume Is Not an Event Queue</h2>
+<p>
+vTaskResume() does not store a pending resume
+request for a task that is not currently suspended.
+If a resume call occurs before the task has
+actually suspended, the call does not act as a
+future wake-up signal.
+</p>
+<p>
+This creates a possible race condition:
+</p>
+<ol>
+<li>A manager intends to suspend a worker.</li>
+<li>The worker has not yet reached its suspension point.</li>
+<li>The manager calls vTaskResume().</li>
+<li>The worker later suspends itself.</li>
+<li>No pending resume request is retained by the ordinary resume API.</li>
+</ol>
+<div class="note">
+When the application needs a persistent event or
+wake-up signal, consider a task notification,
+semaphore or queue instead of relying on
+vTaskSuspend() and vTaskResume().
+</div>
+</section>
+
+<section>
+<h2>10. vTaskSuspend() Versus vTaskDelay()</h2>
+<table>
+<tr><th>Feature</th><th>vTaskSuspend()</th><th>vTaskDelay()</th></tr>
+<tr><td>Task state</td><td>Suspended</td><td>Blocked</td></tr>
+<tr><td>How task becomes Ready</td><td>Explicit resume operation</td><td>Delay interval expires</td></tr>
+<tr><td>Automatic wake-up</td><td>No</td><td>Yes, after the requested delay</td></tr>
+<tr><td>Typical use</td><td>Manual task control</td><td>Timed waiting</td></tr>
+<tr><td>Task handle required?</td><td>Required for another task; NULL for self-suspension</td><td>No task handle parameter</td></tr>
+</table>
+</section>
+
+<section>
+<h2>11. vTaskResume() Versus Task Notifications</h2>
+<p>
+Task notifications provide a more event-oriented
+way to wake a task. They can also carry a value or
+bit information depending on the notification API
+used.
+</p>
+<table>
+<tr><th>Feature</th><th>vTaskResume()</th><th>Task Notification</th></tr>
+<tr><td>Primary purpose</td><td>Resume a suspended task.</td><td>Signal or communicate with a task.</td></tr>
+<tr><td>Pending signal</td><td>Does not retain a resume request when the task is not suspended.</td><td>Notification state/value can remain pending until received.</td></tr>
+<tr><td>Data transfer</td><td>No notification value is transferred.</td><td>Can convey a value or event bits using suitable APIs.</td></tr>
+<tr><td>ISR support</td><td>xTaskResumeFromISR() where supported.</td><td>ISR-safe notification APIs are available.</td></tr>
+<tr><td>Typical use</td><td>Explicit administrative control.</td><td>Event signaling and task wake-up.</td></tr>
+</table>
+<p>
+For event-driven systems, task notifications are
+often preferable because they avoid the lost
+wake-up problem associated with ordinary resume
+calls.
+</p>
+</section>
+
+<section>
+<h2>12. Suspending a Task and Resource Management</h2>
+<p>
+Suspending a task does not release the resources
+it owns. A suspended task may still own a mutex,
+control a peripheral or hold an application buffer.
+</p>
+<h3>Potential Problems</h3>
+<ul>
+<li>A suspended task may retain a mutex indefinitely.</li>
+<li>Other tasks waiting for that mutex may remain blocked.</li>
+<li>A peripheral may remain in an intermediate state.</li>
+<li>Shared buffers may remain reserved.</li>
+<li>Time-sensitive operations may miss their deadlines.</li>
+</ul>
+<div class="warning">
+Avoid suspending a task while it owns a mutex or
+is performing a critical hardware operation.
+Prefer a cooperative pause protocol in which
+the task reaches a safe point and releases
+resources before waiting.
+</div>
+</section>
+
+<section>
+<h2>13. Best Practices</h2>
+<ul>
+<li>Use valid task handles and manage their lifetime carefully.</li>
+<li>Use vTaskSuspend() and vTaskResume() only when explicit task-state control is required.</li>
+<li>Do not call vTaskResume() from an ISR.</li>
+<li>Use xTaskResumeFromISR() where supported for ISR-context resumption.</li>
+<li>Use task notifications or semaphores for event signaling.</li>
+<li>Do not assume vTaskResume() stores a pending event.</li>
+<li>Avoid suspending tasks while they own mutexes or shared resources.</li>
+<li>Define clear rules for which task is allowed to suspend or resume another task.</li>
+<li>Do not use suspension as a substitute for safe peripheral shutdown.</li>
+</ul>
+</section>
+
+<section>
+<h2>14. Practical Activity – Suspend and Resume a Task</h2>
+<p><strong>Objective:</strong> Create two tasks. One task performs periodic monitoring, while another task suspends and resumes it.</p>
+<h3>Procedure</h3>
+<ol>
+<li>Create MonitorTask and store its handle.</li>
+<li>Create ManagerTask.</li>
+<li>Allow MonitorTask to execute for a defined interval.</li>
+<li>Call vTaskSuspend() from ManagerTask.</li>
+<li>Observe that MonitorTask no longer executes.</li>
+<li>Call vTaskResume() after the maintenance interval.</li>
+<li>Observe that MonitorTask becomes Ready and resumes execution when scheduled.</li>
+<li>Repeat the test and inspect task states using available debugging or trace facilities.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+MonitorTask executes while active, enters the
+Suspended state when requested and becomes Ready
+after vTaskResume() is called. Its execution then
+continues according to the scheduler's priority
+and preemption rules.
+</p>
+</section>
+
+<section>
+<h2>15. Common Mistakes</h2>
+<table>
+<tr><th>Mistake</th><th>Problem</th><th>Correct Practice</th></tr>
+<tr><td>Calling vTaskResume() before suspension</td><td>The resume request is not stored for later.</td><td>Use event signaling when a pending wake-up is required.</td></tr>
+<tr><td>Calling vTaskResume() from an ISR</td><td>Incorrect API context.</td><td>Use xTaskResumeFromISR() where supported.</td></tr>
+<tr><td>Assuming resume means immediate execution</td><td>Scheduler may select another task first.</td><td>Understand Ready state and task priorities.</td></tr>
+<tr><td>Suspending a task while it owns a mutex</td><td>Other tasks may remain blocked.</td><td>Use cooperative pause and resource-release logic.</td></tr>
+<tr><td>Using an invalid handle</td><td>Invalid task reference.</td><td>Maintain handle validity and synchronization.</td></tr>
+<tr><td>Confusing suspension with delay</td><td>Task will not wake automatically.</td><td>Choose the correct blocking or suspension API.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>16. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is the purpose of vTaskSuspend()?</li>
+<li>What is the purpose of vTaskResume()?</li>
+<li>What is the Suspended state?</li>
+<li>What does NULL mean in vTaskSuspend(NULL)?</li>
+<li>Does a suspended task become Ready automatically?</li>
+<li>What is the purpose of xTaskResumeFromISR()?</li>
+<li>Why should vTaskResume() not be called from an ISR?</li>
+<li>Why is vTaskResume() not suitable as a persistent event signal?</li>
+<li>What happens if a task is suspended while it owns a mutex?</li>
+<li>How does task notification differ from task resumption?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain vTaskSuspend() and vTaskResume() with programming examples.</li>
+<li>Describe task self-suspension and external task resumption.</li>
+<li>Explain ISR-safe task resumption.</li>
+<li>Compare task suspension with task delay and deletion.</li>
+<li>Discuss the risks of suspending tasks that own shared resources.</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+<ul>
+<li>vTaskSuspend() places a task in the Suspended state.</li>
+<li>vTaskResume() makes a suspended task Ready.</li>
+<li>A task can suspend itself using vTaskSuspend(NULL).</li>
+<li>Another task can resume it using its task handle.</li>
+<li>vTaskResume() does not retain a pending request when the task is not suspended.</li>
+<li>xTaskResumeFromISR() is the ISR-context counterpart where supported.</li>
+<li>Task notifications and semaphores are often better for event-driven wake-up.</li>
+<li>Suspending a task does not automatically release its resources.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+<a href="L06_vTaskDelayUntil_Function.html">← Previous Lesson</a>
+<a href="index.html">Chapter 13 Index</a>
+<a href="L08_uxTaskPriorityGet_and_vTaskPrioritySet.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
