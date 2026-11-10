@@ -1,1 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task Synchronization Using Event Groups | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+* {
+    box-sizing: border-box;
+}
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f4f7fc;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 15px;
+}
+header h1 {
+    margin: 0 0 8px;
+    font-size: 30px;
+}
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 13px;
+}
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+section {
+    background: white;
+    margin-bottom: 22px;
+    padding: 24px;
+    border-radius: 10px;
+    box-shadow: 0 2px 9px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8fa;
+    padding-bottom: 8px;
+    margin-top: 0;
+}
+h3 {
+    color: #2165b5;
+    margin-top: 22px;
+}
+p {
+    text-align: justify;
+}
+ul, ol {
+    padding-left: 25px;
+}
+li {
+    margin-bottom: 7px;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+th, td {
+    border: 1px solid #d5deeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th {
+    background: #eaf2ff;
+    color: #174ea6;
+}
+pre {
+    background: #172334;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+}
+code {
+    font-family: Consolas, monospace;
+}
+.note {
+    background: #edf5ff;
+    border-left: 4px solid #2878d7;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.warning {
+    background: #fff6e5;
+    border-left: 4px solid #e5a000;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.example {
+    background: #f5f8fc;
+    border: 1px solid #dce5f1;
+    padding: 16px;
+    border-radius: 8px;
+    margin: 15px 0;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media(max-width:650px) {
+    header h1 {
+        font-size: 24px;
+    }
+    nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    section {
+        padding: 17px;
+    }
+    table {
+        display: block;
+        overflow-x: auto;
+    }
+}
+</style>
+</head>
+<body>
 
+<header>
+    <h1>Task Synchronization Using Event Groups</h1>
+    <p>RTOS & FreeRTOS – Chapter 11: Event Groups and Software Timers</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../rtos.html">RTOS Course</a>
+    <a href="index.html">Chapter 11</a>
+</nav>
+
+<div class="container">
+
+<section>
+    <h2>1. Learning Objectives</h2>
+    <p>
+        In a multitasking embedded system, multiple tasks may need to
+        coordinate their execution based on the completion of different
+        operations. FreeRTOS event groups provide a mechanism for
+        synchronizing tasks through shared event bits.
+    </p>
+    <ul>
+        <li>Understand task synchronization using event groups.</li>
+        <li>Learn how one task sets an event bit for another task.</li>
+        <li>Understand waiting for one or multiple event conditions.</li>
+        <li>Learn event-bit clearing behavior.</li>
+        <li>Implement task synchronization using FreeRTOS APIs.</li>
+        <li>Handle timeouts and synchronization failures.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>2. What Is Task Synchronization?</h2>
+
+    <p>
+        Task synchronization is the coordination of multiple tasks so
+        that they perform operations in the required order or proceed
+        only when specified conditions are satisfied.
+    </p>
+
+    <h3>Example</h3>
+    <p>
+        Consider an embedded monitoring system containing three tasks:
+    </p>
+    <ul>
+        <li>SensorTask reads sensor data.</li>
+        <li>UARTTask initializes serial communication.</li>
+        <li>ConfigTask loads application configuration.</li>
+    </ul>
+
+    <p>
+        MainTask should begin normal operation only after all three
+        initialization operations have completed.
+    </p>
+
+    <pre><code>SensorTask ---------&gt; SENSOR_READY
+                           |
+UARTTask ----------&gt; UART_READY
+                           |
+ConfigTask --------&gt; CONFIG_READY
+                           |
+                           v
+                     EVENT GROUP
+                           |
+                           v
+                       MainTask
+                           |
+                           v
+                  Start Normal Operation</code></pre>
+</section>
+
+<section>
+    <h2>3. Event Bits Used for Synchronization</h2>
+
+    <p>
+        Each task reports completion by setting its assigned event bit.
+        A waiting task checks whether the required combination of bits
+        has been set.
+    </p>
+
+    <h3>Event-Bit Definitions</h3>
+
+    <pre><code>#define SENSOR_READY_BIT    (1U &lt;&lt; 0)
+#define UART_READY_BIT      (1U &lt;&lt; 1)
+#define CONFIG_READY_BIT    (1U &lt;&lt; 2)
+
+#define ALL_READY_BITS \
+    (SENSOR_READY_BIT | UART_READY_BIT | CONFIG_READY_BIT)</code></pre>
+
+    <table>
+        <tr>
+            <th>Bit</th>
+            <th>Task</th>
+            <th>Meaning</th>
+        </tr>
+        <tr>
+            <td>Bit 0</td>
+            <td>SensorTask</td>
+            <td>Sensor initialization completed</td>
+        </tr>
+        <tr>
+            <td>Bit 1</td>
+            <td>UARTTask</td>
+            <td>UART initialization completed</td>
+        </tr>
+        <tr>
+            <td>Bit 2</td>
+            <td>ConfigTask</td>
+            <td>Configuration loading completed</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>4. FreeRTOS APIs for Task Synchronization</h2>
+
+    <table>
+        <tr>
+            <th>API</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td><code>xEventGroupCreate()</code></td>
+            <td>Creates an event group.</td>
+        </tr>
+        <tr>
+            <td><code>xEventGroupSetBits()</code></td>
+            <td>Sets one or more event bits.</td>
+        </tr>
+        <tr>
+            <td><code>xEventGroupClearBits()</code></td>
+            <td>Clears selected event bits.</td>
+        </tr>
+        <tr>
+            <td><code>xEventGroupWaitBits()</code></td>
+            <td>Blocks a task until specified event conditions are met or a timeout occurs.</td>
+        </tr>
+        <tr>
+            <td><code>xEventGroupGetBits()</code></td>
+            <td>Reads the current event-bit state.</td>
+        </tr>
+        <tr>
+            <td><code>xEventGroupGetBitsFromISR()</code></td>
+            <td>Reads event bits from ISR context where supported.</td>
+        </tr>
+    </table>
+
+    <div class="note">
+        <code>xEventGroupSetBits()</code> and
+        <code>xEventGroupClearBits()</code> are task-context APIs.
+        ISR code uses the appropriate FromISR API where available.
+    </div>
+</section>
+
+<section>
+    <h2>5. Waiting for Event Bits</h2>
+
+    <p>
+        The <code>xEventGroupWaitBits()</code> API allows a task to wait
+        for one or more event conditions.
+    </p>
+
+    <h3>Function Syntax</h3>
+
+    <pre><code>EventBits_t xEventGroupWaitBits(
+    EventGroupHandle_t xEventGroup,
+    const EventBits_t uxBitsToWaitFor,
+    const BaseType_t xClearOnExit,
+    const BaseType_t xWaitForAllBits,
+    TickType_t xTicksToWait
+);</code></pre>
+
+    <h3>Parameters</h3>
+
+    <table>
+        <tr>
+            <th>Parameter</th>
+            <th>Description</th>
+        </tr>
+        <tr>
+            <td><code>xEventGroup</code></td>
+            <td>Handle of the event group.</td>
+        </tr>
+        <tr>
+            <td><code>uxBitsToWaitFor</code></td>
+            <td>Event-bit mask specifying the required conditions.</td>
+        </tr>
+        <tr>
+            <td><code>xClearOnExit</code></td>
+            <td>Specifies whether the requested bits are cleared when the wait condition is satisfied.</td>
+        </tr>
+        <tr>
+            <td><code>xWaitForAllBits</code></td>
+            <td><code>pdTRUE</code> waits for all requested bits; <code>pdFALSE</code> waits for any requested bit.</td>
+        </tr>
+        <tr>
+            <td><code>xTicksToWait</code></td>
+            <td>Maximum wait time in RTOS ticks.</td>
+        </tr>
+    </table>
+
+    <h3>Wait for All Events</h3>
+
+    <pre><code>EventBits_t result;
+
+result = xEventGroupWaitBits(
+    xSystemEvents,
+    ALL_READY_BITS,
+    pdTRUE,
+    pdTRUE,
+    portMAX_DELAY
+);</code></pre>
+
+    <p>
+        The task waits until all selected event bits are set. With
+        <code>pdTRUE</code> for the clear-on-exit argument, the requested
+        bits are cleared when the all-bits condition is satisfied.
+    </p>
+
+    <h3>Wait for Any Event</h3>
+
+    <pre><code>EventBits_t result;
+
+result = xEventGroupWaitBits(
+    xSystemEvents,
+    ALL_READY_BITS,
+    pdFALSE,
+    pdFALSE,
+    portMAX_DELAY
+);</code></pre>
+
+    <p>
+        The task proceeds when at least one selected event bit is set.
+        The requested bits are not automatically cleared.
+    </p>
+</section>
+
+<section>
+    <h2>6. Example 1 – Two Tasks Synchronizing Through One Event Bit</h2>
+
+    <p><strong>Objective:</strong> Make one task wait until another task reports completion.</p>
+
+    <h3>Program</h3>
+
+    <pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "event_groups.h"
+
+#define DATA_READY_BIT (1U &lt;&lt; 0)
+
+EventGroupHandle_t xEventGroup;
+
+void ProducerTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform data acquisition. */
+
+        xEventGroupSetBits(xEventGroup, DATA_READY_BIT);
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void ConsumerTask(void *pvParameters)
+{
+    EventBits_t result;
+
+    for (;;)
+    {
+        result = xEventGroupWaitBits(
+            xEventGroup,
+            DATA_READY_BIT,
+            pdTRUE,
+            pdTRUE,
+            portMAX_DELAY
+        );
+
+        if ((result &amp; DATA_READY_BIT) != 0U)
+        {
+            /* Process the data-ready condition. */
+        }
+    }
+}
+
+int main(void)
+{
+    xEventGroup = xEventGroupCreate();
+
+    if (xEventGroup != NULL)
+    {
+        xTaskCreate(
+            ProducerTask,
+            "Producer",
+            256,
+            NULL,
+            2,
+            NULL
+        );
+
+        xTaskCreate(
+            ConsumerTask,
+            "Consumer",
+            256,
+            NULL,
+            2,
+            NULL
+        );
+
+        vTaskStartScheduler();
+    }
+
+    for (;;);
+}</code></pre>
+
+    <h3>Working</h3>
+    <ol>
+        <li>ProducerTask performs its acquisition operation.</li>
+        <li>It sets DATA_READY_BIT.</li>
+        <li>ConsumerTask becomes eligible to continue.</li>
+        <li>ConsumerTask checks the returned event-bit value.</li>
+        <li>The requested bit is cleared on successful exit from the wait.</li>
+        <li>The consumer waits again for the next report.</li>
+    </ol>
+
+    <div class="warning">
+        Event bits coalesce repeated occurrences. If the producer sets
+        DATA_READY_BIT several times before the consumer clears it,
+        the consumer may observe only one pending indication. Use a queue
+        or counting semaphore when every produced item or occurrence
+        must be preserved.
+    </div>
+</section>
+
+<section>
+    <h2>7. Example 2 – Synchronizing Three Initialization Tasks</h2>
+
+    <p>
+        This example demonstrates how a main task waits for sensor,
+        UART and configuration initialization to complete.
+    </p>
+
+    <h3>Program</h3>
+
+    <pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "event_groups.h"
+
+#define SENSOR_READY_BIT    (1U &lt;&lt; 0)
+#define UART_READY_BIT      (1U &lt;&lt; 1)
+#define CONFIG_READY_BIT    (1U &lt;&lt; 2)
+
+#define ALL_READY_BITS \
+    (SENSOR_READY_BIT | UART_READY_BIT | CONFIG_READY_BIT)
+
+EventGroupHandle_t xSystemEvents;
+
+void SensorTask(void *pvParameters)
+{
+    /* Initialize sensor hardware here. */
+
+    xEventGroupSetBits(
+        xSystemEvents,
+        SENSOR_READY_BIT
+    );
+
+    vTaskDelete(NULL);
+}
+
+void UARTTask(void *pvParameters)
+{
+    /* Initialize UART hardware here. */
+
+    xEventGroupSetBits(
+        xSystemEvents,
+        UART_READY_BIT
+    );
+
+    vTaskDelete(NULL);
+}
+
+void ConfigTask(void *pvParameters)
+{
+    /* Load application configuration here. */
+
+    xEventGroupSetBits(
+        xSystemEvents,
+        CONFIG_READY_BIT
+    );
+
+    vTaskDelete(NULL);
+}
+
+void MainTask(void *pvParameters)
+{
+    EventBits_t result;
+
+    result = xEventGroupWaitBits(
+        xSystemEvents,
+        ALL_READY_BITS,
+        pdTRUE,
+        pdTRUE,
+        pdMS_TO_TICKS(5000)
+    );
+
+    if ((result &amp; ALL_READY_BITS) == ALL_READY_BITS)
+    {
+        /* All initialization conditions are satisfied. */
+
+        for (;;)
+        {
+            /* Execute normal application operations. */
+
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+    else
+    {
+        /* Initialization timeout or incomplete readiness. */
+
+        for (;;)
+        {
+            /* Enter defined fault-handling behavior. */
+
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+}
+
+int main(void)
+{
+    xSystemEvents = xEventGroupCreate();
+
+    if (xSystemEvents != NULL)
+    {
+        xTaskCreate(SensorTask, "Sensor", 256, NULL, 2, NULL);
+        xTaskCreate(UARTTask, "UART", 256, NULL, 2, NULL);
+        xTaskCreate(ConfigTask, "Config", 256, NULL, 2, NULL);
+        xTaskCreate(MainTask, "Main", 256, NULL, 3, NULL);
+
+        vTaskStartScheduler();
+    }
+
+    for (;;);
+}</code></pre>
+
+    <h3>Expected Behavior</h3>
+    <ul>
+        <li>Each initialization task completes its operation.</li>
+        <li>Each task sets its own event bit.</li>
+        <li>MainTask waits for all three conditions.</li>
+        <li>If all bits are set within the timeout, normal operation begins.</li>
+        <li>If the wait expires before all bits are set, fault handling executes.</li>
+    </ul>
+
+    <div class="note">
+        <code>xEventGroupWaitBits()</code> returns the event-bit value
+        observed when the task leaves the wait. The condition check
+        determines whether all requested bits were present. This example
+        assumes each initialization task sets its bit only after
+        successful initialization.
+    </div>
+</section>
+
+<section>
+    <h2>8. Example 3 – Waiting for Any One of Multiple Events</h2>
+
+    <p>
+        Sometimes a task needs to react when any one of several events
+        occurs, rather than waiting for all of them.
+    </p>
+
+    <h3>Example Scenario</h3>
+    <ul>
+        <li>UART data received.</li>
+        <li>Sensor threshold exceeded.</li>
+        <li>Communication fault detected.</li>
+    </ul>
+
+    <h3>Program Fragment</h3>
+
+    <pre><code>#define UART_EVENT_BIT    (1U &lt;&lt; 0)
+#define SENSOR_EVENT_BIT  (1U &lt;&lt; 1)
+#define FAULT_EVENT_BIT   (1U &lt;&lt; 2)
+
+#define ANY_EVENT_BITS \
+    (UART_EVENT_BIT | SENSOR_EVENT_BIT | FAULT_EVENT_BIT)
+
+EventBits_t events;
+
+events = xEventGroupWaitBits(
+    xSystemEvents,
+    ANY_EVENT_BITS,
+    pdFALSE,
+    pdFALSE,
+    portMAX_DELAY
+);
+
+if ((events &amp; UART_EVENT_BIT) != 0U)
+{
+    /* Handle UART event. */
+}
+
+if ((events &amp; SENSOR_EVENT_BIT) != 0U)
+{
+    /* Handle sensor event. */
+}
+
+if ((events &amp; FAULT_EVENT_BIT) != 0U)
+{
+    /* Handle fault event. */
+}</code></pre>
+
+    <p>
+        Because clear-on-exit is <code>pdFALSE</code>, the event bits
+        remain set after the wait. The application must define when and
+        how they are cleared.
+    </p>
+
+    <div class="warning">
+        If several bits are set at the same time, the returned value may
+        contain several of them. Check each relevant bit rather than
+        assuming only one event occurred.
+    </div>
+</section>
+
+<section>
+    <h2>9. Clear-on-Exit Behavior</h2>
+
+    <p>
+        The clear-on-exit parameter controls whether the requested event
+        bits are automatically cleared when the wait condition is
+        satisfied.
+    </p>
+
+    <table>
+        <tr>
+            <th>Parameter</th>
+            <th>Behavior</th>
+        </tr>
+        <tr>
+            <td><code>pdTRUE</code></td>
+            <td>Clear the requested bits when the wait condition is satisfied.</td>
+        </tr>
+        <tr>
+            <td><code>pdFALSE</code></td>
+            <td>Leave the event bits unchanged after the wait.</td>
+        </tr>
+    </table>
+
+    <h3>Important Detail</h3>
+    <p>
+        When waiting for all requested bits, successful completion clears
+        the requested bits if clear-on-exit is enabled. When waiting for
+        any requested bit, the matching requested bits are cleared on
+        successful completion. A timeout does not cause the requested
+        bits to be automatically cleared by this parameter.
+    </p>
+</section>
+
+<section>
+    <h2>10. Event Groups and Multiple Waiting Tasks</h2>
+
+    <p>
+        Multiple tasks can wait on the same event group. Each task can
+        wait for a different bit or combination of bits.
+    </p>
+
+    <h3>Example</h3>
+
+    <pre><code>Task A waits for SENSOR_READY_BIT.
+
+Task B waits for UART_READY_BIT.
+
+Task C waits for:
+
+    SENSOR_READY_BIT | UART_READY_BIT</code></pre>
+
+    <p>
+        When the corresponding bits are set, eligible waiting tasks
+        are unblocked according to their wait conditions and the
+        scheduler's priority rules.
+    </p>
+
+    <div class="warning">
+        Event groups are shared state. If one waiting task clears a bit
+        on exit, another waiting task may no longer see that bit set.
+        Design clear-on-exit behavior carefully when multiple tasks
+        observe the same events.
+    </div>
+</section>
+
+<section>
+    <h2>11. Event Groups vs Direct Task Notifications</h2>
+
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Event Groups</th>
+            <th>Task Notifications</th>
+        </tr>
+        <tr>
+            <td>Multiple event conditions</td>
+            <td>Yes, using event bits</td>
+            <td>Can use notification value bits in suitable notification modes</td>
+        </tr>
+        <tr>
+            <td>Multiple waiting tasks</td>
+            <td>Multiple tasks can wait on one event group</td>
+            <td>Each notification is directed to a specific task</td>
+        </tr>
+        <tr>
+            <td>Resource overhead</td>
+            <td>Separate event-group object</td>
+            <td>Notification state is part of each task</td>
+        </tr>
+        <tr>
+            <td>Typical use</td>
+            <td>Shared multi-condition synchronization</td>
+            <td>Efficient task-directed signaling</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>12. Best Practices</h2>
+
+    <ul>
+        <li>Assign a unique bit to each independent event condition.</li>
+        <li>Use named bit-mask macros instead of unexplained numeric values.</li>
+        <li>Choose wait-for-any or wait-for-all behavior deliberately.</li>
+        <li>Define whether bits should be cleared automatically.</li>
+        <li>Handle timeouts explicitly.</li>
+        <li>Do not use event bits to count repeated events.</li>
+        <li>Use queues when event payloads must be transferred.</li>
+        <li>Consider interactions when several tasks wait on the same event group.</li>
+        <li>Use the correct ISR-specific APIs for interrupt context.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>13. Practical Activity</h2>
+
+    <h3>Activity – Three-Subsystem Startup Synchronization</h3>
+
+    <p><strong>Objective:</strong> Synchronize sensor, communication and configuration tasks.</p>
+
+    <ol>
+        <li>Create an event group.</li>
+        <li>Define SENSOR_READY_BIT, UART_READY_BIT and CONFIG_READY_BIT.</li>
+        <li>Create three initialization tasks.</li>
+        <li>Set the appropriate event bit after each successful initialization.</li>
+        <li>Create a main task that waits for all three bits.</li>
+        <li>Configure a finite timeout.</li>
+        <li>Inspect the returned event bits and implement success or failure handling.</li>
+    </ol>
+
+    <p><strong>Expected Result:</strong> MainTask proceeds only when all required initialization events have been reported. If the timeout expires first, the application enters its defined fault-handling path.</p>
+
+    <h3>Additional Exercise</h3>
+    <p>
+        Modify the main task to wait for any one of three fault events.
+        Explain how the application should clear and process each event.
+    </p>
+
+    <div class="warning">
+        These are generic FreeRTOS examples. They require a compatible
+        FreeRTOS port and target or simulator. Do not assume that the
+        LPC2129 Keil uVision simulator has a working FreeRTOS port.
+    </div>
+</section>
+
+<section>
+    <h2>14. Review Questions</h2>
+
+    <ol>
+        <li>What is task synchronization?</li>
+        <li>How does an event group synchronize multiple tasks?</li>
+        <li>What is the purpose of <code>xEventGroupSetBits()</code>?</li>
+        <li>What does <code>xEventGroupWaitBits()</code> return?</li>
+        <li>What is the difference between waiting for any bit and all bits?</li>
+        <li>What is the purpose of the clear-on-exit parameter?</li>
+        <li>How should a task handle an event-group timeout?</li>
+        <li>Can multiple tasks wait on the same event group?</li>
+        <li>What problem can occur when several tasks use clear-on-exit?</li>
+        <li>When should task notifications or queues be preferred?</li>
+    </ol>
+</section>
+
+<section>
+    <h2>15. Lesson Summary</h2>
+
+    <ul>
+        <li>Event groups coordinate tasks through shared event bits.</li>
+        <li>Tasks set bits to report that conditions have occurred.</li>
+        <li><code>xEventGroupWaitBits()</code> supports wait-for-any and wait-for-all behavior.</li>
+        <li>The clear-on-exit parameter controls automatic clearing after a successful wait.</li>
+        <li>Multiple tasks can wait on the same event group.</li>
+        <li>Clearing shared bits requires careful design.</li>
+        <li>Timeout handling is important for reliable synchronization.</li>
+        <li>Queues are preferable when every event or its associated data must be preserved.</li>
+    </ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L02_Event_Flags_and_Event_Bits.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 11</a>
+    <a href="L04_Wait_Any_and_Wait_All_Conditions.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+    <p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
