@@ -1,1 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Memory Management Overview | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f4f7fc;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 15px;
+}
+header h1 { margin: 0 0 8px; font-size: 29px; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 13px;
+}
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+section {
+    background: white;
+    margin-bottom: 22px;
+    padding: 24px;
+    border-radius: 10px;
+    box-shadow: 0 2px 9px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8fa;
+    padding-bottom: 8px;
+    margin-top: 0;
+}
+h3 { color: #2165b5; margin-top: 22px; }
+p { text-align: justify; }
+ul, ol { padding-left: 25px; }
+li { margin-bottom: 7px; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+th, td {
+    border: 1px solid #d5deeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #eaf2ff; color: #174ea6; }
+pre {
+    background: #172334;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+.note {
+    background: #edf5ff;
+    border-left: 4px solid #2878d7;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.warning {
+    background: #fff6e5;
+    border-left: 4px solid #e5a000;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media(max-width:650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 8px; }
+    section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+}
+</style>
+</head>
+<body>
 
+<header>
+    <h1>FreeRTOS Memory Management Overview</h1>
+    <p>RAM Organization, Static and Dynamic Allocation, Heap Management</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../rtos.html">RTOS Course</a>
+    <a href="index.html">Chapter 12</a>
+</nav>
+
+<div class="container">
+
+<section>
+    <h2>1. Learning Objectives</h2>
+    <p>
+        Memory management is an important part of embedded
+        real-time system design. FreeRTOS requires memory
+        for task stacks, task control blocks, queues,
+        synchronization objects and other kernel services.
+    </p>
+    <ul>
+        <li>Understand memory requirements in FreeRTOS.</li>
+        <li>Identify the main RAM regions used by an embedded application.</li>
+        <li>Understand task stack and kernel object memory.</li>
+        <li>Differentiate static and dynamic allocation.</li>
+        <li>Understand the role of the FreeRTOS heap.</li>
+        <li>Identify memory-allocation failure conditions.</li>
+        <li>Learn basic memory-planning techniques.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>2. Introduction to Memory Management</h2>
+    <p>
+        Memory management is the process of allocating,
+        using and releasing memory required by software.
+        In a FreeRTOS application, memory is needed by
+        both the kernel and the application.
+    </p>
+
+    <h3>Memory Required by FreeRTOS</h3>
+    <ul>
+        <li>Task Control Blocks (TCBs).</li>
+        <li>Task stacks.</li>
+        <li>Queue control structures and queue storage.</li>
+        <li>Semaphore and mutex control structures.</li>
+        <li>Event group structures.</li>
+        <li>Software timer structures.</li>
+        <li>Timer service task stack and queue storage.</li>
+    </ul>
+
+    <h3>Memory Required by the Application</h3>
+    <ul>
+        <li>Global and static variables.</li>
+        <li>Local variables and function call stacks.</li>
+        <li>Sensor and communication buffers.</li>
+        <li>Peripheral driver data.</li>
+        <li>Application-specific data structures.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>3. Memory Organization in an Embedded System</h2>
+    <p>
+        A typical embedded application uses different
+        memory regions for program instructions, initialized
+        data, uninitialized data, stacks and dynamically
+        allocated memory.
+    </p>
+
+    <pre><code>              Microcontroller Memory
+                       |
+          +------------+------------+
+          |                         |
+        Flash                       RAM
+          |                         |
+     Program Code             +-----+------+
+     Constant Data            |            |
+                         Static Data    Runtime Data
+                         (.data/.bss)       |
+                                           +------+
+                                           |      |
+                                      Task Stacks Heap
+                                           |
+                                      Local Data
+                                      Kernel Objects</code></pre>
+
+    <table>
+        <tr>
+            <th>Memory Region</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td>Flash / ROM</td>
+            <td>Stores executable program code and constant data.</td>
+        </tr>
+        <tr>
+            <td>.text</td>
+            <td>Contains executable instructions.</td>
+        </tr>
+        <tr>
+            <td>.data</td>
+            <td>Stores initialized global and static variables in RAM.</td>
+        </tr>
+        <tr>
+            <td>.bss</td>
+            <td>Stores zero-initialized or uninitialized global and static variables.</td>
+        </tr>
+        <tr>
+            <td>Stack</td>
+            <td>Stores function call information and automatic local variables.</td>
+        </tr>
+        <tr>
+            <td>Heap</td>
+            <td>Provides memory for dynamic allocation.</td>
+        </tr>
+    </table>
+
+    <div class="note">
+        Exact memory layout depends on the processor,
+        compiler, linker script and startup code. The
+        FreeRTOS heap is not necessarily the same as
+        the C library heap.
+    </div>
+</section>
+
+<section>
+    <h2>4. Task Stack Memory</h2>
+    <p>
+        Every FreeRTOS task requires its own stack.
+        The stack stores information required during
+        task execution, including local variables,
+        function call information and saved context.
+    </p>
+
+    <h3>Example</h3>
+    <pre><code>void SensorTask(void *pvParameters)
+{
+    int sensorValue = 100;
+    float temperature = 25.5f;
+
+    for (;;)
+    {
+        /* Task operations */
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}</code></pre>
+
+    <p>
+        The task's local variables and function execution
+        information use its stack, subject to compiler
+        optimization and variable storage rules.
+    </p>
+
+    <h3>Stack Depth Calculation</h3>
+    <pre><code>Stack Memory = Stack Depth × sizeof(StackType_t)
+
+Example:
+
+Stack Depth = 256 words
+sizeof(StackType_t) = 4 bytes
+
+Stack Memory = 256 × 4
+             = 1024 bytes</code></pre>
+
+    <div class="warning">
+        The stack depth argument used by common FreeRTOS
+        task-creation APIs is expressed in StackType_t
+        elements, not bytes. The exact type size depends
+        on the processor port.
+    </div>
+</section>
+
+<section>
+    <h2>5. Task Control Block Memory</h2>
+    <p>
+        FreeRTOS maintains a Task Control Block for each
+        task. The TCB stores internal information required
+        by the kernel to manage task execution.
+    </p>
+
+    <h3>Typical TCB Information</h3>
+    <ul>
+        <li>Task stack pointer.</li>
+        <li>Task priority.</li>
+        <li>Task state and scheduling information.</li>
+        <li>Task name and related metadata.</li>
+        <li>Links to internal kernel lists.</li>
+        <li>Other port- and configuration-dependent fields.</li>
+    </ul>
+
+    <p>
+        The kernel allocates and manages the TCB.
+        Application code should use documented task
+        APIs and handles instead of modifying internal
+        TCB fields.
+    </p>
+</section>
+
+<section>
+    <h2>6. Static Memory Allocation</h2>
+    <p>
+        Static allocation means that memory for an object
+        is supplied by the application instead of being
+        requested from the FreeRTOS heap at runtime.
+    </p>
+
+    <h3>Example: Static Task Creation</h3>
+    <pre><code>static StaticTask_t taskControlBlock;
+
+static StackType_t taskStack[256];
+
+TaskHandle_t sensorTaskHandle;
+
+sensorTaskHandle = xTaskCreateStatic(
+    SensorTask,
+    "Sensor",
+    256,
+    NULL,
+    2,
+    taskStack,
+    &taskControlBlock
+);</code></pre>
+
+    <p>
+        The application provides both the task stack
+        storage and the TCB storage through the
+        appropriate API parameters.
+    </p>
+
+    <h3>Advantages</h3>
+    <ul>
+        <li>Memory requirements can be planned in advance.</li>
+        <li>No heap allocation is required for that object.</li>
+        <li>Runtime heap fragmentation is avoided for statically allocated objects.</li>
+        <li>Useful for systems with strict memory constraints.</li>
+    </ul>
+
+    <h3>Limitations</h3>
+    <ul>
+        <li>Memory must be reserved before object creation.</li>
+        <li>Application code must manage storage lifetime.</li>
+        <li>Changing the number of objects at runtime is less flexible.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>7. Dynamic Memory Allocation</h2>
+    <p>
+        Dynamic allocation obtains memory at runtime
+        through an allocator. FreeRTOS provides heap
+        implementations for supported allocation APIs.
+    </p>
+
+    <h3>Example: Dynamic Task Creation</h3>
+    <pre><code>TaskHandle_t sensorTaskHandle = NULL;
+
+BaseType_t result;
+
+result = xTaskCreate(
+    SensorTask,
+    "Sensor",
+    256,
+    NULL,
+    2,
+    &sensorTaskHandle
+);
+
+if (result != pdPASS)
+{
+    /* Handle task creation failure */
+}</code></pre>
+
+    <p>
+        When successful, the kernel obtains the required
+        memory for the task's internal control structure
+        and stack through the configured allocation
+        mechanism.
+    </p>
+
+    <h3>Advantages</h3>
+    <ul>
+        <li>Objects can be created when required.</li>
+        <li>Useful when object count varies during execution.</li>
+        <li>Reduces the need to reserve every object in advance.</li>
+    </ul>
+
+    <h3>Limitations</h3>
+    <ul>
+        <li>Allocation can fail at runtime.</li>
+        <li>Some heap strategies can suffer fragmentation.</li>
+        <li>Allocation and freeing can introduce timing variability.</li>
+        <li>Memory ownership and object lifetime must be controlled.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>8. Static vs Dynamic Allocation</h2>
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Static Allocation</th>
+            <th>Dynamic Allocation</th>
+        </tr>
+        <tr>
+            <td>Memory source</td>
+            <td>Application-provided storage</td>
+            <td>Configured allocator</td>
+        </tr>
+        <tr>
+            <td>Allocation time</td>
+            <td>Storage reserved in advance</td>
+            <td>Requested at runtime</td>
+        </tr>
+        <tr>
+            <td>Runtime allocation failure</td>
+            <td>Not caused by a heap allocation for that object</td>
+            <td>Possible</td>
+        </tr>
+        <tr>
+            <td>Flexibility</td>
+            <td>Less flexible for changing object counts</td>
+            <td>More flexible</td>
+        </tr>
+        <tr>
+            <td>Heap fragmentation</td>
+            <td>Avoided for statically allocated objects</td>
+            <td>Depends on allocator strategy</td>
+        </tr>
+        <tr>
+            <td>Memory planning</td>
+            <td>Storage can be reserved explicitly</td>
+            <td>Requires runtime allocation planning</td>
+        </tr>
+    </table>
+
+    <p>
+        Some embedded applications use a combination
+        of static and dynamic allocation. The choice
+        depends on system requirements, memory constraints
+        and timing behavior.
+    </p>
+</section>
+
+<section>
+    <h2>9. FreeRTOS Heap Management</h2>
+    <p>
+        The FreeRTOS heap is an area of memory used by
+        selected dynamic allocation APIs. FreeRTOS
+        provides several heap implementation files
+        with different allocation and freeing behavior.
+    </p>
+
+    <h3>Common Heap Implementations</h3>
+    <table>
+        <tr>
+            <th>Heap</th>
+            <th>Characteristics</th>
+        </tr>
+        <tr>
+            <td><code>heap_1.c</code></td>
+            <td>Allocates memory but does not free it. Simple and predictable after initialization.</td>
+        </tr>
+        <tr>
+            <td><code>heap_2.c</code></td>
+            <td>Supports allocation and freeing but does not coalesce adjacent free blocks.</td>
+        </tr>
+        <tr>
+            <td><code>heap_3.c</code></td>
+            <td>Wraps the standard C library malloc() and free() functions.</td>
+        </tr>
+        <tr>
+            <td><code>heap_4.c</code></td>
+            <td>Supports allocation, freeing and coalescing adjacent free blocks.</td>
+        </tr>
+        <tr>
+            <td><code>heap_5.c</code></td>
+            <td>Supports multiple non-contiguous heap regions and coalescing within regions.</td>
+        </tr>
+    </table>
+
+    <div class="note">
+        Select one compatible heap implementation when
+        using the corresponding FreeRTOS dynamic allocation
+        functions. Do not compile multiple competing
+        heap implementations together.
+    </div>
+</section>
+
+<section>
+    <h2>10. Memory Fragmentation</h2>
+    <p>
+        Memory fragmentation occurs when free memory is
+        divided into separate blocks. The total free
+        memory may be sufficient for a request, but no
+        single suitable block may be available.
+    </p>
+
+    <h3>External Fragmentation Example</h3>
+    <pre><code>Initial Heap:
+
++--------------------------------------+
+|              Free Memory             |
++--------------------------------------+
+
+After Allocations:
+
++----------+--------+----------+--------+
+| Block A  | Block B| Block C  | Block D|
++----------+--------+----------+--------+
+
+After Freeing B and D:
+
++----------+--------+----------+--------+
+| Block A  |  Free  | Block C  |  Free  |
++----------+--------+----------+--------+
+
+Free memory exists in separate blocks.</code></pre>
+
+    <p>
+        A request for a large contiguous block can fail
+        even when the sum of all free blocks is large
+        enough.
+    </p>
+
+    <h3>Fragmentation Reduction Techniques</h3>
+    <ul>
+        <li>Prefer static allocation for long-lived objects where appropriate.</li>
+        <li>Reduce frequent allocation and freeing of different-sized blocks.</li>
+        <li>Use a suitable heap implementation.</li>
+        <li>Plan memory requirements before deployment.</li>
+        <li>Monitor free heap and allocation failures.</li>
+        <li>Use fixed-size memory pools when suitable.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>11. Heap Size Configuration</h2>
+    <p>
+        Some FreeRTOS heap implementations use
+        configTOTAL_HEAP_SIZE to define the available
+        heap memory.
+    </p>
+
+    <pre><code>#define configTOTAL_HEAP_SIZE (10 * 1024)</code></pre>
+
+    <p>
+        This example configures a 10 KB heap for heap
+        implementations that use this macro.
+    </p>
+
+    <h3>Important Considerations</h3>
+    <ul>
+        <li>Heap memory is only part of total RAM usage.</li>
+        <li>Task stacks and static application variables also consume RAM.</li>
+        <li>Some heap implementations use different configuration mechanisms.</li>
+        <li>Alignment and port-specific requirements affect usable memory.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>12. Memory Allocation Failure</h2>
+    <p>
+        A dynamic allocation request may fail if
+        sufficient suitable memory is unavailable.
+        FreeRTOS provides a hook that can be used to
+        handle allocation failures when configured.
+    </p>
+
+    <h3>Malloc Failed Hook</h3>
+    <pre><code>#define configUSE_MALLOC_FAILED_HOOK 1
+
+void vApplicationMallocFailedHook(void)
+{
+    /* Record failure or enter a safe error state */
+    for (;;)
+    {
+    }
+}</code></pre>
+
+    <p>
+        The hook is useful for diagnostics. The
+        application's response should be designed
+        according to its safety and recovery requirements.
+    </p>
+
+    <div class="warning">
+        Do not assume that every memory-allocation
+        failure automatically invokes this hook.
+        The configuration and allocation path must
+        support it.
+    </div>
+</section>
+
+<section>
+    <h2>13. FreeRTOS Memory Monitoring APIs</h2>
+    <p>
+        FreeRTOS provides APIs that help an application
+        inspect heap usage and task stack information.
+    </p>
+
+    <table>
+        <tr>
+            <th>API</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td><code>xPortGetFreeHeapSize()</code></td>
+            <td>Reports the amount of currently free heap memory where supported.</td>
+        </tr>
+        <tr>
+            <td><code>xPortGetMinimumEverFreeHeapSize()</code></td>
+            <td>Reports the minimum free heap observed since startup where supported.</td>
+        </tr>
+        <tr>
+            <td><code>uxTaskGetStackHighWaterMark()</code></td>
+            <td>Reports the minimum remaining stack space observed for a task, in stack words.</td>
+        </tr>
+        <tr>
+            <td><code>vTaskGetInfo()</code></td>
+            <td>Provides task information when the required configuration is enabled.</td>
+        </tr>
+    </table>
+
+    <div class="note">
+        These APIs are configuration- and port-dependent.
+        Stack high-water marks are useful estimates of
+        observed stack usage, not proof that every
+        execution path is safe.
+    </div>
+</section>
+
+<section>
+    <h2>14. Memory Planning Example</h2>
+    <p>
+        Consider a controller with three application tasks.
+        Assume StackType_t is four bytes and the selected
+        implementation uses dynamically allocated task
+        stacks and TCBs.
+    </p>
+
+    <table>
+        <tr>
+            <th>Task</th>
+            <th>Stack Depth</th>
+            <th>Stack Memory</th>
+        </tr>
+        <tr>
+            <td>Sensor Task</td>
+            <td>256 words</td>
+            <td>1024 bytes</td>
+        </tr>
+        <tr>
+            <td>Communication Task</td>
+            <td>384 words</td>
+            <td>1536 bytes</td>
+        </tr>
+        <tr>
+            <td>Control Task</td>
+            <td>256 words</td>
+            <td>1024 bytes</td>
+        </tr>
+        <tr>
+            <th>Total</th>
+            <th>896 words</th>
+            <th>3584 bytes</th>
+        </tr>
+    </table>
+
+    <p>
+        This calculation includes only the task stack
+        storage. It does not include TCBs, queues,
+        application buffers, timer service resources,
+        interrupt stacks where applicable, or other
+        system memory.
+    </p>
+
+    <div class="warning">
+        Do not use the sum of task stack sizes as the
+        complete RAM requirement. Include all kernel,
+        application and platform memory requirements.
+    </div>
+</section>
+
+<section>
+    <h2>15. Memory Management Best Practices</h2>
+    <ul>
+        <li>Estimate task stack requirements using realistic execution paths.</li>
+        <li>Measure stack high-water marks during representative testing.</li>
+        <li>Choose static or dynamic allocation deliberately.</li>
+        <li>Check every dynamic object-creation result.</li>
+        <li>Avoid unnecessary runtime allocation and freeing.</li>
+        <li>Use one appropriate heap implementation.</li>
+        <li>Monitor free heap and minimum-ever-free heap where supported.</li>
+        <li>Keep buffer ownership and object lifetime clear.</li>
+        <li>Reserve memory for interrupt and platform requirements.</li>
+        <li>Test memory behavior under maximum expected workload.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>16. Practical Activity – Prepare a Memory Budget</h2>
+    <p><strong>Objective:</strong> Estimate RAM requirements for a small FreeRTOS application.</p>
+
+    <h3>Procedure</h3>
+    <ol>
+        <li>List the tasks required by the application.</li>
+        <li>Estimate a stack depth for each task.</li>
+        <li>Convert stack depths into bytes using sizeof(StackType_t).</li>
+        <li>List the required queues and their storage sizes.</li>
+        <li>List semaphore, mutex and event group objects.</li>
+        <li>Include timer service resources if software timers are enabled.</li>
+        <li>Include application buffers and global variables.</li>
+        <li>Choose static or dynamic allocation for each object.</li>
+        <li>Compare the estimated total with available RAM.</li>
+    </ol>
+
+    <h3>Expected Result</h3>
+    <p>
+        A memory budget showing estimated task stacks,
+        kernel objects, application buffers and remaining
+        memory margin. The estimate should be validated
+        through build-map analysis and runtime testing
+        on a supported target.
+    </p>
+</section>
+
+<section>
+    <h2>17. Review Questions</h2>
+
+    <h3>Short Answer Questions</h3>
+    <ol>
+        <li>Why does FreeRTOS require memory management?</li>
+        <li>What is the purpose of a task stack?</li>
+        <li>What information does a TCB maintain?</li>
+        <li>Differentiate static and dynamic allocation.</li>
+        <li>What is the purpose of the FreeRTOS heap?</li>
+        <li>Differentiate heap_1 and heap_4.</li>
+        <li>What is memory fragmentation?</li>
+        <li>What does configTOTAL_HEAP_SIZE configure?</li>
+        <li>What is the purpose of vApplicationMallocFailedHook?</li>
+        <li>What does uxTaskGetStackHighWaterMark() report?</li>
+    </ol>
+
+    <h3>Long Answer Questions</h3>
+    <ol>
+        <li>Explain the memory organization of a typical embedded application.</li>
+        <li>Discuss static and dynamic memory allocation in FreeRTOS.</li>
+        <li>Explain the characteristics of the FreeRTOS heap implementations.</li>
+        <li>Describe memory fragmentation and methods to reduce it.</li>
+        <li>Prepare a RAM budget for a multitasking embedded controller.</li>
+    </ol>
+</section>
+
+<section>
+    <h2>18. Lesson Summary</h2>
+    <ul>
+        <li>FreeRTOS requires memory for tasks, stacks and kernel objects.</li>
+        <li>Task stacks hold execution information and local data.</li>
+        <li>TCBs maintain internal task-management information.</li>
+        <li>Static allocation uses application-provided storage.</li>
+        <li>Dynamic allocation obtains memory through an allocator.</li>
+        <li>Heap implementations provide different allocation strategies.</li>
+        <li>Fragmentation can prevent allocation of large contiguous blocks.</li>
+        <li>Memory monitoring helps identify allocation and stack problems.</li>
+        <li>Memory budgeting must include both kernel and application requirements.</li>
+    </ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L07_FreeRTOS_Kernel_Objects.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 12 Index</a>
+    <a href="L09_FreeRTOS_Heap_Implementations.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+    <p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
