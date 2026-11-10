@@ -1,1 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multitasking Motor Control Project | NS Learning Hub</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Multitasking Motor Control Project</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 20: Practical Projects and Interview Preparation</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 20</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Understand the role of an RTOS in motor-control applications.</li>
+<li>Divide a motor-control system into independent tasks.</li>
+<li>Understand speed command, feedback and protection tasks.</li>
+<li>Use queues to transfer motor commands.</li>
+<li>Use task notifications or semaphores for event signaling.</li>
+<li>Understand PWM-based motor speed control.</li>
+<li>Design fault detection and safe motor shutdown logic.</li>
+<li>Understand timing and synchronization requirements.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Project Introduction</h2>
+<p>Motor-control systems are used in industrial automation, robotics, electric vehicles, pumps, fans, conveyors and home appliances.</p>
+
+<p>A motor-control application may need to perform several operations simultaneously:</p>
+<ul>
+<li>Generate a motor speed command.</li>
+<li>Read speed or position feedback.</li>
+<li>Update the PWM duty cycle.</li>
+<li>Monitor current and temperature.</li>
+<li>Detect faults and stop the motor when necessary.</li>
+<li>Communicate status through UART.</li>
+</ul>
+
+<p>FreeRTOS allows these operations to be organized into separate tasks with defined priorities and communication mechanisms.</p>
+
+<h3>Project Objective</h3>
+<p>Design a multitasking motor-control application that receives a speed command, updates a simulated PWM output, monitors motor feedback and handles protection events.</p>
+
+<div class="note">This lesson demonstrates the software architecture. A real motor must be driven through a suitable power stage and gate driver. A microcontroller GPIO pin or PWM output must never be connected directly to a motor requiring substantial current.</div>
+</section>
+
+<section>
+<h2>3. System Block Diagram</h2>
+<div class="diagram">
+       SPEED COMMAND
+              |
+              v
+       COMMAND TASK
+              |
+              v
+          COMMAND QUEUE
+              |
+              v
+       MOTOR CONTROL TASK
+              |
+              v
+        PWM GENERATION
+              |
+              v
+       MOTOR DRIVER STAGE
+              |
+              v
+             MOTOR
+              |
+       +------+------+
+       |             |
+       v             v
+  SPEED SENSOR   CURRENT SENSOR
+       |             |
+       +------+------+
+              |
+              v
+       FEEDBACK / MONITOR TASK
+              |
+              v
+       PROTECTION TASK
+              |
+              v
+       FAULT / STOP REQUEST
+</div>
+</section>
+
+<section>
+<h2>4. Task Architecture</h2>
+<p>The application can be divided into the following tasks.</p>
+
+<table>
+<tr><th>Task</th><th>Responsibility</th><th>Typical Priority</th></tr>
+<tr><td>Motor Control Task</td><td>Updates motor command and control output.</td><td>High</td></tr>
+<tr><td>Feedback Task</td><td>Reads speed and other feedback.</td><td>High or medium</td></tr>
+<tr><td>Protection Task</td><td>Checks overcurrent, overtemperature and fault conditions.</td><td>High, depending on safety architecture</td></tr>
+<tr><td>Command Task</td><td>Processes requested speed and start/stop commands.</td><td>Medium</td></tr>
+<tr><td>Communication Task</td><td>Reports system status through UART.</td><td>Low or medium</td></tr>
+</table>
+
+<div class="warning">The table gives illustrative task priorities, not a universal priority assignment. Actual priorities must be selected through timing analysis, worst-case execution-time estimates and the required fault-response time.</div>
+</section>
+
+<section>
+<h2>5. Motor Control Fundamentals</h2>
+<p>Motor speed can be controlled by changing the voltage or power delivered to the motor. In many embedded applications, PWM is used to control the power stage.</p>
+
+<h3>Pulse Width Modulation</h3>
+<p>PWM switches a digital output between ON and OFF states at a configured frequency. The duty cycle is the percentage of one period during which the signal is active.</p>
+
+<pre><code>Duty Cycle (%) =
+    (ON Time / PWM Period) * 100</code></pre>
+
+<table>
+<tr><th>Duty Cycle</th><th>Illustrative Interpretation</th></tr>
+<tr><td>0%</td><td>Output continuously inactive.</td></tr>
+<tr><td>25%</td><td>Output active for one-quarter of each period.</td></tr>
+<tr><td>50%</td><td>Output active for half of each period.</td></tr>
+<tr><td>75%</td><td>Output active for three-quarters of each period.</td></tr>
+<tr><td>100%</td><td>Output continuously active.</td></tr>
+</table>
+
+<div class="note">The relationship between PWM duty cycle and actual motor speed depends on the motor, power stage, supply voltage, load and control strategy. A 50% duty cycle does not universally mean 50% rated speed.</div>
+</section>
+
+<section>
+<h2>6. Open-Loop and Closed-Loop Motor Control</h2>
+
+<h3>Open-Loop Control</h3>
+<p>The controller sets a PWM duty cycle without measuring actual motor speed.</p>
+<ul>
+<li>Simple implementation.</li>
+<li>Does not automatically compensate for load changes.</li>
+<li>Actual speed may vary with supply voltage and load.</li>
+</ul>
+
+<h3>Closed-Loop Control</h3>
+<p>The controller measures actual motor speed and compares it with the requested speed.</p>
+
+<pre><code>Speed Error = Reference Speed - Measured Speed</code></pre>
+
+<p>A control algorithm, such as PI or PID, calculates the output command from the error.</p>
+
+<div class="diagram">
+REFERENCE SPEED
+      |
+      v
+   COMPARATOR <------ MEASURED SPEED
+      |
+      v
+  SPEED ERROR
+      |
+      v
+   PI / PID
+  CONTROLLER
+      |
+      v
+   PWM OUTPUT
+      |
+      v
+  MOTOR DRIVER
+      |
+      v
+     MOTOR
+</div>
+</section>
+
+<section>
+<h2>7. FreeRTOS Communication Design</h2>
+<p>Different tasks need to exchange commands, measurements and fault information.</p>
+
+<table>
+<tr><th>Mechanism</th><th>Application</th></tr>
+<tr><td>Queue</td><td>Transfer speed commands or structured measurements.</td></tr>
+<tr><td>Task notification</td><td>Signal a task that an event or new data is available.</td></tr>
+<tr><td>Binary semaphore</td><td>Signal an event from an ISR to a task.</td></tr>
+<tr><td>Mutex</td><td>Protect a shared resource used by multiple tasks.</td></tr>
+<tr><td>Event group</td><td>Represent system conditions such as ready, running and fault.</td></tr>
+</table>
+
+<div class="tip">Use queues for data transfer and notifications or semaphores for event signaling. Do not use a mutex as a substitute for a fault-shutdown mechanism.</div>
+</section>
+
+<section>
+<h2>8. Define Motor Command Structure</h2>
+<p>A structured command can contain the requested speed and operating mode.</p>
+
+<pre><code>#include "stdint.h"
+
+typedef enum
+{
+    MOTOR_STOP = 0,
+    MOTOR_RUN  = 1
+} MotorMode_t;
+
+typedef struct
+{
+    MotorMode_t mode;
+    uint16_t targetSpeed;
+} MotorCommand_t;</code></pre>
+
+<p>The command is copied into a FreeRTOS queue. Both producer and consumer use the same structure definition.</p>
+</section>
+
+<section>
+<h2>9. Create FreeRTOS Queues</h2>
+<p>The command queue transfers motor commands to the motor-control task.</p>
+
+<pre><code>QueueHandle_t motorCommandQueue;
+
+motorCommandQueue = xQueueCreate(
+    5,
+    sizeof(MotorCommand_t)
+);</code></pre>
+
+<p>A feedback queue can transfer measured speed and current values.</p>
+
+<pre><code>typedef struct
+{
+    uint16_t measuredSpeed;
+    uint16_t measuredCurrent;
+} MotorFeedback_t;
+
+QueueHandle_t motorFeedbackQueue;
+
+motorFeedbackQueue = xQueueCreate(
+    5,
+    sizeof(MotorFeedback_t)
+);</code></pre>
+
+<p>Always check queue creation results for NULL before starting the scheduler.</p>
+</section>
+
+<section>
+<h2>10. Motor Control Task</h2>
+<p>The motor-control task receives commands and updates the PWM output.</p>
+
+<h3>Conceptual PWM Interface</h3>
+<pre><code>void PWM_Init(void);
+
+void PWM_SetDutyCycle(uint16_t duty);
+
+void PWM_Disable(void);</code></pre>
+
+<h3>Motor Control Task</h3>
+<pre><code>static void MotorControlTask(void *pvParameters)
+{
+    MotorCommand_t command;
+    uint16_t dutyCycle;
+
+    (void) pvParameters;
+
+    PWM_Init();
+    PWM_Disable();
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                motorCommandQueue,
+                &amp;command,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            if (command.mode == MOTOR_STOP)
+            {
+                PWM_Disable();
+            }
+            else
+            {
+                /*
+                 * Illustrative mapping only.
+                 * Real control requires calibrated limits.
+                 */
+                if (command.targetSpeed > 1000)
+                {
+                    command.targetSpeed = 1000;
+                }
+
+                dutyCycle =
+                    (command.targetSpeed * 100U) / 1000U;
+
+                PWM_SetDutyCycle(dutyCycle);
+            }
+        }
+    }
+}</code></pre>
+
+<div class="warning">This example uses a simplified speed-command-to-duty-cycle mapping. It is not a closed-loop speed controller. Real motor control requires feedback, calibrated limits, appropriate acceleration/deceleration behavior and independent protection.</div>
+</section>
+
+<section>
+<h2>11. Command Task</h2>
+<p>The command task represents a source of motor commands, such as a UART interface or user control panel.</p>
+
+<pre><code>static void CommandTask(void *pvParameters)
+{
+    MotorCommand_t command;
+
+    (void) pvParameters;
+
+    command.mode = MOTOR_RUN;
+    command.targetSpeed = 500;
+
+    for (;;)
+    {
+        if (xQueueSend(
+                motorCommandQueue,
+                &amp;command,
+                pdMS_TO_TICKS(100)
+            ) != pdPASS)
+        {
+            /* Record command queue failure */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}</code></pre>
+
+<p>This demonstration sends a fixed illustrative command once per second. A production command task should validate external input and reject invalid or unsafe requests.</p>
+</section>
+
+<section>
+<h2>12. Feedback Monitoring Task</h2>
+<p>The feedback task obtains speed and current measurements from hardware-specific sensor interfaces.</p>
+
+<pre><code>uint16_t ReadMotorSpeed(void);
+uint16_t ReadMotorCurrent(void);
+
+static void FeedbackTask(void *pvParameters)
+{
+    MotorFeedback_t feedback;
+
+    (void) pvParameters;
+
+    for (;;)
+    {
+        feedback.measuredSpeed = ReadMotorSpeed();
+        feedback.measuredCurrent = ReadMotorCurrent();
+
+        if (xQueueSend(
+                motorFeedbackQueue,
+                &amp;feedback,
+                0
+            ) != pdPASS)
+        {
+            /* Record dropped feedback sample */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}</code></pre>
+
+<p>The task samples feedback every 100 ms in this example. The period must be chosen according to the motor dynamics and control-loop requirements.</p>
+</section>
+
+<section>
+<h2>13. Protection Monitoring</h2>
+<p>Motor protection can include:</p>
+<ul>
+<li>Overcurrent detection.</li>
+<li>Overtemperature detection.</li>
+<li>Undervoltage and overvoltage detection.</li>
+<li>Overspeed detection.</li>
+<li>Stall detection.</li>
+<li>Sensor failure detection.</li>
+<li>Driver fault input monitoring.</li>
+</ul>
+
+<h3>Illustrative Fault Conditions</h3>
+<pre><code>#define MAX_ALLOWED_CURRENT 800
+#define MAX_ALLOWED_SPEED   1000
+
+BaseType_t MotorFaultDetected(
+    const MotorFeedback_t *feedback
+)
+{
+    if (feedback->measuredCurrent >
+        MAX_ALLOWED_CURRENT)
+    {
+        return pdTRUE;
+    }
+
+    if (feedback->measuredSpeed >
+        MAX_ALLOWED_SPEED)
+    {
+        return pdTRUE;
+    }
+
+    return pdFALSE;
+}</code></pre>
+
+<p>The thresholds above are example values only. Real limits must come from motor, driver and system specifications.</p>
+</section>
+
+<section>
+<h2>14. Fault Handling and Safe Shutdown</h2>
+<p>A fault should cause the motor to enter a defined safe state. The safety mechanism should not depend solely on a low-priority application task receiving a queue message.</p>
+
+<h3>Recommended Architecture</h3>
+<div class="diagram">
+ CURRENT / TEMPERATURE / DRIVER FAULT
+                  |
+                  v
+          HARDWARE PROTECTION
+             OR ISR EVENT
+                  |
+          +-------+-------+
+          |               |
+          v               v
+   DISABLE POWER     NOTIFY RTOS
+      STAGE             TASK
+          |               |
+          v               v
+     SAFE OUTPUT     FAULT LOGGING
+                          |
+                          v
+                    UART STATUS
+</div>
+
+<ul>
+<li>Use a hardware driver-enable or shutdown input where appropriate.</li>
+<li>Use independent overcurrent protection when required by the power-stage design.</li>
+<li>Latch faults where the system requires manual reset or explicit recovery.</li>
+<li>Record the fault cause and relevant measurements.</li>
+<li>Define safe restart conditions.</li>
+</ul>
+
+<div class="warning">An RTOS task is not a substitute for independent hardware protection where a fault requires a fast or safety-critical response. The safe state must be designed around the actual motor and power electronics.</div>
+</section>
+
+<section>
+<h2>15. Periodic Control Using vTaskDelayUntil()</h2>
+<p>Periodic feedback and control tasks can use <code>vTaskDelayUntil()</code> to maintain a nominal periodic schedule.</p>
+
+<pre><code>static void PeriodicControlTask(void *pvParameters)
+{
+    TickType_t previousWakeTime;
+    const TickType_t period =
+        pdMS_TO_TICKS(10);
+
+    (void) pvParameters;
+
+    previousWakeTime = xTaskGetTickCount();
+
+    for (;;)
+    {
+        /* Read feedback */
+        /* Calculate control output */
+        /* Update PWM */
+
+        vTaskDelayUntil(
+            &amp;previousWakeTime,
+            period
+        );
+    }
+}</code></pre>
+
+<p>This example uses a nominal 10 ms period. The actual achievable timing depends on the RTOS tick rate, task execution time, interrupt load and processor capacity.</p>
+
+<div class="note">A periodic delay function does not guarantee a control deadline. For demanding motor-control loops, a hardware timer, PWM peripheral, ADC trigger and appropriately designed interrupt or control architecture may be required.</div>
+</section>
+
+<section>
+<h2>16. PI Controller Concept</h2>
+<p>A proportional-integral controller can reduce the difference between reference and measured speed.</p>
+
+<pre><code>Error = Reference Speed - Measured Speed
+
+Integral = Integral + Error * Sample Time
+
+Output = Kp * Error + Ki * Integral</code></pre>
+
+<table>
+<tr><th>Term</th><th>Function</th></tr>
+<tr><td>Proportional (Kp)</td><td>Responds to the present error.</td></tr>
+<tr><td>Integral (Ki)</td><td>Accumulates error over time.</td></tr>
+<tr><td>Output</td><td>Control command, usually limited to a valid range.</td></tr>
+</table>
+
+<p>A practical controller must also consider output saturation, integral windup, sampling period, sensor filtering and stability.</p>
+</section>
+
+<section>
+<h2>17. Complete Application Structure</h2>
+<p>The following is a simplified application skeleton showing task creation and queue initialization. Hardware-specific functions must be supplied for the selected MCU and motor driver.</p>
+
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "stdint.h"
+
+typedef enum
+{
+    MOTOR_STOP = 0,
+    MOTOR_RUN = 1
+} MotorMode_t;
+
+typedef struct
+{
+    MotorMode_t mode;
+    uint16_t targetSpeed;
+} MotorCommand_t;
+
+typedef struct
+{
+    uint16_t measuredSpeed;
+    uint16_t measuredCurrent;
+} MotorFeedback_t;
+
+static QueueHandle_t motorCommandQueue;
+static QueueHandle_t motorFeedbackQueue;
+
+void PWM_Init(void);
+void PWM_Disable(void);
+void PWM_SetDutyCycle(uint16_t duty);
+uint16_t ReadMotorSpeed(void);
+uint16_t ReadMotorCurrent(void);
+
+static void MotorControlTask(void *pvParameters);
+static void CommandTask(void *pvParameters);
+static void FeedbackTask(void *pvParameters);
+static void MonitorTask(void *pvParameters);
+
+static void MotorControlTask(void *pvParameters)
+{
+    MotorCommand_t command;
+    uint16_t duty;
+
+    (void) pvParameters;
+
+    PWM_Init();
+    PWM_Disable();
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                motorCommandQueue,
+                &amp;command,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            if (command.mode == MOTOR_STOP)
+            {
+                PWM_Disable();
+            }
+            else
+            {
+                if (command.targetSpeed > 1000)
+                {
+                    command.targetSpeed = 1000;
+                }
+
+                duty = (uint16_t)
+                    ((command.targetSpeed * 100U) / 1000U);
+
+                PWM_SetDutyCycle(duty);
+            }
+        }
+    }
+}
+
+static void CommandTask(void *pvParameters)
+{
+    MotorCommand_t command;
+
+    (void) pvParameters;
+
+    command.mode = MOTOR_RUN;
+    command.targetSpeed = 500;
+
+    for (;;)
+    {
+        if (xQueueSend(
+                motorCommandQueue,
+                &amp;command,
+                pdMS_TO_TICKS(100)
+            ) != pdPASS)
+        {
+            /* Handle command queue failure */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+static void FeedbackTask(void *pvParameters)
+{
+    MotorFeedback_t feedback;
+
+    (void) pvParameters;
+
+    for (;;)
+    {
+        feedback.measuredSpeed = ReadMotorSpeed();
+        feedback.measuredCurrent = ReadMotorCurrent();
+
+        if (xQueueSend(
+                motorFeedbackQueue,
+                &amp;feedback,
+                0
+            ) != pdPASS)
+        {
+            /* Record dropped sample */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+static void MonitorTask(void *pvParameters)
+{
+    MotorFeedback_t feedback;
+
+    (void) pvParameters;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                motorFeedbackQueue,
+                &amp;feedback,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            if (feedback.measuredCurrent > 800 ||
+                feedback.measuredSpeed > 1000)
+            {
+                /*
+                 * Application-level fault request.
+                 * Independent hardware protection
+                 * may also be required.
+                 */
+                PWM_Disable();
+            }
+        }
+    }
+}
+
+int main(void)
+{
+    motorCommandQueue = xQueueCreate(
+        5,
+        sizeof(MotorCommand_t)
+    );
+
+    motorFeedbackQueue = xQueueCreate(
+        5,
+        sizeof(MotorFeedback_t)
+    );
+
+    if (motorCommandQueue == NULL ||
+        motorFeedbackQueue == NULL)
+    {
+        for (;;)
+        {
+            /* Initialization failure */
+        }
+    }
+
+    if (xTaskCreate(
+            MotorControlTask,
+            "MotorControl",
+            256,
+            NULL,
+            4,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;);
+    }
+
+    if (xTaskCreate(
+            CommandTask,
+            "Command",
+            256,
+            NULL,
+            2,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;);
+    }
+
+    if (xTaskCreate(
+            FeedbackTask,
+            "Feedback",
+            256,
+            NULL,
+            3,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;);
+    }
+
+    if (xTaskCreate(
+            MonitorTask,
+            "Monitor",
+            256,
+            NULL,
+            4,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;);
+    }
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+        /* Scheduler startup failure */
+    }
+}</code></pre>
+
+<div class="warning">This skeleton is for studying task and queue organization, not for controlling a physical motor as written. In particular, the monitor task's direct call to <code>PWM_Disable()</code> bypasses the motor-control task's ownership. A production design should use a single, well-defined control owner or an independent hardware shutdown path, with fault handling that cannot be delayed by ordinary application traffic.</div>
+</section>
+
+<section>
+<h2>18. Important Design Improvement – Single Owner for Motor Output</h2>
+<p>In a robust application, multiple tasks should not independently modify the same PWM or motor-driver registers.</p>
+
+<p>A better design is to send both normal commands and fault requests to a single motor-control owner. A separate hardware shutdown path can disable the power stage immediately when required.</p>
+
+<table>
+<tr><th>Source</th><th>Message</th><th>Motor-control owner action</th></tr>
+<tr><td>Command task</td><td>Set speed to 500</td><td>Validate and update reference.</td></tr>
+<tr><td>Command task</td><td>Stop motor</td><td>Disable normal drive output.</td></tr>
+<tr><td>Monitor task</td><td>Overcurrent fault</td><td>Latch fault and request shutdown.</td></tr>
+<tr><td>Driver fault ISR</td><td>Hardware fault event</td><td>Hardware protection disables output; task records fault.</td></tr>
+</table>
+
+<div class="tip">Define one owner for each hardware resource. This reduces race conditions and makes the system easier to test and maintain.</div>
+</section>
+
+<section>
+<h2>19. Priority and Timing Considerations</h2>
+<ul>
+<li>Assign priorities based on response-time requirements.</li>
+<li>Keep interrupt handlers short.</li>
+<li>Measure worst-case task execution time.</li>
+<li>Consider blocking time and shared-resource contention.</li>
+<li>Prevent communication tasks from delaying critical control work.</li>
+<li>Monitor task stack usage.</li>
+<li>Check queue capacity under maximum command and feedback rates.</li>
+<li>Define what happens when a control task misses its intended period.</li>
+</ul>
+
+<p>FreeRTOS priority scheduling does not automatically guarantee that all motor-control deadlines will be met. The complete workload and timing behavior must be analyzed.</p>
+</section>
+
+<section>
+<h2>20. Keil µVision and LPC2129 Practical Notes</h2>
+<p>The LPC2129 can be used to study PWM, timers, ADC and interrupt-related programming, subject to the simulator's device-model support.</p>
+
+<table>
+<tr><th>Peripheral</th><th>Possible Study Area</th></tr>
+<tr><td>PWM</td><td>Duty-cycle configuration and register inspection.</td></tr>
+<tr><td>Timer</td><td>Periodic timing and interrupt concepts.</td></tr>
+<tr><td>ADC</td><td>Digital conversion and simulated measurement values.</td></tr>
+<tr><td>UART0</td><td>Command and diagnostic communication.</td></tr>
+<tr><td>VIC</td><td>Interrupt source routing and handling.</td></tr>
+</table>
+
+<h3>Important FreeRTOS Compatibility Note</h3>
+<p>The LPC2129 uses an ARM7TDMI-S core. A compatible ARM7 FreeRTOS port, compiler integration, startup code, interrupt handling and linker configuration must be verified before attempting to run this application.</p>
+
+<div class="warning">Keil simulation cannot validate actual motor behavior, power-stage switching, current protection, mechanical load response or electrical noise. With no physical motor hardware, use the project to study task architecture, queue operation and simulated control calculations only.</div>
+</section>
+
+<section>
+<h2>21. Practical Exercises</h2>
+
+<h3>Exercise 1 – Fixed-Speed Command</h3>
+<ul>
+<li>Create a motor-control task.</li>
+<li>Send a fixed speed command from another task.</li>
+<li>Calculate an illustrative PWM duty cycle.</li>
+<li>Inspect the calculated output.</li>
+</ul>
+<p><strong>Expected result:</strong> The motor-control task receives the command and calculates a bounded duty-cycle value.</p>
+
+<h3>Exercise 2 – Speed Feedback</h3>
+<ul>
+<li>Generate simulated speed measurements.</li>
+<li>Send them through a feedback queue.</li>
+<li>Display the difference between reference and measured speed.</li>
+</ul>
+<p><strong>Expected result:</strong> The application reports the speed error for each measurement.</p>
+
+<h3>Exercise 3 – Overcurrent Detection</h3>
+<ul>
+<li>Generate simulated current values.</li>
+<li>Define an example current threshold.</li>
+<li>Detect threshold violations.</li>
+<li>Generate a fault event.</li>
+</ul>
+<p><strong>Expected result:</strong> The application detects an overcurrent condition and records a shutdown request.</p>
+
+<h3>Exercise 4 – Start and Stop Commands</h3>
+<ul>
+<li>Implement START and STOP commands.</li>
+<li>Validate command input.</li>
+<li>Transfer commands through a queue.</li>
+<li>Ensure the motor-control owner handles all normal output changes.</li>
+</ul>
+<p><strong>Expected result:</strong> The simulated motor state changes according to valid commands.</p>
+
+<h3>Exercise 5 – Periodic Control Timing</h3>
+<ul>
+<li>Create a periodic task.</li>
+<li>Use <code>vTaskDelayUntil()</code>.</li>
+<li>Record execution and wake-up timing.</li>
+<li>Introduce additional workload and observe timing variation.</li>
+</ul>
+<p><strong>Expected result:</strong> You can observe nominal periodic scheduling and identify timing deviations.</p>
+</section>
+
+<section>
+<h2>22. Interview Questions</h2>
+<ol>
+<li>Why is an RTOS useful in motor-control applications?</li>
+<li>What is PWM?</li>
+<li>How is PWM duty cycle calculated?</li>
+<li>What is the difference between open-loop and closed-loop control?</li>
+<li>What is the role of a feedback task?</li>
+<li>Why should motor-control tasks have carefully selected priorities?</li>
+<li>How can a queue transfer speed commands?</li>
+<li>Why should a single task own the motor output peripheral?</li>
+<li>What is a PI controller?</li>
+<li>What is integral windup?</li>
+<li>What is overcurrent protection?</li>
+<li>Why should hardware protection not depend only on a low-priority task?</li>
+<li>What is the purpose of a motor driver?</li>
+<li>Why is a periodic task useful in a control loop?</li>
+<li>Does <code>vTaskDelayUntil()</code> guarantee a deadline?</li>
+<li>How can task execution time affect control performance?</li>
+<li>What is a race condition in motor-control software?</li>
+<li>How can FreeRTOS task notifications be used in control applications?</li>
+<li>Why should UART logging not delay a critical control loop?</li>
+<li>What should be validated before connecting a real motor?</li>
+</ol>
+</section>
+
+<section>
+<h2>23. Lesson Summary</h2>
+<ul>
+<li>Motor-control applications often perform several concurrent activities.</li>
+<li>FreeRTOS separates these activities into tasks.</li>
+<li>Queues transfer commands and feedback data.</li>
+<li>PWM is commonly used to control power delivered through a motor driver.</li>
+<li>Closed-loop control uses feedback to regulate motor behavior.</li>
+<li>Protection must account for current, temperature, voltage and driver faults.</li>
+<li>A single task should normally own software-controlled motor outputs.</li>
+<li>Independent hardware protection is important for fast or safety-critical shutdown.</li>
+<li>Task priorities and periods must be selected using timing requirements.</li>
+<li>Simulation can validate software logic but not physical motor performance.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L07_UART_Communication_Using_FreeRTOS.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L09_Complete_Embedded_FreeRTOS_Mini_Project.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 20 – Practical Projects and Interview Preparation</p>
+</footer>
+
+</body>
+</html>
