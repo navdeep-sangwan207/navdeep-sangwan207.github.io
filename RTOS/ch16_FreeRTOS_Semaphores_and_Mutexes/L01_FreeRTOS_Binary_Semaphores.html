@@ -1,1 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Binary Semaphores | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:28px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>FreeRTOS Binary Semaphores</h1>
+<p>Event Signaling, Task Synchronization and Interrupt Communication</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 16</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+A binary semaphore is a synchronization
+mechanism used to signal events and
+coordinate task execution. In FreeRTOS,
+it can be used to notify a task that an
+event has occurred or that a resource
+has become available.
+</p>
+<ul>
+<li>Understand semaphore fundamentals.</li>
+<li>Explain binary semaphore operation.</li>
+<li>Study binary semaphore creation.</li>
+<li>Understand take and give operations.</li>
+<li>Implement task-to-task synchronization.</li>
+<li>Understand ISR-to-task signaling.</li>
+<li>Differentiate binary semaphores from mutexes.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Is a Semaphore?</h2>
+<p>
+A semaphore is a synchronization object
+used to coordinate tasks or signal events.
+It maintains a state or count that controls
+whether a task can proceed.
+</p>
+<p>
+A task can attempt to take a semaphore.
+If the semaphore is available, the task
+takes it and continues. If it is unavailable,
+the task may wait for another task or an
+ISR to give it.
+</p>
+<h3>Common Semaphore Types</h3>
+<table>
+<tr><th>Type</th><th>Purpose</th></tr>
+<tr><td>Binary semaphore</td><td>Event signaling or basic synchronization.</td></tr>
+<tr><td>Counting semaphore</td><td>Counting events or tracking available resource units.</td></tr>
+<tr><td>Mutex</td><td>Mutual exclusion for shared resources, with ownership semantics.</td></tr>
+<tr><td>Recursive mutex</td><td>Allows the owning task to take the same mutex recursively.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>3. What Is a Binary Semaphore?</h2>
+<p>
+A binary semaphore has only two possible
+states:
+</p>
+<ul>
+<li><strong>Available (1):</strong> A task can successfully take it.</li>
+<li><strong>Unavailable (0):</strong> A task cannot take it immediately.</li>
+</ul>
+<p>
+A binary semaphore can be used as an
+event signal. One task or an ISR gives
+the semaphore, and another task takes it.
+</p>
+<pre><code>       Binary Semaphore
+       +-------------+
+       |             |
+       |  Available  |  1
+       |             |
+       +-------------+
+              |
+          Take |
+              v
+       +-------------+
+       |             |
+       | Unavailable |  0
+       |             |
+       +-------------+
+              |
+          Give |
+              v
+       +-------------+
+       |             |
+       |  Available  |  1
+       |             |
+       +-------------+</code></pre>
+<div class="note">
+A FreeRTOS binary semaphore stores at
+most one token. Giving it repeatedly
+while it is already full does not build
+up a count of pending events.
+</div>
+</section>
+
+<section>
+<h2>4. Binary Semaphore Working Principle</h2>
+<p>
+Consider two tasks:
+</p>
+<ul>
+<li><strong>Task A:</strong> Performs an operation and signals completion.</li>
+<li><strong>Task B:</strong> Waits until Task A signals that the operation is complete.</li>
+</ul>
+<pre><code>       Task A
+          |
+          | Event occurs
+          v
+   xSemaphoreGive()
+          |
+          v
+   +----------------+
+   | Binary         |
+   | Semaphore      |
+   +----------------+
+          |
+          v
+   xSemaphoreTake()
+          |
+          v
+       Task B
+   Continues Execution</code></pre>
+<p>
+If Task B is blocked waiting for the
+semaphore, a successful give can make
+Task B Ready. Whether it runs immediately
+depends on task priorities and scheduler
+behavior.
+</p>
+</section>
+
+<section>
+<h2>5. Creating a Binary Semaphore</h2>
+<p>
+FreeRTOS provides
+<code>xSemaphoreCreateBinary()</code>
+to create a binary semaphore dynamically.
+</p>
+<h3>Syntax</h3>
+<pre><code>SemaphoreHandle_t xSemaphoreCreateBinary(void);</code></pre>
+<h3>Example</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t eventSemaphore;
+
+void CreateSemaphore(void)
+{
+    eventSemaphore = xSemaphoreCreateBinary();
+
+    if (eventSemaphore == NULL)
+    {
+        /* Semaphore creation failed */
+    }
+}</code></pre>
+<h3>Important Behavior</h3>
+<ul>
+<li>The function returns a semaphore handle.</li>
+<li>It returns NULL if creation fails.</li>
+<li>The newly created binary semaphore is initially empty.</li>
+<li>A task or ISR must give it before a task can successfully take it.</li>
+<li>Dynamic allocation is used by this creation function.</li>
+</ul>
+<div class="note">
+Unlike some older semaphore creation
+patterns, xSemaphoreCreateBinary()
+creates an initially empty semaphore.
+It does not provide an initial token.
+</div>
+</section>
+
+<section>
+<h2>6. xSemaphoreTake() Function</h2>
+<p>
+The <code>xSemaphoreTake()</code>
+function attempts to take a semaphore.
+If the semaphore is unavailable, the
+calling task may block for the specified
+number of ticks.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xSemaphoreTake(
+    SemaphoreHandle_t xSemaphore,
+    TickType_t xTicksToWait
+);</code></pre>
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>xSemaphore</td><td>Handle of the semaphore.</td></tr>
+<tr><td>xTicksToWait</td><td>Maximum time to wait for availability, in ticks.</td></tr>
+</table>
+<h3>Return Values</h3>
+<ul>
+<li>pdPASS: Semaphore successfully taken.</li>
+<li>pdFAIL: Semaphore could not be taken within the permitted wait.</li>
+</ul>
+<h3>Wait Behavior</h3>
+<table>
+<tr><th>Value</th><th>Meaning</th></tr>
+<tr><td>0</td><td>Check immediately without blocking.</td></tr>
+<tr><td>Finite tick value</td><td>Wait up to the specified number of ticks.</td></tr>
+<tr><td>portMAX_DELAY</td><td>Wait indefinitely where the selected configuration supports it.</td></tr>
+</table>
+<pre><code>if (xSemaphoreTake(
+        eventSemaphore,
+        portMAX_DELAY
+    ) == pdPASS)
+{
+    /* Semaphore successfully taken */
+}</code></pre>
+</section>
+
+<section>
+<h2>7. xSemaphoreGive() Function</h2>
+<p>
+The <code>xSemaphoreGive()</code>
+function gives a semaphore. For a binary
+semaphore, this makes the token available
+if it is currently empty.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xSemaphoreGive(
+    SemaphoreHandle_t xSemaphore
+);</code></pre>
+<h3>Return Values</h3>
+<ul>
+<li>pdPASS: Semaphore successfully given.</li>
+<li>pdFAIL: The binary semaphore was already full or the operation could not be completed.</li>
+</ul>
+<h3>Example</h3>
+<pre><code>if (xSemaphoreGive(eventSemaphore) == pdPASS)
+{
+    /* Event signal successfully posted */
+}</code></pre>
+<div class="note">
+Giving a binary semaphore does not
+transfer data. If an event includes
+payload data, use a queue or another
+appropriate data-transfer mechanism.
+</div>
+</section>
+
+<section>
+<h2>8. Binary Semaphore Example – Two Tasks</h2>
+<p><strong>Objective:</strong> Synchronize two tasks using a binary semaphore.</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t eventSemaphore;
+
+void SenderTask(void *pvParameters)
+{
+    for (;;)
+    {
+        /* Perform an operation */
+
+        if (xSemaphoreGive(eventSemaphore) == pdPASS)
+        {
+            /* Signal posted */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void ReceiverTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                eventSemaphore,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Handle the event */
+        }
+    }
+}
+
+int main(void)
+{
+    eventSemaphore = xSemaphoreCreateBinary();
+
+    if (eventSemaphore == NULL)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTaskCreate(
+            SenderTask,
+            "Sender",
+            configMINIMAL_STACK_SIZE,
+            NULL,
+            2,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    if (xTaskCreate(
+            ReceiverTask,
+            "Receiver",
+            configMINIMAL_STACK_SIZE,
+            NULL,
+            2,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+        }
+    }
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Program Explanation</h3>
+<ol>
+<li>A binary semaphore is created.</li>
+<li>The sender task performs its operation.</li>
+<li>The sender gives the semaphore.</li>
+<li>The receiver task waits for the semaphore.</li>
+<li>After a successful take, the receiver handles the event.</li>
+<li>The receiver waits again for the next signal.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+The receiver task processes an event after
+the sender gives the semaphore. The
+semaphore provides synchronization between
+the two tasks.
+</p>
+</section>
+
+<section>
+<h2>9. Binary Semaphore for Task Synchronization</h2>
+<p>
+A binary semaphore can synchronize two
+tasks that need to coordinate the order
+of their operations.
+</p>
+<h3>Example Scenario</h3>
+<p>
+A communication task receives a response
+from a peripheral. Another task waits for
+the response-complete event before
+continuing its operation.
+</p>
+<pre><code>Task A:
+    Start communication
+    Wait for peripheral response
+    Give binary semaphore
+
+Task B:
+    Take binary semaphore
+    Process response-complete event</code></pre>
+<p>
+The semaphore signals that an event has
+occurred. If the response also contains
+data, transfer that data separately using
+a queue or shared buffer with an appropriate
+synchronization protocol.
+</p>
+</section>
+
+<section>
+<h2>10. Binary Semaphore From an ISR</h2>
+<p>
+A hardware interrupt can give a binary
+semaphore to notify a task that an event
+has occurred. FreeRTOS provides a
+dedicated ISR-safe function:
+<code>xSemaphoreGiveFromISR()</code>.
+</p>
+<h3>Syntax</h3>
+<pre><code>BaseType_t xSemaphoreGiveFromISR(
+    SemaphoreHandle_t xSemaphore,
+    BaseType_t *pxHigherPriorityTaskWoken
+);</code></pre>
+<h3>Example ISR Body</h3>
+<pre><code>void HardwareISR(void)
+{
+    BaseType_t xHigherPriorityTaskWoken =
+        pdFALSE;
+
+    xSemaphoreGiveFromISR(
+        eventSemaphore,
+        &xHigherPriorityTaskWoken
+    );
+
+    /*
+     * Use the ISR-yield mechanism required
+     * by the selected FreeRTOS port.
+     */
+    portYIELD_FROM_ISR(
+        xHigherPriorityTaskWoken
+    );
+}</code></pre>
+<h3>Important Rules</h3>
+<ul>
+<li>Use xSemaphoreGiveFromISR() in interrupt context.</li>
+<li>Do not use xSemaphoreGive() from an ISR.</li>
+<li>Do not block inside an ISR.</li>
+<li>Check the return value if repeated signals or a full semaphore matter.</li>
+<li>Follow the port-specific interrupt-priority restrictions.</li>
+<li>Use the correct ISR-yield mechanism for the selected port.</li>
+</ul>
+<div class="warning">
+The ISR declaration and
+portYIELD_FROM_ISR() convention are
+port-dependent. Verify the selected
+FreeRTOS port documentation. ARM7/LPC2129
+interrupt rules must not be replaced with
+Cortex-M NVIC or BASEPRI assumptions.
+</div>
+</section>
+
+<section>
+<h2>11. Binary Semaphore vs Queue</h2>
+<table>
+<tr><th>Feature</th><th>Binary Semaphore</th><th>Queue</th></tr>
+<tr><td>Main purpose</td><td>Signal an event or synchronize tasks.</td><td>Transfer data between tasks or contexts.</td></tr>
+<tr><td>Data storage</td><td>Stores a token state.</td><td>Stores copies of fixed-size items.</td></tr>
+<tr><td>Repeated events</td><td>Can coalesce while already full.</td><td>Can preserve multiple items until capacity is reached.</td></tr>
+<tr><td>Payload transfer</td><td>No payload transfer.</td><td>Supports data transfer.</td></tr>
+<tr><td>ISR support</td><td>Give FromISR API.</td><td>Send and receive FromISR APIs.</td></tr>
+<tr><td>Typical use</td><td>Event notification.</td><td>Sensor samples or messages.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>12. Binary Semaphore vs Mutex</h2>
+<table>
+<tr><th>Feature</th><th>Binary Semaphore</th><th>Mutex</th></tr>
+<tr><td>Purpose</td><td>Event signaling and synchronization.</td><td>Mutual exclusion.</td></tr>
+<tr><td>Ownership</td><td>No ownership requirement.</td><td>Has ownership.</td></tr>
+<tr><td>Priority inheritance</td><td>No.</td><td>Supported by standard FreeRTOS mutexes.</td></tr>
+<tr><td>Give operation</td><td>Can be given by a different task or an ISR using FromISR API.</td><td>Must be released by the owning task.</td></tr>
+<tr><td>ISR use</td><td>Can be given using ISR-safe API.</td><td>Cannot be used from an ISR.</td></tr>
+<tr><td>Typical use</td><td>Event signaling.</td><td>Protecting shared resources.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>13. Important Limitation – Binary Semaphore Does Not Count Every Event</h2>
+<p>
+A binary semaphore can store only one
+pending token. If several events occur
+while the semaphore is already available,
+additional give operations do not create
+additional tokens.
+</p>
+<h3>Example</h3>
+<pre><code>Initial state: Empty
+
+Event 1: Give
+State: Available
+
+Event 2: Give
+State: Already available
+
+Event 3: Give
+State: Already available
+
+Task takes semaphore
+State: Empty</code></pre>
+<p>
+The receiving task may process one signal,
+even though multiple events occurred.
+If every event must be counted, use a
+counting semaphore or queue instead.
+</p>
+</section>
+
+<section>
+<h2>14. Binary Semaphore Best Practices</h2>
+<ul>
+<li>Use binary semaphores primarily for event signaling.</li>
+<li>Check whether creation succeeds.</li>
+<li>Remember that xSemaphoreCreateBinary() creates an empty semaphore.</li>
+<li>Check take and give return values when failures matter.</li>
+<li>Use a queue when event payload data must be transferred.</li>
+<li>Use a counting semaphore when every event must be counted.</li>
+<li>Use a mutex to protect shared resources.</li>
+<li>Never use a mutex as an ISR signaling object.</li>
+<li>Keep ISRs short and use FromISR APIs.</li>
+<li>Define the behavior for repeated or coalesced events.</li>
+</ul>
+</section>
+
+<section>
+<h2>15. Practical Applications</h2>
+<table>
+<tr><th>Application</th><th>Semaphore Signaling</th></tr>
+<tr><td>ADC conversion</td><td>ISR signals that conversion has completed.</td></tr>
+<tr><td>UART reception</td><td>ISR notifies a task that receive processing is required.</td></tr>
+<tr><td>Timer event</td><td>Timer ISR signals a waiting task.</td></tr>
+<tr><td>External interrupt</td><td>ISR signals detection of an external event.</td></tr>
+<tr><td>Peripheral operation</td><td>Completion task is notified when an operation finishes.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>16. Practical Experiment</h2>
+<p><strong>Objective:</strong> Demonstrate synchronization between two tasks using a binary semaphore.</p>
+<h3>Procedure</h3>
+<ol>
+<li>Include the FreeRTOS semaphore header.</li>
+<li>Declare a SemaphoreHandle_t variable.</li>
+<li>Create a binary semaphore.</li>
+<li>Create a sender task and a receiver task.</li>
+<li>Make the receiver wait using xSemaphoreTake().</li>
+<li>Make the sender signal using xSemaphoreGive().</li>
+<li>Observe the semaphore state and task transitions.</li>
+<li>Repeat with a longer sender delay.</li>
+<li>Try multiple give operations before the receiver takes the semaphore.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+The receiver remains Blocked while the
+semaphore is unavailable. A successful
+give makes the semaphore available and
+can unblock the receiver. Repeated give
+operations while the semaphore is already
+full do not accumulate additional tokens.
+</p>
+</section>
+
+<section>
+<h2>17. LPC2129 and Keil Simulator Considerations</h2>
+<ul>
+<li>LPC2129 uses the ARM7TDMI-S processor.</li>
+<li>Verify a compatible FreeRTOS ARM7 port before building the examples.</li>
+<li>Check the selected port's ISR declaration and context-switch mechanism.</li>
+<li>Use simulated task events or controlled test inputs where physical hardware is unavailable.</li>
+<li>Inspect semaphore state and task states where debugger support permits.</li>
+<li>Do not assume the Keil simulator provides complete external peripheral or interrupt simulation.</li>
+</ul>
+<div class="warning">
+The examples are generic FreeRTOS programs.
+They do not establish that a compatible
+LPC2129 FreeRTOS port is already configured
+in the Keil simulator environment.
+</div>
+</section>
+
+<section>
+<h2>18. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is a semaphore?</li>
+<li>What is a binary semaphore?</li>
+<li>What are the two states of a binary semaphore?</li>
+<li>Which function creates a binary semaphore?</li>
+<li>What is the initial state after xSemaphoreCreateBinary()?</li>
+<li>What is the purpose of xSemaphoreTake()?</li>
+<li>What is the purpose of xSemaphoreGive()?</li>
+<li>Can a binary semaphore count every repeated event?</li>
+<li>Which API gives a binary semaphore from an ISR?</li>
+<li>How does a binary semaphore differ from a mutex?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain the working principle of a binary semaphore with a diagram.</li>
+<li>Explain xSemaphoreCreateBinary() and its initial state.</li>
+<li>Explain xSemaphoreTake() with its parameters and return values.</li>
+<li>Explain xSemaphoreGive() with an example.</li>
+<li>Develop a program to synchronize two tasks using a binary semaphore.</li>
+<li>Explain ISR-to-task signaling using a binary semaphore.</li>
+<li>Compare binary semaphores, counting semaphores and mutexes.</li>
+<li>Discuss event coalescing and the limitations of binary semaphores.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Lesson Summary</h2>
+<ul>
+<li>A binary semaphore has two states: available and unavailable.</li>
+<li>xSemaphoreCreateBinary() creates an initially empty semaphore.</li>
+<li>xSemaphoreTake() attempts to take the semaphore.</li>
+<li>xSemaphoreGive() makes the semaphore available.</li>
+<li>Binary semaphores are useful for task synchronization and event signaling.</li>
+<li>xSemaphoreGiveFromISR() is used to give a semaphore from an ISR.</li>
+<li>Repeated gives can coalesce while the semaphore is already full.</li>
+<li>A counting semaphore is more appropriate when every event must be counted.</li>
+<li>A mutex is the appropriate mechanism for mutual exclusion and ownership-based resource protection.</li>
+</ul>
+</section>
+
+<section>
+<h2>20. Practice Assignment</h2>
+<ol>
+<li>Define a semaphore and explain its purpose.</li>
+<li>Explain the two states of a binary semaphore.</li>
+<li>Write the syntax of xSemaphoreCreateBinary().</li>
+<li>Explain why a newly created binary semaphore is initially empty.</li>
+<li>Write the syntax of xSemaphoreTake() and xSemaphoreGive().</li>
+<li>Develop a two-task synchronization program.</li>
+<li>Explain binary semaphore signaling from an ISR.</li>
+<li>Compare a binary semaphore with a queue.</li>
+<li>Explain why repeated binary semaphore gives may lose event counts.</li>
+<li>Identify when a binary semaphore, counting semaphore or mutex should be used.</li>
+</ol>
+</section>
+
+<div class="lesson-nav">
+<a href="../ch15_FreeRTOS_Queue_Management/index.html">← Previous Chapter</a>
+<a href="index.html">Chapter 16 Index</a>
+<a href="L02_FreeRTOS_Counting_Semaphores.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
