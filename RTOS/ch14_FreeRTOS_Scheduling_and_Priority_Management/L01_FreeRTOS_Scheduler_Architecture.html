@@ -1,1 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Scheduler Architecture | RTOS & FreeRTOS</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 15px}
+header h1{margin:0 0 8px;font-size:29px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000014}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;margin-bottom:22px;padding:24px;border-radius:10px;box-shadow:0 2px 9px #0000000f}
+h2{color:#174ea6;border-bottom:2px solid #dce8fa;padding-bottom:8px;margin-top:0}
+h3{color:#2165b5;margin-top:22px}
+p{text-align:justify}
+ul,ol{padding-left:25px}
+li{margin-bottom:7px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th,td{border:1px solid #d5deeb;padding:11px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172334;color:#e8f1ff;padding:18px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.55}
+code{font-family:Consolas,monospace}
+.note{background:#edf5ff;border-left:4px solid #2878d7;padding:14px;margin:16px 0;border-radius:5px}
+.warning{background:#fff6e5;border-left:4px solid #e5a000;padding:14px;margin:16px 0;border-radius:5px}
+.lesson-nav{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-nav a{background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>FreeRTOS Scheduler Architecture</h1>
+<p>Kernel Scheduling, Ready Lists, Task Selection and Context Switching</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 14</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>
+The scheduler is the central execution-management
+component of FreeRTOS. It selects a task from the
+Ready state and controls when the processor
+switches between tasks.
+</p>
+<ul>
+<li>Understand the architecture of the FreeRTOS scheduler.</li>
+<li>Identify the main scheduler components.</li>
+<li>Understand task priority and Ready task selection.</li>
+<li>Learn the role of task control blocks and ready lists.</li>
+<li>Understand the relationship between the scheduler and tick interrupt.</li>
+<li>Study context switching at a conceptual level.</li>
+<li>Understand preemptive and cooperative scheduling.</li>
+<li>Distinguish scheduler behavior from interrupt handling.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to the FreeRTOS Scheduler</h2>
+<p>
+A scheduler determines which task should execute
+on the processor at a particular time. FreeRTOS
+normally uses a fixed-priority scheduler: among
+the Ready tasks, the scheduler selects a task
+with the highest configured priority.
+</p>
+<p>
+A task can be Ready, Running, Blocked or
+Suspended. Only Ready tasks are eligible for
+normal task selection. A higher-priority task
+that is Blocked does not prevent a lower-priority
+Ready task from running.
+</p>
+<div class="note">
+A scheduler does not execute all tasks at the
+same time on a single-core microcontroller.
+It switches between task contexts to provide
+concurrent progress.
+</div>
+</section>
+
+<section>
+<h2>3. FreeRTOS Scheduler Architecture</h2>
+<p>
+The scheduler works with task management,
+kernel lists, timing services and processor-port
+code. These components cooperate to select
+and execute tasks.
+</p>
+<pre><code>             FreeRTOS Application
+                      |
+          +-----------+-----------+
+          |           |           |
+          v           v           v
+       Task A       Task B      Task C
+          |           |           |
+          +-----------+-----------+
+                      |
+                      v
+                FreeRTOS Kernel
+                      |
+          +-----------+-----------+
+          |           |           |
+          v           v           v
+     Task Manager  Ready Lists  Tick Handling
+          |           |           |
+          +-----------+-----------+
+                      |
+                      v
+               Scheduler Logic
+                      |
+                      v
+              Processor Port Layer
+                      |
+                      v
+             Context Switch / CPU</code></pre>
+<h3>Main Components</h3>
+<table>
+<tr><th>Component</th><th>Responsibility</th></tr>
+<tr><td>Task management</td><td>Creates, deletes and manages task states.</td></tr>
+<tr><td>Task Control Block</td><td>Stores the kernel's task-specific management information.</td></tr>
+<tr><td>Ready lists</td><td>Organize tasks that are eligible for execution.</td></tr>
+<tr><td>Scheduler logic</td><td>Selects an appropriate Ready task.</td></tr>
+<tr><td>Tick handling</td><td>Updates RTOS time and processes time-based blocking.</td></tr>
+<tr><td>Port layer</td><td>Implements processor-specific context switching and interrupt integration.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. Task Control Block (TCB)</h2>
+<p>
+Each FreeRTOS task has an associated Task Control
+Block. The TCB contains information that the
+kernel needs to manage that task.
+</p>
+<h3>Typical TCB Information</h3>
+<ul>
+<li>Task stack pointer.</li>
+<li>Task priority.</li>
+<li>Task state and list-management information.</li>
+<li>Task name, when name storage is configured.</li>
+<li>Stack boundaries or related stack information, depending on configuration.</li>
+<li>Task-specific kernel bookkeeping information.</li>
+</ul>
+<div class="note">
+The internal TCB structure is implementation
+specific. Its fields can change across kernel
+versions and configurations. Application code
+should use public FreeRTOS APIs rather than
+accessing or modifying internal TCB fields.
+</div>
+<h3>Task Handle</h3>
+<pre><code>TaskHandle_t taskHandle = NULL;
+
+xTaskCreate(
+    MyTask,
+    "MyTask",
+    256,
+    NULL,
+    2,
+    &taskHandle
+);</code></pre>
+<p>
+TaskHandle_t is an opaque reference used to
+identify a task through supported APIs. It is
+not the TCB itself.
+</p>
+</section>
+
+<section>
+<h2>5. Task State Management</h2>
+<p>
+The scheduler manages tasks according to their
+current states.
+</p>
+<table>
+<tr><th>State</th><th>Description</th><th>Scheduler Eligibility</th></tr>
+<tr><td>Running</td><td>Currently executing on the CPU.</td><td>Already selected.</td></tr>
+<tr><td>Ready</td><td>Can execute but is waiting for CPU selection.</td><td>Eligible.</td></tr>
+<tr><td>Blocked</td><td>Waiting for a delay, queue, semaphore or another event.</td><td>Not eligible until unblocked.</td></tr>
+<tr><td>Suspended</td><td>Explicitly suspended.</td><td>Not eligible until resumed.</td></tr>
+</table>
+<h3>Typical State Transitions</h3>
+<pre><code>             Created
+                |
+                v
+              Ready
+                |
+          Selected by Scheduler
+                |
+                v
+             Running
+           /    |     \
+          /     |      \
+         v      v       v
+      Blocked Suspended Deleted
+         |
+     Event / Timeout
+         |
+         v
+       Ready</code></pre>
+</section>
+
+<section>
+<h2>6. Ready Lists and Priority-Based Selection</h2>
+<p>
+FreeRTOS maintains internal lists to organize
+tasks by state and priority. Ready tasks are
+managed so that the scheduler can select a
+highest-priority Ready task.
+</p>
+<p>
+Conceptually, a system with four configured
+priorities may have the following Ready tasks:
+</p>
+<table>
+<tr><th>Priority</th><th>Ready Tasks</th><th>Selection</th></tr>
+<tr><td>3</td><td>Task A, Task B</td><td>Highest-priority Ready group.</td></tr>
+<tr><td>2</td><td>Task C</td><td>Selected only when no priority-3 task is Ready.</td></tr>
+<tr><td>1</td><td>Task D</td><td>Selected when higher-priority tasks are not Ready.</td></tr>
+<tr><td>0</td><td>Idle Task</td><td>Runs when no higher-priority task is Ready.</td></tr>
+</table>
+<p>
+If multiple tasks share the same priority,
+time slicing may allow them to share processor
+time when enabled and when they remain Ready.
+</p>
+<div class="warning">
+The exact internal list implementation is a kernel
+detail. The table illustrates scheduling behavior,
+not the complete internal data structure.
+</div>
+</section>
+
+<section>
+<h2>7. Role of the Tick Interrupt</h2>
+<p>
+The RTOS tick is a periodic timing event used
+by FreeRTOS to maintain its tick count and
+process time-based task delays.
+</p>
+<p>
+For example, with a tick rate of 1000 Hz,
+the nominal tick interval is 1 millisecond.
+A task delayed for 100 ticks is scheduled to
+become Ready after approximately 100 tick
+intervals, subject to tick timing and scheduling.
+</p>
+<h3>Tick Rate Configuration</h3>
+<pre><code>#define configTICK_RATE_HZ 1000</code></pre>
+<h3>Tick Count API</h3>
+<pre><code>TickType_t currentTick;
+
+currentTick = xTaskGetTickCount();</code></pre>
+<p>
+xTaskGetTickCount() returns the current RTOS
+tick count. It is not a calendar clock or a
+high-resolution hardware timestamp.
+</p>
+<h3>What Happens During a Tick?</h3>
+<ol>
+<li>The configured tick interrupt occurs.</li>
+<li>The port-specific interrupt handler performs required processing.</li>
+<li>The kernel updates its tick count.</li>
+<li>Time-based blocked tasks are checked for expiry.</li>
+<li>Tasks whose delays expire can become Ready.</li>
+<li>A scheduling decision may be requested if required.</li>
+</ol>
+<div class="note">
+A tick interrupt does not necessarily cause a
+context switch on every tick. A switch is needed
+only when scheduling conditions require one.
+</div>
+</section>
+
+<section>
+<h2>8. Context Switching</h2>
+<p>
+A context switch changes the currently executing
+task. The processor-specific port saves the
+outgoing task's required execution context and
+restores the context of the selected task.
+</p>
+<h3>Conceptual Steps</h3>
+<ol>
+<li>A scheduling event occurs.</li>
+<li>The current task's execution context is saved.</li>
+<li>The scheduler determines the next task to run.</li>
+<li>The selected task's saved context is restored.</li>
+<li>Execution continues from the selected task's saved location.</li>
+</ol>
+<p>
+The exact registers saved, stack operations and
+exception or interrupt mechanism depend on the
+processor architecture and FreeRTOS port.
+</p>
+</section>
+
+<section>
+<h2>9. Preemptive Scheduling</h2>
+<p>
+In preemptive scheduling, a higher-priority
+Ready task can interrupt the execution of a
+lower-priority task at an appropriate scheduling
+point.
+</p>
+<h3>Configuration</h3>
+<pre><code>#define configUSE_PREEMPTION 1</code></pre>
+<h3>Example</h3>
+<table>
+<tr><th>Task</th><th>Priority</th><th>State</th></tr>
+<tr><td>Task A</td><td>1</td><td>Running</td></tr>
+<tr><td>Task B</td><td>3</td><td>Blocked</td></tr>
+</table>
+<p>
+When Task B becomes Ready, it has a higher
+priority than Task A. With preemption enabled,
+the scheduler can select Task B and preempt
+Task A.
+</p>
+</section>
+
+<section>
+<h2>10. Cooperative Scheduling</h2>
+<p>
+When preemption is disabled, a running task
+normally continues until it blocks, yields or
+otherwise reaches a kernel scheduling point.
+A higher-priority task becoming Ready does not
+necessarily interrupt the current task immediately.
+</p>
+<h3>Configuration</h3>
+<pre><code>#define configUSE_PREEMPTION 0</code></pre>
+<p>
+Cooperative scheduling requires tasks to
+relinquish the processor appropriately. A task
+that never blocks or yields can prevent other
+tasks from receiving CPU time.
+</p>
+<table>
+<tr><th>Feature</th><th>Preemptive</th><th>Cooperative</th></tr>
+<tr><td>Higher-priority Ready task</td><td>Can preempt a lower-priority running task.</td><td>Waits for a scheduling point.</td></tr>
+<tr><td>Task control</td><td>Kernel can switch tasks at preemption points.</td><td>Tasks must cooperate by yielding or blocking.</td></tr>
+<tr><td>Response behavior</td><td>Generally more responsive to newly Ready higher-priority tasks.</td><td>Can suffer long delays if tasks do not yield.</td></tr>
+<tr><td>Design consideration</td><td>Requires careful shared-resource and timing design.</td><td>Requires disciplined task execution.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>11. Time Slicing Between Equal-Priority Tasks</h2>
+<p>
+When time slicing is enabled, FreeRTOS can
+rotate execution among Ready tasks at the
+same priority. This is useful when several tasks
+have equal scheduling priority.
+</p>
+<h3>Configuration</h3>
+<pre><code>#define configUSE_TIME_SLICING 1</code></pre>
+<p>
+Time slicing is commonly associated with tick
+interrupt scheduling behavior. Its exact effect
+depends on the kernel version, scheduler
+configuration and port.
+</p>
+<div class="note">
+Time slicing does not mean that every task
+receives an identical amount of CPU time over
+all circumstances. Blocking, yielding, priority
+changes and execution readiness affect actual
+CPU allocation.
+</div>
+</section>
+
+<section>
+<h2>12. Idle Task and Scheduler Operation</h2>
+<p>
+The Idle Task is created automatically by
+FreeRTOS when the scheduler starts. It normally
+runs at priority zero.
+</p>
+<ul>
+<li>Runs when no higher-priority task is Ready.</li>
+<li>Supports cleanup of memory used by dynamically deleted tasks.</li>
+<li>Can execute an application Idle Hook if enabled.</li>
+<li>Provides a low-priority execution context.</li>
+</ul>
+<p>
+The Idle Task must receive CPU time so that
+kernel cleanup can proceed. Applications should
+avoid continuously starving it.
+</p>
+</section>
+
+<section>
+<h2>13. Scheduler Configuration Parameters</h2>
+<table>
+<tr><th>Configuration</th><th>Purpose</th></tr>
+<tr><td><code>configMAX_PRIORITIES</code></td><td>Defines the number of available task priority levels.</td></tr>
+<tr><td><code>configUSE_PREEMPTION</code></td><td>Enables or disables preemptive scheduling.</td></tr>
+<tr><td><code>configUSE_TIME_SLICING</code></td><td>Controls time slicing among equal-priority Ready tasks where supported.</td></tr>
+<tr><td><code>configTICK_RATE_HZ</code></td><td>Defines the RTOS tick frequency.</td></tr>
+<tr><td><code>configUSE_TICKLESS_IDLE</code></td><td>Enables tickless idle support when implemented by the port.</td></tr>
+<tr><td><code>configUSE_IDLE_HOOK</code></td><td>Enables the application Idle Hook.</td></tr>
+</table>
+<p>
+These settings belong to FreeRTOSConfig.h.
+The available configuration options and their
+behavior must be checked against the selected
+FreeRTOS release and port.
+</p>
+</section>
+
+<section>
+<h2>14. Standard FreeRTOS Scheduling Model</h2>
+<p>
+The standard FreeRTOS scheduler uses fixed
+task priorities. It does not automatically
+schedule tasks according to Earliest Deadline
+First (EDF).
+</p>
+<table>
+<tr><th>Scheduling Concept</th><th>Standard FreeRTOS Behavior</th></tr>
+<tr><td>Fixed-priority scheduling</td><td>Supported by the standard scheduler.</td></tr>
+<tr><td>Priority-based preemption</td><td>Supported when preemption is configured.</td></tr>
+<tr><td>Equal-priority time slicing</td><td>Supported through scheduler configuration.</td></tr>
+<tr><td>Automatic EDF scheduling</td><td>Not the standard scheduler policy.</td></tr>
+<tr><td>Automatic deadline guarantee</td><td>Not provided simply by using FreeRTOS.</td></tr>
+</table>
+<div class="warning">
+An RTOS does not automatically guarantee that
+every task meets its deadline. Task execution
+times, blocking, interrupt interference, priorities
+and system workload must be analyzed.
+</div>
+</section>
+
+<section>
+<h2>15. Practical Example – Observe Scheduler Selection</h2>
+<p><strong>Objective:</strong> Create two tasks with different priorities and observe how Ready and Blocked states affect task selection.</p>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+
+volatile unsigned long taskA_Count = 0;
+volatile unsigned long taskB_Count = 0;
+
+void TaskA(void *pvParameters)
+{
+    for (;;)
+    {
+        taskA_Count++;
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void TaskB(void *pvParameters)
+{
+    for (;;)
+    {
+        taskB_Count++;
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+int main(void)
+{
+    BaseType_t resultA;
+    BaseType_t resultB;
+
+    resultA = xTaskCreate(
+        TaskA,
+        "TaskA",
+        256,
+        NULL,
+        2,
+        NULL
+    );
+
+    resultB = xTaskCreate(
+        TaskB,
+        "TaskB",
+        256,
+        NULL,
+        1,
+        NULL
+    );
+
+    if ((resultA == pdPASS) &&
+        (resultB == pdPASS))
+    {
+        vTaskStartScheduler();
+    }
+
+    for (;;)
+    {
+    }
+}</code></pre>
+<h3>Procedure</h3>
+<ol>
+<li>Build the application in a verified FreeRTOS target environment.</li>
+<li>Set breakpoints in both task functions.</li>
+<li>Inspect task states using supported debugger or trace facilities.</li>
+<li>Observe that TaskA has priority 2 and TaskB has priority 1.</li>
+<li>Observe how each task blocks after its delay.</li>
+<li>Inspect the counter variables while execution is running.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>
+Both tasks execute when Ready. TaskA has higher
+priority, but when it is Blocked during its delay,
+TaskB can execute. The scheduler selects from
+the Ready tasks rather than simply choosing the
+task with the highest priority in the entire system.
+</p>
+</section>
+
+<section>
+<h2>16. Common Scheduler Design Problems</h2>
+<table>
+<tr><th>Problem</th><th>Cause</th><th>Design Approach</th></tr>
+<tr><td>Task starvation</td><td>Higher-priority tasks remain continuously Ready.</td><td>Ensure tasks block appropriately and review priorities.</td></tr>
+<tr><td>Priority inversion</td><td>High-priority task waits for a resource held by a lower-priority task.</td><td>Use suitable mutexes and bounded resource holding.</td></tr>
+<tr><td>Excessive context switching</td><td>Unnecessary yields, frequent task wakeups or poorly chosen periods.</td><td>Review task architecture and scheduling requirements.</td></tr>
+<tr><td>Long interrupt processing</td><td>ISR execution delays task scheduling.</td><td>Keep ISRs short and defer processing.</td></tr>
+<tr><td>Missed deadlines</td><td>Execution time, blocking or interference exceeds timing budget.</td><td>Perform response-time and schedulability analysis.</td></tr>
+<tr><td>Tick-related timing error</td><td>Incorrect tick conversion or unsuitable tick rate.</td><td>Use pdMS_TO_TICKS() and validate tick resolution.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>17. Important Notes for ARM7 LPC2129</h2>
+<p>
+The LPC2129 uses an ARM7TDMI-S core. FreeRTOS
+scheduler context switching must be implemented
+by a port compatible with this processor and
+the selected compiler.
+</p>
+<ul>
+<li>ARM7TDMI-S is not a Cortex-M processor.</li>
+<li>ARM7 exception modes and interrupt handling differ from Cortex-M NVIC behavior.</li>
+<li>The processor port must provide compatible context-switch and tick-interrupt code.</li>
+<li>Do not use Cortex-M-specific interrupt-priority configuration assumptions for LPC2129.</li>
+<li>Verify the availability and build compatibility of an ARM7 FreeRTOS port before attempting execution.</li>
+</ul>
+<div class="note">
+This lesson explains generic FreeRTOS scheduler
+architecture. It does not assume that the current
+LPC2129 Keil simulator setup contains a working
+FreeRTOS port.
+</div>
+</section>
+
+<section>
+<h2>18. Review Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is the purpose of the FreeRTOS scheduler?</li>
+<li>What is a Task Control Block?</li>
+<li>What is the purpose of Ready lists?</li>
+<li>Which tasks are eligible for scheduler selection?</li>
+<li>What is the role of the RTOS tick interrupt?</li>
+<li>Does every tick interrupt cause a context switch?</li>
+<li>What is preemptive scheduling?</li>
+<li>What is cooperative scheduling?</li>
+<li>What is time slicing?</li>
+<li>What is the role of the Idle Task?</li>
+<li>Does standard FreeRTOS scheduling automatically implement EDF?</li>
+<li>Why is a processor-specific port required?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain the FreeRTOS scheduler architecture with a block diagram.</li>
+<li>Describe task management and the role of the TCB.</li>
+<li>Explain Ready lists and priority-based task selection.</li>
+<li>Explain the role of the tick interrupt in task scheduling.</li>
+<li>Compare preemptive and cooperative scheduling.</li>
+<li>Discuss context switching and processor-port responsibilities.</li>
+<li>Explain common scheduler design problems and their solutions.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Lesson Summary</h2>
+<ul>
+<li>The FreeRTOS scheduler selects tasks from the Ready state.</li>
+<li>The standard scheduler uses fixed task priorities.</li>
+<li>The TCB stores internal task-management information.</li>
+<li>Ready lists organize tasks for scheduling.</li>
+<li>The tick interrupt supports timekeeping and delay processing.</li>
+<li>Context switching saves and restores task execution contexts.</li>
+<li>Preemption and time slicing are controlled through configuration.</li>
+<li>The Idle Task runs when no higher-priority task is Ready.</li>
+<li>Standard FreeRTOS scheduling does not automatically guarantee deadlines or implement EDF.</li>
+<li>Processor-specific port code is essential for actual execution.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+<a href="../ch13_FreeRTOS_Task_Programming/index.html">← Previous Chapter</a>
+<a href="index.html">Chapter 14 Index</a>
+<a href="L02_Preemptive_and_Cooperative_Scheduling.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS & FreeRTOS Course</p>
+<p>Learn • Practice • Build • Understand</p>
+</footer>
+
+</body>
+</html>
