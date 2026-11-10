@@ -1,1 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Event Group Set and Clear Bits</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fc;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 15px}
+header h1{font-size:28px;margin-bottom:8px}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 7px rgba(0,0,0,.08)}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 13px}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:22px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h2{color:#174ea6;font-size:22px;border-bottom:2px solid #d8e6fa;padding-bottom:8px;margin-bottom:15px}
+h3{color:#1765b1;margin:17px 0 9px;font-size:18px}
+p{margin:9px 0}
+ul,ol{padding-left:25px;margin:10px 0}
+li{margin:6px 0}
+pre{background:#172338;color:#e6edf7;padding:17px;border-radius:8px;overflow-x:auto;margin:13px 0;font-size:13px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0;display:block;overflow-x:auto}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;min-width:135px}
+th{background:#eaf2ff;color:#174ea6}
+.note{background:#eaf3ff;border-left:4px solid #2878d7;padding:13px;margin:14px 0;border-radius:5px}
+.warning{background:#fff5e6;border-left:4px solid #e69a24;padding:13px;margin:14px 0;border-radius:5px}
+.example{background:#effaf2;border-left:4px solid #269653;padding:13px;margin:14px 0;border-radius:5px}
+.objectives{background:#eef5ff;padding:17px 22px;border-radius:8px}
+.navigation{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 17px;border-radius:6px;text-decoration:none}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:35px}
+@media(max-width:600px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 8px}section{padding:17px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 17: FreeRTOS Event Groups and Software Timers</h1>
+<p>Lesson 03 – xEventGroupSetBits() and xEventGroupClearBits()</p>
+</header>
+
+<nav>
+<a href="../rtos.html">RTOS &amp; FreeRTOS</a>
+<a href="index.html">Chapter Index</a>
+<a href="../../index.html">Learning Portal</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>Lesson Overview</h2>
+<p>
+FreeRTOS provides <code>xEventGroupSetBits()</code> and
+<code>xEventGroupClearBits()</code> to modify event bits in an
+event group. Setting a bit indicates that a condition has occurred
+or become true. Clearing a bit indicates that the condition is no
+longer active or should be considered incomplete.
+</p>
+<div class="objectives">
+<h3>Learning Objectives</h3>
+<ul>
+<li>Understand how event bits are set and cleared.</li>
+<li>Learn the syntax and parameters of both functions.</li>
+<li>Understand bit masks and bitwise operations.</li>
+<li>Interpret function return values.</li>
+<li>Write programs for setting and clearing event bits.</li>
+<li>Understand task synchronization using event groups.</li>
+<li>Identify common programming errors.</li>
+</ul>
+</div>
+</section>
+
+<section>
+<h2>1. Event-Bit Representation</h2>
+<p>
+Each usable event bit represents a Boolean condition. A set bit
+has the value 1, while a cleared bit has the value 0.
+</p>
+<pre><code>#define EVENT_SENSOR_READY   (1U << 0)
+#define EVENT_UART_READY     (1U << 1)
+#define EVENT_STORAGE_READY  (1U << 2)
+#define EVENT_NETWORK_READY  (1U << 3)</code></pre>
+
+<table>
+<tr><th>Event</th><th>Bit Position</th><th>Mask</th></tr>
+<tr><td>Sensor ready</td><td>0</td><td>0001</td></tr>
+<tr><td>UART ready</td><td>1</td><td>0010</td></tr>
+<tr><td>Storage ready</td><td>2</td><td>0100</td></tr>
+<tr><td>Network ready</td><td>3</td><td>1000</td></tr>
+</table>
+
+<p>
+These four-bit patterns are simplified illustrations of the
+corresponding bit masks.
+</p>
+</section>
+
+<section>
+<h2>2. xEventGroupSetBits() Function</h2>
+<p>
+The <code>xEventGroupSetBits()</code> function sets one or more
+selected event bits in an event group.
+</p>
+
+<h3>Function Syntax</h3>
+<pre><code>EventBits_t xEventGroupSetBits(
+    EventGroupHandle_t xEventGroup,
+    const EventBits_t uxBitsToSet
+);</code></pre>
+
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>xEventGroup</code></td><td>Handle of the event group to modify.</td></tr>
+<tr><td><code>uxBitsToSet</code></td><td>Bit mask specifying which bits should be set.</td></tr>
+</table>
+
+<h3>Return Value</h3>
+<p>
+The function returns an <code>EventBits_t</code> value representing
+the event-group bits after the operation and the kernel's
+synchronization processing. It is not a simple success/failure
+status.
+</p>
+
+<h3>Example</h3>
+<pre><code>xEventGroupSetBits(
+    xSystemEvents,
+    EVENT_SENSOR_READY
+);</code></pre>
+
+<p>
+This sets the sensor-ready bit. Other event bits are not changed
+by this operation.
+</p>
+</section>
+
+<section>
+<h2>3. Setting Multiple Event Bits</h2>
+<p>
+The bitwise OR operator (<code>|</code>) combines multiple event
+masks. This allows several conditions to be marked as set in
+one operation.
+</p>
+<pre><code>xEventGroupSetBits(
+    xSystemEvents,
+    EVENT_SENSOR_READY |
+    EVENT_UART_READY   |
+    EVENT_STORAGE_READY
+);</code></pre>
+
+<h3>Bitwise Example</h3>
+<pre><code>EVENT_SENSOR_READY  = 0001
+EVENT_UART_READY    = 0010
+EVENT_STORAGE_READY = 0100
+
+Combined mask:
+                      0111</code></pre>
+
+<p>
+After this operation, bits 0, 1, and 2 are set. Bit 3 remains
+unchanged.
+</p>
+</section>
+
+<section>
+<h2>4. xEventGroupClearBits() Function</h2>
+<p>
+The <code>xEventGroupClearBits()</code> function clears one or more
+selected event bits.
+</p>
+
+<h3>Function Syntax</h3>
+<pre><code>EventBits_t xEventGroupClearBits(
+    EventGroupHandle_t xEventGroup,
+    const EventBits_t uxBitsToClear
+);</code></pre>
+
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>xEventGroup</code></td><td>Handle of the event group.</td></tr>
+<tr><td><code>uxBitsToClear</code></td><td>Mask specifying which bits must be cleared.</td></tr>
+</table>
+
+<h3>Return Value</h3>
+<p>
+The function returns the event-bit pattern from before the
+requested bits were cleared.
+</p>
+
+<h3>Example</h3>
+<pre><code>xEventGroupClearBits(
+    xSystemEvents,
+    EVENT_SENSOR_READY
+);</code></pre>
+
+<p>
+The sensor-ready bit is cleared. Other bits retain their previous
+values.
+</p>
+</section>
+
+<section>
+<h2>5. Setting and Clearing Bits – Worked Example</h2>
+<p>Assume the initial event-group bit pattern is zero.</p>
+
+<table>
+<tr><th>Operation</th><th>Bit Pattern (bits 3–0)</th></tr>
+<tr><td>Initial state</td><td>0000</td></tr>
+<tr><td>Set sensor-ready</td><td>0001</td></tr>
+<tr><td>Set UART-ready</td><td>0011</td></tr>
+<tr><td>Set storage-ready</td><td>0111</td></tr>
+<tr><td>Clear UART-ready</td><td>0101</td></tr>
+<tr><td>Set network-ready</td><td>1101</td></tr>
+<tr><td>Clear sensor-ready</td><td>1100</td></tr>
+</table>
+
+<p>
+This example shows that setting or clearing a selected bit does
+not automatically modify unrelated event bits.
+</p>
+</section>
+
+<section>
+<h2>6. Complete Program – Setting and Clearing Event Bits</h2>
+
+<h3>Objective</h3>
+<p>
+Create an event group, set three event bits, clear one event bit,
+and inspect the returned bit patterns.
+</p>
+
+<h3>Program</h3>
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "event_groups.h"
+
+#define EVENT_SENSOR_READY   (1U << 0)
+#define EVENT_UART_READY     (1U << 1)
+#define EVENT_STORAGE_READY  (1U << 2)
+
+static EventGroupHandle_t xSystemEvents;
+
+int main(void)
+{
+    EventBits_t bits;
+
+    xSystemEvents = xEventGroupCreate();
+
+    if (xSystemEvents == NULL)
+    {
+        for (;;)
+        {
+            /* Creation error */
+        }
+    }
+
+    /* Set sensor and UART bits */
+    bits = xEventGroupSetBits(
+        xSystemEvents,
+        EVENT_SENSOR_READY | EVENT_UART_READY
+    );
+
+    /* Set storage bit */
+    bits = xEventGroupSetBits(
+        xSystemEvents,
+        EVENT_STORAGE_READY
+    );
+
+    /* Clear UART bit */
+    bits = xEventGroupClearBits(
+        xSystemEvents,
+        EVENT_UART_READY
+    );
+
+    /* Read current event bits */
+    bits = xEventGroupGetBits(xSystemEvents);
+
+    /* Application can inspect bits here */
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+    }
+}</code></pre>
+
+<h3>Program Explanation</h3>
+<ol>
+<li>Create an event group dynamically.</li>
+<li>Check whether creation succeeded.</li>
+<li>Set sensor-ready and UART-ready bits.</li>
+<li>Set the storage-ready bit.</li>
+<li>Clear the UART-ready bit.</li>
+<li>Read the current event-group bit pattern.</li>
+<li>Start the scheduler.</li>
+</ol>
+
+<h3>Expected Result</h3>
+<pre><code>Initial event bits:       000
+
+After setting sensor:     001
+After setting UART:       011
+After setting storage:    111
+After clearing UART:      101
+
+Final state:
+Storage ready = 1
+Sensor ready  = 1
+UART ready    = 0</code></pre>
+
+<div class="note">
+The example demonstrates the API sequence. In a real application,
+create the event group and perform initialization before the
+scheduler starts, or use an appropriate task to perform operations
+after scheduler startup.
+</div>
+</section>
+
+<section>
+<h2>7. Reading Event Bits After Modification</h2>
+<p>
+The current event-bit pattern can be read using
+<code>xEventGroupGetBits()</code> from task context.
+</p>
+<pre><code>EventBits_t currentBits;
+
+currentBits = xEventGroupGetBits(xSystemEvents);
+
+if ((currentBits &amp; EVENT_SENSOR_READY) != 0)
+{
+    /* Sensor-ready condition is set */
+}
+
+if ((currentBits &amp; EVENT_UART_READY) != 0)
+{
+    /* UART-ready condition is set */
+}</code></pre>
+
+<p>
+Use bitwise AND (<code>&amp;</code>) to test whether a particular
+event bit is set.
+</p>
+
+<div class="warning">
+A read of the current bits is a snapshot. Another task may set or
+clear bits immediately afterward. Do not treat a separate read
+followed by an action as an atomic test-and-reserve operation.
+</div>
+</section>
+
+<section>
+<h2>8. Important Difference – Task and ISR Context</h2>
+<p>
+The functions <code>xEventGroupSetBits()</code> and
+<code>xEventGroupClearBits()</code> are task-context APIs. They
+must not be called directly from an ISR.
+</p>
+<p>
+For setting event bits from an ISR, FreeRTOS provides:
+</p>
+<pre><code>BaseType_t xEventGroupSetBitsFromISR(
+    EventGroupHandle_t xEventGroup,
+    EventBits_t uxBitsToSet,
+    BaseType_t *pxHigherPriorityTaskWoken
+);</code></pre>
+
+<p>
+This ISR API defers the event-bit setting operation to the
+FreeRTOS timer service task. It can fail if the timer command
+queue cannot accept the request.
+</p>
+
+<div class="warning">
+The ISR must not block. Check the return value of
+<code>xEventGroupSetBitsFromISR()</code> and use the
+port-appropriate ISR yield mechanism when a higher-priority task
+is unblocked. The exact yield macro depends on the selected port.
+</div>
+</section>
+
+<section>
+<h2>9. Common Programming Errors</h2>
+<table>
+<tr><th>Error</th><th>Correction</th></tr>
+<tr><td>Using an invalid event-group handle</td><td>Create the event group and check its handle first.</td></tr>
+<tr><td>Calling task-context APIs from an ISR</td><td>Use the supported ISR-specific API.</td></tr>
+<tr><td>Using incorrect bit masks</td><td>Define each event with a unique bit position.</td></tr>
+<tr><td>Clearing unrelated bits</td><td>Pass only the intended clear mask.</td></tr>
+<tr><td>Assuming a bit counts repeated events</td><td>Use a queue or counting semaphore if every occurrence matters.</td></tr>
+<tr><td>Ignoring ISR command-queue failure</td><td>Check the return value of the FromISR function.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>10. Review Questions</h2>
+<ol>
+<li>What is the purpose of <code>xEventGroupSetBits()</code>?</li>
+<li>What is the purpose of <code>xEventGroupClearBits()</code>?</li>
+<li>What does the bitwise OR operator do when combining event masks?</li>
+<li>What does the bitwise AND operator do when checking a bit?</li>
+<li>What is the return value of <code>xEventGroupSetBits()</code>?</li>
+<li>What is the return value of <code>xEventGroupClearBits()</code>?</li>
+<li>Can the task-context set-bits API be called directly from an ISR?</li>
+<li>Which API can set event bits from an ISR?</li>
+<li>Why can repeated setting of one event bit lose event-count information?</li>
+<li>Why should an application avoid relying on a separate read and later action as an atomic operation?</li>
+</ol>
+</section>
+
+<section>
+<h2>11. Practical Assignment</h2>
+<ol>
+<li>Define four event bits for sensor, UART, storage, and network readiness.</li>
+<li>Create an event group and set all four bits.</li>
+<li>Clear the storage-ready bit and inspect the resulting pattern.</li>
+<li>Write code to test whether both sensor and UART bits are set.</li>
+<li>Write code to clear two selected event bits in one call.</li>
+<li>Explain the difference between <code>xEventGroupSetBits()</code> and <code>xEventGroupSetBitsFromISR()</code>.</li>
+<li>Explain why an event group is not an event counter.</li>
+</ol>
+</section>
+
+<section>
+<h2>12. Lesson Summary</h2>
+<ul>
+<li><code>xEventGroupSetBits()</code> sets selected event bits.</li>
+<li><code>xEventGroupClearBits()</code> clears selected event bits.</li>
+<li>Bitwise OR combines multiple event masks.</li>
+<li>Bitwise AND checks whether selected bits are set.</li>
+<li>The set-bits API returns the event-bit value after synchronization processing.</li>
+<li>The clear-bits API returns the previous event-bit value.</li>
+<li>Task-context APIs must not be called directly from an ISR.</li>
+<li><code>xEventGroupSetBitsFromISR()</code> provides an ISR-safe deferred mechanism.</li>
+<li>Event bits represent conditions, not counts of repeated events.</li>
+</ul>
+</section>
+
+<div class="navigation">
+<a href="L02_xEventGroupCreate_Function.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L04_xEventGroupWaitBits_Function.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 17 – FreeRTOS Event Groups and Software Timers</p>
+</footer>
+
+</body>
+</html>
