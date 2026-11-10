@@ -1,1 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UART Communication Using FreeRTOS | NS Learning Hub</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#263238;font-family:Arial,sans-serif;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+header p{margin:8px 0 0}
+nav{background:white;padding:13px;text-align:center;box-shadow:0 2px 6px #00000012}
+nav a{color:#174ea6;text-decoration:none;margin:0 12px;font-weight:600}
+.container{max-width:1050px;margin:25px auto;padding:0 18px}
+section{background:white;padding:23px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 9px #0000000d}
+h2{color:#174ea6;border-bottom:2px solid #e3edfa;padding-bottom:7px}
+h3{color:#245a9b;margin-top:22px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d7e0ec;padding:10px;text-align:left;vertical-align:top}
+th{background:#eaf2ff;color:#174ea6}
+pre{background:#172333;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note,.warning,.tip{padding:13px 16px;margin:15px 0;border-left:4px solid;border-radius:5px}
+.note{background:#eaf3ff;border-color:#2878d7}
+.warning{background:#fff2e8;border-color:#e58b32}
+.tip{background:#eaf8ef;border-color:#32965b}
+.diagram{background:#f0f5fc;border:1px solid #d6e3f5;padding:15px;border-radius:7px;text-align:center;font-family:Consolas,monospace;white-space:pre-wrap;overflow-x:auto}
+.lesson-nav{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lesson-nav a{background:#174ea6;color:white;text-decoration:none;padding:10px 15px;border-radius:6px}
+footer{text-align:center;color:#667085;padding:25px}
+@media(max-width:650px){header h1{font-size:22px}nav a{display:inline-block;margin:5px}.container{padding:0 10px}section{padding:17px}table{font-size:13px}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>UART Communication Using FreeRTOS</h1>
+<p>RTOS &amp; FreeRTOS – Chapter 20: Practical Projects and Interview Preparation</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../rtos.html">RTOS Course</a>
+<a href="index.html">Chapter 20</a>
+</nav>
+
+<div class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Understand UART communication in an RTOS application.</li>
+<li>Understand UART transmitter and receiver operation.</li>
+<li>Configure the responsibilities of UART driver and application tasks.</li>
+<li>Use FreeRTOS queues for transmitting messages.</li>
+<li>Understand interrupt-driven UART reception.</li>
+<li>Use ISR-safe FreeRTOS APIs for communicating with tasks.</li>
+<li>Understand UART buffering and data ownership.</li>
+<li>Design a dedicated UART-owner task.</li>
+<li>Recognize UART communication errors and troubleshooting methods.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Project Introduction</h2>
+<p>UART (Universal Asynchronous Receiver/Transmitter) is a serial communication interface commonly used in embedded systems for debugging, command processing, device communication and data logging.</p>
+
+<p>This project uses FreeRTOS tasks and queues to organize UART communication.</p>
+
+<h3>Project Objective</h3>
+<p>Develop an application in which multiple tasks can request UART transmission, while received UART data is transferred from an interrupt handler to an application task for processing.</p>
+
+<table>
+<tr><th>Component</th><th>Responsibility</th></tr>
+<tr><td>UART peripheral</td><td>Serial transmission and reception.</td></tr>
+<tr><td>UART driver</td><td>Handles hardware registers, buffers and interrupts.</td></tr>
+<tr><td>Application tasks</td><td>Generate messages and process received commands.</td></tr>
+<tr><td>TX queue</td><td>Transfers outgoing messages to the UART-owner task.</td></tr>
+<tr><td>RX queue</td><td>Transfers received bytes from the ISR to a task.</td></tr>
+<tr><td>UART-owner task</td><td>Serializes outgoing messages and manages transmission requests.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>3. UART Communication Basics</h2>
+<p>UART is an asynchronous serial communication protocol. It normally uses separate transmit and receive signals.</p>
+
+<table>
+<tr><th>Signal</th><th>Function</th></tr>
+<tr><td>TX</td><td>Transmits serial data.</td></tr>
+<tr><td>RX</td><td>Receives serial data.</td></tr>
+<tr><td>GND</td><td>Common electrical reference for the interface.</td></tr>
+</table>
+
+<h3>Common UART Configuration</h3>
+<ul>
+<li>Baud rate: 9600, 19200, 38400, 57600 or 115200 bits/s.</li>
+<li>Data bits: commonly 8.</li>
+<li>Parity: none, even or odd.</li>
+<li>Stop bits: commonly 1 or 2.</li>
+</ul>
+
+<p>A common configuration is 9600 baud, 8 data bits, no parity and 1 stop bit, often written as 9600 8N1.</p>
+</section>
+
+<section>
+<h2>4. UART Frame Format</h2>
+<p>A UART frame typically contains a start bit, data bits, an optional parity bit and one or more stop bits.</p>
+
+<div class="diagram">
+IDLE | START | D0 D1 D2 D3 D4 D5 D6 D7 | STOP | IDLE
+  1  |   0   |       DATA BITS          |  1   |  1
+</div>
+
+<table>
+<tr><th>Field</th><th>Description</th></tr>
+<tr><td>Start bit</td><td>Logic low indicates the beginning of a frame.</td></tr>
+<tr><td>Data bits</td><td>Carry the transmitted character or byte.</td></tr>
+<tr><td>Parity bit</td><td>Optional basic error-detection bit.</td></tr>
+<tr><td>Stop bit</td><td>Logic high indicates the end of the frame.</td></tr>
+</table>
+
+<div class="note">UART is asynchronous: transmitter and receiver use configured baud-rate timing rather than a shared clock signal.</div>
+</section>
+
+<section>
+<h2>5. UART Communication in FreeRTOS</h2>
+<p>UART operations can be performed from tasks or through interrupt-driven and DMA-based drivers. The correct design depends on the selected MCU and driver.</p>
+
+<h3>Task-Based Transmission</h3>
+<p>An application task requests transmission. A UART-owner task obtains the message and passes it to the driver.</p>
+
+<h3>Interrupt-Driven Reception</h3>
+<p>The UART peripheral generates an interrupt when receive data is available. The ISR reads the received byte and transfers it to an application task using an ISR-safe communication mechanism.</p>
+
+<div class="diagram">
+       APPLICATION TASKS
+          |       |
+          +---+---+
+              |
+              v
+          TX QUEUE
+              |
+              v
+        UART OWNER TASK
+              |
+              v
+          UART DRIVER
+              |
+              v
+         UART TRANSMITTER
+
+
+         UART RECEIVER
+              |
+              v
+          UART ISR
+              |
+              v
+          RX QUEUE
+              |
+              v
+        RX PROCESSING TASK
+</div>
+</section>
+
+<section>
+<h2>6. Why Use a Dedicated UART Task?</h2>
+<p>If multiple tasks directly write to the same UART peripheral, their transmissions can interfere unless the driver provides suitable serialization.</p>
+
+<p>A dedicated UART-owner task provides a single application-level owner of the transmission interface.</p>
+
+<h3>Advantages</h3>
+<ul>
+<li>Centralized transmission management.</li>
+<li>Consistent message ordering according to queue policy.</li>
+<li>Reduced need for multiple tasks to use a UART mutex.</li>
+<li>Centralized handling of transmit errors and completion.</li>
+<li>Better control over message buffering.</li>
+</ul>
+
+<div class="tip">A queue transfers messages to the UART-owner task. The owner task should not release a message buffer or reuse its storage until the driver no longer needs it.</div>
+</section>
+
+<section>
+<h2>7. UART Driver Design</h2>
+<p>The UART driver is hardware-specific. It may support polling, interrupts, DMA or a combination of these techniques.</p>
+
+<table>
+<tr><th>Method</th><th>Description</th><th>Typical Consideration</th></tr>
+<tr><td>Polling</td><td>CPU checks UART status repeatedly.</td><td>Simple but can waste CPU time.</td></tr>
+<tr><td>Interrupt-driven</td><td>UART interrupts signal data availability or transmission progress.</td><td>Requires careful ISR and buffer management.</td></tr>
+<tr><td>DMA-driven</td><td>DMA transfers data between memory and UART peripheral.</td><td>Requires transfer-completion and buffer-lifetime management.</td></tr>
+</table>
+
+<h3>Suggested Driver Interface</h3>
+<pre><code>void UART_Init(void);
+
+int UART_StartTransmit(
+    const uint8_t *buffer,
+    uint16_t length
+);
+
+uint8_t UART_ReadByteFromHardware(void);
+
+void UART_EnableReceiveInterrupt(void);</code></pre>
+
+<p>These are illustrative application-level function declarations. Their implementation must match the target MCU and peripheral driver.</p>
+</section>
+
+<section>
+<h2>8. FreeRTOS Queue for UART Transmission</h2>
+<p>A TX queue can transfer complete messages to the UART-owner task.</p>
+
+<h3>Message Structure</h3>
+<pre><code>#define UART_MESSAGE_SIZE 64
+
+typedef struct
+{
+    char text[UART_MESSAGE_SIZE];
+    uint16_t length;
+} UART_Message_t;</code></pre>
+
+<h3>Create the Queue</h3>
+<pre><code>QueueHandle_t uartTxQueue;
+
+uartTxQueue = xQueueCreate(
+    8,
+    sizeof(UART_Message_t)
+);</code></pre>
+
+<p>The queue can hold eight message structures. FreeRTOS copies the complete structure into the queue.</p>
+
+<h3>Send a Message</h3>
+<pre><code>UART_Message_t message = {0};
+
+snprintf(
+    message.text,
+    sizeof(message.text),
+    "System Started\r\n"
+);
+
+message.length = strlen(message.text);
+
+xQueueSend(
+    uartTxQueue,
+    &amp;message,
+    pdMS_TO_TICKS(50)
+);</code></pre>
+</section>
+
+<section>
+<h2>9. UART Receive Queue</h2>
+<p>Received bytes can be transferred from the UART ISR to a task through a queue.</p>
+
+<h3>Create the RX Queue</h3>
+<pre><code>QueueHandle_t uartRxQueue;
+
+uartRxQueue = xQueueCreate(
+    32,
+    sizeof(uint8_t)
+);</code></pre>
+
+<h3>Receive in a Task</h3>
+<pre><code>uint8_t receivedByte;
+
+if (xQueueReceive(
+        uartRxQueue,
+        &amp;receivedByte,
+        portMAX_DELAY
+    ) == pdPASS)
+{
+    /* Process received byte */
+}</code></pre>
+
+<p>The receive task blocks until a byte becomes available.</p>
+</section>
+
+<section>
+<h2>10. ISR-to-Task Communication</h2>
+<p>When the UART peripheral receives data, the interrupt handler can read the byte and place it in a queue.</p>
+
+<h3>Important Rules</h3>
+<ul>
+<li>Use ISR-safe FreeRTOS APIs.</li>
+<li>Do not call task-context blocking APIs from an ISR.</li>
+<li>Do not wait for queue space inside the ISR.</li>
+<li>Keep interrupt processing short.</li>
+<li>Handle queue-full conditions.</li>
+<li>Request a context switch when required by the selected port.</li>
+</ul>
+
+<h3>Conceptual ISR Pattern</h3>
+<pre><code>void UART_IRQHandler(void)
+{
+    BaseType_t higherPriorityTaskWoken = pdFALSE;
+
+    uint8_t receivedByte;
+
+    /* Read and acknowledge hardware interrupt */
+    receivedByte = UART_ReadByteFromHardware();
+
+    /* Transfer byte to RX queue */
+    if (xQueueSendFromISR(
+            uartRxQueue,
+            &amp;receivedByte,
+            &amp;higherPriorityTaskWoken
+        ) != pdPASS)
+    {
+        /* Record receive queue overflow */
+    }
+
+    /*
+     * Request a context switch if needed.
+     * Exact macro is port-specific.
+     */
+    portYIELD_FROM_ISR(higherPriorityTaskWoken);
+}</code></pre>
+
+<div class="warning">This is a conceptual ISR template, not a complete LPC2129 interrupt handler. A real handler must inspect the peripheral interrupt identification/status, handle all relevant causes, read the correct UART register and acknowledge the source according to the device documentation. The yield macro and ISR API behavior must match the FreeRTOS port.</div>
+</section>
+
+<section>
+<h2>11. Complete FreeRTOS UART Application Example</h2>
+<p><strong>Objective:</strong> Implement a queue-based UART transmission task and a receive-processing task.</p>
+
+<div class="note">This example demonstrates the application architecture. Hardware-specific UART functions and the interrupt handler must be implemented separately for the target. The example assumes a driver that provides a synchronous transmit operation, or otherwise waits for transmission completion before returning.</div>
+
+<pre><code>#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "stdint.h"
+#include "stdio.h"
+#include "string.h"
+
+#define UART_MESSAGE_SIZE 64
+
+/* UART message structure */
+typedef struct
+{
+    char text[UART_MESSAGE_SIZE];
+    uint16_t length;
+} UART_Message_t;
+
+/* Queue handles */
+static QueueHandle_t uartTxQueue = NULL;
+static QueueHandle_t uartRxQueue = NULL;
+
+/* Hardware-specific UART functions */
+void UART_Init(void);
+
+void UART_SendBuffer(
+    const uint8_t *buffer,
+    uint16_t length
+);
+
+/* Task declarations */
+static void UART_TxTask(void *pvParameters);
+static void UART_RxTask(void *pvParameters);
+static void ApplicationTask(void *pvParameters);
+
+/* Send a message through the TX queue */
+static BaseType_t UART_QueueMessage(
+    const char *text
+)
+{
+    UART_Message_t message = {0};
+
+    size_t length = strlen(text);
+
+    if (length >= UART_MESSAGE_SIZE)
+    {
+        return pdFAIL;
+    }
+
+    memcpy(message.text, text, length);
+
+    message.length = (uint16_t)length;
+
+    return xQueueSend(
+        uartTxQueue,
+        &amp;message,
+        pdMS_TO_TICKS(50)
+    );
+}
+
+/* UART transmission task */
+static void UART_TxTask(void *pvParameters)
+{
+    UART_Message_t message;
+
+    (void) pvParameters;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                uartTxQueue,
+                &amp;message,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /*
+             * Driver must complete the transfer
+             * or safely manage buffer ownership.
+             */
+            UART_SendBuffer(
+                (const uint8_t *)message.text,
+                message.length
+            );
+        }
+    }
+}
+
+/* UART receive-processing task */
+static void UART_RxTask(void *pvParameters)
+{
+    uint8_t receivedByte;
+
+    (void) pvParameters;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                uartRxQueue,
+                &amp;receivedByte,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /*
+             * Example command processing.
+             * A production application should
+             * assemble and validate complete frames.
+             */
+            if (receivedByte == '\r')
+            {
+                UART_QueueMessage(
+                    "Carriage return received\r\n"
+                );
+            }
+            else if (receivedByte == '\n')
+            {
+                UART_QueueMessage(
+                    "Line feed received\r\n"
+                );
+            }
+            else
+            {
+                /* Process or buffer received byte */
+            }
+        }
+    }
+}
+
+/* Application task */
+static void ApplicationTask(void *pvParameters)
+{
+    (void) pvParameters;
+
+    for (;;)
+    {
+        UART_QueueMessage(
+            "FreeRTOS UART Application Running\r\n"
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+
+int main(void)
+{
+    UART_Init();
+
+    /* Create TX queue */
+    uartTxQueue = xQueueCreate(
+        8,
+        sizeof(UART_Message_t)
+    );
+
+    /* Create RX queue */
+    uartRxQueue = xQueueCreate(
+        32,
+        sizeof(uint8_t)
+    );
+
+    if (uartTxQueue == NULL || uartRxQueue == NULL)
+    {
+        for (;;)
+        {
+            /* Queue creation failure */
+        }
+    }
+
+    /* Create UART TX task */
+    if (xTaskCreate(
+            UART_TxTask,
+            "UART_Tx",
+            256,
+            NULL,
+            3,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+            /* Task creation failure */
+        }
+    }
+
+    /* Create UART RX task */
+    if (xTaskCreate(
+            UART_RxTask,
+            "UART_Rx",
+            256,
+            NULL,
+            3,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+            /* Task creation failure */
+        }
+    }
+
+    /* Create application task */
+    if (xTaskCreate(
+            ApplicationTask,
+            "Application",
+            256,
+            NULL,
+            2,
+            NULL
+        ) != pdPASS)
+    {
+        for (;;)
+        {
+            /* Task creation failure */
+        }
+    }
+
+    vTaskStartScheduler();
+
+    for (;;)
+    {
+        /* Scheduler startup failure */
+    }
+}</code></pre>
+
+<div class="warning">The code requires a real UART ISR or another driver mechanism to populate <code>uartRxQueue</code>. It also requires a target-specific implementation of <code>UART_SendBuffer()</code>. Do not expect it to compile or run as a complete application without those components.</div>
+</section>
+
+<section>
+<h2>12. Program Explanation</h2>
+
+<h3>Step 1 – Define Message Structure</h3>
+<pre><code>typedef struct
+{
+    char text[UART_MESSAGE_SIZE];
+    uint16_t length;
+} UART_Message_t;</code></pre>
+<p>The structure contains a complete outgoing message and its length.</p>
+
+<h3>Step 2 – Create TX and RX Queues</h3>
+<pre><code>uartTxQueue = xQueueCreate(
+    8,
+    sizeof(UART_Message_t)
+);
+
+uartRxQueue = xQueueCreate(
+    32,
+    sizeof(uint8_t)
+);</code></pre>
+<p>The TX queue stores message structures. The RX queue stores individual received bytes.</p>
+
+<h3>Step 3 – Submit Outgoing Messages</h3>
+<pre><code>UART_QueueMessage(
+    "FreeRTOS UART Application Running\r\n"
+);</code></pre>
+<p>Application tasks submit messages through the TX queue instead of accessing the UART peripheral directly.</p>
+
+<h3>Step 4 – Transmit Messages</h3>
+<pre><code>xQueueReceive(
+    uartTxQueue,
+    &amp;message,
+    portMAX_DELAY
+);</code></pre>
+<p>The UART TX task receives a message and passes it to the driver.</p>
+
+<h3>Step 5 – Receive UART Bytes</h3>
+<p>The UART ISR reads incoming bytes and sends them to the RX queue using an ISR-safe API.</p>
+
+<h3>Step 6 – Process Received Data</h3>
+<p>The RX task receives bytes and performs application-level command processing.</p>
+</section>
+
+<section>
+<h2>13. UART Message Framing</h2>
+<p>UART transmits a continuous stream of bytes. It does not automatically define application-level message boundaries.</p>
+
+<p>A receiver must determine where one message ends and another begins.</p>
+
+<h3>Common Framing Methods</h3>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td>Delimiter-based</td><td>Messages end with a delimiter such as newline.</td></tr>
+<tr><td>Fixed-length</td><td>Every message contains a known number of bytes.</td></tr>
+<tr><td>Length-prefixed</td><td>A header specifies the message length.</td></tr>
+<tr><td>Start/end markers</td><td>Special bytes identify frame boundaries.</td></tr>
+<tr><td>Protocol-based</td><td>Structured packets contain header, payload and integrity fields.</td></tr>
+</table>
+
+<h3>Example Line-Based Protocol</h3>
+<pre><code>TEMP:28.5\r\n
+STATUS:RUNNING\r\n
+ALARM:OFF\r\n</code></pre>
+
+<p>The receiver can collect bytes until it encounters a newline delimiter and then process the complete line.</p>
+</section>
+
+<section>
+<h2>14. UART Buffer Management</h2>
+<p>Buffer management is important in interrupt-driven and DMA-driven communication.</p>
+
+<h3>Important Concepts</h3>
+<ul>
+<li>TX buffers contain outgoing data.</li>
+<li>RX buffers store incoming data.</li>
+<li>Buffer capacity must account for expected traffic bursts.</li>
+<li>Queue overflow must be detected.</li>
+<li>DMA buffers must remain valid until the transfer completes.</li>
+<li>Shared buffers require a defined ownership or synchronization protocol.</li>
+</ul>
+
+<div class="note">A FreeRTOS queue copies the queued item. If the item contains a pointer, only the pointer value is copied; the pointed-to memory is not copied. Pointer-based designs therefore need an explicit lifetime and ownership policy.</div>
+</section>
+
+<section>
+<h2>15. UART Baud Rate Calculation</h2>
+<p>Baud rate represents the number of signaling symbols transmitted per second. For ordinary binary UART signaling, the symbol rate corresponds to the bit rate.</p>
+
+<p>For a common 8N1 frame, each byte requires:</p>
+<ul>
+<li>1 start bit.</li>
+<li>8 data bits.</li>
+<li>1 stop bit.</li>
+</ul>
+
+<p>Total = 10 bits per transmitted byte.</p>
+
+<h3>Approximate Throughput</h3>
+<pre><code>Bytes per second = Baud Rate / Bits per Frame</code></pre>
+
+<p>At 9600 baud with 8N1:</p>
+<pre><code>Bytes per second = 9600 / 10
+                 = 960 bytes/second</code></pre>
+
+<p>This is a theoretical line-rate estimate before considering protocol overhead, idle time and software delays.</p>
+</section>
+
+<section>
+<h2>16. UART Interrupt Handling</h2>
+<p>UART interrupts can indicate different events depending on the peripheral.</p>
+
+<table>
+<tr><th>Interrupt Event</th><th>Typical Meaning</th></tr>
+<tr><td>Receive data available</td><td>One or more bytes are ready to be read.</td></tr>
+<tr><td>Receive timeout</td><td>Data has stopped arriving for a configured interval.</td></tr>
+<tr><td>Transmit holding register empty</td><td>More transmit data can be supplied.</td></tr>
+<tr><td>Transmit complete</td><td>The final frame has completed transmission.</td></tr>
+<tr><td>Line status error</td><td>Framing, parity, overrun or other line error.</td></tr>
+</table>
+
+<p>Actual interrupt causes and register-clearing behavior are peripheral-specific.</p>
+</section>
+
+<section>
+<h2>17. UART Error Handling</h2>
+<table>
+<tr><th>Error</th><th>Meaning</th><th>Possible Response</th></tr>
+<tr><td>Overrun error</td><td>New data arrives before earlier data is serviced.</td><td>Improve ISR latency or buffering.</td></tr>
+<tr><td>Framing error</td><td>Expected stop-bit condition was not detected.</td><td>Check baud rate, wiring and signal quality.</td></tr>
+<tr><td>Parity error</td><td>Received parity does not match configured parity.</td><td>Verify parity configuration and transmission integrity.</td></tr>
+<tr><td>Noise error</td><td>Peripheral detects a noisy frame, where supported.</td><td>Check grounding, wiring and electrical interference.</td></tr>
+<tr><td>Queue overflow</td><td>Software queue has no free item slot.</td><td>Increase capacity or improve consumer performance.</td></tr>
+</table>
+
+<div class="warning">UART parity detects some bit errors but is not a substitute for a robust packet integrity mechanism such as a CRC.</div>
+</section>
+
+<section>
+<h2>18. UART Communication with LPC2129</h2>
+<p>The LPC2129 provides two UART peripherals: UART0 and UART1.</p>
+
+<table>
+<tr><th>Peripheral</th><th>TX Pin</th><th>RX Pin</th><th>VIC Interrupt Source</th></tr>
+<tr><td>UART0</td><td>P0.0</td><td>P0.1</td><td>IRQ 6</td></tr>
+<tr><td>UART1</td><td>P0.8</td><td>P0.9</td><td>IRQ 7</td></tr>
+</table>
+
+<h3>Relevant UART0 Registers</h3>
+<table>
+<tr><th>Register</th><th>Purpose</th></tr>
+<tr><td>U0RBR</td><td>Receive Buffer Register.</td></tr>
+<tr><td>U0THR</td><td>Transmit Holding Register.</td></tr>
+<tr><td>U0DLL / U0DLM</td><td>Baud-rate divisor latches when enabled.</td></tr>
+<tr><td>U0LCR</td><td>Line Control Register.</td></tr>
+<tr><td>U0LSR</td><td>Line Status Register.</td></tr>
+<tr><td>U0IER</td><td>Interrupt Enable Register.</td></tr>
+<tr><td>U0IIR</td><td>Interrupt Identification Register.</td></tr>
+</table>
+
+<h3>Baud Rate Divisor</h3>
+<p>For the LPC2129 UART baud-rate generator, the divisor is determined using the peripheral clock and the configured fractional divider.</p>
+
+<p>With the fractional divider disabled:</p>
+<pre><code>Baud Rate = PCLK / (16 * Divisor)</code></pre>
+
+<p>For PCLK = 15 MHz and 9600 baud:</p>
+<pre><code>Divisor = 15000000 / (16 * 9600)
+        = 97.65625</code></pre>
+
+<p>The divisor must be an integer, so the selected divisor produces a small baud-rate error. For example, divisor 98 gives approximately 9566.33 baud with the fractional divider disabled.</p>
+
+<div class="note">For accurate configuration, use the LPC2129 fractional baud-rate generator settings where appropriate and verify the resulting baud-rate error. Confirm the actual PCLK and register configuration in the project.</div>
+</section>
+
+<section>
+<h2>19. FreeRTOS ISR Rules for ARM7 / LPC2129</h2>
+<p>The LPC2129 uses an ARM7TDMI-S processor and a Vectored Interrupt Controller (VIC). Its interrupt architecture is not the Cortex-M NVIC architecture.</p>
+
+<ul>
+<li>Use the FreeRTOS ISR APIs supported by the selected ARM7 port.</li>
+<li>Keep the UART ISR short.</li>
+<li>Do not call blocking queue or semaphore APIs from the ISR.</li>
+<li>Do not use a mutex from an ISR.</li>
+<li>Handle UART interrupt identification and status correctly.</li>
+<li>Use the port-specific ISR exit and yield mechanism.</li>
+<li>Verify interrupt priority and masking behavior for the selected port.</li>
+</ul>
+
+<div class="warning">Do not copy Cortex-M-specific interrupt-priority configuration macros or NVIC examples into an ARM7 LPC2129 project. The port's interrupt integration must be followed.</div>
+</section>
+
+<section>
+<h2>20. Practical Exercise 1 – UART Echo Application</h2>
+<p><strong>Objective:</strong> Receive a character through UART and transmit the same character back.</p>
+
+<h3>Operation</h3>
+<ol>
+<li>Send a character from a terminal.</li>
+<li>UART hardware receives the character.</li>
+<li>The ISR transfers the character to the RX queue.</li>
+<li>The RX task receives it.</li>
+<li>The application submits the character for transmission.</li>
+<li>The TX task sends it through UART.</li>
+</ol>
+
+<p><strong>Expected result:</strong> The terminal displays the received character returned by the embedded application.</p>
+</section>
+
+<section>
+<h2>21. Practical Exercise 2 – UART Command Processing</h2>
+<p><strong>Objective:</strong> Implement a basic command interface.</p>
+
+<h3>Example Commands</h3>
+<table>
+<tr><th>Command</th><th>Action</th></tr>
+<tr><td>LED_ON</td><td>Request LED activation.</td></tr>
+<tr><td>LED_OFF</td><td>Request LED deactivation.</td></tr>
+<tr><td>STATUS</td><td>Request system status.</td></tr>
+<tr><td>HELP</td><td>Display available commands.</td></tr>
+</table>
+
+<p><strong>Expected result:</strong> The application receives complete command lines, validates them and performs the associated action.</p>
+</section>
+
+<section>
+<h2>22. Practical Exercise 3 – Multiple Tasks Sending Messages</h2>
+<p><strong>Objective:</strong> Allow multiple application tasks to submit UART messages.</p>
+<ul>
+<li>Create a sensor task.</li>
+<li>Create a status task.</li>
+<li>Create a logging task.</li>
+<li>Allow each task to submit messages to the TX queue.</li>
+<li>Use one UART-owner task to transmit the messages.</li>
+<li>Observe queue ordering and message integrity.</li>
+</ul>
+<p><strong>Expected result:</strong> Messages are transmitted through one owner task without competing direct access to the UART driver.</p>
+</section>
+
+<section>
+<h2>23. Practical Exercise 4 – Detect UART RX Overflow</h2>
+<p><strong>Objective:</strong> Detect receive queue overflow.</p>
+<ul>
+<li>Use a small RX queue.</li>
+<li>Temporarily delay the receive-processing task.</li>
+<li>Send a continuous stream of data.</li>
+<li>Count failed ISR queue submissions.</li>
+<li>Compare received sequence numbers with transmitted sequence numbers.</li>
+</ul>
+<p><strong>Expected result:</strong> The application identifies dropped data instead of silently assuming all bytes were received.</p>
+</section>
+
+<section>
+<h2>24. Common Problems and Troubleshooting</h2>
+<table>
+<tr><th>Problem</th><th>Possible Cause</th><th>Solution</th></tr>
+<tr><td>No UART output</td><td>Incorrect pin configuration or baud rate.</td><td>Verify pin multiplexing, clock and driver setup.</td></tr>
+<tr><td>Garbage characters</td><td>Baud-rate mismatch or electrical noise.</td><td>Verify UART configuration and signal quality.</td></tr>
+<tr><td>Missing received bytes</td><td>ISR latency or receive queue overflow.</td><td>Improve buffering and consumer performance.</td></tr>
+<tr><td>Interleaved messages</td><td>Multiple tasks access UART directly.</td><td>Use a dedicated owner task or consistent locking.</td></tr>
+<tr><td>TX queue full</td><td>Producer rate exceeds transmission rate.</td><td>Review message rate and queue capacity.</td></tr>
+<tr><td>RX task never runs</td><td>ISR does not send to queue or request required scheduling.</td><td>Inspect ISR integration and queue status.</td></tr>
+<tr><td>Corrupted DMA data</td><td>Buffer reused before transfer completion.</td><td>Define transfer ownership and completion handling.</td></tr>
+<tr><td>Unexpected interrupt behavior</td><td>Incorrect source acknowledgement or VIC setup.</td><td>Check peripheral and VIC documentation.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>25. Keil µVision and LPC2129 Simulator Notes</h2>
+<p>For the LPC2129, UART0 and UART1 can be studied through their peripheral registers and interrupt configuration, subject to the simulator's device-model support.</p>
+
+<h3>Suggested Activities</h3>
+<ul>
+<li>Inspect UART0 line-control and divisor registers.</li>
+<li>Review the calculated PCLK and baud-rate divisor.</li>
+<li>Study the UART interrupt identification register.</li>
+<li>Set breakpoints in the UART ISR.</li>
+<li>Inspect the RX queue after ISR-to-task communication.</li>
+<li>Observe task blocking and wake-up behavior.</li>
+<li>Inspect the TX queue and UART transmit path.</li>
+</ul>
+
+<div class="warning">A simulator may not reproduce a physical UART link, external serial adapter, electrical signal quality or every peripheral interrupt behavior. Verify the selected Keil device model and FreeRTOS ARM7 port before treating simulation results as hardware validation.</div>
+</section>
+
+<section>
+<h2>26. Interview Questions</h2>
+<ol>
+<li>What is UART communication?</li>
+<li>Why is UART called asynchronous communication?</li>
+<li>What are TX and RX signals?</li>
+<li>Explain the UART frame format.</li>
+<li>What does 9600 8N1 mean?</li>
+<li>What is the difference between polling and interrupt-driven UART?</li>
+<li>How can a FreeRTOS queue be used for UART transmission?</li>
+<li>Why use a dedicated UART-owner task?</li>
+<li>How can UART data be transferred from an ISR to a task?</li>
+<li>Why must ISR-safe APIs be used inside an ISR?</li>
+<li>What is UART receive overrun?</li>
+<li>What is the purpose of a receive buffer?</li>
+<li>Why is message framing required?</li>
+<li>What is the difference between a queue of bytes and a queue of message structures?</li>
+<li>What happens when a FreeRTOS queue becomes full?</li>
+<li>Why is DMA buffer ownership important?</li>
+<li>How is UART baud rate calculated?</li>
+<li>What is parity checking?</li>
+<li>Why is CRC useful in communication protocols?</li>
+<li>What is the difference between UART0 and UART1 on the LPC2129?</li>
+</ol>
+</section>
+
+<section>
+<h2>27. Lesson Summary</h2>
+<ul>
+<li>UART provides asynchronous serial communication.</li>
+<li>TX and RX are separate communication signals.</li>
+<li>FreeRTOS tasks can request UART transmission through a queue.</li>
+<li>A dedicated UART-owner task simplifies shared transmission management.</li>
+<li>Interrupt-driven reception can transfer bytes to tasks using ISR-safe APIs.</li>
+<li>Queue overflow and hardware errors must be handled.</li>
+<li>UART is a byte stream, so application-level framing is required.</li>
+<li>DMA and interrupt-driven drivers need explicit buffer ownership rules.</li>
+<li>The LPC2129 has UART0 and UART1 with separate pin assignments and interrupt sources.</li>
+<li>ARM7 interrupt integration must follow the selected FreeRTOS port.</li>
+</ul>
+</section>
+
+<section class="lesson-nav">
+<a href="L06_Sensor_Monitoring_Using_FreeRTOS_Project.html">← Previous Lesson</a>
+<a href="index.html">Chapter Index</a>
+<a href="L08_Multitasking_Motor_Control_Project.html">Next Lesson →</a>
+</section>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | RTOS &amp; FreeRTOS Course</p>
+<p>Chapter 20 – Practical Projects and Interview Preparation</p>
+</footer>
+
+</body>
+</html>
