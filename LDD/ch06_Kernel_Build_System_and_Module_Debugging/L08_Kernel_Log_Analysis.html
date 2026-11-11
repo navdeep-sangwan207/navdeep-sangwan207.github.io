@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kernel Log Analysis | Linux Device Drivers</title>
+    <link rel="stylesheet" href="../../style.css">
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f7fb;
+            color: #263238;
+            line-height: 1.7;
+        }
+
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 30px 15px;
+        }
+
+        header h1 { margin: 0; font-size: 30px; }
+        header p { margin: 8px 0 0; }
+
+        nav {
+            background: #092b5c;
+            padding: 12px;
+            text-align: center;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        nav a:hover { color: #b9dcff; }
+
+        .container {
+            max-width: 1050px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+
+        .lesson-info {
+            background: #e5f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 22px;
+        }
+
+        .content-section {
+            background: white;
+            padding: 22px;
+            margin-bottom: 22px;
+            border-radius: 9px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #dce8f7;
+            padding-bottom: 8px;
+            margin-top: 0;
+        }
+
+        h3 { color: #174ea6; margin-top: 22px; }
+
+        pre {
+            background: #172337;
+            color: #eaf2ff;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .diagram {
+            background: #edf5ff;
+            border: 1px solid #c8dcf5;
+            border-radius: 8px;
+            padding: 18px;
+            margin: 18px 0;
+            text-align: center;
+        }
+
+        .diagram-box {
+            background: white;
+            border: 2px solid #2878d7;
+            border-radius: 7px;
+            padding: 12px;
+            margin: 9px auto;
+            max-width: 650px;
+            font-weight: bold;
+        }
+
+        .arrow {
+            color: #174ea6;
+            font-size: 23px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th { background: #e5f1ff; color: #123b80; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e5a000;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .tip {
+            background: #e8f6ed;
+            border-left: 5px solid #279653;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+
+        .navigation-buttons a {
+            background: #174ea6;
+            color: white;
+            padding: 11px 18px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .navigation-buttons a:hover { background: #0d3478; }
+
+        footer {
+            background: #092b5c;
+            color: white;
+            text-align: center;
+            padding: 18px;
+            margin-top: 35px;
+        }
+
+        @media (max-width: 600px) {
+            header h1 { font-size: 23px; }
+            nav a { margin: 5px 7px; }
+            .content-section { padding: 16px; }
+            table { display: block; overflow-x: auto; }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 6: Kernel Build System and Module Debugging</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter 6</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson 8:</strong> Kernel Log Analysis
+        <br>
+        <strong>Level:</strong> Beginner to Intermediate
+        <br>
+        <strong>Prerequisites:</strong> printk(), kernel log levels, dmesg and kernel modules.
+        <br>
+        <strong>Objective:</strong> Understand Linux kernel logs, inspect diagnostic messages and identify device driver problems using kernel logging tools.
+    </div>
+
+    <section class="content-section">
+        <h2>1. Introduction</h2>
+
+        <p>
+            The Linux kernel performs many operations internally,
+            including process scheduling, memory management,
+            interrupt handling, device communication and module
+            management.
+        </p>
+
+        <p>
+            When a problem occurs, the kernel can generate
+            diagnostic messages that help developers understand
+            what happened.
+        </p>
+
+        <p>
+            These messages are called kernel log messages.
+            They are particularly important in Linux device
+            driver development because many driver operations
+            take place inside kernel space.
+        </p>
+
+        <p>
+            Kernel log analysis is the process of examining
+            these messages to identify errors, warnings,
+            initialization failures and unexpected system behavior.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Are Kernel Logs?</h2>
+
+        <p>
+            Kernel logs are diagnostic messages generated by
+            the Linux kernel and kernel components.
+        </p>
+
+        <p>They may contain information about:</p>
+
+        <ul>
+            <li>Kernel initialization.</li>
+            <li>Hardware detection.</li>
+            <li>Device driver initialization.</li>
+            <li>Kernel module loading and unloading.</li>
+            <li>Memory allocation failures.</li>
+            <li>Interrupt-related problems.</li>
+            <li>Kernel warnings and errors.</li>
+            <li>Kernel crashes and hardware faults.</li>
+        </ul>
+
+        <div class="diagram">
+            <div class="diagram-box">Linux Kernel and Device Drivers</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Kernel Logging Functions</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Kernel Ring Buffer</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">dmesg / systemd Journal</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Developer Analyzes Messages</div>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Kernel Ring Buffer</h2>
+
+        <p>
+            The kernel ring buffer is a memory-based buffer
+            that stores kernel messages.
+        </p>
+
+        <p>
+            Messages generated by functions such as
+            <code>printk()</code> are recorded in the kernel
+            logging system and can be read using tools such
+            as <code>dmesg</code>.
+        </p>
+
+        <h3>Important Characteristics</h3>
+
+        <ul>
+            <li>Stores kernel diagnostic messages.</li>
+            <li>Uses a circular or ring-buffer organization.</li>
+            <li>Older messages may be overwritten as new messages arrive.</li>
+            <li>Provides information about kernel and driver activity.</li>
+            <li>Can be inspected from user space.</li>
+        </ul>
+
+        <div class="diagram">
+            <div class="diagram-box">Kernel Message 1</div>
+            <div class="diagram-box">Kernel Message 2</div>
+            <div class="diagram-box">Kernel Message 3</div>
+            <div class="diagram-box">Kernel Message 4</div>
+            <div class="diagram-box">Kernel Message 5</div>
+            <p><strong>New messages enter as the buffer continues to operate.</strong></p>
+        </div>
+
+        <div class="note">
+            The kernel ring buffer is not the same as a permanent
+            log file. Messages may be lost when the buffer wraps
+            or when the system restarts.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. printk() and Kernel Logging</h2>
+
+        <p>
+            <code>printk()</code> is a kernel logging function
+            used to generate messages from kernel code.
+        </p>
+
+        <p>Example:</p>
+
+        <pre><code>#include &lt;linux/kernel.h&gt;
+
+printk("Device driver initialized\n");</code></pre>
+
+        <p>
+            The message can be inspected using:
+        </p>
+
+        <pre><code>sudo dmesg</code></pre>
+
+        <p>
+            Linux also provides convenient logging macros such
+            as <code>pr_info()</code>, <code>pr_err()</code>,
+            <code>pr_warn()</code> and <code>pr_debug()</code>.
+        </p>
+
+        <pre><code>pr_info("Driver initialized\n");
+pr_warn("Device configuration warning\n");
+pr_err("Device initialization failed\n");</code></pre>
+
+        <p>
+            These macros make kernel logging more readable
+            and allow messages to carry appropriate severity
+            levels.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Kernel Log Levels</h2>
+
+        <p>
+            Kernel messages have different severity levels.
+            These levels help developers distinguish normal
+            information from serious failures.
+        </p>
+
+        <table>
+            <tr>
+                <th>Level</th>
+                <th>Name</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>0</td>
+                <td>KERN_EMERG</td>
+                <td>System is unusable.</td>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>KERN_ALERT</td>
+                <td>Action must be taken immediately.</td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>KERN_CRIT</td>
+                <td>Critical condition.</td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>KERN_ERR</td>
+                <td>Error condition.</td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>KERN_WARNING</td>
+                <td>Warning condition.</td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>KERN_NOTICE</td>
+                <td>Normal but significant condition.</td>
+            </tr>
+            <tr>
+                <td>6</td>
+                <td>KERN_INFO</td>
+                <td>Informational message.</td>
+            </tr>
+            <tr>
+                <td>7</td>
+                <td>KERN_DEBUG</td>
+                <td>Debug-level message.</td>
+            </tr>
+        </table>
+
+        <p>Example:</p>
+
+        <pre><code>printk(KERN_INFO "Device initialized\n");
+printk(KERN_ERR "Device initialization failed\n");
+printk(KERN_WARNING "Configuration warning\n");</code></pre>
+
+        <p>
+            The severity level helps control which messages
+            are displayed on the console. It does not mean
+            that every message is permanently stored.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Understanding dmesg</h2>
+
+        <p>
+            The <code>dmesg</code> command displays messages
+            from the kernel ring buffer.
+        </p>
+
+        <h3>Display All Available Messages</h3>
+
+        <pre><code>sudo dmesg</code></pre>
+
+        <h3>Display Recent Messages</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <h3>Display the Last 50 Messages</h3>
+
+        <pre><code>sudo dmesg | tail -50</code></pre>
+
+        <h3>Display Messages with Human-Readable Timestamps</h3>
+
+        <pre><code>sudo dmesg -T</code></pre>
+
+        <h3>Clear the Ring Buffer</h3>
+
+        <pre><code>sudo dmesg -C</code></pre>
+
+        <div class="note">
+            Clearing the ring buffer removes its currently
+            retained messages. It does not clear persistent
+            system journal records. Use this command carefully
+            because it can remove useful diagnostic evidence.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Filtering Kernel Log Messages</h2>
+
+        <p>
+            A large kernel log can contain thousands of messages.
+            Filtering makes it easier to find relevant information.
+        </p>
+
+        <h3>Search for Errors</h3>
+
+        <pre><code>sudo dmesg | grep -i error</code></pre>
+
+        <h3>Search for Warnings</h3>
+
+        <pre><code>sudo dmesg | grep -i warning</code></pre>
+
+        <h3>Search for a Specific Module</h3>
+
+        <pre><code>sudo dmesg | grep -i hello</code></pre>
+
+        <h3>Search for USB Messages</h3>
+
+        <pre><code>sudo dmesg | grep -i usb</code></pre>
+
+        <h3>Search for I2C Messages</h3>
+
+        <pre><code>sudo dmesg | grep -i i2c</code></pre>
+
+        <h3>Search for Multiple Terms</h3>
+
+        <pre><code>sudo dmesg | grep -Ei 'error|failed|warning'</code></pre>
+
+        <p>
+            The <code>-i</code> option ignores letter case,
+            while <code>-E</code> enables extended regular
+            expression matching.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Following Kernel Logs in Real Time</h2>
+
+        <p>
+            During driver development, it is useful to monitor
+            kernel messages while performing an operation.
+        </p>
+
+        <h3>Using dmesg -w</h3>
+
+        <pre><code>sudo dmesg -w</code></pre>
+
+        <p>
+            This command waits for new kernel messages and
+            displays them as they arrive.
+        </p>
+
+        <h3>Example Workflow</h3>
+
+        <ol>
+            <li>Open Terminal 1.</li>
+            <li>Run <code>sudo dmesg -w</code>.</li>
+            <li>Open Terminal 2.</li>
+            <li>Load a test kernel module.</li>
+            <li>Observe initialization messages in Terminal 1.</li>
+            <li>Remove the module and observe cleanup messages.</li>
+        </ol>
+
+        <pre><code>sudo insmod hello.ko
+sudo rmmod hello</code></pre>
+
+        <p>
+            Press Ctrl+C in Terminal 1 to stop monitoring.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Kernel Logs and systemd Journal</h2>
+
+        <p>
+            Modern Linux distributions often use systemd's
+            journal service to collect system and kernel logs.
+        </p>
+
+        <p>
+            The <code>journalctl</code> command can be used
+            to inspect kernel messages and other system logs.
+        </p>
+
+        <h3>Display Kernel Messages</h3>
+
+        <pre><code>sudo journalctl -k</code></pre>
+
+        <h3>Display Kernel Messages from the Current Boot</h3>
+
+        <pre><code>sudo journalctl -k -b</code></pre>
+
+        <h3>Display Recent Kernel Messages</h3>
+
+        <pre><code>sudo journalctl -k -n 50</code></pre>
+
+        <h3>Follow Kernel Messages</h3>
+
+        <pre><code>sudo journalctl -k -f</code></pre>
+
+        <h3>Display Kernel Messages Since a Time</h3>
+
+        <pre><code>sudo journalctl -k --since "1 hour ago"</code></pre>
+
+        <table>
+            <tr>
+                <th>dmesg</th>
+                <th>journalctl -k</th>
+            </tr>
+            <tr>
+                <td>Reads kernel messages from the ring buffer.</td>
+                <td>Reads kernel messages collected by the systemd journal.</td>
+            </tr>
+            <tr>
+                <td>Useful for immediate kernel diagnostics.</td>
+                <td>Useful for examining current and retained boot history.</td>
+            </tr>
+            <tr>
+                <td>Ring buffer contents can be overwritten.</td>
+                <td>Journal retention depends on system configuration.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Understanding Kernel Log Timestamps</h2>
+
+        <p>
+            Kernel log messages commonly contain timestamps.
+            These indicate the time associated with a message,
+            often measured relative to the start of the current
+            boot.
+        </p>
+
+        <p>Example:</p>
+
+        <pre><code>[  12.450000] hello: module initialized
+[  18.320000] hello: device operation started
+[  25.100000] hello: module removed</code></pre>
+
+        <p>Interpretation:</p>
+
+        <ul>
+            <li><code>12.450000</code> represents the message timestamp.</li>
+            <li>The first message indicates module initialization.</li>
+            <li>The second message indicates a later operation.</li>
+            <li>The third message indicates module removal.</li>
+        </ul>
+
+        <p>
+            Use <code>dmesg -T</code> when a human-readable
+            date and time representation is useful.
+        </p>
+
+        <div class="note">
+            Human-readable timestamps are converted using the
+            system clock and may be affected by clock adjustments.
+            For precise timing analysis, understand the timestamp
+            source used by the logging tool.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Analyzing Device Driver Messages</h2>
+
+        <p>
+            Device drivers often generate messages during
+            initialization, device detection, configuration
+            and error handling.
+        </p>
+
+        <p>Example driver log messages:</p>
+
+        <pre><code>[  10.120000] my_driver: initialization started
+[  10.150000] my_driver: device detected
+[  10.180000] my_driver: configuration completed
+[  10.200000] my_driver: initialization successful</code></pre>
+
+        <h3>What to Look For</h3>
+
+        <ul>
+            <li>Did the driver initialization function execute?</li>
+            <li>Was the device detected?</li>
+            <li>Did resource allocation succeed?</li>
+            <li>Was the device configuration completed?</li>
+            <li>Did any error occur before initialization finished?</li>
+        </ul>
+
+        <p>
+            If initialization stops after a particular message,
+            investigate the next operation performed by the driver.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Common Kernel Log Messages</h2>
+
+        <table>
+            <tr>
+                <th>Log Message</th>
+                <th>Possible Meaning</th>
+            </tr>
+            <tr>
+                <td><code>Unknown symbol</code></td>
+                <td>A required symbol could not be resolved.</td>
+            </tr>
+            <tr>
+                <td><code>Invalid module format</code></td>
+                <td>The module is incompatible with the running kernel or its expected format.</td>
+            </tr>
+            <tr>
+                <td><code>Out of memory</code></td>
+                <td>A memory allocation or memory-related operation failed.</td>
+            </tr>
+            <tr>
+                <td><code>Device or resource busy</code></td>
+                <td>A resource is already occupied or cannot be accessed.</td>
+            </tr>
+            <tr>
+                <td><code>Permission denied</code></td>
+                <td>An operation was rejected due to permissions or security policy.</td>
+            </tr>
+            <tr>
+                <td><code>Kernel BUG</code></td>
+                <td>The kernel encountered an internal bug condition.</td>
+            </tr>
+            <tr>
+                <td><code>Oops</code></td>
+                <td>The kernel encountered an unexpected fault or invalid operation.</td>
+            </tr>
+        </table>
+
+        <p>
+            A message must be interpreted in its surrounding
+            context. The same phrase can have different
+            implications depending on the subsystem and operation.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Kernel Log Levels and Filtering</h2>
+
+        <p>
+            Kernel messages have severity levels that can be
+            used to identify important conditions.
+        </p>
+
+        <h3>Display Messages at Error Severity</h3>
+
+        <pre><code>sudo dmesg --level=err</code></pre>
+
+        <h3>Display Errors and Warnings</h3>
+
+        <pre><code>sudo dmesg --level=err,warn</code></pre>
+
+        <h3>Display Information and Higher-Severity Messages</h3>
+
+        <pre><code>sudo dmesg --level=info</code></pre>
+
+        <p>
+            Supported filtering options can vary with the
+            util-linux version. Use <code>dmesg --help</code>
+            to inspect the available options.
+        </p>
+
+        <div class="note">
+            Message filtering is different from changing the
+            kernel console log level. Filtering selects messages
+            for display; console log-level settings control
+            which messages are printed to the console.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Kernel Log Analysis Workflow</h2>
+
+        <p>
+            A systematic approach helps prevent incorrect
+            conclusions when diagnosing driver problems.
+        </p>
+
+        <div class="diagram">
+            <div class="diagram-box">Reproduce the Driver Problem</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Capture Kernel Messages</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Filter Relevant Messages</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Identify Errors and Warnings</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Analyze Timestamps and Message Order</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Locate the Failing Driver Operation</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Correct and Retest</div>
+        </div>
+
+        <h3>Recommended Procedure</h3>
+
+        <ol>
+            <li>Record the kernel version using <code>uname -r</code>.</li>
+            <li>Capture the current kernel log.</li>
+            <li>Reproduce the problem.</li>
+            <li>Capture new messages using <code>dmesg</code>.</li>
+            <li>Filter messages related to the driver.</li>
+            <li>Identify the first relevant warning or error.</li>
+            <li>Correlate timestamps with driver operations.</li>
+            <li>Correct the underlying problem.</li>
+            <li>Repeat the test and compare results.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Practical Project: Analyze Kernel Module Logs</h2>
+
+        <p>
+            In this exercise, create a module that generates
+            messages at different severity levels.
+        </p>
+
+        <h3>Step 1: Create Project Directory</h3>
+
+        <pre><code>mkdir kernel_log_practice
+cd kernel_log_practice</code></pre>
+
+        <h3>Step 2: Create hello.c</h3>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+
+static int __init hello_init(void)
+{
+    pr_info("hello: module initialization started\n");
+    pr_warn("hello: example warning message\n");
+    pr_err("hello: example error-level test message\n");
+
+    pr_info("hello: module initialization successful\n");
+
+    return 0;
+}
+
+static void __exit hello_exit(void)
+{
+    pr_info("hello: module cleanup executed\n");
+}
+
+module_init(hello_init);
+module_exit(hello_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Kernel logging practice module");</code></pre>
+
+        <p>
+            The error-level message in this exercise is
+            deliberately generated for logging practice.
+            It does not indicate that initialization failed.
+        </p>
+
+        <h3>Step 3: Create Makefile</h3>
+
+        <pre><code>obj-m += hello.o
+
+all:
+	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+        <h3>Step 4: Compile the Module</h3>
+
+        <pre><code>make</code></pre>
+
+        <h3>Step 5: Load the Module</h3>
+
+        <pre><code>sudo insmod hello.ko</code></pre>
+
+        <h3>Step 6: View Kernel Messages</h3>
+
+        <pre><code>sudo dmesg | tail -30</code></pre>
+
+        <h3>Step 7: Filter Messages</h3>
+
+        <pre><code>sudo dmesg | grep -i hello</code></pre>
+
+        <h3>Step 8: Remove the Module</h3>
+
+        <pre><code>sudo rmmod hello</code></pre>
+
+        <h3>Step 9: Verify Cleanup Message</h3>
+
+        <pre><code>sudo dmesg | grep -i hello</code></pre>
+
+        <h3>Step 10: Inspect Journal Logs</h3>
+
+        <pre><code>sudo journalctl -k -n 50</code></pre>
+
+        <div class="tip">
+            Expected result: you should be able to identify
+            initialization, warning, error-level test and
+            cleanup messages in the kernel log.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Important Precautions During Log Analysis</h2>
+
+        <ul>
+            <li>Do not assume every error-level message means a kernel failure.</li>
+            <li>Read surrounding messages before interpreting an error.</li>
+            <li>Consider the order and timestamps of messages.</li>
+            <li>Remember that old ring-buffer messages can be overwritten.</li>
+            <li>Use persistent journal records when available.</li>
+            <li>Avoid clearing logs before collecting useful diagnostic information.</li>
+            <li>Do not expose sensitive information from system logs when sharing them.</li>
+            <li>Use appropriate logging levels in production drivers.</li>
+            <li>Avoid excessive logging in frequently executed or performance-critical paths.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Summary</h2>
+
+        <ul>
+            <li>Kernel logs provide diagnostic information about kernel activity.</li>
+            <li>The kernel ring buffer stores recent kernel messages.</li>
+            <li><code>printk()</code> and <code>pr_*()</code> macros generate kernel messages.</li>
+            <li>Kernel messages have different severity levels.</li>
+            <li><code>dmesg</code> displays ring-buffer messages.</li>
+            <li><code>journalctl -k</code> displays kernel messages from the system journal.</li>
+            <li><code>grep</code> helps filter relevant messages.</li>
+            <li>Real-time monitoring helps diagnose module behavior.</li>
+            <li>Timestamps help correlate messages with driver operations.</li>
+            <li>Systematic log analysis makes driver debugging more effective.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>18. Practice Questions</h2>
+
+        <h3>A. Short Answer Questions</h3>
+
+        <p>1. What are kernel logs?</p>
+        <p>2. What is the kernel ring buffer?</p>
+        <p>3. What is the purpose of printk()?</p>
+        <p>4. What is the difference between pr_info() and pr_err()?</p>
+        <p>5. What does the dmesg command do?</p>
+        <p>6. How can you monitor kernel messages in real time?</p>
+        <p>7. What is the purpose of journalctl -k?</p>
+        <p>8. Why are timestamps useful during debugging?</p>
+        <p>9. How can you search for a particular driver's messages?</p>
+        <p>10. Why should kernel logs be analyzed in context?</p>
+
+        <h3>B. Long Answer Questions</h3>
+
+        <p>1. Explain the Linux kernel logging architecture.</p>
+        <p>2. Describe the kernel ring buffer and its characteristics.</p>
+        <p>3. Explain the different kernel log severity levels.</p>
+        <p>4. Compare dmesg and journalctl -k.</p>
+        <p>5. Explain how kernel logs help in device driver debugging.</p>
+        <p>6. Describe a systematic kernel log analysis workflow.</p>
+
+        <h3>C. Practical Exercises</h3>
+
+        <p>1. Display recent kernel messages using dmesg.</p>
+        <p>2. Filter kernel messages containing the word error.</p>
+        <p>3. Monitor kernel messages in real time.</p>
+        <p>4. Display kernel logs using journalctl.</p>
+        <p>5. Create a module that generates informational messages.</p>
+        <p>6. Generate warning and error-level test messages.</p>
+        <p>7. Load and unload the module while monitoring logs.</p>
+        <p>8. Prepare a short report explaining the observed messages.</p>
+    </section>
+
+    <section class="content-section">
+        <h2>19. Expected Learning Outcomes</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Explain kernel logging and the ring buffer.</li>
+            <li>Understand printk() and kernel logging macros.</li>
+            <li>Identify kernel message severity levels.</li>
+            <li>Display and filter kernel logs using dmesg.</li>
+            <li>Monitor kernel messages in real time.</li>
+            <li>Use journalctl to inspect kernel logs.</li>
+            <li>Analyze timestamps and driver-related messages.</li>
+            <li>Use kernel logs to investigate module and driver problems.</li>
+        </ul>
+    </section>
+
+    <div class="navigation-buttons">
+        <a href="L07_Module_Loading_Errors.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter Index
+        </a>
+
+        <a href="L09_Debugging_Kernel_Modules.html">
+            Next Lesson →
+        </a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 6 – Lesson 8: Kernel Log Analysis</p>
+</footer>
+
+</body>
+</html>
