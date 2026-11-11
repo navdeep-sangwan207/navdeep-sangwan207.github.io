@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debugging Kernel Modules | Linux Device Drivers</title>
+    <link rel="stylesheet" href="../../style.css">
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f7fb;
+            color: #263238;
+            line-height: 1.7;
+        }
+
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 30px 15px;
+        }
+
+        header h1 { margin: 0; font-size: 30px; }
+        header p { margin: 8px 0 0; }
+
+        nav {
+            background: #092b5c;
+            padding: 12px;
+            text-align: center;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        nav a:hover { color: #b9dcff; }
+
+        .container {
+            max-width: 1050px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+
+        .lesson-info {
+            background: #e5f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 22px;
+        }
+
+        .content-section {
+            background: white;
+            padding: 22px;
+            margin-bottom: 22px;
+            border-radius: 9px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #dce8f7;
+            padding-bottom: 8px;
+            margin-top: 0;
+        }
+
+        h3 { color: #174ea6; margin-top: 22px; }
+
+        pre {
+            background: #172337;
+            color: #eaf2ff;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .diagram {
+            background: #edf5ff;
+            border: 1px solid #c8dcf5;
+            border-radius: 8px;
+            padding: 18px;
+            margin: 18px 0;
+            text-align: center;
+        }
+
+        .diagram-box {
+            background: white;
+            border: 2px solid #2878d7;
+            border-radius: 7px;
+            padding: 12px;
+            margin: 9px auto;
+            max-width: 650px;
+            font-weight: bold;
+        }
+
+        .arrow {
+            color: #174ea6;
+            font-size: 23px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th { background: #e5f1ff; color: #123b80; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e5a000;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .tip {
+            background: #e8f6ed;
+            border-left: 5px solid #279653;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+
+        .navigation-buttons a {
+            background: #174ea6;
+            color: white;
+            padding: 11px 18px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .navigation-buttons a:hover { background: #0d3478; }
+
+        footer {
+            background: #092b5c;
+            color: white;
+            text-align: center;
+            padding: 18px;
+            margin-top: 35px;
+        }
+
+        @media (max-width: 600px) {
+            header h1 { font-size: 23px; }
+            nav a { margin: 5px 7px; }
+            .content-section { padding: 16px; }
+            table { display: block; overflow-x: auto; }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 6: Kernel Build System and Module Debugging</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter 6</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson 9:</strong> Debugging Kernel Modules
+        <br>
+        <strong>Level:</strong> Intermediate
+        <br>
+        <strong>Prerequisites:</strong> Kernel modules, printk(), dmesg, module loading and unloading, and kernel build system.
+        <br>
+        <strong>Objective:</strong> Learn practical techniques and tools for identifying, analyzing and correcting problems in Linux kernel modules.
+    </div>
+
+    <section class="content-section">
+        <h2>1. Introduction</h2>
+
+        <p>
+            Debugging is the process of identifying, analyzing
+            and correcting errors in a software program.
+            Kernel module debugging applies this process to
+            code that executes inside the Linux kernel.
+        </p>
+
+        <p>
+            Kernel modules are different from ordinary user-space
+            applications because they execute with kernel privileges.
+            A programming mistake can affect the entire operating
+            system.
+        </p>
+
+        <p>
+            A faulty module may cause memory corruption, invalid
+            pointer access, kernel warnings, kernel oops messages
+            or even a complete system crash.
+        </p>
+
+        <p>
+            Therefore, kernel developers use systematic debugging
+            techniques to investigate problems safely.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>2. Why Is Kernel Module Debugging Important?</h2>
+
+        <p>
+            Device drivers interact with kernel subsystems,
+            memory management, hardware resources and other
+            kernel components.
+        </p>
+
+        <p>Debugging helps identify problems such as:</p>
+
+        <ul>
+            <li>Incorrect module initialization.</li>
+            <li>Failure during module cleanup.</li>
+            <li>Invalid pointer dereferencing.</li>
+            <li>Memory allocation failures.</li>
+            <li>Memory leaks.</li>
+            <li>Race conditions.</li>
+            <li>Interrupt handling problems.</li>
+            <li>Resource conflicts.</li>
+            <li>Incorrect device register access.</li>
+            <li>Kernel API misuse.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>3. User-Space Debugging vs Kernel-Space Debugging</h2>
+
+        <table>
+            <tr>
+                <th>User-Space Debugging</th>
+                <th>Kernel-Space Debugging</th>
+            </tr>
+            <tr>
+                <td>Debugs normal application processes.</td>
+                <td>Debugs kernel code and loadable modules.</td>
+            </tr>
+            <tr>
+                <td>Tools include GDB and application logging.</td>
+                <td>Tools include printk, dmesg, ftrace, KASAN and KGDB.</td>
+            </tr>
+            <tr>
+                <td>A program crash usually affects that process.</td>
+                <td>A kernel fault can affect the entire system.</td>
+            </tr>
+            <tr>
+                <td>Processes have separate virtual address spaces.</td>
+                <td>Kernel code operates with kernel privileges and kernel memory access.</td>
+            </tr>
+            <tr>
+                <td>Ordinary debugging can often pause a process.</td>
+                <td>Stopping kernel execution can affect system-wide activity and timing.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Common Kernel Module Debugging Techniques</h2>
+
+        <table>
+            <tr>
+                <th>Technique</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>printk() and pr_*()</td>
+                <td>Generate diagnostic messages.</td>
+            </tr>
+            <tr>
+                <td>dmesg</td>
+                <td>Inspect kernel ring-buffer messages.</td>
+            </tr>
+            <tr>
+                <td>Dynamic Debug</td>
+                <td>Enable selected debug messages at runtime.</td>
+            </tr>
+            <tr>
+                <td>ftrace</td>
+                <td>Trace kernel functions and execution events.</td>
+            </tr>
+            <tr>
+                <td>KGDB</td>
+                <td>Perform source-level kernel debugging with GDB.</td>
+            </tr>
+            <tr>
+                <td>KASAN</td>
+                <td>Detect many kernel memory access errors.</td>
+            </tr>
+            <tr>
+                <td>Lockdep</td>
+                <td>Detect potential locking errors and deadlocks.</td>
+            </tr>
+            <tr>
+                <td>Debugfs</td>
+                <td>Expose debugging information through a kernel interface.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Debugging with printk() and pr_*()</h2>
+
+        <p>
+            Logging is one of the simplest ways to debug
+            a kernel module.
+        </p>
+
+        <p>
+            Developers place messages at important points
+            in the module to understand its execution flow.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+
+static int __init debug_init(void)
+{
+    pr_info("debug: initialization started\n");
+
+    pr_info("debug: checking configuration\n");
+
+    pr_info("debug: initialization completed\n");
+
+    return 0;
+}
+
+static void __exit debug_exit(void)
+{
+    pr_info("debug: cleanup started\n");
+}
+
+module_init(debug_init);
+module_exit(debug_exit);
+
+MODULE_LICENSE("GPL");</code></pre>
+
+        <h3>View Messages</h3>
+
+        <pre><code>sudo dmesg | grep -i debug</code></pre>
+
+        <h3>Common Logging Macros</h3>
+
+        <table>
+            <tr>
+                <th>Macro</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td><code>pr_info()</code></td>
+                <td>Informational messages.</td>
+            </tr>
+            <tr>
+                <td><code>pr_warn()</code></td>
+                <td>Warning messages.</td>
+            </tr>
+            <tr>
+                <td><code>pr_err()</code></td>
+                <td>Error messages.</td>
+            </tr>
+            <tr>
+                <td><code>pr_debug()</code></td>
+                <td>Debug messages that can be controlled by configuration or Dynamic Debug.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            Do not add excessive logging to frequently executed
+            functions. Large amounts of logging can affect
+            performance and make important messages difficult
+            to identify.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Debugging Module Initialization</h2>
+
+        <p>
+            The initialization function is executed when the
+            kernel loads a module.
+        </p>
+
+        <p>
+            If initialization fails, the module is not
+            successfully loaded.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/errno.h&gt;
+
+static int __init test_init(void)
+{
+    pr_info("test: step 1 - initialization started\n");
+
+    pr_info("test: step 2 - checking resources\n");
+
+    pr_err("test: step 3 - simulated failure\n");
+
+    return -EINVAL;
+}
+
+static void __exit test_exit(void)
+{
+    pr_info("test: cleanup executed\n");
+}
+
+module_init(test_init);
+module_exit(test_exit);
+
+MODULE_LICENSE("GPL");</code></pre>
+
+        <p>
+            This example intentionally returns a negative
+            error code.
+        </p>
+
+        <h3>Load the Module</h3>
+
+        <pre><code>sudo insmod test.ko</code></pre>
+
+        <h3>Inspect the Kernel Log</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <p>
+            The initialization messages help identify how far
+            the function executed before returning the error.
+        </p>
+
+        <div class="note">
+            The registered exit function is not called as
+            a normal unload operation when initialization
+            fails. Resources acquired before failure must
+            be released by the initialization error path.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Debugging Memory Allocation Problems</h2>
+
+        <p>
+            Kernel modules often allocate memory dynamically
+            using functions such as:
+        </p>
+
+        <ul>
+            <li><code>kmalloc()</code></li>
+            <li><code>kzalloc()</code></li>
+            <li><code>kcalloc()</code></li>
+            <li><code>vmalloc()</code></li>
+        </ul>
+
+        <p>
+            Allocation can fail, so the returned pointer
+            must be checked before use.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/slab.h&gt;
+#include &lt;linux/init.h&gt;
+
+static int *buffer;
+
+static int __init memory_init(void)
+{
+    buffer = kmalloc(10 * sizeof(*buffer), GFP_KERNEL);
+
+    if (!buffer) {
+        pr_err("memory: allocation failed\n");
+        return -ENOMEM;
+    }
+
+    pr_info("memory: allocation successful\n");
+
+    return 0;
+}
+
+static void __exit memory_exit(void)
+{
+    kfree(buffer);
+    pr_info("memory: buffer released\n");
+}
+
+module_init(memory_init);
+module_exit(memory_exit);
+
+MODULE_LICENSE("GPL");</code></pre>
+
+        <h3>Debugging Checklist</h3>
+
+        <ul>
+            <li>Check whether allocation succeeded.</li>
+            <li>Verify the allocated size.</li>
+            <li>Use the correct allocation flags.</li>
+            <li>Do not access a NULL pointer.</li>
+            <li>Release allocated memory when it is no longer needed.</li>
+            <li>Check all initialization error paths for cleanup.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Debugging NULL Pointer Dereferencing</h2>
+
+        <p>
+            A NULL pointer dereference occurs when code tries
+            to access memory through a NULL pointer.
+        </p>
+
+        <p>Incorrect example:</p>
+
+        <pre><code>int *ptr = NULL;
+
+*ptr = 100;</code></pre>
+
+        <p>
+            This operation attempts to write through an invalid
+            pointer and can cause a kernel fault if performed
+            in kernel code.
+        </p>
+
+        <h3>Correct Approach</h3>
+
+        <pre><code>int *ptr = NULL;
+
+if (!ptr) {
+    pr_err("Invalid pointer\n");
+    return -EINVAL;
+}
+
+*ptr = 100;</code></pre>
+
+        <p>
+            Validate pointers before accessing the memory
+            they reference.
+        </p>
+
+        <div class="note">
+            Never intentionally load a kernel module that
+            performs an uncontrolled invalid memory access
+            on your normal operating system.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Dynamic Debugging</h2>
+
+        <p>
+            Dynamic Debug is a Linux kernel facility that allows
+            selected debug messages to be enabled or disabled
+            at runtime.
+        </p>
+
+        <p>
+            It is commonly used with kernel logging macros
+            such as <code>pr_debug()</code> and
+            <code>dev_dbg()</code>.
+        </p>
+
+        <h3>Check Dynamic Debug Control</h3>
+
+        <pre><code>sudo mount -t debugfs none /sys/kernel/debug</code></pre>
+
+        <p>
+            If debugfs is already mounted, this command may
+            report that the mount point is busy.
+        </p>
+
+        <h3>Check the Control File</h3>
+
+        <pre><code>ls /sys/kernel/debug/dynamic_debug/</code></pre>
+
+        <p>
+            On kernels with Dynamic Debug enabled, the control
+            file is commonly:
+        </p>
+
+        <pre><code>/sys/kernel/debug/dynamic_debug/control</code></pre>
+
+        <h3>Enable Debug Messages for a Source File</h3>
+
+        <pre><code>echo 'file hello.c +p' | sudo tee /sys/kernel/debug/dynamic_debug/control</code></pre>
+
+        <h3>Disable Debug Messages for a Source File</h3>
+
+        <pre><code>echo 'file hello.c -p' | sudo tee /sys/kernel/debug/dynamic_debug/control</code></pre>
+
+        <p>
+            The exact query can select messages by file,
+            function, module, line or format string.
+        </p>
+
+        <div class="note">
+            Dynamic Debug works only when the kernel and
+            relevant code support it. A call to pr_debug()
+            is not guaranteed to produce output unless its
+            debug mechanism is enabled.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Debugging with ftrace</h2>
+
+        <p>
+            Ftrace is a Linux kernel tracing framework.
+            It helps developers examine function execution,
+            scheduling activity and other kernel events.
+        </p>
+
+        <h3>Check Available Tracers</h3>
+
+        <pre><code>sudo cat /sys/kernel/tracing/available_tracers</code></pre>
+
+        <h3>Check Current Tracer</h3>
+
+        <pre><code>sudo cat /sys/kernel/tracing/current_tracer</code></pre>
+
+        <h3>Enable Function Tracing</h3>
+
+        <pre><code>echo function | sudo tee /sys/kernel/tracing/current_tracer
+echo 1 | sudo tee /sys/kernel/tracing/tracing_on</code></pre>
+
+        <h3>Read Trace Output</h3>
+
+        <pre><code>sudo cat /sys/kernel/tracing/trace</code></pre>
+
+        <h3>Disable Tracing</h3>
+
+        <pre><code>echo 0 | sudo tee /sys/kernel/tracing/tracing_on
+echo nop | sudo tee /sys/kernel/tracing/current_tracer</code></pre>
+
+        <p>
+            Function tracing records function entry activity
+            for traceable kernel functions. It is useful for
+            understanding execution flow.
+        </p>
+
+        <div class="note">
+            The tracing filesystem is commonly mounted at
+            <code>/sys/kernel/tracing</code>. On some systems,
+            tracefs may instead be available through
+            <code>/sys/kernel/debug/tracing</code>.
+            Available tracers depend on kernel configuration.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Debugging with KGDB and GDB</h2>
+
+        <p>
+            KGDB is a kernel debugging facility that allows
+            developers to inspect kernel execution using
+            GDB.
+        </p>
+
+        <p>
+            It supports source-level debugging techniques such as:
+        </p>
+
+        <ul>
+            <li>Setting breakpoints.</li>
+            <li>Inspecting variables.</li>
+            <li>Examining stack information.</li>
+            <li>Stepping through kernel code.</li>
+            <li>Investigating execution paths.</li>
+        </ul>
+
+        <div class="diagram">
+            <div class="diagram-box">Developer Machine Running GDB</div>
+            <div class="arrow">↕ Debugging Connection</div>
+            <div class="diagram-box">Target Linux Kernel with KGDB</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Kernel Source-Level Debugging</div>
+        </div>
+
+        <h3>Requirements</h3>
+
+        <ul>
+            <li>Kernel configured with KGDB support.</li>
+            <li>Suitable debugging symbols.</li>
+            <li>Compatible kernel source and build information.</li>
+            <li>A supported debugging connection or target setup.</li>
+        </ul>
+
+        <p>
+            KGDB is an advanced debugging method. It is not
+            normally required for basic module development.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Debugging with KASAN</h2>
+
+        <p>
+            KASAN stands for Kernel Address Sanitizer.
+            It is a dynamic memory error detector used by
+            Linux kernel developers.
+        </p>
+
+        <p>
+            It can detect several classes of memory errors,
+            including:
+        </p>
+
+        <ul>
+            <li>Out-of-bounds memory accesses.</li>
+            <li>Use-after-free errors.</li>
+            <li>Some invalid memory access patterns.</li>
+        </ul>
+
+        <h3>Example of a Memory Error</h3>
+
+        <pre><code>int *buffer;
+
+buffer = kmalloc(4 * sizeof(int), GFP_KERNEL);
+
+/* Incorrect: access beyond allocated array */
+buffer[10] = 50;</code></pre>
+
+        <p>
+            A suitable KASAN-enabled kernel can detect this
+            kind of out-of-bounds access during execution.
+        </p>
+
+        <h3>Important Requirements</h3>
+
+        <ul>
+            <li>The kernel must be built with suitable KASAN support.</li>
+            <li>Runtime overhead may be significant.</li>
+            <li>Not all kernel configurations support every KASAN mode.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Debugging Locking Problems with Lockdep</h2>
+
+        <p>
+            Kernel modules may use mutexes, spinlocks and other
+            synchronization mechanisms.
+        </p>
+
+        <p>
+            Incorrect locking can cause deadlocks, lock-order
+            inversions and other concurrency problems.
+        </p>
+
+        <p>
+            Lockdep is a kernel locking correctness validator
+            that can detect many potential locking mistakes.
+        </p>
+
+        <h3>Common Problems</h3>
+
+        <ul>
+            <li>Acquiring locks in inconsistent orders.</li>
+            <li>Recursive locking errors.</li>
+            <li>Incorrect locking context.</li>
+            <li>Potential deadlock situations.</li>
+        </ul>
+
+        <p>
+            Lockdep requires appropriate kernel configuration
+            and is particularly useful during development
+            and testing.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Kernel Oops and Kernel Panic</h2>
+
+        <p>
+            A kernel oops is a report generated when the kernel
+            encounters a serious fault, such as an invalid
+            memory access.
+        </p>
+
+        <p>
+            A kernel panic occurs when the kernel determines
+            that it cannot safely continue execution.
+        </p>
+
+        <table>
+            <tr>
+                <th>Kernel Oops</th>
+                <th>Kernel Panic</th>
+            </tr>
+            <tr>
+                <td>Reports a serious kernel fault.</td>
+                <td>Indicates that the kernel cannot safely continue.</td>
+            </tr>
+            <tr>
+                <td>The system may continue operating in some cases.</td>
+                <td>The system normally stops or enters a configured panic action.</td>
+            </tr>
+            <tr>
+                <td>Can include register and stack information.</td>
+                <td>Can include panic information and diagnostic output.</td>
+            </tr>
+        </table>
+
+        <p>
+            An oops can lead to a panic depending on the
+            severity of the fault and system configuration.
+        </p>
+
+        <div class="note">
+            Do not intentionally trigger kernel panics on
+            your main system. Use a disposable virtual machine
+            or dedicated test environment.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Useful Kernel Debugging Commands</h2>
+
+        <table>
+            <tr>
+                <th>Command</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td><code>sudo dmesg</code></td>
+                <td>Displays kernel ring-buffer messages.</td>
+            </tr>
+            <tr>
+                <td><code>sudo dmesg -w</code></td>
+                <td>Monitors new kernel messages.</td>
+            </tr>
+            <tr>
+                <td><code>lsmod</code></td>
+                <td>Lists loaded loadable modules.</td>
+            </tr>
+            <tr>
+                <td><code>modinfo hello.ko</code></td>
+                <td>Displays module metadata.</td>
+            </tr>
+            <tr>
+                <td><code>sudo journalctl -k -b</code></td>
+                <td>Displays kernel messages from the current boot.</td>
+            </tr>
+            <tr>
+                <td><code>sudo cat /sys/kernel/tracing/available_tracers</code></td>
+                <td>Lists available ftrace tracers.</td>
+            </tr>
+            <tr>
+                <td><code>sudo cat /proc/modules</code></td>
+                <td>Displays information about loaded modules.</td>
+            </tr>
+            <tr>
+                <td><code>sudo cat /proc/kallsyms</code></td>
+                <td>Displays kernel symbol information, subject to access restrictions.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Practical Project: Debug a Kernel Module</h2>
+
+        <p>
+            In this exercise, create a simple module and use
+            kernel logging to inspect its execution flow.
+        </p>
+
+        <h3>Step 1: Create Project Directory</h3>
+
+        <pre><code>mkdir kernel_debug_practice
+cd kernel_debug_practice</code></pre>
+
+        <h3>Step 2: Create debug.c</h3>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+
+static int __init debug_init(void)
+{
+    pr_info("debug: step 1 - initialization started\n");
+
+    pr_info("debug: step 2 - checking module configuration\n");
+
+    pr_info("debug: step 3 - configuration verified\n");
+
+    pr_info("debug: step 4 - initialization successful\n");
+
+    return 0;
+}
+
+static void __exit debug_exit(void)
+{
+    pr_info("debug: cleanup started\n");
+    pr_info("debug: cleanup completed\n");
+}
+
+module_init(debug_init);
+module_exit(debug_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Kernel module debugging practice");</code></pre>
+
+        <h3>Step 3: Create Makefile</h3>
+
+        <pre><code>obj-m += debug.o
+
+all:
+	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+        <h3>Step 4: Compile the Module</h3>
+
+        <pre><code>make</code></pre>
+
+        <h3>Step 5: Start Kernel Log Monitoring</h3>
+
+        <pre><code>sudo dmesg -w</code></pre>
+
+        <h3>Step 6: Load the Module in Another Terminal</h3>
+
+        <pre><code>sudo insmod debug.ko</code></pre>
+
+        <h3>Step 7: Observe Execution Messages</h3>
+
+        <p>
+            You should see the initialization messages
+            generated by the module.
+        </p>
+
+        <h3>Step 8: Remove the Module</h3>
+
+        <pre><code>sudo rmmod debug</code></pre>
+
+        <h3>Step 9: Observe Cleanup Messages</h3>
+
+        <p>
+            Verify that the cleanup messages appear in the
+            kernel log.
+        </p>
+
+        <h3>Step 10: Stop Log Monitoring</h3>
+
+        <p>
+            Press Ctrl+C in the terminal running
+            <code>dmesg -w</code>.
+        </p>
+
+        <div class="tip">
+            Expected result: you should be able to trace the
+            initialization and cleanup sequence using kernel
+            messages.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Best Practices for Kernel Module Debugging</h2>
+
+        <ul>
+            <li>Start with simple logging before using advanced debugging tools.</li>
+            <li>Check kernel logs immediately after reproducing a problem.</li>
+            <li>Validate pointers before dereferencing them.</li>
+            <li>Check memory allocation return values.</li>
+            <li>Release resources on every initialization failure path.</li>
+            <li>Use synchronization correctly in concurrent code.</li>
+            <li>Use Dynamic Debug for selectively enabling debug messages.</li>
+            <li>Use ftrace when execution-flow analysis is required.</li>
+            <li>Use KASAN and Lockdep when supported by the test kernel.</li>
+            <li>Test experimental modules in a disposable environment.</li>
+            <li>Keep a record of the error, investigation and solution.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>18. Summary</h2>
+
+        <ul>
+            <li>Kernel module debugging identifies and corrects kernel-space problems.</li>
+            <li>printk() and pr_*() macros provide diagnostic messages.</li>
+            <li>dmesg and journalctl help inspect kernel logs.</li>
+            <li>Dynamic Debug enables selected debug messages at runtime.</li>
+            <li>ftrace helps trace kernel function execution.</li>
+            <li>KGDB supports source-level kernel debugging with GDB.</li>
+            <li>KASAN detects many memory access errors.</li>
+            <li>Lockdep detects potential locking mistakes.</li>
+            <li>Kernel oops and panic messages indicate serious kernel faults.</li>
+            <li>Systematic debugging improves driver reliability.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>19. Practice Questions</h2>
+
+        <h3>A. Short Answer Questions</h3>
+
+        <p>1. What is kernel module debugging?</p>
+        <p>2. Why is kernel debugging different from user-space debugging?</p>
+        <p>3. How does printk() help debug a kernel module?</p>
+        <p>4. What is Dynamic Debug?</p>
+        <p>5. What is the purpose of ftrace?</p>
+        <p>6. What is KGDB?</p>
+        <p>7. What is KASAN?</p>
+        <p>8. What is Lockdep?</p>
+        <p>9. What is a kernel oops?</p>
+        <p>10. What is the difference between a kernel oops and panic?</p>
+
+        <h3>B. Long Answer Questions</h3>
+
+        <p>1. Explain common kernel module debugging techniques.</p>
+        <p>2. Describe how printk() and Dynamic Debug are used in driver development.</p>
+        <p>3. Explain ftrace and its applications.</p>
+        <p>4. Discuss the purpose of KGDB and GDB in kernel debugging.</p>
+        <p>5. Explain how KASAN helps identify memory errors.</p>
+        <p>6. Discuss kernel locking problems and Lockdep.</p>
+        <p>7. Explain the difference between kernel oops and kernel panic.</p>
+
+        <h3>C. Practical Exercises</h3>
+
+        <p>1. Create a module with initialization and cleanup messages.</p>
+        <p>2. Monitor its messages using dmesg -w.</p>
+        <p>3. Enable Dynamic Debug for a test source file if supported.</p>
+        <p>4. Inspect available ftrace tracers.</p>
+        <p>5. Trace kernel function execution in a suitable test environment.</p>
+        <p>6. Study a KASAN report from a test kernel.</p>
+        <p>7. Inspect a kernel warning or oops report and identify its main sections.</p>
+        <p>8. Prepare a debugging report for a simulated module problem.</p>
+    </section>
+
+    <section class="content-section">
+        <h2>20. Expected Learning Outcomes</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Explain why kernel module debugging is important.</li>
+            <li>Use kernel logging for basic debugging.</li>
+            <li>Understand Dynamic Debug and ftrace.</li>
+            <li>Describe KGDB and source-level kernel debugging.</li>
+            <li>Understand KASAN and memory error detection.</li>
+            <li>Explain Lockdep and synchronization debugging.</li>
+            <li>Recognize kernel oops and panic conditions.</li>
+            <li>Follow a systematic debugging procedure.</li>
+            <li>Apply safe debugging practices during device driver development.</li>
+        </ul>
+    </section>
+
+    <div class="navigation-buttons">
+        <a href="L08_Kernel_Log_Analysis.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter Index
+        </a>
+
+        <a href="L10_Kernel_Module_Development_Workflow.html">
+            Next Lesson →
+        </a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 6 – Lesson 9: Debugging Kernel Modules</p>
+</footer>
+
+</body>
+</html>
