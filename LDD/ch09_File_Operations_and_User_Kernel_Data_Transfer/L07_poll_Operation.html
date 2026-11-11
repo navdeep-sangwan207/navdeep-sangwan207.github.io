@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 7 - poll() Operation | Linux Device Drivers</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{font-size:28px;margin-bottom:8px}
+nav{background:white;padding:12px;text-align:center;box-shadow:0 2px 5px rgba(0,0,0,.08)}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 12px}
+nav a:hover{color:#007bff}
+.container{max-width:1100px;margin:25px auto;padding:0 18px}
+.lesson-info{background:#e7f1ff;border-left:5px solid #2878d7;padding:18px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:23px;margin-bottom:22px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h2{color:#174ea6;border-bottom:2px solid #e5edf8;padding-bottom:8px;margin-bottom:15px}
+h3{color:#245b9e;margin:18px 0 10px}
+p{margin:10px 0}
+ul,ol{margin:10px 0 10px 25px}
+li{margin-bottom:7px}
+pre{background:#17212f;color:#eaf2ff;padding:17px;border-radius:7px;overflow-x:auto;margin:14px 0;font-size:13px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;vertical-align:top}
+th{background:#e7f1ff;color:#174ea6}
+.diagram{background:#f0f6ff;border:1px solid #b9d2f4;border-radius:8px;padding:18px;margin:15px 0;text-align:center}
+.diagram-box{display:inline-block;background:white;border:2px solid #2878d7;border-radius:7px;padding:12px 18px;margin:7px;font-weight:bold;color:#174ea6}
+.arrow{font-size:22px;color:#2878d7;font-weight:bold}
+.note{background:#fff8e5;border-left:4px solid #e0a000;padding:13px;margin:14px 0}
+.tip{background:#e9f7ef;border-left:4px solid #24965b;padding:13px;margin:14px 0}
+.warning{background:#fff0f0;border-left:4px solid #d9534f;padding:13px;margin:14px 0}
+.lesson-navigation{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 18px;border-radius:5px;text-decoration:none;font-weight:bold}
+.lesson-navigation a:hover{background:#2878d7}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:30px}
+@media(max-width:650px){
+header h1{font-size:22px}
+nav a{display:inline-block;margin:5px 7px}
+section{padding:16px}
+table{display:block;overflow-x:auto}
+pre{font-size:12px}
+}
+</style>
+</head>
+<body>
+
+<header>
+<h1>Linux Device Drivers</h1>
+<p>Chapter 9 - File Operations and User-Kernel Data Transfer</p>
+<p>Lesson 7: poll() Operation</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">LDD Course</a>
+<a href="index.html">Chapter 9</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+<strong>Lesson:</strong> 7 of 12<br>
+<strong>Topic:</strong> I/O Readiness Notification and poll() Callback<br>
+<strong>Prerequisites:</strong> Character Drivers, file_operations, read(), write(), wait queues and nonblocking I/O basics.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Understand I/O readiness notification in Linux.</li>
+<li>Explain blocking and nonblocking I/O.</li>
+<li>Understand the purpose of the poll() system call.</li>
+<li>Implement the .poll callback in a character driver.</li>
+<li>Understand wait queues and poll_wait().</li>
+<li>Identify common readiness events such as POLLIN and POLLOUT.</li>
+<li>Differentiate poll(), select() and epoll().</li>
+<li>Test a device driver using a user-space polling program.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to I/O Readiness</h2>
+<p>A device driver may receive data from hardware, store data in a kernel buffer, or wait for an event before allowing a process to continue.</p>
+
+<p>Consider a character device that receives data from a sensor or communication interface.</p>
+<ul>
+<li>An application wants to read data from the device.</li>
+<li>Data may not be available immediately.</li>
+<li>The application should avoid repeatedly calling read() without useful data.</li>
+<li>The driver needs a way to notify the application when reading or writing can proceed.</li>
+</ul>
+
+<p>Linux provides I/O readiness notification mechanisms through poll(), select() and epoll().</p>
+
+<div class="diagram">
+<h3>Basic Readiness Notification</h3>
+<div class="diagram-box">Application</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">Checks Device Readiness</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">Kernel Driver</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">Data Available / Space Available</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">Application Performs I/O</div>
+</div>
+</section>
+
+<section>
+<h2>3. Blocking I/O</h2>
+<p>In blocking I/O, a process may sleep when the requested operation cannot proceed immediately.</p>
+
+<h3>Example: Reading from a Device</h3>
+<pre><code>read(fd, buffer, sizeof(buffer));</code></pre>
+
+<p>If the device has no data available, a blocking read callback may place the process into a waiting state until data arrives.</p>
+
+<h3>Typical Sequence</h3>
+<ol>
+<li>The application calls read().</li>
+<li>The driver checks whether data is available.</li>
+<li>If data is unavailable, the driver waits using an appropriate wait queue.</li>
+<li>A hardware event or another process makes data available.</li>
+<li>The driver wakes the waiting process.</li>
+<li>The read operation continues.</li>
+</ol>
+
+<div class="note">
+<strong>Important:</strong> A blocking read does not automatically wait just because a device has no data. The driver must implement the required waiting and wake-up behavior.
+</div>
+</section>
+
+<section>
+<h2>4. Nonblocking I/O</h2>
+<p>Nonblocking I/O allows an application to request an operation without waiting indefinitely for data or buffer space.</p>
+
+<p>A file can be opened using the <code>O_NONBLOCK</code> flag.</p>
+
+<pre><code>int fd = open("/dev/mychardev",
+              O_RDONLY | O_NONBLOCK);</code></pre>
+
+<p>If no data is currently available, a correctly implemented driver can return <code>-EAGAIN</code> or <code>-EWOULDBLOCK</code> rather than putting the process to sleep.</p>
+
+<h3>Blocking vs Nonblocking I/O</h3>
+<table>
+<tr><th>Blocking I/O</th><th>Nonblocking I/O</th></tr>
+<tr><td>May wait until the operation can proceed.</td><td>Returns promptly if the operation cannot proceed.</td></tr>
+<tr><td>Can sleep while waiting for data.</td><td>Does not wait indefinitely for the requested I/O.</td></tr>
+<tr><td>Useful for simple sequential processing.</td><td>Useful for event-driven applications.</td></tr>
+<tr><td>Waiting is managed by driver and VFS semantics.</td><td>Application may retry or use readiness notification.</td></tr>
+</table>
+
+<div class="warning">
+<strong>Important:</strong> Setting O_NONBLOCK does not automatically make a driver nonblocking. The driver's read() and write() implementations must explicitly handle nonblocking conditions.
+</div>
+</section>
+
+<section>
+<h2>5. What Is poll()?</h2>
+<p><code>poll()</code> is a user-space system call that allows an application to monitor multiple file descriptors and determine whether I/O operations can proceed without blocking.</p>
+
+<h3>Header File</h3>
+<pre><code>#include &lt;poll.h&gt;</code></pre>
+
+<h3>Function Prototype</h3>
+<pre><code>int poll(struct pollfd fds[],
+         nfds_t nfds,
+         int timeout);</code></pre>
+
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>fds</td><td>Array of pollfd structures representing file descriptors to monitor.</td></tr>
+<tr><td>nfds</td><td>Number of entries in the array.</td></tr>
+<tr><td>timeout</td><td>Maximum time to wait in milliseconds.</td></tr>
+</table>
+
+<h3>Return Value</h3>
+<ul>
+<li>Positive value: Number of file descriptors with reported events.</li>
+<li>Zero: Timeout expired without a reported event.</li>
+<li>Negative value: Error; returns -1 and sets errno.</li>
+</ul>
+
+<h3>pollfd Structure</h3>
+<pre><code>struct pollfd {
+    int   fd;
+    short events;
+    short revents;
+};</code></pre>
+
+<ul>
+<li><code>fd</code>: File descriptor being monitored.</li>
+<li><code>events</code>: Events requested by the application.</li>
+<li><code>revents</code>: Events reported by the kernel.</li>
+</ul>
+</section>
+
+<section>
+<h2>6. Important poll() Event Flags</h2>
+<table>
+<tr><th>Event</th><th>Meaning</th></tr>
+<tr><td>POLLIN</td><td>Data is available for reading.</td></tr>
+<tr><td>POLLRDNORM</td><td>Normal data can be read.</td></tr>
+<tr><td>POLLOUT</td><td>Writing can proceed without blocking.</td></tr>
+<tr><td>POLLWRNORM</td><td>Normal data can be written.</td></tr>
+<tr><td>POLLPRI</td><td>Priority or exceptional data is available.</td></tr>
+<tr><td>POLLERR</td><td>An error condition exists.</td></tr>
+<tr><td>POLLHUP</td><td>A hangup condition exists.</td></tr>
+<tr><td>POLLNVAL</td><td>The file descriptor is invalid.</td></tr>
+</table>
+
+<div class="note">
+POLLERR, POLLHUP and POLLNVAL are condition indicators. They are generally reported in revents rather than requested in events.
+</div>
+
+<h3>Readiness Meaning</h3>
+<ul>
+<li>POLLIN indicates that a read operation can proceed without blocking, although it may return fewer bytes than requested.</li>
+<li>POLLOUT indicates that some writing can proceed without blocking; it does not guarantee that the entire requested write will fit.</li>
+<li>POLLHUP can indicate that the other end of a communication channel has closed.</li>
+</ul>
+</section>
+
+<section>
+<h2>7. What Is the .poll Callback?</h2>
+<p>Linux character drivers can implement a <code>.poll</code> callback in the <code>struct file_operations</code> structure.</p>
+
+<p>The callback reports whether the device is ready for reading or writing and registers the application's wait queue interest.</p>
+
+<h3>Callback Prototype</h3>
+<pre><code>__poll_t (*poll)(
+    struct file *file,
+    struct poll_table_struct *wait
+);</code></pre>
+
+<p>The exact callback type is defined by the target kernel headers. Modern kernels use <code>__poll_t</code> for the return type.</p>
+
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>file</td><td>Pointer to the open file structure.</td></tr>
+<tr><td>wait</td><td>Poll table used to register wait queue interest.</td></tr>
+</table>
+
+<h3>Return Value</h3>
+<p>The callback returns a bitmask of readiness events, such as:</p>
+<pre><code>EPOLLIN
+EPOLLOUT
+EPOLLERR
+EPOLLHUP</code></pre>
+
+<p>The returned readiness flags use the poll/epoll event definitions. For example, EPOLLIN corresponds to readable data and EPOLLOUT corresponds to writable space.</p>
+</section>
+
+<section>
+<h2>8. What Is poll_wait()?</h2>
+<p><code>poll_wait()</code> is a kernel helper used inside a driver's .poll callback to register a wait queue with the polling mechanism.</p>
+
+<h3>Function Usage</h3>
+<pre><code>poll_wait(file, &amp;my_wait_queue, wait);</code></pre>
+
+<p>It associates the poll request with the specified wait queue when a wait table is supplied.</p>
+
+<p>The driver should register the relevant wait queues before checking the current readiness state. This ordering helps avoid missing an event that occurs while the readiness condition is being checked.</p>
+
+<h3>Wait Queue Declaration</h3>
+<pre><code>static DECLARE_WAIT_QUEUE_HEAD(my_wait_queue);</code></pre>
+
+<h3>Waking Waiting Processes</h3>
+<pre><code>wake_up_interruptible(&amp;my_wait_queue);</code></pre>
+
+<p>When data becomes available, or buffer space becomes available, the driver wakes the relevant wait queue.</p>
+
+<div class="diagram">
+<h3>Wait Queue Operation</h3>
+<div class="diagram-box">Application calls poll()</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">Driver .poll callback</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">poll_wait() registers wait queue</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">No readiness: application waits</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">Device event / buffer update</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">wake_up_interruptible()</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">Application checks readiness again</div>
+</div>
+</section>
+
+<section>
+<h2>9. Implementing .poll in a Character Driver</h2>
+
+<p>Consider a memory-backed character device with a shared data buffer.</p>
+
+<p>Assume the driver maintains:</p>
+<ul>
+<li><code>data_available</code>: Number of bytes currently available to read.</li>
+<li><code>BUFFER_SIZE</code>: Maximum buffer capacity.</li>
+<li><code>my_wait_queue</code>: Wait queue used for readiness notification.</li>
+<li>A mutex to protect shared buffer state.</li>
+</ul>
+
+<h3>Step 1: Include Required Headers</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/poll.h&gt;
+#include &lt;linux/wait.h&gt;
+#include &lt;linux/mutex.h&gt;</code></pre>
+
+<h3>Step 2: Declare Shared Resources</h3>
+<pre><code>#define BUFFER_SIZE 1024
+
+static char device_buffer[BUFFER_SIZE];
+static size_t data_available;
+
+static DEFINE_MUTEX(buffer_lock);
+
+static DECLARE_WAIT_QUEUE_HEAD(my_wait_queue);</code></pre>
+
+<h3>Step 3: Implement the .poll Callback</h3>
+<pre><code>static __poll_t my_poll(
+    struct file *file,
+    struct poll_table_struct *wait)
+{
+    __poll_t mask = 0;
+
+    /* Register interest in device events. */
+    poll_wait(file, &amp;my_wait_queue, wait);
+
+    mutex_lock(&amp;buffer_lock);
+
+    /* Data available for reading. */
+    if (data_available &gt; 0)
+        mask |= EPOLLIN | EPOLLRDNORM;
+
+    /* Space available for writing. */
+    if (data_available &lt; BUFFER_SIZE)
+        mask |= EPOLLOUT | EPOLLWRNORM;
+
+    mutex_unlock(&amp;buffer_lock);
+
+    return mask;
+}</code></pre>
+
+<h3>Explanation</h3>
+<ol>
+<li>The callback starts with an empty readiness mask.</li>
+<li><code>poll_wait()</code> registers the wait queue.</li>
+<li>The mutex protects the shared buffer state while checking readiness.</li>
+<li>If data exists, the callback reports readable events.</li>
+<li>If free space exists, the callback reports writable events.</li>
+<li>The callback returns the readiness mask.</li>
+</ol>
+
+<div class="warning">
+This is an illustrative readiness callback. A production driver must coordinate its read(), write(), poll() and wake-up paths around the same state and synchronization rules. The buffer accounting must also match the actual data-consumption and data-production logic.
+</div>
+</section>
+
+<section>
+<h2>10. Registering the .poll Callback</h2>
+
+<p>Register the callback in the file_operations structure.</p>
+
+<pre><code>static const struct file_operations my_fops = {
+    .owner   = THIS_MODULE,
+    .open    = my_open,
+    .read    = my_read,
+    .write   = my_write,
+    .release = my_release,
+    .poll    = my_poll,
+};</code></pre>
+
+<p>Now applications can monitor the device using poll(), select() or epoll(), provided the driver implements the necessary readiness behavior.</p>
+</section>
+
+<section>
+<h2>11. Waking Up the Polling Application</h2>
+
+<p>Registering a wait queue is not enough. The driver must wake waiting processes when the readiness condition changes.</p>
+
+<h3>Example: Data Becomes Available</h3>
+<pre><code>/* Data has been added to the device buffer. */
+
+wake_up_interruptible(&amp;my_wait_queue);</code></pre>
+
+<h3>Example: Buffer Space Becomes Available</h3>
+<pre><code>/* Data has been removed from the device buffer. */
+
+wake_up_interruptible(&amp;my_wait_queue);</code></pre>
+
+<p>After waking, the polling mechanism checks readiness again by invoking the driver's poll operation as appropriate.</p>
+
+<div class="note">
+The wake-up should occur after the state change has been made visible using the driver's synchronization rules. Waking a process does not itself guarantee that the device is readable or writable; the readiness condition must be checked again.
+</div>
+</section>
+
+<section>
+<h2>12. User-Space Program Using poll()</h2>
+
+<p>The following program monitors a character device for readable and writable events.</p>
+
+<h3>Source Code: test_poll.c</h3>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;poll.h&gt;
+#include &lt;errno.h&gt;
+
+int main(void)
+{
+    int fd;
+    int ret;
+
+    struct pollfd pfd;
+
+    fd = open("/dev/mychardev",
+              O_RDWR | O_NONBLOCK);
+
+    if (fd &lt; 0) {
+        perror("open");
+        return 1;
+    }
+
+    pfd.fd = fd;
+    pfd.events = POLLIN | POLLOUT;
+    pfd.revents = 0;
+
+    printf("Waiting for device readiness...\n");
+
+    ret = poll(&amp;pfd, 1, 5000);
+
+    if (ret &lt; 0) {
+        perror("poll");
+        close(fd);
+        return 1;
+    }
+
+    if (ret == 0) {
+        printf("Poll timeout expired.\n");
+    } else {
+        printf("Events reported: 0x%x\n",
+               pfd.revents);
+
+        if (pfd.revents &amp; POLLIN)
+            printf("Device is readable.\n");
+
+        if (pfd.revents &amp; POLLOUT)
+            printf("Device is writable.\n");
+
+        if (pfd.revents &amp; POLLERR)
+            printf("Device error reported.\n");
+
+        if (pfd.revents &amp; POLLHUP)
+            printf("Device hangup reported.\n");
+
+        if (pfd.revents &amp; POLLNVAL)
+            printf("Invalid file descriptor.\n");
+    }
+
+    close(fd);
+
+    return 0;
+}</code></pre>
+
+<h3>Compile</h3>
+<pre><code>gcc test_poll.c -o test_poll</code></pre>
+
+<h3>Run</h3>
+<pre><code>sudo ./test_poll</code></pre>
+
+<p>The program waits for up to five seconds for readiness events.</p>
+
+<p>The actual result depends on the device driver's implementation and current buffer state.</p>
+</section>
+
+<section>
+<h2>13. poll() vs select() vs epoll()</h2>
+
+<p>Linux provides three commonly used readiness notification interfaces.</p>
+
+<table>
+<tr>
+<th>Feature</th>
+<th>poll()</th>
+<th>select()</th>
+<th>epoll()</th>
+</tr>
+<tr>
+<td>Purpose</td>
+<td>Monitor multiple file descriptors.</td>
+<td>Monitor multiple file descriptors.</td>
+<td>Monitor large sets of file descriptors efficiently.</td>
+</tr>
+<tr>
+<td>Descriptor input</td>
+<td>Array of pollfd structures.</td>
+<td>fd_set bitmaps.</td>
+<td>Kernel-managed interest list.</td>
+</tr>
+<tr>
+<td>Timeout</td>
+<td>Milliseconds.</td>
+<td>timeval structure.</td>
+<td>Milliseconds in epoll_wait().</td>
+</tr>
+<tr>
+<td>Typical use</td>
+<td>Moderate descriptor sets.</td>
+<td>Small descriptor sets or existing applications.</td>
+<td>Applications managing many connections.</td>
+</tr>
+<tr>
+<td>Descriptor limit</td>
+<td>No fixed FD_SETSIZE bitmap limit.</td>
+<td>Limited by FD_SETSIZE in common implementations.</td>
+<td>Not limited by FD_SETSIZE.</td>
+</tr>
+</table>
+
+<h3>Important Functions</h3>
+<pre><code>poll()
+select()
+
+epoll_create1()
+epoll_ctl()
+epoll_wait()</code></pre>
+
+<p>The .poll callback in a device driver supplies readiness information that can be used by these interfaces. It is not a replacement for the user-space poll() system call.</p>
+</section>
+
+<section>
+<h2>14. Relationship Between poll() and O_NONBLOCK</h2>
+
+<p>Readiness notification and nonblocking I/O are related but separate concepts.</p>
+
+<ul>
+<li><code>poll()</code> reports whether an operation can proceed without blocking at the time readiness is checked.</li>
+<li><code>O_NONBLOCK</code> changes how subsequent I/O operations behave when they cannot proceed immediately.</li>
+<li>The driver must implement correct nonblocking behavior in its read() and write() callbacks.</li>
+<li>Readiness can change between poll() returning and the application performing I/O.</li>
+<li>Applications must handle partial I/O and retry conditions such as EAGAIN.</li>
+</ul>
+
+<div class="note">
+<strong>Race consideration:</strong> Readiness is a snapshot, not a guarantee that the next operation will complete fully. Another process may consume data or buffer space before the application performs I/O.
+</div>
+</section>
+
+<section>
+<h2>15. Common Mistakes in poll() Implementation</h2>
+
+<table>
+<tr><th>Mistake</th><th>Problem</th></tr>
+<tr><td>Not calling poll_wait()</td><td>Applications may not be notified when readiness changes.</td></tr>
+<tr><td>Not waking the wait queue</td><td>Applications can remain asleep even after the device becomes ready.</td></tr>
+<tr><td>Checking readiness before registering the wait queue</td><td>Can create a missed-event race.</td></tr>
+<tr><td>Incorrect readiness mask</td><td>Applications may attempt operations that cannot proceed.</td></tr>
+<tr><td>Not protecting shared state</td><td>Concurrent operations can cause inconsistent readiness results.</td></tr>
+<tr><td>Assuming O_NONBLOCK is automatic</td><td>Driver read/write callbacks may still block incorrectly.</td></tr>
+<tr><td>Returning POLLOUT unconditionally</td><td>Applications may be told writing is possible when the buffer is full.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>16. Practical Applications</h2>
+
+<ul>
+<li>Serial communication drivers waiting for incoming data.</li>
+<li>Sensor drivers reporting when new samples are available.</li>
+<li>Communication devices managing receive and transmit buffers.</li>
+<li>Character drivers supporting event-driven user applications.</li>
+<li>Drivers that need to notify applications about device readiness or hangup conditions.</li>
+</ul>
+
+<p>For hardware-specific exercises, a suitable physical device or supported emulator is required. A standard Ubuntu VirtualBox environment can be used to learn the polling API with software-only character drivers, but it does not automatically provide access to physical GPIO, I2C or SPI peripherals.</p>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+<ul>
+<li>poll() is a user-space system call for monitoring file descriptor readiness.</li>
+<li>The .poll callback is implemented by a device driver.</li>
+<li>poll_wait() registers the relevant wait queue.</li>
+<li>Wait queues allow applications to sleep until readiness changes.</li>
+<li>wake_up_interruptible() can wake waiting processes.</li>
+<li>POLLIN indicates readable data and POLLOUT indicates writable capacity.</li>
+<li>O_NONBLOCK must be supported by the driver's I/O callbacks.</li>
+<li>select(), poll() and epoll() are user-space readiness notification interfaces.</li>
+<li>Readiness can change before the application performs the actual I/O.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+<li>What is I/O readiness?</li>
+<li>What is blocking I/O?</li>
+<li>What is nonblocking I/O?</li>
+<li>What is the purpose of poll()?</li>
+<li>What is the role of the .poll callback?</li>
+<li>What is poll_wait()?</li>
+<li>What is a wait queue?</li>
+<li>What is the meaning of POLLIN and POLLOUT?</li>
+<li>What is the purpose of O_NONBLOCK?</li>
+<li>What is the difference between events and revents?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+<li>Explain the working of poll() in Linux.</li>
+<li>Describe the implementation of .poll in a character driver.</li>
+<li>Explain how poll_wait() and wake_up_interruptible() work together.</li>
+<li>Differentiate blocking and nonblocking I/O.</li>
+<li>Compare poll(), select() and epoll().</li>
+<li>Explain the relationship between poll() and O_NONBLOCK.</li>
+</ol>
+
+<h3>C. Practical Exercises</h3>
+<ol>
+<li>Write a user-space program to monitor a device using poll().</li>
+<li>Implement a wait queue in a character driver.</li>
+<li>Implement a .poll callback for readable and writable conditions.</li>
+<li>Wake a waiting process when data becomes available.</li>
+<li>Test the device using O_NONBLOCK.</li>
+<li>Observe how the polling result changes when the device buffer becomes full or empty.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Expected Learning Outcome</h2>
+<p>After completing this lesson, you should understand how Linux applications monitor device readiness and how character drivers implement the .poll callback using wait queues. You should be able to design basic readiness notification for a memory-backed character device and test it from user space.</p>
+</section>
+
+<div class="lesson-navigation">
+<a href="L06_llseek_Operation.html">← Previous Lesson</a>
+<a href="index.html">Chapter 9 Index</a>
+<a href="L08_unlocked_ioctl_Operation.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | Linux Device Drivers</p>
+<p>Chapter 9 - File Operations and User-Kernel Data Transfer</p>
+</footer>
+
+</body>
+</html>
