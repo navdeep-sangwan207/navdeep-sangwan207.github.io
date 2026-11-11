@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>open() and Driver Open Callback | Linux Device Drivers</title>
+    <link rel="stylesheet" href="../../style.css">
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f7fb;
+            color: #263238;
+            line-height: 1.7;
+        }
+
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 30px 15px;
+        }
+
+        header h1 { margin: 0; font-size: 30px; }
+        header p { margin: 8px 0 0; }
+
+        nav {
+            background: #092b5c;
+            padding: 12px;
+            text-align: center;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        nav a:hover { color: #b9dcff; }
+
+        .container {
+            max-width: 1050px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+
+        .lesson-info {
+            background: #e5f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 22px;
+        }
+
+        .content-section {
+            background: white;
+            padding: 22px;
+            margin-bottom: 22px;
+            border-radius: 9px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #dce8f7;
+            padding-bottom: 8px;
+            margin-top: 0;
+        }
+
+        h3 { color: #174ea6; margin-top: 22px; }
+
+        pre {
+            background: #172337;
+            color: #eaf2ff;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .diagram {
+            background: #edf5ff;
+            border: 1px solid #c8dcf5;
+            border-radius: 8px;
+            padding: 18px;
+            margin: 18px 0;
+            text-align: center;
+        }
+
+        .diagram-box {
+            background: white;
+            border: 2px solid #2878d7;
+            border-radius: 7px;
+            padding: 12px;
+            margin: 9px auto;
+            max-width: 720px;
+            font-weight: bold;
+        }
+
+        .arrow {
+            color: #174ea6;
+            font-size: 23px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th { background: #e5f1ff; color: #123b80; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e5a000;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .tip {
+            background: #e8f6ed;
+            border-left: 5px solid #279653;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+
+        .navigation-buttons a {
+            background: #174ea6;
+            color: white;
+            padding: 11px 18px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .navigation-buttons a:hover { background: #0d3478; }
+
+        footer {
+            background: #092b5c;
+            color: white;
+            text-align: center;
+            padding: 18px;
+            margin-top: 35px;
+        }
+
+        @media (max-width: 650px) {
+            header h1 { font-size: 23px; }
+            nav a { margin: 5px 7px; }
+            .content-section { padding: 16px; }
+            table { display: block; overflow-x: auto; }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 9: File Operations and User-Kernel Data Transfer</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter 9</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson 2:</strong> open() and Driver Open Callback
+        <br>
+        <strong>Level:</strong> Intermediate
+        <br>
+        <strong>Prerequisites:</strong> VFS, struct file, struct inode and file_operations.
+        <br>
+        <strong>Objective:</strong> Understand how the open() system call works and how a character driver implements its .open callback.
+    </div>
+
+    <section class="content-section">
+        <h2>1. Introduction</h2>
+
+        <p>
+            The <code>open()</code> system call
+            is used by a user-space application
+            to open a file or device file.
+        </p>
+
+        <p>
+            In Linux device-driver development,
+            opening a character-device file
+            normally causes the kernel to
+            invoke the driver's
+            <code>.open</code> callback.
+        </p>
+
+        <p>
+            The open callback is commonly used
+            to:
+        </p>
+
+        <ul>
+            <li>Initialize per-open resources.</li>
+            <li>Check whether the device is available.</li>
+            <li>Validate access conditions.</li>
+            <li>Allocate a private data structure.</li>
+            <li>Initialize file-&gt;private_data.</li>
+            <li>Prevent unsupported simultaneous access when required.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Is the open() System Call?</h2>
+
+        <p>
+            The <code>open()</code> system call
+            opens a file and returns a file
+            descriptor on success.
+        </p>
+
+        <h3>Header File</h3>
+
+        <pre><code>#include &lt;fcntl.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/stat.h&gt;
+#include &lt;unistd.h&gt;</code></pre>
+
+        <h3>Function Prototype</h3>
+
+        <pre><code>int open(const char *pathname, int flags);
+
+int open(const char *pathname,
+         int flags,
+         mode_t mode);</code></pre>
+
+        <p>
+            The third argument is used when
+            creating a file with flags such
+            as <code>O_CREAT</code>.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>int fd;
+
+fd = open("/dev/mychardev", O_RDWR);
+
+if (fd &lt; 0) {
+    perror("open failed");
+}</code></pre>
+
+        <p>
+            If the operation succeeds,
+            <code>fd</code> contains a
+            non-negative file descriptor.
+            If it fails, <code>open()</code>
+            returns -1 and sets errno.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Common open() Flags</h2>
+
+        <table>
+            <tr>
+                <th>Flag</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td><code>O_RDONLY</code></td>
+                <td>Open for reading only.</td>
+            </tr>
+            <tr>
+                <td><code>O_WRONLY</code></td>
+                <td>Open for writing only.</td>
+            </tr>
+            <tr>
+                <td><code>O_RDWR</code></td>
+                <td>Open for reading and writing.</td>
+            </tr>
+            <tr>
+                <td><code>O_NONBLOCK</code></td>
+                <td>Request nonblocking I/O behavior where supported.</td>
+            </tr>
+            <tr>
+                <td><code>O_CLOEXEC</code></td>
+                <td>Set close-on-exec for the returned file descriptor.</td>
+            </tr>
+            <tr>
+                <td><code>O_APPEND</code></td>
+                <td>Request append behavior for writes.</td>
+            </tr>
+            <tr>
+                <td><code>O_CREAT</code></td>
+                <td>Create the file if it does not exist.</td>
+            </tr>
+            <tr>
+                <td><code>O_TRUNC</code></td>
+                <td>Request truncation when applicable to a regular file opened for writing.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            Not every flag has the same
+            meaning for every device driver.
+            For example, O_APPEND and O_TRUNC
+            do not automatically implement
+            append or truncation behavior
+            in a character driver's private
+            buffer. The driver must define
+            any device-specific behavior it supports.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. What Happens When a Device File Is Opened?</h2>
+
+        <p>
+            Consider an application opening:
+        </p>
+
+        <pre><code>open("/dev/mychardev", O_RDWR);</code></pre>
+
+        <p>
+            A simplified sequence is:
+        </p>
+
+        <ol>
+            <li>The application invokes the open() system call.</li>
+            <li>The kernel validates the pathname and access permissions.</li>
+            <li>The VFS resolves the device file.</li>
+            <li>The character-device infrastructure identifies the registered cdev.</li>
+            <li>The kernel obtains the appropriate file operations.</li>
+            <li>The driver's .open callback is invoked if provided.</li>
+            <li>On success, the application receives a file descriptor.</li>
+        </ol>
+
+        <div class="diagram">
+            <div class="diagram-box">
+                Application
+                <br>
+                open("/dev/mychardev", O_RDWR)
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                System Call Interface
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                VFS and Device File Lookup
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Character Device Infrastructure
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Driver .open Callback
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                File Descriptor Returned to Application
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Driver Open Callback</h2>
+
+        <p>
+            The driver open callback is
+            registered through the
+            <code>.open</code> member of
+            <code>struct file_operations</code>.
+        </p>
+
+        <h3>Function Prototype</h3>
+
+        <pre><code>static int my_open(struct inode *inode,
+                   struct file *file);</code></pre>
+
+        <h3>Parameters</h3>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><code>inode</code></td>
+                <td>Represents the device-file inode and provides access to its device number.</td>
+            </tr>
+            <tr>
+                <td><code>file</code></td>
+                <td>Represents the open-file description and stores per-open state.</td>
+            </tr>
+        </table>
+
+        <h3>Return Value</h3>
+
+        <table>
+            <tr>
+                <th>Return Value</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>0</td>
+                <td>Open operation succeeded.</td>
+            </tr>
+            <tr>
+                <td>Negative error code</td>
+                <td>Open operation failed.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Basic Open Callback Example</h2>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+
+static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    pr_info("mychardev: device opened\n");
+
+    return 0;
+}
+
+static const struct file_operations my_fops = {
+    .owner = THIS_MODULE,
+    .open = my_open,
+};</code></pre>
+
+        <p>
+            When a process successfully
+            opens the registered device file,
+            the kernel invokes
+            <code>my_open()</code>.
+        </p>
+
+        <p>
+            Returning zero indicates success.
+            A negative error code indicates
+            that the driver rejected the
+            open request.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Accessing Major and Minor Numbers</h2>
+
+        <p>
+            The open callback receives
+            an inode pointer. A driver can
+            use the inode helper functions
+            to obtain the device major
+            and minor numbers.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    unsigned int major_number;
+    unsigned int minor_number;
+
+    major_number = imajor(inode);
+    minor_number = iminor(inode);
+
+    pr_info("Device opened\n");
+    pr_info("Major number: %u\n", major_number);
+    pr_info("Minor number: %u\n", minor_number);
+
+    return 0;
+}</code></pre>
+
+        <p>
+            This is useful when one driver
+            manages multiple device instances
+            using different minor numbers.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Using file-&gt;private_data</h2>
+
+        <p>
+            The <code>private_data</code>
+            member of <code>struct file</code>
+            allows a driver to associate
+            its own data with an open-file
+            description.
+        </p>
+
+        <p>
+            This is commonly used for
+            per-open state.
+        </p>
+
+        <h3>Example Data Structure</h3>
+
+        <pre><code>struct device_context {
+    int device_id;
+    int access_count;
+};</code></pre>
+
+        <h3>Example Open Callback</h3>
+
+        <pre><code>#include &lt;linux/slab.h&gt;
+
+static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    struct device_context *context;
+
+    context = kzalloc(sizeof(*context), GFP_KERNEL);
+
+    if (!context)
+        return -ENOMEM;
+
+    context-&gt;device_id = iminor(inode);
+    context-&gt;access_count = 1;
+
+    file-&gt;private_data = context;
+
+    pr_info("mychardev: opened minor %d\n",
+            context-&gt;device_id);
+
+    return 0;
+}</code></pre>
+
+        <h3>Explanation</h3>
+
+        <ol>
+            <li>Allocate memory for a device context.</li>
+            <li>Check whether allocation succeeded.</li>
+            <li>Store the device minor number.</li>
+            <li>Initialize the access count.</li>
+            <li>Store the pointer in file-&gt;private_data.</li>
+        </ol>
+
+        <div class="note">
+            When a driver allocates per-open
+            memory in .open, it must release
+            that memory in the corresponding
+            .release callback. Otherwise,
+            repeated open and close operations
+            can cause memory leaks.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Accessing private_data in Other Callbacks</h2>
+
+        <p>
+            The driver can retrieve the
+            per-open structure from the
+            file pointer in later callbacks.
+        </p>
+
+        <h3>Example Read Callback</h3>
+
+        <pre><code>static ssize_t my_read(
+    struct file *file,
+    char __user *buffer,
+    size_t count,
+    loff_t *position
+)
+{
+    struct device_context *context;
+
+    context = file-&gt;private_data;
+
+    if (!context)
+        return -EINVAL;
+
+    pr_info("Reading from device %d\n",
+            context-&gt;device_id);
+
+    return 0;
+}</code></pre>
+
+        <p>
+            The callback accesses the
+            same per-open context that
+            was stored during the open
+            operation.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Releasing Per-Open Resources</h2>
+
+        <p>
+            If the open callback allocates
+            memory, the release callback
+            should free it when the open-file
+            description is finally released.
+        </p>
+
+        <h3>Example Release Callback</h3>
+
+        <pre><code>#include &lt;linux/slab.h&gt;
+
+static int my_release(struct inode *inode,
+                      struct file *file)
+{
+    struct device_context *context;
+
+    context = file-&gt;private_data;
+
+    if (context) {
+        pr_info("Closing device %d\n",
+                context-&gt;device_id);
+
+        kfree(context);
+        file-&gt;private_data = NULL;
+    }
+
+    return 0;
+}</code></pre>
+
+        <p>
+            This prevents the per-open
+            allocation from remaining
+            in memory after its open-file
+            description is released.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Preventing Multiple Simultaneous Opens</h2>
+
+        <p>
+            Some devices may allow only
+            one process to open them at
+            a time.
+        </p>
+
+        <p>
+            A driver can implement an
+            exclusive-open policy using
+            an atomic variable.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>#include &lt;linux/atomic.h&gt;
+
+static atomic_t device_available = ATOMIC_INIT(1);
+
+static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    if (atomic_cmpxchg(&amp;device_available, 1, 0) != 1)
+        return -EBUSY;
+
+    pr_info("mychardev: exclusive open successful\n");
+
+    return 0;
+}
+
+static int my_release(struct inode *inode,
+                      struct file *file)
+{
+    atomic_set(&amp;device_available, 1);
+
+    pr_info("mychardev: device released\n");
+
+    return 0;
+}</code></pre>
+
+        <p>
+            The atomic compare-and-exchange
+            operation ensures that only
+            one opener can change the
+            availability state from 1 to 0.
+        </p>
+
+        <div class="note">
+            This is an exclusive-open
+            demonstration. A production
+            driver must also consider
+            device removal, failure paths
+            and the lifetime of its shared
+            state.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Error Handling in the Open Callback</h2>
+
+        <p>
+            The open callback should return
+            a negative error code when
+            it cannot safely provide access
+            to the device.
+        </p>
+
+        <table>
+            <tr>
+                <th>Error Code</th>
+                <th>Possible Reason</th>
+            </tr>
+            <tr>
+                <td><code>-ENOMEM</code></td>
+                <td>Memory allocation failed.</td>
+            </tr>
+            <tr>
+                <td><code>-EBUSY</code></td>
+                <td>Device is already exclusively opened.</td>
+            </tr>
+            <tr>
+                <td><code>-ENODEV</code></td>
+                <td>Device is unavailable or has been removed.</td>
+            </tr>
+            <tr>
+                <td><code>-EINVAL</code></td>
+                <td>Invalid device or unsupported configuration.</td>
+            </tr>
+            <tr>
+                <td><code>-EACCES</code></td>
+                <td>Driver-level access policy denies the operation.</td>
+            </tr>
+        </table>
+
+        <h3>Example: Allocation Failure</h3>
+
+        <pre><code>context = kzalloc(sizeof(*context), GFP_KERNEL);
+
+if (!context)
+    return -ENOMEM;</code></pre>
+
+        <h3>Example: Device Busy</h3>
+
+        <pre><code>if (atomic_cmpxchg(&amp;device_available, 1, 0) != 1)
+    return -EBUSY;</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Complete Open and Release Example</h2>
+
+        <p>
+            This example demonstrates
+            per-open memory allocation
+            and cleanup.
+        </p>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/slab.h&gt;
+
+struct device_context {
+    unsigned int minor_number;
+};
+
+static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    struct device_context *context;
+
+    context = kzalloc(sizeof(*context), GFP_KERNEL);
+
+    if (!context)
+        return -ENOMEM;
+
+    context-&gt;minor_number = iminor(inode);
+
+    file-&gt;private_data = context;
+
+    pr_info("mychardev: opened minor %u\n",
+            context-&gt;minor_number);
+
+    return 0;
+}
+
+static int my_release(struct inode *inode,
+                      struct file *file)
+{
+    struct device_context *context;
+
+    context = file-&gt;private_data;
+
+    if (context) {
+        pr_info("mychardev: released minor %u\n",
+                context-&gt;minor_number);
+
+        kfree(context);
+        file-&gt;private_data = NULL;
+    }
+
+    return 0;
+}
+
+static const struct file_operations my_fops = {
+    .owner = THIS_MODULE,
+    .open = my_open,
+    .release = my_release,
+};
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Open and Release Callback Example");</code></pre>
+
+        <p>
+            This source demonstrates the
+            callback implementation only.
+            It must be connected to a
+            registered character device
+            before user applications can
+            invoke it.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Difference Between open() and .open</h2>
+
+        <table>
+            <tr>
+                <th>open()</th>
+                <th>.open</th>
+            </tr>
+            <tr>
+                <td>User-space system call.</td>
+                <td>Kernel-space driver callback.</td>
+            </tr>
+            <tr>
+                <td>Called by an application.</td>
+                <td>Invoked by the kernel during device-file opening when registered.</td>
+            </tr>
+            <tr>
+                <td>Returns a file descriptor on success.</td>
+                <td>Returns zero or a negative error code.</td>
+            </tr>
+            <tr>
+                <td>Declared in user-space headers such as fcntl.h.</td>
+                <td>Registered through struct file_operations.</td>
+            </tr>
+            <tr>
+                <td>Example: open("/dev/mychardev", O_RDWR).</td>
+                <td>Example: .open = my_open.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Important Note: close() and .release</h2>
+
+        <p>
+            The user-space <code>close()</code>
+            system call closes one file
+            descriptor.
+        </p>
+
+        <p>
+            The driver's <code>.release</code>
+            callback is normally invoked
+            when the associated open-file
+            description is finally released.
+        </p>
+
+        <p>
+            If a file descriptor has been
+            duplicated using <code>dup()</code>
+            or inherited through process
+            creation, closing one descriptor
+            may not be enough to trigger
+            .release.
+        </p>
+
+        <div class="tip">
+            Do not confuse .release with
+            .flush. The .flush callback
+            can be invoked for individual
+            close operations, while .release
+            handles final release of the
+            open-file description.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Practical Testing in Ubuntu</h2>
+
+        <p>
+            Use the Chapter 8 character
+            driver to test the open callback.
+        </p>
+
+        <h3>Step 1: Load the Module</h3>
+
+        <pre><code>sudo insmod basic_char_driver.ko</code></pre>
+
+        <h3>Step 2: Find the Major Number</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <h3>Step 3: Create the Device Node</h3>
+
+        <p>
+            Replace 240 with the major
+            number reported by your module.
+        </p>
+
+        <pre><code>sudo mknod /dev/mychardev c 240 0
+sudo chmod 666 /dev/mychardev</code></pre>
+
+        <h3>Step 4: Open the Device</h3>
+
+        <pre><code>sudo cat /dev/mychardev</code></pre>
+
+        <h3>Step 5: Inspect Kernel Messages</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <p>
+            Observe the open and release
+            messages generated by the driver.
+        </p>
+
+        <h3>Step 6: Remove the Device</h3>
+
+        <pre><code>sudo rm /dev/mychardev
+sudo rmmod basic_char_driver</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Common Mistakes</h2>
+
+        <table>
+            <tr>
+                <th>Mistake</th>
+                <th>Correct Approach</th>
+            </tr>
+            <tr>
+                <td>Returning success after memory allocation fails.</td>
+                <td>Return -ENOMEM.</td>
+            </tr>
+            <tr>
+                <td>Allocating per-open data without freeing it.</td>
+                <td>Free it in .release.</td>
+            </tr>
+            <tr>
+                <td>Forgetting to initialize private_data.</td>
+                <td>Assign a valid pointer or NULL.</td>
+            </tr>
+            <tr>
+                <td>Assuming .release runs for every close().</td>
+                <td>Understand open-file description reference counting.</td>
+            </tr>
+            <tr>
+                <td>Using a shared availability flag without synchronization.</td>
+                <td>Use appropriate atomic or locking mechanisms.</td>
+            </tr>
+            <tr>
+                <td>Accessing an invalid device instance.</td>
+                <td>Validate device state before accepting access.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>18. Summary</h2>
+
+        <ul>
+            <li>open() is a user-space system call.</li>
+            <li>The .open callback is implemented by a device driver.</li>
+            <li>The kernel invokes the callback when a registered device file is opened.</li>
+            <li>The callback receives inode and file pointers.</li>
+            <li>imajor() and iminor() retrieve device numbers from the inode.</li>
+            <li>file-&gt;private_data stores driver-defined per-open information.</li>
+            <li>Per-open allocations should be released in .release.</li>
+            <li>Atomic operations can implement exclusive-open policies.</li>
+            <li>Negative error codes indicate open failures.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>19. Practice Questions</h2>
+
+        <h3>Short Answer Questions</h3>
+
+        <ol>
+            <li>What is the purpose of open()?</li>
+            <li>What is the difference between open() and .open?</li>
+            <li>What is the prototype of the driver open callback?</li>
+            <li>What is the purpose of the inode parameter?</li>
+            <li>What is the purpose of the file parameter?</li>
+            <li>What is file-&gt;private_data?</li>
+            <li>How can a driver obtain the minor number?</li>
+            <li>What does -ENOMEM indicate?</li>
+            <li>What is an exclusive-open policy?</li>
+            <li>When is .release invoked?</li>
+        </ol>
+
+        <h3>Long Answer Questions</h3>
+
+        <ol>
+            <li>Explain the complete sequence of opening a character device.</li>
+            <li>Explain the role of the .open callback in Linux device drivers.</li>
+            <li>Explain how file-&gt;private_data is used.</li>
+            <li>Describe how a driver can prevent multiple simultaneous opens.</li>
+            <li>Differentiate open(), close() and .release.</li>
+        </ol>
+
+        <h3>Practical Questions</h3>
+
+        <ol>
+            <li>Implement an open callback that prints the device major and minor numbers.</li>
+            <li>Allocate a device context using kzalloc() in .open.</li>
+            <li>Store the context pointer in file-&gt;private_data.</li>
+            <li>Retrieve the context in another callback.</li>
+            <li>Free the context in .release.</li>
+            <li>Implement an exclusive-open mechanism using atomic_cmpxchg().</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>20. Expected Learning Outcomes</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Explain the open() system call.</li>
+            <li>Understand the driver's .open callback.</li>
+            <li>Describe the role of inode and file parameters.</li>
+            <li>Retrieve major and minor device numbers.</li>
+            <li>Use file-&gt;private_data for per-open state.</li>
+            <li>Allocate and release per-open memory.</li>
+            <li>Implement basic exclusive-open behavior.</li>
+            <li>Handle open-operation errors correctly.</li>
+        </ul>
+    </section>
+
+    <div class="navigation-buttons">
+        <a href="L01_Introduction_to_File_Operations.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter Index
+        </a>
+
+        <a href="L03_Read_and_Driver_Read_Callback.html">
+            Next Lesson →
+        </a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 9 – Lesson 2: open() and Driver Open Callback</p>
+</footer>
+
+</body>
+</html>
