@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Character Device Driver Architecture | Linux Device Drivers</title>
+    <link rel="stylesheet" href="../../style.css">
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f7fb;
+            color: #263238;
+            line-height: 1.7;
+        }
+
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 30px 15px;
+        }
+
+        header h1 { margin: 0; font-size: 30px; }
+        header p { margin: 8px 0 0; }
+
+        nav {
+            background: #092b5c;
+            padding: 12px;
+            text-align: center;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        nav a:hover { color: #b9dcff; }
+
+        .container {
+            max-width: 1050px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+
+        .lesson-info {
+            background: #e5f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 22px;
+        }
+
+        .content-section {
+            background: white;
+            padding: 22px;
+            margin-bottom: 22px;
+            border-radius: 9px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #dce8f7;
+            padding-bottom: 8px;
+            margin-top: 0;
+        }
+
+        h3 { color: #174ea6; margin-top: 22px; }
+
+        pre {
+            background: #172337;
+            color: #eaf2ff;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .diagram {
+            background: #edf5ff;
+            border: 1px solid #c8dcf5;
+            border-radius: 8px;
+            padding: 18px;
+            margin: 18px 0;
+            text-align: center;
+        }
+
+        .diagram-box {
+            background: white;
+            border: 2px solid #2878d7;
+            border-radius: 7px;
+            padding: 12px;
+            margin: 9px auto;
+            max-width: 680px;
+            font-weight: bold;
+        }
+
+        .arrow {
+            color: #174ea6;
+            font-size: 23px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        .two-column {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+            margin: 18px 0;
+        }
+
+        .info-card {
+            background: #f7faff;
+            border: 1px solid #c8dcf5;
+            border-radius: 8px;
+            padding: 17px;
+        }
+
+        .info-card h3 { margin-top: 0; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th { background: #e5f1ff; color: #123b80; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e5a000;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .tip {
+            background: #e8f6ed;
+            border-left: 5px solid #279653;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+
+        .navigation-buttons a {
+            background: #174ea6;
+            color: white;
+            padding: 11px 18px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .navigation-buttons a:hover { background: #0d3478; }
+
+        footer {
+            background: #092b5c;
+            color: white;
+            text-align: center;
+            padding: 18px;
+            margin-top: 35px;
+        }
+
+        @media (max-width: 650px) {
+            header h1 { font-size: 23px; }
+            nav a { margin: 5px 7px; }
+            .content-section { padding: 16px; }
+            .two-column { grid-template-columns: 1fr; }
+            table { display: block; overflow-x: auto; }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 7: Character Device Driver Fundamentals</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter 7</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson 4:</strong> Character Device Driver Architecture
+        <br>
+        <strong>Level:</strong> Intermediate
+        <br>
+        <strong>Prerequisites:</strong> Character devices, device nodes, Linux kernel architecture and basic kernel modules.
+        <br>
+        <strong>Objective:</strong> Understand the complete architecture of a Linux character device driver, including device registration, VFS interaction, file operations and data transfer.
+    </div>
+
+    <section class="content-section">
+        <h2>1. Introduction</h2>
+
+        <p>
+            A Linux character device driver provides an interface
+            between a user-space application and a character-oriented
+            device or kernel-managed data source.
+        </p>
+
+        <p>
+            It allows applications to interact with a device
+            using familiar file operations such as
+            <code>open()</code>, <code>read()</code>,
+            <code>write()</code> and <code>close()</code>.
+        </p>
+
+        <p>
+            Internally, the Linux kernel uses the Virtual File
+            System (VFS), character-device registration
+            mechanisms and driver callback functions to
+            process these operations.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>2. Overall Character Device Driver Architecture</h2>
+
+        <p>
+            The following diagram shows the typical interaction
+            between an application, the kernel and a device.
+        </p>
+
+        <div class="diagram">
+            <div class="diagram-box">User-Space Application</div>
+            <div class="arrow">↓ System Calls</div>
+            <div class="diagram-box">Virtual File System (VFS)</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Character Device Infrastructure</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Character Device Registration: dev_t + cdev</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Driver Callbacks: file_operations</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Device-Specific Driver Logic</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Hardware or Kernel-Managed Device</div>
+        </div>
+
+        <p>
+            This is a conceptual view. The kernel's internal
+            dispatch and registration mechanisms are more
+            detailed, but the diagram represents the main
+            path followed by common character-device operations.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Main Components of Character Driver Architecture</h2>
+
+        <div class="two-column">
+            <div class="info-card">
+                <h3>3.1 User Application</h3>
+                <p>
+                    The application accesses the device through
+                    a device node or another supported interface.
+                    It uses system calls such as open, read and write.
+                </p>
+            </div>
+
+            <div class="info-card">
+                <h3>3.2 Device Node</h3>
+                <p>
+                    A device node under <code>/dev</code>
+                    provides a filesystem entry associated with
+                    a device number.
+                </p>
+            </div>
+
+            <div class="info-card">
+                <h3>3.3 Virtual File System</h3>
+                <p>
+                    VFS provides a common interface for filesystem
+                    objects and routes file operations to the
+                    appropriate implementation.
+                </p>
+            </div>
+
+            <div class="info-card">
+                <h3>3.4 Character Device Subsystem</h3>
+                <p>
+                    This kernel infrastructure manages character
+                    device registrations and helps associate
+                    device numbers with driver operations.
+                </p>
+            </div>
+
+            <div class="info-card">
+                <h3>3.5 cdev Object</h3>
+                <p>
+                    The <code>struct cdev</code> object represents
+                    a registered character device and connects
+                    its device number range to file operations.
+                </p>
+            </div>
+
+            <div class="info-card">
+                <h3>3.6 file_operations</h3>
+                <p>
+                    This structure contains callback functions
+                    that implement operations such as open,
+                    read, write and release.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Role of the Device Node</h2>
+
+        <p>
+            A device node is a special filesystem entry
+            that represents a device interface.
+        </p>
+
+        <p>
+            Character device nodes are commonly located
+            under the <code>/dev</code> directory.
+        </p>
+
+        <h3>Examples</h3>
+
+        <pre><code>/dev/null
+/dev/tty
+/dev/ttyS0
+/dev/ttyUSB0
+/dev/input/event0</code></pre>
+
+        <p>
+            A device node contains a device type and
+            device number information. The major and
+            minor numbers help the kernel identify
+            the associated device registration.
+        </p>
+
+        <h3>Inspect a Device Node</h3>
+
+        <pre><code>ls -l /dev/null</code></pre>
+
+        <p>Example output:</p>
+
+        <pre><code>crw-rw-rw- 1 root root 1, 3 ... /dev/null</code></pre>
+
+        <p>
+            The initial <code>c</code> indicates a
+            character device node. The numbers
+            <code>1, 3</code> represent its major
+            and minor device numbers in this example.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Role of the Virtual File System (VFS)</h2>
+
+        <p>
+            The Virtual File System is a kernel layer
+            that provides a common interface for
+            filesystem and file-related operations.
+        </p>
+
+        <p>
+            Applications do not need to understand
+            the internal implementation of every device.
+            They use standard system calls, and VFS
+            routes operations to the appropriate
+            kernel implementation.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>fd = open("/dev/mydevice", O_RDWR);</code></pre>
+
+        <p>
+            The application requests that the device
+            file be opened. If the device is registered
+            and the operation is permitted, the kernel
+            associates the open file instance with
+            the appropriate driver operations.
+        </p>
+
+        <div class="note">
+            The user-space <code>open()</code> system call
+            and the driver's <code>open</code> callback
+            are different functions. The kernel routes
+            the system-call request through its file
+            handling infrastructure.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Role of dev_t</h2>
+
+        <p>
+            Linux uses the <code>dev_t</code> data type
+            to represent a device number.
+        </p>
+
+        <p>
+            A device number contains two logical parts:
+        </p>
+
+        <ul>
+            <li><strong>Major number:</strong> Identifies the driver registration or device-number range.</li>
+            <li><strong>Minor number:</strong> Identifies a particular device or instance handled by that registration.</li>
+        </ul>
+
+        <p>
+            The kernel provides helper macros to extract
+            these values.
+        </p>
+
+        <pre><code>MAJOR(dev)
+MINOR(dev)
+MKDEV(major, minor)</code></pre>
+
+        <p>
+            For example, a driver may manage multiple
+            device instances using one major number
+            and different minor numbers.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Role of struct cdev</h2>
+
+        <p>
+            The <code>struct cdev</code> structure is
+            central to the registration of a character
+            device.
+        </p>
+
+        <p>
+            It associates a range of device numbers
+            with the file operations implemented by
+            the driver.
+        </p>
+
+        <h3>Important Functions</h3>
+
+        <table>
+            <tr>
+                <th>Function</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td><code>cdev_init()</code></td>
+                <td>Initializes a cdev object and associates it with file operations.</td>
+            </tr>
+            <tr>
+                <td><code>cdev_add()</code></td>
+                <td>Adds the character device to the kernel for a specified device-number range.</td>
+            </tr>
+            <tr>
+                <td><code>cdev_del()</code></td>
+                <td>Removes the cdev from the kernel's character-device mapping.</td>
+            </tr>
+        </table>
+
+        <p>
+            These functions are used with device-number
+            allocation or registration functions such as
+            <code>alloc_chrdev_region()</code> and
+            <code>register_chrdev_region()</code>.
+        </p>
+
+        <div class="note">
+            Removing a cdev registration does not by itself
+            release every resource owned by the driver.
+            The driver must also manage its memory,
+            device objects and other resources correctly.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Role of struct file_operations</h2>
+
+        <p>
+            The <code>struct file_operations</code>
+            structure contains function pointers that
+            define how the driver responds to file
+            operations.
+        </p>
+
+        <h3>Important Callbacks</h3>
+
+        <table>
+            <tr>
+                <th>Callback</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td><code>open</code></td>
+                <td>Handles opening the device file.</td>
+            </tr>
+            <tr>
+                <td><code>read</code></td>
+                <td>Transfers data from the driver to user space.</td>
+            </tr>
+            <tr>
+                <td><code>write</code></td>
+                <td>Transfers data from user space to the driver.</td>
+            </tr>
+            <tr>
+                <td><code>release</code></td>
+                <td>Handles closing an open file instance.</td>
+            </tr>
+            <tr>
+                <td><code>unlocked_ioctl</code></td>
+                <td>Handles device-specific control requests.</td>
+            </tr>
+            <tr>
+                <td><code>llseek</code></td>
+                <td>Handles file-position changes when supported.</td>
+            </tr>
+            <tr>
+                <td><code>poll</code></td>
+                <td>Reports readiness for nonblocking I/O and polling mechanisms.</td>
+            </tr>
+        </table>
+
+        <h3>Illustrative Structure</h3>
+
+        <pre><code>static const struct file_operations my_fops = {
+    .owner          = THIS_MODULE,
+    .open           = my_open,
+    .read           = my_read,
+    .write          = my_write,
+    .release        = my_release,
+    .unlocked_ioctl = my_ioctl,
+};</code></pre>
+
+        <p>
+            The callback functions must be defined with
+            the correct prototypes for the target kernel.
+            Unsupported operations may be left unimplemented.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Data Flow: Read Operation</h2>
+
+        <p>
+            Consider an application reading data from
+            a character device.
+        </p>
+
+        <div class="diagram">
+            <div class="diagram-box">Application calls read()</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Kernel processes the system call</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">VFS dispatches the file operation</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Driver's read callback executes</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Driver obtains device data</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">copy_to_user() transfers data</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Application receives data</div>
+        </div>
+
+        <p>
+            The driver commonly uses
+            <code>copy_to_user()</code> when transferring
+            data from a kernel buffer to a user-space
+            buffer.
+        </p>
+
+        <p>
+            The driver's read callback returns the number
+            of bytes read, zero for end-of-file where
+            appropriate, or a negative error code.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Data Flow: Write Operation</h2>
+
+        <p>
+            When an application writes data to a
+            character device, the kernel routes the
+            operation to the driver's write callback.
+        </p>
+
+        <div class="diagram">
+            <div class="diagram-box">Application calls write()</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Kernel processes the system call</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">VFS dispatches the file operation</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Driver's write callback executes</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">copy_from_user() transfers data</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Driver processes or sends data</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Application receives write result</div>
+        </div>
+
+        <p>
+            The driver commonly uses
+            <code>copy_from_user()</code> to copy
+            data from a user-space buffer into
+            a kernel buffer.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Device Registration and Driver Initialization</h2>
+
+        <p>
+            A typical character-device driver follows
+            a sequence of registration steps.
+        </p>
+
+        <div class="diagram">
+            <div class="diagram-box">Load Kernel Module</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Allocate or Register Device Numbers</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Initialize struct cdev</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Add cdev to Kernel</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Create Device Interface if Required</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Application Uses Device</div>
+        </div>
+
+        <p>
+            During cleanup, the driver reverses its
+            registration and releases resources.
+        </p>
+
+        <div class="note">
+            This is a conceptual registration sequence.
+            A real driver must check every return value
+            and unwind already-acquired resources if
+            a later initialization step fails.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Device Node Creation</h2>
+
+        <p>
+            A character device registration and a device
+            node are related, but they are not the same thing.
+        </p>
+
+        <ul>
+            <li><code>cdev_add()</code> registers the character device with the kernel.</li>
+            <li><code>mknod</code> can create a device node manually.</li>
+            <li><code>class_create()</code> and <code>device_create()</code> can be used to expose a device through the device model.</li>
+            <li><code>udev</code> commonly manages device nodes in user space in response to device events.</li>
+        </ul>
+
+        <h3>Manual Device Node Example</h3>
+
+        <pre><code>sudo mknod /dev/mydevice c 240 0
+sudo chmod 660 /dev/mydevice
+ls -l /dev/mydevice</code></pre>
+
+        <p>
+            In this example, 240 is an illustrative major
+            number and 0 is the minor number. A real driver
+            must use the device number actually allocated
+            or registered by the kernel.
+        </p>
+
+        <div class="note">
+            Creating a device node alone does not register
+            a driver. The corresponding kernel driver
+            registration must already exist.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Character Driver Architecture: Important Kernel Objects</h2>
+
+        <table>
+            <tr>
+                <th>Kernel Object</th>
+                <th>Responsibility</th>
+            </tr>
+            <tr>
+                <td><code>dev_t</code></td>
+                <td>Stores the device number.</td>
+            </tr>
+            <tr>
+                <td><code>struct cdev</code></td>
+                <td>Connects a device-number range to file operations.</td>
+            </tr>
+            <tr>
+                <td><code>struct file_operations</code></td>
+                <td>Defines driver operation callbacks.</td>
+            </tr>
+            <tr>
+                <td><code>struct file</code></td>
+                <td>Represents an open file instance.</td>
+            </tr>
+            <tr>
+                <td><code>struct inode</code></td>
+                <td>Represents a filesystem object, including device-node metadata.</td>
+            </tr>
+            <tr>
+                <td><code>struct device</code></td>
+                <td>Represents a device in the Linux device model.</td>
+            </tr>
+        </table>
+
+        <p>
+            These objects have different responsibilities.
+            Understanding their relationships is essential
+            for developing reliable character drivers.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Practical: Inspect Character Device Architecture in Ubuntu</h2>
+
+        <h3>Step 1: List Character Devices</h3>
+
+        <pre><code>find /dev -type c | head -20</code></pre>
+
+        <h3>Step 2: Inspect a Device Node</h3>
+
+        <pre><code>ls -l /dev/null
+stat /dev/null</code></pre>
+
+        <h3>Step 3: Display Device Number Information</h3>
+
+        <pre><code>stat -c 'Type: %F, Major: %t, Minor: %T' /dev/null</code></pre>
+
+        <h3>Step 4: Inspect Kernel Device Information</h3>
+
+        <pre><code>ls -l /sys/dev/char/</code></pre>
+
+        <h3>Step 5: Inspect a Specific Device Number</h3>
+
+        <pre><code>ls -l /sys/dev/char/1:3</code></pre>
+
+        <p>
+            The example above refers to the commonly
+            available <code>/dev/null</code> device
+            number. Its availability can vary by system.
+        </p>
+
+        <h3>Step 6: Inspect Kernel Messages</h3>
+
+        <pre><code>journalctl -k -n 30</code></pre>
+
+        <div class="tip">
+            These exercises inspect existing Linux devices.
+            They do not require loading an experimental
+            driver or modifying hardware.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Important Design Considerations</h2>
+
+        <h3>15.1 Error Handling</h3>
+        <p>
+            Every registration, allocation and device
+            operation should be checked for failure.
+        </p>
+
+        <h3>15.2 User-Kernel Data Transfer</h3>
+        <p>
+            Drivers must use appropriate helpers such as
+            <code>copy_to_user()</code> and
+            <code>copy_from_user()</code> instead of
+            directly dereferencing arbitrary user pointers.
+        </p>
+
+        <h3>15.3 Concurrency</h3>
+        <p>
+            Multiple processes may access a device at
+            the same time. Shared data may require
+            synchronization using suitable kernel
+            mechanisms.
+        </p>
+
+        <h3>15.4 Resource Management</h3>
+        <p>
+            Memory, device numbers, cdev objects and
+            device-model objects must be released
+            correctly during cleanup.
+        </p>
+
+        <h3>15.5 Permissions</h3>
+        <p>
+            Device-node permissions and ownership should
+            be configured to prevent unauthorized access.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Summary</h2>
+
+        <ul>
+            <li>Character drivers provide interfaces to character devices.</li>
+            <li>User applications commonly access devices through device nodes.</li>
+            <li>VFS routes file operations to the appropriate driver implementation.</li>
+            <li><code>dev_t</code> represents a device number.</li>
+            <li><code>struct cdev</code> represents a registered character device.</li>
+            <li><code>struct file_operations</code> defines driver callbacks.</li>
+            <li><code>copy_to_user()</code> and <code>copy_from_user()</code> support safe data transfer.</li>
+            <li><code>cdev_add()</code> registers the character device with the kernel.</li>
+            <li>Device nodes and kernel driver registration are separate concepts.</li>
+            <li>Correct error handling, synchronization and cleanup are essential.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Practice Questions</h2>
+
+        <h3>A. Short Answer Questions</h3>
+
+        <p>1. What is character device driver architecture?</p>
+        <p>2. What is the role of VFS?</p>
+        <p>3. What is a device node?</p>
+        <p>4. What is the purpose of <code>dev_t</code>?</p>
+        <p>5. What is <code>struct cdev</code>?</p>
+        <p>6. What is <code>struct file_operations</code>?</p>
+        <p>7. What is the role of the driver's open callback?</p>
+        <p>8. Why are <code>copy_to_user()</code> and <code>copy_from_user()</code> needed?</p>
+        <p>9. What is the difference between <code>cdev_add()</code> and <code>mknod</code>?</p>
+        <p>10. Why is resource cleanup important?</p>
+
+        <h3>B. Long Answer Questions</h3>
+
+        <p>1. Draw and explain the complete architecture of a character device driver.</p>
+        <p>2. Explain the role of VFS in character-device access.</p>
+        <p>3. Describe the relationship between <code>dev_t</code>, <code>struct cdev</code> and <code>file_operations</code>.</p>
+        <p>4. Explain the read-operation data flow.</p>
+        <p>5. Explain the write-operation data flow.</p>
+        <p>6. Describe the device registration and cleanup sequence.</p>
+        <p>7. Discuss important design considerations when developing character drivers.</p>
+
+        <h3>C. Practical Exercises</h3>
+
+        <p>1. List character device nodes in Ubuntu.</p>
+        <p>2. Inspect <code>/dev/null</code> using <code>ls -l</code>.</p>
+        <p>3. Display the major and minor numbers of <code>/dev/null</code>.</p>
+        <p>4. Inspect the corresponding entry under <code>/sys/dev/char/</code>.</p>
+        <p>5. Draw the complete character driver architecture.</p>
+        <p>6. Prepare a table explaining the purpose of the main kernel structures.</p>
+        <p>7. Explain how a read request reaches the driver's read callback.</p>
+
+    </section>
+
+    <section class="content-section">
+        <h2>18. Expected Learning Outcomes</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Explain the complete architecture of a Linux character driver.</li>
+            <li>Describe the interaction between user space and kernel space.</li>
+            <li>Understand the role of VFS and character-device infrastructure.</li>
+            <li>Identify the purpose of major character-driver structures.</li>
+            <li>Explain how read and write operations reach driver callbacks.</li>
+            <li>Understand device registration and device-node creation.</li>
+            <li>Recognize important driver design and resource-management requirements.</li>
+        </ul>
+    </section>
+
+    <div class="navigation-buttons">
+        <a href="L03_Character_Devices_vs_Network_Devices.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter Index
+        </a>
+
+        <a href="L05_Major_and_Minor_Device_Numbers.html">
+            Next Lesson →
+        </a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 7 – Lesson 4: Character Device Driver Architecture</p>
+</footer>
+
+</body>
+</html>
