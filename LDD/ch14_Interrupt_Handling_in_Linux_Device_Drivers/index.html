@@ -1,1 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chapter 14 - Interrupt Handling in Linux Device Drivers</title>
 
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f7fb;
+            color: #263238;
+            line-height: 1.6;
+        }
+
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 35px 20px;
+        }
+
+        header h1 {
+            font-size: 30px;
+            margin-bottom: 10px;
+        }
+
+        nav {
+            background: white;
+            padding: 14px;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+
+        nav a {
+            display: inline-block;
+            color: #174ea6;
+            text-decoration: none;
+            font-weight: bold;
+            margin: 5px 12px;
+        }
+
+        nav a:hover {
+            color: #007bff;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+
+        .overview {
+            background: #e8f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 22px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+        }
+
+        .section {
+            background: white;
+            padding: 22px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+        }
+
+        h2 {
+            color: #174ea6;
+            margin-bottom: 15px;
+            font-size: 23px;
+        }
+
+        ul {
+            padding-left: 25px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        code {
+            background: #eef2f7;
+            padding: 2px 5px;
+            border-radius: 4px;
+        }
+
+        .lesson-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .lesson-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: white;
+            border: 1px solid #dce6f5;
+            border-radius: 9px;
+            padding: 16px;
+            text-decoration: none;
+            color: #263238;
+            transition: 0.2s;
+        }
+
+        .lesson-card:hover {
+            border-color: #2878d7;
+            background: #f0f6ff;
+            transform: translateY(-2px);
+        }
+
+        .lesson-number {
+            min-width: 42px;
+            height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #174ea6;
+            color: white;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .lesson-title {
+            font-weight: bold;
+            font-size: 15px;
+        }
+
+        .lesson-label {
+            display: block;
+            color: #64748b;
+            font-size: 12px;
+            margin-top: 3px;
+        }
+
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 15px;
+            margin: 25px 0;
+        }
+
+        .nav-button {
+            display: inline-block;
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .nav-button:hover {
+            background: #2878d7;
+        }
+
+        footer {
+            background: #123b80;
+            color: white;
+            text-align: center;
+            padding: 18px;
+            margin-top: 35px;
+        }
+
+        @media (max-width: 650px) {
+            header h1 {
+                font-size: 23px;
+            }
+
+            .lesson-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .navigation-buttons {
+                flex-direction: column;
+            }
+
+            .nav-button {
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Chapter 14: Interrupt Handling in Linux Device Drivers</h1>
+    <p>Linux Device Drivers Course | IRQs, ISRs and Deferred Processing</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">All Chapters</a>
+    <a href="../../about.html">About</a>
+    <a href="../../contact.html">Contact</a>
+</nav>
+
+<main class="container">
+
+    <section class="overview">
+        <h2>Chapter Overview</h2>
+        <p>
+            Hardware devices use interrupts to notify the processor
+            that an event requires attention. Linux device drivers
+            must handle these events efficiently while following
+            kernel execution-context restrictions.
+        </p>
+        <p>
+            This chapter explains the Linux interrupt-handling
+            architecture, interrupt service routines, IRQ registration
+            and removal, shared interrupts, interrupt context,
+            top-half and bottom-half processing, tasklets and
+            workqueues. It also demonstrates how interrupt handling
+            is integrated into device drivers.
+        </p>
+    </section>
+
+    <section class="section">
+        <h2>Learning Objectives</h2>
+        <p>After completing this chapter, you will be able to:</p>
+        <ul>
+            <li>Understand hardware interrupts and their role in device drivers.</li>
+            <li>Explain the Linux interrupt-handling architecture.</li>
+            <li>Understand interrupt service routines (ISRs).</li>
+            <li>Register an interrupt handler using <code>request_irq()</code>.</li>
+            <li>Release an interrupt using <code>free_irq()</code>.</li>
+            <li>Understand shared interrupts.</li>
+            <li>Differentiate interrupt context and process context.</li>
+            <li>Explain top-half and bottom-half processing.</li>
+            <li>Understand tasklets and workqueues.</li>
+            <li>Implement interrupt handling in a character driver.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>Chapter Lessons</h2>
+
+        <div class="lesson-grid">
+
+            <a class="lesson-card" href="L01_Introduction_to_Hardware_Interrupts.html">
+                <span class="lesson-number">01</span>
+                <span>
+                    <span class="lesson-title">Introduction to Hardware Interrupts</span>
+                    <span class="lesson-label">Interrupt Concepts and Applications</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L02_Interrupt_Handling_Architecture.html">
+                <span class="lesson-number">02</span>
+                <span>
+                    <span class="lesson-title">Interrupt Handling Architecture</span>
+                    <span class="lesson-label">Linux IRQ Subsystem</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L03_Interrupt_Service_Routines_in_Linux.html">
+                <span class="lesson-number">03</span>
+                <span>
+                    <span class="lesson-title">Interrupt Service Routines in Linux</span>
+                    <span class="lesson-label">Interrupt Handler Functions</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L04_request_irq.html">
+                <span class="lesson-number">04</span>
+                <span>
+                    <span class="lesson-title">request_irq()</span>
+                    <span class="lesson-label">Registering an Interrupt Handler</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L05_free_irq.html">
+                <span class="lesson-number">05</span>
+                <span>
+                    <span class="lesson-title">free_irq()</span>
+                    <span class="lesson-label">Releasing an Interrupt Handler</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L06_Shared_Interrupts.html">
+                <span class="lesson-number">06</span>
+                <span>
+                    <span class="lesson-title">Shared Interrupts</span>
+                    <span class="lesson-label">Multiple Devices and IRQ Sharing</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L07_Interrupt_Context_and_Process_Context.html">
+                <span class="lesson-number">07</span>
+                <span>
+                    <span class="lesson-title">Interrupt Context and Process Context</span>
+                    <span class="lesson-label">Kernel Execution Contexts</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L08_Top_Half_and_Bottom_Half.html">
+                <span class="lesson-number">08</span>
+                <span>
+                    <span class="lesson-title">Top Half and Bottom Half</span>
+                    <span class="lesson-label">Immediate and Deferred Processing</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L09_Tasklets_and_Workqueues.html">
+                <span class="lesson-number">09</span>
+                <span>
+                    <span class="lesson-title">Tasklets and Workqueues</span>
+                    <span class="lesson-label">Deferred Work Mechanisms</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L10_Deferred_Interrupt_Processing.html">
+                <span class="lesson-number">10</span>
+                <span>
+                    <span class="lesson-title">Deferred Interrupt Processing</span>
+                    <span class="lesson-label">Handling Time-Consuming Operations</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L11_Interrupt_Handling_in_Character_Drivers.html">
+                <span class="lesson-number">11</span>
+                <span>
+                    <span class="lesson-title">Interrupt Handling in Character Drivers</span>
+                    <span class="lesson-label">Practical Interrupt-Driven Driver</span>
+                </span>
+            </a>
+
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>Important Kernel APIs and Concepts</h2>
+        <ul>
+            <li><strong>IRQ:</strong> Interrupt request generated by a hardware device or interrupt controller.</li>
+            <li><strong>ISR:</strong> Interrupt service routine that handles an interrupt event.</li>
+            <li><strong>request_irq():</strong> Registers an interrupt handler with the kernel.</li>
+            <li><strong>free_irq():</strong> Releases an interrupt handler registration.</li>
+            <li><strong>IRQF_SHARED:</strong> Flag used when an interrupt line can be shared by multiple handlers.</li>
+            <li><strong>IRQ_NONE:</strong> Indicates that the interrupt was not handled by the handler.</li>
+            <li><strong>IRQ_HANDLED:</strong> Indicates that the interrupt was handled.</li>
+            <li><strong>Top half:</strong> Immediate interrupt-handling portion that performs time-critical work.</li>
+            <li><strong>Bottom half:</strong> Deferred processing mechanism for work that does not need to run immediately.</li>
+            <li><strong>Tasklets:</strong> A legacy deferred-work mechanism; new drivers should generally prefer modern alternatives such as workqueues or threaded IRQs where appropriate.</li>
+            <li><strong>Workqueues:</strong> Execute deferred work in process context, where sleeping is permitted.</li>
+            <li><strong>Threaded IRQ:</strong> Allows an interrupt handler's deferred portion to execute in a kernel thread.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>Typical Interrupt Handling Sequence</h2>
+        <ul>
+            <li>Identify the interrupt source and obtain the appropriate IRQ number.</li>
+            <li>Register the interrupt handler using <code>request_irq()</code> or an appropriate managed or threaded IRQ API.</li>
+            <li>A device generates an interrupt event.</li>
+            <li>The interrupt controller and kernel IRQ subsystem dispatch the event.</li>
+            <li>The registered handler identifies and services the interrupt.</li>
+            <li>Time-consuming work is deferred when necessary.</li>
+            <li>The driver releases its interrupt registration during cleanup.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>Interrupt Handling Guidelines</h2>
+        <ul>
+            <li>Keep hard interrupt handlers short and efficient.</li>
+            <li>Do not perform sleeping operations in hard interrupt context.</li>
+            <li>Do not acquire a mutex in a hard interrupt handler.</li>
+            <li>Use appropriate synchronization for shared data.</li>
+            <li>Check whether an interrupt belongs to the device when sharing an IRQ.</li>
+            <li>Use threaded IRQs or suitable deferred-work mechanisms for longer operations.</li>
+            <li>Release registered interrupts correctly during driver cleanup.</li>
+            <li>Ensure deferred work is cancelled or flushed safely before releasing resources it uses.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>Practical Applications</h2>
+        <ul>
+            <li>Study the Linux interrupt-handling flow.</li>
+            <li>Write a simple interrupt handler for a suitable test device.</li>
+            <li>Register and release an IRQ using the Linux IRQ APIs.</li>
+            <li>Understand shared interrupt handling.</li>
+            <li>Compare hard IRQ handling and threaded IRQ handling.</li>
+            <li>Implement deferred processing using a workqueue.</li>
+            <li>Synchronize interrupt handlers with character-driver operations.</li>
+            <li>Develop an interrupt-driven character driver on supported hardware.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>Chapter Completion Checklist</h2>
+        <ul>
+            <li>Understand hardware interrupts and Linux IRQ architecture.</li>
+            <li>Understand interrupt service routines.</li>
+            <li>Use request_irq() and free_irq().</li>
+            <li>Understand shared interrupts.</li>
+            <li>Differentiate interrupt context and process context.</li>
+            <li>Understand top-half and bottom-half processing.</li>
+            <li>Understand tasklets, workqueues and threaded IRQs.</li>
+            <li>Apply interrupt handling in a device driver.</li>
+        </ul>
+    </section>
+
+    <div class="navigation-buttons">
+
+        <a class="nav-button"
+           href="../ch13_Synchronization_and_Concurrency/index.html">
+            ← Previous Chapter
+        </a>
+
+        <a class="nav-button" href="../ldd.html">
+            All Chapters
+        </a>
+
+        <a class="nav-button"
+           href="../ch15_Procfs_Sysfs_and_Kernel_Interfaces/index.html">
+            Next Chapter →
+        </a>
+
+    </div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 14 - Interrupt Handling in Linux Device Drivers</p>
+</footer>
+
+</body>
+</html>
