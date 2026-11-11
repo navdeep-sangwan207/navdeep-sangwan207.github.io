@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Writing the First Kernel Module</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+    border-radius: 10px;
+}
+.lesson-info {
+    background: #eaf3ff;
+    border-left: 5px solid #2878d7;
+    padding: 15px;
+    margin: 20px 0;
+    border-radius: 6px;
+}
+.lesson-content {
+    background: white;
+    padding: 22px;
+    margin: 18px 0;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+}
+.lesson-content h2 { color: #174ea6; }
+.lesson-content h3 { color: #245a9c; }
+.lesson-content pre {
+    background: #17202b;
+    color: #e8f1ff;
+    padding: 15px;
+    overflow-x: auto;
+    border-radius: 6px;
+}
+.lesson-content code {
+    background: #eef2f7;
+    padding: 2px 5px;
+    border-radius: 4px;
+}
+.lesson-content pre code {
+    background: transparent;
+    padding: 0;
+}
+.lesson-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+.lesson-content th, .lesson-content td {
+    border: 1px solid #d5dce5;
+    padding: 10px;
+    text-align: left;
+}
+.lesson-content th { background: #eaf3ff; }
+.info-diagram {
+    background: #f3f7fc;
+    border: 1px solid #cbd9eb;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    margin: 15px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: #dceaff;
+    border: 1px solid #2878d7;
+    padding: 12px 18px;
+    margin: 5px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+}
+.lesson-navigation {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-navigation a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+.lesson-navigation a:hover { background: #0d3475; }
+footer {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+}
+@media(max-width:600px) {
+    .lesson-content { padding: 15px; }
+    .lesson-content table { font-size: 13px; }
+}
+</style>
+</head>
+<body>
+
+<header class="lesson-banner">
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 3: Device Driver Development Environment</p>
+    <h2>Lesson 8: Writing the First Kernel Module</h2>
+</header>
+
+<nav style="text-align:center; padding:15px;">
+    <a href="../../index.html">Home</a> |
+    <a href="../ldd.html">Linux Device Drivers</a> |
+    <a href="index.html">Chapter 3</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson:</strong> 8 of Chapter 3<br>
+    <strong>Topic:</strong> Creating a Basic Linux Kernel Module<br>
+    <strong>Level:</strong> Beginner to Intermediate<br>
+    <strong>Prerequisite:</strong> C Programming, Kernel Headers, GCC, Make and Kbuild
+</div>
+
+<section class="lesson-content">
+<h2>1. Introduction</h2>
+
+<p>A Linux kernel module is a piece of code that can be dynamically loaded into the running Linux kernel and removed when it is no longer required.</p>
+
+<p>Kernel modules extend kernel functionality without requiring the entire kernel to be rebuilt and rebooted for every change.</p>
+
+<p>Examples include:</p>
+
+<ul>
+<li>Device drivers.</li>
+<li>Filesystem support.</li>
+<li>Network-related modules.</li>
+<li>Hardware interface modules.</li>
+<li>Kernel extensions and utilities.</li>
+</ul>
+
+<p>In this lesson, we will write our first Linux kernel module using C, compile it as a <code>.ko</code> file and understand its initialization and cleanup functions.</p>
+</section>
+
+<section class="lesson-content">
+<h2>2. What Is a Kernel Module?</h2>
+
+<p>A kernel module is compiled kernel code that can be loaded into the Linux kernel at runtime.</p>
+
+<p>Unlike a normal user-space application, a kernel module executes in kernel space and can access kernel services and interfaces.</p>
+
+<h3>Normal application vs kernel module</h3>
+
+<table>
+<tr><th>Normal C Application</th><th>Kernel Module</th></tr>
+<tr><td>Runs in user space.</td><td>Runs in kernel space.</td></tr>
+<tr><td>Usually compiled into an executable.</td><td>Compiled into a loadable <code>.ko</code> file.</td></tr>
+<tr><td>Uses standard C library functions.</td><td>Uses kernel APIs and headers.</td></tr>
+<tr><td>Uses <code>main()</code> as its entry point.</td><td>Uses registered initialization and cleanup functions.</td></tr>
+<tr><td>Can use ordinary application I/O.</td><td>Uses kernel logging and kernel interfaces.</td></tr>
+</table>
+
+<p><strong>Important:</strong> Kernel modules must follow kernel programming rules. They cannot use ordinary user-space library functions such as <code>printf()</code> or <code>malloc()</code> in the same way as a normal application.</p>
+</section>
+
+<section class="lesson-content">
+<h2>3. Kernel Module Development Architecture</h2>
+
+<p>The following diagram shows the basic process of creating and using an external kernel module.</p>
+
+<div class="info-diagram">
+    <div class="diagram-box">C Source File (.c)</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">External Module Makefile</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">GNU Make and Kbuild</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Module (.ko)</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Linux Kernel</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Log Messages</div>
+</div>
+
+<p>The source code is compiled using the kernel build system. The resulting module can then be loaded into the running kernel.</p>
+</section>
+
+<section class="lesson-content">
+<h2>4. Structure of a Basic Kernel Module</h2>
+
+<p>A simple kernel module normally contains:</p>
+
+<ol>
+<li>Required kernel header files.</li>
+<li>Initialization function.</li>
+<li>Cleanup function.</li>
+<li>Module initialization registration.</li>
+<li>Module cleanup registration.</li>
+<li>Module metadata.</li>
+</ol>
+
+<h3>General structure</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+
+/* Initialization function */
+static int __init my_init(void)
+{
+    return 0;
+}
+
+/* Cleanup function */
+static void __exit my_exit(void)
+{
+}
+
+module_init(my_init);
+module_exit(my_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Author Name");
+MODULE_DESCRIPTION("Basic Linux Kernel Module");</code></pre>
+</section>
+
+<section class="lesson-content">
+<h2>5. Kernel Header Files</h2>
+
+<p>Kernel modules include kernel header files to access kernel declarations and APIs.</p>
+
+<table>
+<tr><th>Header File</th><th>Purpose</th></tr>
+<tr><td><code>linux/module.h</code></td><td>Provides module-related declarations and metadata macros.</td></tr>
+<tr><td><code>linux/kernel.h</code></td><td>Provides commonly used kernel declarations and utilities.</td></tr>
+<tr><td><code>linux/init.h</code></td><td>Provides initialization and exit annotations.</td></tr>
+</table>
+
+<h3>Header inclusion example</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;</code></pre>
+
+<p>These are kernel headers, not standard C library headers.</p>
+</section>
+
+<section class="lesson-content">
+<h2>6. Initialization Function</h2>
+
+<p>The initialization function executes when the module is successfully loaded into the kernel.</p>
+
+<p>It is commonly used to:</p>
+
+<ul>
+<li>Initialize module data.</li>
+<li>Register a device driver.</li>
+<li>Allocate required resources.</li>
+<li>Register interfaces with kernel subsystems.</li>
+<li>Display an initialization message.</li>
+</ul>
+
+<h3>Example</h3>
+
+<pre><code>static int __init my_init(void)
+{
+    pr_info("My module loaded successfully\n");
+    return 0;
+}</code></pre>
+
+<h3>Explanation</h3>
+
+<ul>
+<li><code>static</code> limits the function's visibility to its source file.</li>
+<li><code>int</code> is the return type.</li>
+<li><code>__init</code> marks initialization code.</li>
+<li><code>my_init()</code> is the function name.</li>
+<li><code>pr_info()</code> writes an informational message to the kernel log.</li>
+<li><code>return 0</code> indicates successful initialization.</li>
+</ul>
+
+<p>If initialization fails, the function can return a negative error code. The module will not be successfully loaded.</p>
+</section>
+
+<section class="lesson-content">
+<h2>7. Cleanup Function</h2>
+
+<p>The cleanup function executes when a module is successfully removed from the kernel.</p>
+
+<p>It is used to release resources and undo registrations made during initialization.</p>
+
+<h3>Example</h3>
+
+<pre><code>static void __exit my_exit(void)
+{
+    pr_info("My module removed successfully\n");
+}</code></pre>
+
+<h3>Common cleanup responsibilities</h3>
+
+<ul>
+<li>Unregistering a device driver.</li>
+<li>Releasing allocated memory.</li>
+<li>Freeing interrupt registrations.</li>
+<li>Removing device interfaces.</li>
+<li>Releasing resources owned by the module.</li>
+</ul>
+
+<p>A cleanup function is essential when the module can be unloaded. It must correctly reverse the resources and registrations established during initialization.</p>
+</section>
+
+<section class="lesson-content">
+<h2>8. Understanding __init and __exit</h2>
+
+<p><code>__init</code> and <code>__exit</code> are kernel annotations used to identify initialization and cleanup code.</p>
+
+<table>
+<tr><th>Annotation</th><th>Purpose</th></tr>
+<tr><td><code>__init</code></td><td>Marks initialization code. For built-in kernel code, its memory can be reclaimed after initialization.</td></tr>
+<tr><td><code>__exit</code></td><td>Marks exit code. For built-in code, it may be discarded because built-in kernel code is not unloaded.</td></tr>
+</table>
+
+<p>For a loadable module, the exit function is needed when the module is removed, so its cleanup code must remain available while the module is loaded.</p>
+</section>
+
+<section class="lesson-content">
+<h2>9. module_init() Macro</h2>
+
+<p>The <code>module_init()</code> macro identifies the function that should be called when a loadable module is initialized.</p>
+
+<h3>Syntax</h3>
+
+<pre><code>module_init(function_name);</code></pre>
+
+<h3>Example</h3>
+
+<pre><code>static int __init my_init(void)
+{
+    pr_info("Module initialization\n");
+    return 0;
+}
+
+module_init(my_init);</code></pre>
+
+<p>When the module is loaded, the kernel invokes the registered initialization function.</p>
+</section>
+
+<section class="lesson-content">
+<h2>10. module_exit() Macro</h2>
+
+<p>The <code>module_exit()</code> macro identifies the cleanup function for a loadable module.</p>
+
+<h3>Syntax</h3>
+
+<pre><code>module_exit(function_name);</code></pre>
+
+<h3>Example</h3>
+
+<pre><code>static void __exit my_exit(void)
+{
+    pr_info("Module cleanup\n");
+}
+
+module_exit(my_exit);</code></pre>
+
+<p>When the module is removed, the kernel invokes the registered cleanup function, provided the module can be safely unloaded.</p>
+</section>
+
+<section class="lesson-content">
+<h2>11. Kernel Logging with pr_info()</h2>
+
+<p>Kernel modules do not normally use the user-space <code>printf()</code> function. Instead, they use kernel logging functions.</p>
+
+<p><code>pr_info()</code> writes a message at informational log level.</p>
+
+<h3>Example</h3>
+
+<pre><code>pr_info("Hello Linux Kernel\n");</code></pre>
+
+<p>Other commonly used logging functions include:</p>
+
+<table>
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td><code>pr_emerg()</code></td><td>Emergency message.</td></tr>
+<tr><td><code>pr_alert()</code></td><td>Alert message.</td></tr>
+<tr><td><code>pr_crit()</code></td><td>Critical message.</td></tr>
+<tr><td><code>pr_err()</code></td><td>Error message.</td></tr>
+<tr><td><code>pr_warn()</code></td><td>Warning message.</td></tr>
+<tr><td><code>pr_notice()</code></td><td>Notice message.</td></tr>
+<tr><td><code>pr_info()</code></td><td>Informational message.</td></tr>
+<tr><td><code>pr_debug()</code></td><td>Debug message.</td></tr>
+</table>
+
+<p>Kernel messages can be inspected using:</p>
+
+<pre><code>sudo dmesg</code></pre>
+</section>
+
+<section class="lesson-content">
+<h2>12. Module Metadata</h2>
+
+<p>Module metadata describes the module and provides information to kernel module management utilities.</p>
+
+<h3>Common metadata macros</h3>
+
+<pre><code>MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("First Linux Kernel Module");
+MODULE_VERSION("1.0");</code></pre>
+
+<table>
+<tr><th>Macro</th><th>Purpose</th></tr>
+<tr><td><code>MODULE_LICENSE()</code></td><td>Declares the module's license.</td></tr>
+<tr><td><code>MODULE_AUTHOR()</code></td><td>Specifies the author.</td></tr>
+<tr><td><code>MODULE_DESCRIPTION()</code></td><td>Provides a short description.</td></tr>
+<tr><td><code>MODULE_VERSION()</code></td><td>Specifies a module version string.</td></tr>
+</table>
+
+<p>Use an accurate license declaration that matches the actual licensing of the source code. The license also affects how the kernel treats the module's access to GPL-only exported symbols.</p>
+</section>
+
+<section class="lesson-content">
+<h2>13. Complete First Kernel Module Program</h2>
+
+<p>Now combine all the concepts into a complete kernel module.</p>
+
+<h3>File: hello_module.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+
+static int __init hello_init(void)
+{
+    pr_info("Hello Module: Initialization started\n");
+    pr_info("Hello Module: Module loaded successfully\n");
+
+    return 0;
+}
+
+static void __exit hello_exit(void)
+{
+    pr_info("Hello Module: Cleanup started\n");
+    pr_info("Hello Module: Module removed successfully\n");
+}
+
+module_init(hello_init);
+module_exit(hello_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("My First Linux Kernel Module");
+MODULE_VERSION("1.0");</code></pre>
+
+<h3>Program explanation</h3>
+
+<ol>
+<li>Kernel header files are included.</li>
+<li><code>hello_init()</code> is defined as the initialization function.</li>
+<li>Informational messages are written to the kernel log.</li>
+<li>The initialization function returns zero to indicate success.</li>
+<li><code>hello_exit()</code> is defined as the cleanup function.</li>
+<li><code>module_init()</code> registers the initialization function.</li>
+<li><code>module_exit()</code> registers the cleanup function.</li>
+<li>Module metadata is declared.</li>
+</ol>
+</section>
+
+<section class="lesson-content">
+<h2>14. Create the Makefile</h2>
+
+<p>Create a file named <code>Makefile</code> in the same directory as <code>hello_module.c</code>.</p>
+
+<pre><code>obj-m += hello_module.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+<p>The Makefile instructs Kbuild to compile the source file as an external kernel module.</p>
+</section>
+
+<section class="lesson-content">
+<h2>15. Compile the First Kernel Module</h2>
+
+<h3>Step 1: Create the project directory</h3>
+
+<pre><code>mkdir -p ~/Linux_Driver_Projects/hello_module
+cd ~/Linux_Driver_Projects/hello_module</code></pre>
+
+<h3>Step 2: Create the source file</h3>
+
+<pre><code>nano hello_module.c</code></pre>
+
+<p>Enter the complete program from Section 13.</p>
+
+<h3>Step 3: Create the Makefile</h3>
+
+<pre><code>nano Makefile</code></pre>
+
+<p>Enter the Makefile from Section 14.</p>
+
+<h3>Step 4: Compile</h3>
+
+<pre><code>make</code></pre>
+
+<h3>Step 5: Verify the output</h3>
+
+<pre><code>ls -l hello_module.ko</code></pre>
+
+<p>Expected result: the compiled module file <code>hello_module.ko</code> should be present if compilation succeeds.</p>
+
+<h3>Step 6: Inspect metadata</h3>
+
+<pre><code>modinfo hello_module.ko</code></pre>
+</section>
+
+<section class="lesson-content">
+<h2>16. Load the Kernel Module</h2>
+
+<p>After successful compilation, the module can be loaded into the running kernel.</p>
+
+<h3>Load the module</h3>
+
+<pre><code>sudo insmod hello_module.ko</code></pre>
+
+<p><code>insmod</code> attempts to insert the specified module file into the kernel.</p>
+
+<h3>Check whether it is loaded</h3>
+
+<pre><code>lsmod | grep hello_module</code></pre>
+
+<h3>View initialization messages</h3>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<p>Expected messages include:</p>
+
+<pre><code>Hello Module: Initialization started
+Hello Module: Module loaded successfully</code></pre>
+
+<p>The exact displayed output may include timestamps and other kernel log information.</p>
+</section>
+
+<section class="lesson-content">
+<h2>17. Remove the Kernel Module</h2>
+
+<p>To remove the module, execute:</p>
+
+<pre><code>sudo rmmod hello_module</code></pre>
+
+<p>Then inspect the kernel log:</p>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<p>Expected cleanup messages include:</p>
+
+<pre><code>Hello Module: Cleanup started
+Hello Module: Module removed successfully</code></pre>
+
+<p>Finally, verify that the module is no longer listed:</p>
+
+<pre><code>lsmod | grep hello_module</code></pre>
+
+<p>If the module is no longer loaded, the command normally produces no matching output.</p>
+</section>
+
+<section class="lesson-content">
+<h2>18. Understanding the Complete Module Lifecycle</h2>
+
+<div class="info-diagram">
+    <div class="diagram-box">Write C Source Code</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Compile with Kbuild</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Generate .ko File</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">insmod</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Initialization Function</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Module Runs in Kernel</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">rmmod</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Cleanup Function</div>
+</div>
+
+<p>This is the basic lifecycle of a simple loadable kernel module.</p>
+
+<p>Real device drivers perform additional work such as registering devices, allocating resources, handling requests and communicating with hardware.</p>
+</section>
+
+<section class="lesson-content">
+<h2>19. Important Safety Rules</h2>
+
+<ul>
+<li>Kernel modules execute with kernel privileges.</li>
+<li>A faulty module can crash the operating system.</li>
+<li>Test experimental modules in a virtual machine whenever possible.</li>
+<li>Keep a recoverable VM snapshot before risky experiments.</li>
+<li>Never load unknown or untrusted kernel modules.</li>
+<li>Always release resources correctly in cleanup paths.</li>
+<li>Do not access hardware registers without understanding the relevant hardware and kernel subsystem.</li>
+<li>Compile against the intended kernel build environment.</li>
+</ul>
+</section>
+
+<section class="lesson-content">
+<h2>20. Common Errors</h2>
+
+<h3>Compilation error: missing linux/module.h</h3>
+<p><strong>Cause:</strong> Missing or incorrectly configured kernel headers/build tree.</p>
+<p><strong>Solution:</strong> Install and verify the matching kernel headers.</p>
+
+<h3>Invalid module format</h3>
+<p><strong>Cause:</strong> The module does not match the running kernel's build or ABI requirements.</p>
+<p><strong>Solution:</strong> Rebuild against the intended kernel build tree.</p>
+
+<h3>Unknown symbol</h3>
+<p><strong>Cause:</strong> A required symbol is unavailable or a module dependency is missing.</p>
+<p><strong>Solution:</strong> Inspect kernel logs and module dependencies.</p>
+
+<h3>Operation not permitted</h3>
+<p><strong>Cause:</strong> Insufficient privileges or a system security restriction.</p>
+<p><strong>Solution:</strong> Check privileges, Secure Boot and module-signing policy.</p>
+
+<h3>Module is in use</h3>
+<p><strong>Cause:</strong> The module is being used or has a nonzero reference count.</p>
+<p><strong>Solution:</strong> Identify and release the dependent resource before attempting removal.</p>
+</section>
+
+<section class="lesson-content">
+<h2>21. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is a Linux kernel module?</li>
+<li>What is the difference between a user-space application and a kernel module?</li>
+<li>Why do kernel modules use kernel header files?</li>
+<li>What is the purpose of the initialization function?</li>
+<li>What is the purpose of the cleanup function?</li>
+<li>What does <code>module_init()</code> do?</li>
+<li>What does <code>module_exit()</code> do?</li>
+<li>What is the purpose of <code>pr_info()</code>?</li>
+<li>What is the purpose of <code>MODULE_LICENSE()</code>?</li>
+<li>What is the extension of a compiled kernel module?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain the structure of a basic Linux kernel module.</li>
+<li>Explain the role of initialization and cleanup functions.</li>
+<li>Describe the purpose of kernel module metadata.</li>
+<li>Explain the complete kernel module compilation and loading process.</li>
+<li>Differentiate a normal C program from a kernel module.</li>
+<li>Explain the lifecycle of a loadable kernel module.</li>
+</ol>
+
+<h3>Practical Questions</h3>
+<ol>
+<li>Write a Hello World kernel module.</li>
+<li>Create an external module Makefile.</li>
+<li>Compile the module using Kbuild.</li>
+<li>Inspect the module using <code>modinfo</code>.</li>
+<li>Load the module using <code>insmod</code>.</li>
+<li>Check kernel messages using <code>dmesg</code>.</li>
+<li>Remove the module using <code>rmmod</code>.</li>
+<li>Verify that the module is no longer loaded.</li>
+</ol>
+</section>
+
+<section class="lesson-content">
+<h2>22. Learning Outcomes</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+<li>Explain what a Linux kernel module is.</li>
+<li>Differentiate user-space applications and kernel modules.</li>
+<li>Write a basic kernel module using C.</li>
+<li>Understand initialization and cleanup functions.</li>
+<li>Use <code>module_init()</code> and <code>module_exit()</code>.</li>
+<li>Use kernel logging functions.</li>
+<li>Add module metadata.</li>
+<li>Compile, inspect, load and remove a basic module.</li>
+<li>Understand the basic kernel module lifecycle.</li>
+</ul>
+</section>
+
+<div class="lesson-navigation">
+    <a href="L07_Kernel_Module_Development_Setup.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L09_Compiling_a_Kernel_Module.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 3 – Device Driver Development Environment</p>
+</footer>
+
+</body>
+</html>
