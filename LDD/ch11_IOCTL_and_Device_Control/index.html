@@ -1,1 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chapter 11 - IOCTL and Device Control</title>
 
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f7fb;
+            color: #263238;
+            line-height: 1.6;
+        }
+
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 35px 20px;
+        }
+
+        header h1 {
+            font-size: 30px;
+            margin-bottom: 10px;
+        }
+
+        nav {
+            background: white;
+            padding: 14px;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+
+        nav a {
+            display: inline-block;
+            color: #174ea6;
+            text-decoration: none;
+            font-weight: bold;
+            margin: 5px 12px;
+        }
+
+        nav a:hover {
+            color: #007bff;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+
+        .overview {
+            background: #e8f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 22px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+        }
+
+        .section {
+            background: white;
+            padding: 22px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+        }
+
+        h2 {
+            color: #174ea6;
+            margin-bottom: 15px;
+            font-size: 23px;
+        }
+
+        ul {
+            padding-left: 25px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        code {
+            background: #eef2f7;
+            padding: 2px 5px;
+            border-radius: 4px;
+        }
+
+        .lesson-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .lesson-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: white;
+            border: 1px solid #dce6f5;
+            border-radius: 9px;
+            padding: 16px;
+            text-decoration: none;
+            color: #263238;
+            transition: 0.2s;
+        }
+
+        .lesson-card:hover {
+            border-color: #2878d7;
+            background: #f0f6ff;
+            transform: translateY(-2px);
+        }
+
+        .lesson-number {
+            min-width: 42px;
+            height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #174ea6;
+            color: white;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .lesson-title {
+            font-weight: bold;
+            font-size: 15px;
+        }
+
+        .lesson-label {
+            display: block;
+            color: #64748b;
+            font-size: 12px;
+            margin-top: 3px;
+        }
+
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 15px;
+            margin: 25px 0;
+        }
+
+        .nav-button {
+            display: inline-block;
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .nav-button:hover {
+            background: #2878d7;
+        }
+
+        footer {
+            background: #123b80;
+            color: white;
+            text-align: center;
+            padding: 18px;
+            margin-top: 35px;
+        }
+
+        @media (max-width: 650px) {
+            header h1 {
+                font-size: 23px;
+            }
+
+            .lesson-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .navigation-buttons {
+                flex-direction: column;
+            }
+
+            .nav-button {
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Chapter 11: IOCTL and Device Control</h1>
+    <p>Linux Device Drivers Course | ioctl Commands and Device-Specific Control</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">All Chapters</a>
+    <a href="../../about.html">About</a>
+    <a href="../../contact.html">Contact</a>
+</nav>
+
+<main class="container">
+
+    <section class="overview">
+        <h2>Chapter Overview</h2>
+        <p>
+            Read and write operations provide the basic mechanism for
+            transferring data between user-space applications and
+            device drivers. However, many devices also require
+            configuration and control operations that cannot be
+            conveniently represented as ordinary data transfers.
+        </p>
+        <p>
+            Linux provides the IOCTL (Input/Output Control) mechanism
+            for implementing device-specific commands. This chapter
+            explains IOCTL command encoding, the
+            <code>unlocked_ioctl()</code> callback, data exchange
+            through IOCTL and the development of a practical
+            character driver with device-control functionality.
+        </p>
+    </section>
+
+    <section class="section">
+        <h2>Learning Objectives</h2>
+        <p>After completing this chapter, you will be able to:</p>
+        <ul>
+            <li>Understand the purpose of IOCTL in device drivers.</li>
+            <li>Explain why read and write operations are not sufficient for every device-control task.</li>
+            <li>Understand IOCTL command encoding.</li>
+            <li>Use the <code>_IO</code>, <code>_IOR</code>, <code>_IOW</code> and <code>_IOWR</code> macros.</li>
+            <li>Implement the <code>unlocked_ioctl()</code> callback.</li>
+            <li>Pass data structures between user space and kernel space.</li>
+            <li>Validate IOCTL commands and arguments.</li>
+            <li>Handle IOCTL errors safely.</li>
+            <li>Write a user-space application to issue IOCTL commands.</li>
+            <li>Develop a practical IOCTL-based character driver.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>Chapter Lessons</h2>
+
+        <div class="lesson-grid">
+
+            <a class="lesson-card" href="L01_Introduction_to_IOCTL.html">
+                <span class="lesson-number">01</span>
+                <span>
+                    <span class="lesson-title">Introduction to IOCTL</span>
+                    <span class="lesson-label">Input/Output Control Concepts</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L02_Need_for_IOCTL_Operations.html">
+                <span class="lesson-number">02</span>
+                <span>
+                    <span class="lesson-title">Need for IOCTL Operations</span>
+                    <span class="lesson-label">Device Configuration and Control</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L03_IOCTL_Command_Structure.html">
+                <span class="lesson-number">03</span>
+                <span>
+                    <span class="lesson-title">IOCTL Command Structure</span>
+                    <span class="lesson-label">Command Encoding and Parameters</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L04_IO_IOR_IOW_IOWR_Macros.html">
+                <span class="lesson-number">04</span>
+                <span>
+                    <span class="lesson-title">_IO, _IOR, _IOW and _IOWR</span>
+                    <span class="lesson-label">IOCTL Command Macros</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L05_Implementing_IOCTL_in_Character_Drivers.html">
+                <span class="lesson-number">05</span>
+                <span>
+                    <span class="lesson-title">Implementing IOCTL in Character Drivers</span>
+                    <span class="lesson-label">unlocked_ioctl() Callback</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L06_Passing_Structures_Through_IOCTL.html">
+                <span class="lesson-number">06</span>
+                <span>
+                    <span class="lesson-title">Passing Structures Through IOCTL</span>
+                    <span class="lesson-label">Structured Data Exchange</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L07_IOCTL_Data_Transfer.html">
+                <span class="lesson-number">07</span>
+                <span>
+                    <span class="lesson-title">IOCTL Data Transfer</span>
+                    <span class="lesson-label">User-Kernel Communication</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L08_Testing_IOCTL_from_User_Space.html">
+                <span class="lesson-number">08</span>
+                <span>
+                    <span class="lesson-title">Testing IOCTL from User Space</span>
+                    <span class="lesson-label">User-Space Test Application</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L09_IOCTL_Error_Handling.html">
+                <span class="lesson-number">09</span>
+                <span>
+                    <span class="lesson-title">IOCTL Error Handling</span>
+                    <span class="lesson-label">Command Validation and Error Codes</span>
+                </span>
+            </a>
+
+            <a class="lesson-card" href="L10_Practical_IOCTL_Driver.html">
+                <span class="lesson-number">10</span>
+                <span>
+                    <span class="lesson-title">Practical IOCTL Driver</span>
+                    <span class="lesson-label">Complete Device-Control Project</span>
+                </span>
+            </a>
+
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>Important Kernel Concepts and APIs</h2>
+        <ul>
+            <li><strong>IOCTL:</strong> Mechanism for sending device-specific control commands to a driver.</li>
+            <li><strong>ioctl():</strong> User-space system call used to issue a control request.</li>
+            <li><strong>unlocked_ioctl():</strong> Common file-operation callback for handling IOCTL requests.</li>
+            <li><strong>_IO:</strong> Defines a command that does not transfer a data argument through the encoded command type.</li>
+            <li><strong>_IOR:</strong> Defines a command that reads data from the driver into user space.</li>
+            <li><strong>_IOW:</strong> Defines a command that writes data from user space to the driver.</li>
+            <li><strong>_IOWR:</strong> Defines a command that transfers data in both directions.</li>
+            <li><strong>copy_to_user():</strong> Copies data from kernel space to user space.</li>
+            <li><strong>copy_from_user():</strong> Copies data from user space to kernel space.</li>
+            <li><strong>-ENOTTY:</strong> Common error returned for an unsupported IOCTL command.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>Typical IOCTL Communication Sequence</h2>
+        <ul>
+            <li>Define IOCTL command identifiers in a shared header file.</li>
+            <li>Open the device file from a user-space application.</li>
+            <li>Call <code>ioctl()</code> with the command and required argument.</li>
+            <li>The kernel dispatches the request to the driver's <code>unlocked_ioctl()</code> callback.</li>
+            <li>The driver validates the command and safely handles any user-space data.</li>
+            <li>The driver performs the requested control operation.</li>
+            <li>The callback returns a success value or an appropriate negative error code.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>Practical Applications</h2>
+        <ul>
+            <li>Develop a driver supporting a simple IOCTL command.</li>
+            <li>Implement commands to start and stop a simulated device operation.</li>
+            <li>Transfer configuration values through IOCTL.</li>
+            <li>Pass a structure containing multiple configuration parameters.</li>
+            <li>Write a user-space C application to issue IOCTL commands.</li>
+            <li>Test unsupported commands and invalid arguments.</li>
+            <li>Build an IOCTL-based character driver with proper error handling.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>Chapter Completion Checklist</h2>
+        <ul>
+            <li>Understand why IOCTL is needed.</li>
+            <li>Understand IOCTL command encoding.</li>
+            <li>Use the four standard IOCTL command macros.</li>
+            <li>Implement the <code>unlocked_ioctl()</code> callback.</li>
+            <li>Transfer data safely using user-copy functions.</li>
+            <li>Validate command identifiers and arguments.</li>
+            <li>Test IOCTL operations from user space.</li>
+            <li>Complete a practical IOCTL-based character driver.</li>
+        </ul>
+    </section>
+
+    <div class="navigation-buttons">
+
+        <a class="nav-button"
+           href="../ch10_Device_Files_and_Device_Interfaces/index.html">
+            ← Previous Chapter
+        </a>
+
+        <a class="nav-button" href="../ldd.html">
+            All Chapters
+        </a>
+
+        <a class="nav-button"
+           href="../ch12_Kernel_Memory_Management/index.html">
+            Next Chapter →
+        </a>
+
+    </div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 11 - IOCTL and Device Control</p>
+</footer>
+
+</body>
+</html>
