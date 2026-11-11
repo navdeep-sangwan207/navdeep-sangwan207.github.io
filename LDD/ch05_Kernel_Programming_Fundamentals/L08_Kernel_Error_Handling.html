@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kernel Error Handling | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { color: #007bff; }
+.container {
+    width: 92%;
+    max-width: 1100px;
+    margin: 25px auto;
+}
+.lesson-info {
+    background: #e8f1ff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.content-section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 22px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245a9c; }
+pre {
+    background: #17212b;
+    color: #e8f1f8;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.6;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d8e0ea;
+    padding: 11px;
+    text-align: left;
+}
+th {
+    background: #e8f1ff;
+    color: #174ea6;
+}
+.diagram {
+    background: #f0f5fc;
+    border: 1px solid #cbdcf2;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 20px;
+    margin: 6px;
+    font-weight: bold;
+    color: #174ea6;
+}
+.arrow {
+    font-size: 23px;
+    color: #2878d7;
+}
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 13px;
+    margin: 15px 0;
+}
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.navigation-buttons a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 5px;
+    text-decoration: none;
+    font-weight: bold;
+}
+.navigation-buttons a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 600px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 8px; }
+    .content-section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Kernel Error Handling</h1>
+    <p>Chapter 5 – Kernel Programming Fundamentals | Linux Device Drivers</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter Index</a>
+</nav>
+
+<main class="container">
+
+<section class="lesson-info">
+    <strong>Lesson:</strong> 08<br>
+    <strong>Topic:</strong> Kernel Error Handling<br>
+    <strong>Chapter:</strong> Kernel Programming Fundamentals<br>
+    <strong>Level:</strong> Beginner to Intermediate<br>
+    <strong>Prerequisites:</strong> Kernel modules, printk(), pointers and memory allocation
+</section>
+
+<section class="content-section">
+    <h2>1. Introduction</h2>
+
+    <p>
+        Error handling is an essential part of Linux kernel
+        and device driver development. A device driver
+        interacts with hardware, manages kernel resources
+        and provides services to userspace applications.
+    </p>
+
+    <p>
+        During these operations, different problems can occur:
+    </p>
+
+    <ul>
+        <li>Memory allocation may fail.</li>
+        <li>A device may not be available.</li>
+        <li>A hardware operation may time out.</li>
+        <li>A requested resource may already be in use.</li>
+        <li>A userspace request may contain invalid data.</li>
+        <li>A driver may fail to initialize.</li>
+    </ul>
+
+    <p>
+        Proper error handling allows a driver to detect
+        failures, report meaningful errors, release resources
+        and prevent system instability.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>2. What Is Kernel Error Handling?</h2>
+
+    <p>
+        Kernel error handling is the process of detecting,
+        reporting and recovering from failures that occur
+        during kernel operations.
+    </p>
+
+    <div class="diagram">
+        <div class="diagram-box">Kernel Operation</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Check Operation Result</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Success or Failure?</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Continue or Handle Error</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Return Status / Log / Cleanup</div>
+    </div>
+
+    <p>
+        A driver should not assume that every operation
+        succeeds. It must examine return values and handle
+        failure conditions explicitly.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>3. Common Causes of Kernel Errors</h2>
+
+    <table>
+        <tr>
+            <th>Error Source</th>
+            <th>Example</th>
+        </tr>
+        <tr>
+            <td>Memory allocation</td>
+            <td><code>kmalloc()</code> returns NULL.</td>
+        </tr>
+        <tr>
+            <td>Invalid parameters</td>
+            <td>A userspace application sends an unsupported value.</td>
+        </tr>
+        <tr>
+            <td>Hardware failure</td>
+            <td>A peripheral does not respond as expected.</td>
+        </tr>
+        <tr>
+            <td>Resource conflict</td>
+            <td>A device resource is already reserved.</td>
+        </tr>
+        <tr>
+            <td>Permission problem</td>
+            <td>An operation is not permitted.</td>
+        </tr>
+        <tr>
+            <td>Timeout</td>
+            <td>A device does not complete an operation within the expected time.</td>
+        </tr>
+        <tr>
+            <td>Initialization failure</td>
+            <td>A required subsystem or resource cannot be initialized.</td>
+        </tr>
+    </table>
+</section>
+
+<section class="content-section">
+    <h2>4. Kernel Error Codes</h2>
+
+    <p>
+        Linux kernel functions commonly report failures using
+        negative error codes. These codes indicate the type
+        of failure.
+    </p>
+
+    <p>
+        The kernel defines standard error constants in
+        <code>&lt;linux/errno.h&gt;</code> and related headers.
+    </p>
+
+    <table>
+        <tr>
+            <th>Error Code</th>
+            <th>Meaning</th>
+            <th>Typical Situation</th>
+        </tr>
+        <tr>
+            <td><code>-EINVAL</code></td>
+            <td>Invalid argument</td>
+            <td>Invalid function parameter.</td>
+        </tr>
+        <tr>
+            <td><code>-ENOMEM</code></td>
+            <td>Out of memory</td>
+            <td>Memory allocation failure.</td>
+        </tr>
+        <tr>
+            <td><code>-ENODEV</code></td>
+            <td>No such device</td>
+            <td>Requested device is unavailable.</td>
+        </tr>
+        <tr>
+            <td><code>-EBUSY</code></td>
+            <td>Device or resource busy</td>
+            <td>Resource is already in use.</td>
+        </tr>
+        <tr>
+            <td><code>-EIO</code></td>
+            <td>Input/output error</td>
+            <td>Hardware or I/O operation failed.</td>
+        </tr>
+        <tr>
+            <td><code>-ETIMEDOUT</code></td>
+            <td>Operation timed out</td>
+            <td>Device did not respond in time.</td>
+        </tr>
+        <tr>
+            <td><code>-EACCES</code></td>
+            <td>Permission denied</td>
+            <td>Access is not permitted.</td>
+        </tr>
+        <tr>
+            <td><code>-EFAULT</code></td>
+            <td>Bad address</td>
+            <td>Invalid userspace memory address.</td>
+        </tr>
+        <tr>
+            <td><code>-EEXIST</code></td>
+            <td>File or resource already exists</td>
+            <td>Duplicate resource or entry.</td>
+        </tr>
+        <tr>
+            <td><code>-ENOENT</code></td>
+            <td>No such entry</td>
+            <td>Requested object or entry is missing.</td>
+        </tr>
+    </table>
+
+    <div class="note">
+        Kernel functions normally return negative error values.
+        Do not confuse these with the positive errno values
+        commonly observed by userspace applications.
+    </div>
+</section>
+
+<section class="content-section">
+    <h2>5. Returning Errors from Kernel Functions</h2>
+
+    <p>
+        A kernel function can return an integer status value.
+        Zero commonly indicates success, while a negative
+        value indicates failure.
+    </p>
+
+    <h3>Example</h3>
+
+    <pre><code>#include &lt;linux/errno.h&gt;
+
+static int validate_value(int value)
+{
+    if (value &lt; 0)
+        return -EINVAL;
+
+    return 0;
+}</code></pre>
+
+    <p>
+        The caller should inspect the returned status before
+        continuing.
+    </p>
+
+    <pre><code>int ret;
+
+ret = validate_value(10);
+
+if (ret &lt; 0) {
+    pr_err("Invalid value\n");
+    return ret;
+}
+
+pr_info("Value accepted\n");</code></pre>
+</section>
+
+<section class="content-section">
+    <h2>6. Error Handling in Module Initialization</h2>
+
+    <p>
+        The module initialization function returns an integer.
+        Returning zero indicates successful initialization.
+        Returning a negative error code indicates failure.
+    </p>
+
+    <h3>Example</h3>
+
+    <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/errno.h&gt;
+#include &lt;linux/printk.h&gt;
+
+static int __init error_demo_init(void)
+{
+    int device_available = 0;
+
+    if (!device_available) {
+        pr_err("Required device is unavailable\n");
+        return -ENODEV;
+    }
+
+    pr_info("Module initialized successfully\n");
+
+    return 0;
+}
+
+static void __exit error_demo_exit(void)
+{
+    pr_info("Module removed\n");
+}
+
+module_init(error_demo_init);
+module_exit(error_demo_exit);
+
+MODULE_LICENSE("GPL");</code></pre>
+
+    <p>
+        In this example, initialization fails because the
+        required device is unavailable. The kernel receives
+        the negative error code.
+    </p>
+
+    <div class="note">
+        The <code>device_available</code> variable is only a
+        simplified demonstration. Real drivers detect device
+        availability through their relevant bus, device and
+        subsystem interfaces.
+    </div>
+</section>
+
+<section class="content-section">
+    <h2>7. Error Handling During Memory Allocation</h2>
+
+    <p>
+        Memory allocation is a common source of errors in
+        kernel programming. A driver must check the returned
+        pointer before using it.
+    </p>
+
+    <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/slab.h&gt;
+#include &lt;linux/errno.h&gt;
+#include &lt;linux/printk.h&gt;
+
+static char *buffer;
+
+static int __init allocation_demo_init(void)
+{
+    buffer = kmalloc(1024, GFP_KERNEL);
+
+    if (!buffer) {
+        pr_err("Memory allocation failed\n");
+        return -ENOMEM;
+    }
+
+    pr_info("Memory allocated successfully\n");
+
+    return 0;
+}
+
+static void __exit allocation_demo_exit(void)
+{
+    kfree(buffer);
+    buffer = NULL;
+
+    pr_info("Memory released\n");
+}
+
+module_init(allocation_demo_init);
+module_exit(allocation_demo_exit);
+
+MODULE_LICENSE("GPL");</code></pre>
+
+    <p>
+        If memory allocation fails, the initialization
+        function returns <code>-ENOMEM</code>.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>8. Resource Cleanup After Initialization Failure</h2>
+
+    <p>
+        A driver may acquire several resources during
+        initialization. If a later operation fails, previously
+        acquired resources must be released.
+    </p>
+
+    <h3>Example Scenario</h3>
+
+    <ol>
+        <li>Allocate memory.</li>
+        <li>Acquire another required resource.</li>
+        <li>The second operation fails.</li>
+        <li>Release the memory allocated in step 1.</li>
+        <li>Return the appropriate error code.</li>
+    </ol>
+
+    <div class="diagram">
+        <div class="diagram-box">Start Initialization</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Allocate Memory</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Acquire Resource</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Did It Succeed?</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">No → Release Memory → Return Error</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Yes → Continue Initialization</div>
+    </div>
+
+    <h3>Example Code</h3>
+
+    <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/slab.h&gt;
+#include &lt;linux/errno.h&gt;
+#include &lt;linux/printk.h&gt;
+
+static char *buffer;
+
+static int acquire_resource(void)
+{
+    /* Demonstration: simulate a failure. */
+    return -EBUSY;
+}
+
+static int __init cleanup_demo_init(void)
+{
+    int ret;
+
+    buffer = kmalloc(1024, GFP_KERNEL);
+
+    if (!buffer)
+        return -ENOMEM;
+
+    ret = acquire_resource();
+
+    if (ret) {
+        pr_err("Resource acquisition failed\n");
+
+        kfree(buffer);
+        buffer = NULL;
+
+        return ret;
+    }
+
+    pr_info("Initialization successful\n");
+
+    return 0;
+}
+
+static void __exit cleanup_demo_exit(void)
+{
+    kfree(buffer);
+    buffer = NULL;
+
+    pr_info("Cleanup completed\n");
+}
+
+module_init(cleanup_demo_init);
+module_exit(cleanup_demo_exit);
+
+MODULE_LICENSE("GPL");</code></pre>
+
+    <p>
+        Here, the simulated resource acquisition fails.
+        Therefore, the memory is released before the
+        initialization function returns.
+    </p>
+
+    <div class="note">
+        If module initialization returns an error, the module
+        does not become successfully loaded and its normal
+        module exit function is not called. Initialization
+        code must therefore release resources it acquired
+        before returning an error.
+    </div>
+</section>
+
+<section class="content-section">
+    <h2>9. Error Handling Using goto</h2>
+
+    <p>
+        In kernel code, <code>goto</code> is commonly used
+        for structured cleanup when a function acquires
+        multiple resources.
+    </p>
+
+    <p>
+        Each error label releases the resources that were
+        successfully acquired before that point.
+    </p>
+
+    <h3>Example</h3>
+
+    <pre><code>static int __init goto_demo_init(void)
+{
+    char *buffer1;
+    char *buffer2;
+
+    buffer1 = kmalloc(100, GFP_KERNEL);
+
+    if (!buffer1)
+        return -ENOMEM;
+
+    buffer2 = kmalloc(200, GFP_KERNEL);
+
+    if (!buffer2)
+        goto err_free_buffer1;
+
+    pr_info("Both buffers allocated\n");
+
+    kfree(buffer2);
+    kfree(buffer1);
+
+    return 0;
+
+err_free_buffer1:
+    kfree(buffer1);
+    return -ENOMEM;
+}</code></pre>
+
+    <p>
+        This simplified function demonstrates reverse-order
+        cleanup. In a real module, successfully acquired
+        resources would normally remain available until the
+        module's cleanup path releases them.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>10. Logging Errors Using printk() and pr_err()</h2>
+
+    <p>
+        Kernel messages help developers identify failures
+        during module initialization and runtime operation.
+    </p>
+
+    <table>
+        <tr>
+            <th>Logging Function</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td><code>pr_info()</code></td>
+            <td>Reports informational messages.</td>
+        </tr>
+        <tr>
+            <td><code>pr_warn()</code></td>
+            <td>Reports warning conditions.</td>
+        </tr>
+        <tr>
+            <td><code>pr_err()</code></td>
+            <td>Reports error conditions.</td>
+        </tr>
+        <tr>
+            <td><code>pr_debug()</code></td>
+            <td>Reports debugging messages when enabled by the applicable configuration.</td>
+        </tr>
+    </table>
+
+    <h3>Example</h3>
+
+    <pre><code>if (!buffer) {
+    pr_err("Unable to allocate buffer\n");
+    return -ENOMEM;
+}
+
+pr_info("Buffer allocated successfully\n");</code></pre>
+
+    <p>
+        Use messages that describe the operation and failure
+        clearly. Avoid excessive logging in frequently
+        executed paths.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>11. Handling Invalid Function Arguments</h2>
+
+    <p>
+        Kernel functions should validate their inputs before
+        performing operations.
+    </p>
+
+    <h3>Example</h3>
+
+    <pre><code>#include &lt;linux/errno.h&gt;
+
+static int set_device_value(int value)
+{
+    if (value &lt; 0 || value &gt; 100)
+        return -EINVAL;
+
+    /* Process the valid value. */
+
+    return 0;
+}</code></pre>
+
+    <p>
+        The function accepts values from 0 to 100. Values
+        outside that range produce <code>-EINVAL</code>.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>12. Handling Errors in Userspace Data Transfer</h2>
+
+    <p>
+        Character device drivers often exchange data with
+        userspace applications using functions such as
+        <code>copy_to_user()</code> and
+        <code>copy_from_user()</code>.
+    </p>
+
+    <p>
+        These functions return the number of bytes that could
+        not be copied. A return value of zero means the
+        complete transfer succeeded.
+    </p>
+
+    <h3>Example</h3>
+
+    <pre><code>#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/errno.h&gt;
+
+static int copy_example(char __user *user_buffer,
+                        const char *kernel_buffer,
+                        unsigned long length)
+{
+    if (copy_to_user(user_buffer, kernel_buffer, length))
+        return -EFAULT;
+
+    return 0;
+}</code></pre>
+
+    <div class="note">
+        The example demonstrates the error check only.
+        Complete read and write callbacks must also handle
+        file offsets, partial transfers and the appropriate
+        return-value conventions. These topics are covered
+        in Chapter 9 – File Operations and User-Kernel Data
+        Transfer.
+    </div>
+</section>
+
+<section class="content-section">
+    <h2>13. Best Practices for Kernel Error Handling</h2>
+
+    <ul>
+        <li>Check return values from functions that can fail.</li>
+        <li>Return meaningful negative error codes.</li>
+        <li>Use <code>-EINVAL</code> for invalid arguments.</li>
+        <li>Use <code>-ENOMEM</code> for allocation failures.</li>
+        <li>Use <code>-ENODEV</code> when the required device is unavailable.</li>
+        <li>Release acquired resources on every failure path.</li>
+        <li>Use clear error messages with <code>pr_err()</code>.</li>
+        <li>Avoid hiding errors by returning success after a failure.</li>
+        <li>Prevent resource leaks and invalid memory access.</li>
+        <li>Keep cleanup paths understandable and consistent.</li>
+    </ul>
+</section>
+
+<section class="content-section">
+    <h2>14. Lesson Summary</h2>
+
+    <ul>
+        <li>Kernel error handling detects and manages failures.</li>
+        <li>Kernel functions commonly return negative error codes.</li>
+        <li>Zero commonly indicates successful completion.</li>
+        <li><code>-EINVAL</code> indicates an invalid argument.</li>
+        <li><code>-ENOMEM</code> indicates memory allocation failure.</li>
+        <li>Initialization functions must clean up resources before returning an error.</li>
+        <li><code>goto</code> can simplify multi-resource cleanup paths.</li>
+        <li><code>pr_err()</code> helps report errors in kernel logs.</li>
+        <li>Userspace data transfer functions require explicit error checking.</li>
+    </ul>
+</section>
+
+<section class="content-section">
+    <h2>15. Practice Questions</h2>
+
+    <h3>Short Answer Questions</h3>
+    <ol>
+        <li>What is kernel error handling?</li>
+        <li>Why is error handling important in device drivers?</li>
+        <li>What does a negative kernel error code indicate?</li>
+        <li>What is the meaning of <code>-EINVAL</code>?</li>
+        <li>What is the meaning of <code>-ENOMEM</code>?</li>
+        <li>What is the purpose of <code>-ENODEV</code>?</li>
+        <li>What does a module initialization function return?</li>
+        <li>Why must resources be released after initialization failure?</li>
+        <li>What is the purpose of <code>pr_err()</code>?</li>
+        <li>What does <code>copy_to_user()</code> return when copying fails partially?</li>
+    </ol>
+
+    <h3>Long Answer Questions</h3>
+    <ol>
+        <li>Explain common causes of kernel errors.</li>
+        <li>Discuss commonly used Linux kernel error codes.</li>
+        <li>Explain error handling during module initialization.</li>
+        <li>Describe resource cleanup after initialization failure.</li>
+        <li>Explain how goto-based cleanup works in kernel programming.</li>
+        <li>Discuss error handling best practices in device drivers.</li>
+    </ol>
+
+    <h3>Practical Questions</h3>
+    <ol>
+        <li>Write a kernel module that returns <code>-ENODEV</code> during initialization.</li>
+        <li>Write a module that checks for memory allocation failure.</li>
+        <li>Modify a module to release allocated memory on initialization failure.</li>
+        <li>Use <code>pr_err()</code> to report an error condition.</li>
+        <li>Write a function that validates an integer and returns <code>-EINVAL</code> for invalid input.</li>
+        <li>Demonstrate cleanup using a goto-based error path.</li>
+    </ol>
+</section>
+
+<section class="content-section">
+    <h2>16. Expected Learning Outcomes</h2>
+
+    <p>After completing this lesson, you should be able to:</p>
+
+    <ul>
+        <li>Identify common kernel and driver failure conditions.</li>
+        <li>Understand negative Linux kernel error codes.</li>
+        <li>Return appropriate error codes from kernel functions.</li>
+        <li>Handle module initialization failures.</li>
+        <li>Release resources correctly after partial initialization.</li>
+        <li>Use kernel logging to report errors.</li>
+        <li>Implement structured error-handling paths in a module.</li>
+    </ul>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L07_Kernel_Memory_Allocation_Basics.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L09_Return_Values_and_Error_Codes.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 5 – Kernel Programming Fundamentals</p>
+</footer>
+
+</body>
+</html>
