@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Character Device Unregistration | Linux Device Drivers</title>
+    <link rel="stylesheet" href="../../style.css">
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f7fb;
+            color: #263238;
+            line-height: 1.7;
+        }
+
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 30px 15px;
+        }
+
+        header h1 { margin: 0; font-size: 30px; }
+        header p { margin: 8px 0 0; }
+
+        nav {
+            background: #092b5c;
+            padding: 12px;
+            text-align: center;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        nav a:hover { color: #b9dcff; }
+
+        .container {
+            max-width: 1050px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+
+        .lesson-info {
+            background: #e5f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 22px;
+        }
+
+        .content-section {
+            background: white;
+            padding: 22px;
+            margin-bottom: 22px;
+            border-radius: 9px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #dce8f7;
+            padding-bottom: 8px;
+            margin-top: 0;
+        }
+
+        h3 { color: #174ea6; margin-top: 22px; }
+
+        pre {
+            background: #172337;
+            color: #eaf2ff;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .diagram {
+            background: #edf5ff;
+            border: 1px solid #c8dcf5;
+            border-radius: 8px;
+            padding: 18px;
+            margin: 18px 0;
+            text-align: center;
+        }
+
+        .diagram-box {
+            background: white;
+            border: 2px solid #2878d7;
+            border-radius: 7px;
+            padding: 12px;
+            margin: 9px auto;
+            max-width: 720px;
+            font-weight: bold;
+        }
+
+        .arrow {
+            color: #174ea6;
+            font-size: 23px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th { background: #e5f1ff; color: #123b80; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e5a000;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .tip {
+            background: #e8f6ed;
+            border-left: 5px solid #279653;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+
+        .navigation-buttons a {
+            background: #174ea6;
+            color: white;
+            padding: 11px 18px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .navigation-buttons a:hover { background: #0d3478; }
+
+        footer {
+            background: #092b5c;
+            color: white;
+            text-align: center;
+            padding: 18px;
+            margin-top: 35px;
+        }
+
+        @media (max-width: 650px) {
+            header h1 { font-size: 23px; }
+            nav a { margin: 5px 7px; }
+            .content-section { padding: 16px; }
+            table { display: block; overflow-x: auto; }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 8: Character Driver Implementation</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter 8</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson 6:</strong> Character Device Unregistration
+        <br>
+        <strong>Level:</strong> Intermediate
+        <br>
+        <strong>Prerequisites:</strong> Device numbers, struct cdev, cdev_init(), cdev_add() and cdev_del().
+        <br>
+        <strong>Objective:</strong> Understand the complete process of removing a character-device registration and releasing associated resources safely.
+    </div>
+
+    <section class="content-section">
+        <h2>1. Introduction</h2>
+
+        <p>
+            A Linux character-device driver
+            must manage the complete lifecycle
+            of its device registration.
+        </p>
+
+        <p>
+            During initialization, the driver
+            allocates device numbers, initializes
+            a cdev object and registers it with
+            the kernel.
+        </p>
+
+        <p>
+            During cleanup, these registrations
+            and allocated resources must be
+            released in an appropriate order.
+        </p>
+
+        <p>
+            This process is known as
+            <strong>character-device unregistration</strong>.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Is Character Device Unregistration?</h2>
+
+        <p>
+            Character-device unregistration is
+            the process of removing a registered
+            character-device interface from the
+            Linux kernel and releasing the
+            associated device-number reservation.
+        </p>
+
+        <p>
+            It generally involves two important
+            operations:
+        </p>
+
+        <pre><code>cdev_del(&amp;my_cdev);
+
+unregister_chrdev_region(dev, count);</code></pre>
+
+        <table>
+            <tr>
+                <th>Function</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td><code>cdev_del()</code></td>
+                <td>Removes the character-device registration.</td>
+            </tr>
+            <tr>
+                <td><code>unregister_chrdev_region()</code></td>
+                <td>Releases the reserved device-number range.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            These functions are not interchangeable.
+            Removing a cdev registration does not
+            release its device numbers, and
+            releasing device numbers does not
+            remove a cdev registration.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Why Is Unregistration Necessary?</h2>
+
+        <p>
+            When a kernel module is unloaded or
+            a character device is removed, the
+            driver must stop exposing the
+            corresponding interface.
+        </p>
+
+        <h3>Main Reasons</h3>
+
+        <ul>
+            <li>Prevent new opens through the removed cdev registration.</li>
+            <li>Remove the device's registration from the kernel.</li>
+            <li>Release reserved major and minor device numbers.</li>
+            <li>Prevent stale device registrations.</li>
+            <li>Support safe module unloading.</li>
+            <li>Allow device numbers to be reused after release.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Character Device Registration and Unregistration Sequence</h2>
+
+        <p>
+            The following diagram shows the
+            complete registration and cleanup
+            sequence.
+        </p>
+
+        <div class="diagram">
+            <div class="diagram-box">
+                alloc_chrdev_region()
+                <br>
+                Allocate device-number range
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                cdev_init()
+                <br>
+                Initialize cdev
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                cdev_add()
+                <br>
+                Register character device
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Device Available
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                cdev_del()
+                <br>
+                Remove cdev registration
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                unregister_chrdev_region()
+                <br>
+                Release device-number range
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Character Device Registration Removed
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>5. unregister_chrdev_region() Function</h2>
+
+        <p>
+            Linux provides
+            <code>unregister_chrdev_region()</code>
+            to release a previously reserved
+            character-device number range.
+        </p>
+
+        <p>Header file:</p>
+
+        <pre><code>#include &lt;linux/fs.h&gt;</code></pre>
+
+        <p>Function prototype:</p>
+
+        <pre><code>void unregister_chrdev_region(
+    dev_t from,
+    unsigned int count
+);</code></pre>
+
+        <h3>Function Parameters</h3>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><code>from</code></td>
+                <td>Starting device number of the reserved range.</td>
+            </tr>
+            <tr>
+                <td><code>count</code></td>
+                <td>Number of device numbers to release.</td>
+            </tr>
+        </table>
+
+        <h3>Example</h3>
+
+        <pre><code>unregister_chrdev_region(dev, 1);</code></pre>
+
+        <p>
+            This releases one previously
+            reserved device number beginning
+            at <code>dev</code>.
+        </p>
+
+        <div class="tip">
+            The starting device number and count
+            must correspond to the range that
+            the driver previously allocated or
+            reserved.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Difference Between cdev_del() and unregister_chrdev_region()</h2>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>cdev_del()</th>
+                <th>unregister_chrdev_region()</th>
+            </tr>
+            <tr>
+                <td>Purpose</td>
+                <td>Removes cdev registration.</td>
+                <td>Releases device-number reservation.</td>
+            </tr>
+            <tr>
+                <td>Input</td>
+                <td>struct cdev pointer.</td>
+                <td>dev_t and count.</td>
+            </tr>
+            <tr>
+                <td>Return type</td>
+                <td>void</td>
+                <td>void</td>
+            </tr>
+            <tr>
+                <td>Removes cdev registration</td>
+                <td>Yes</td>
+                <td>No</td>
+            </tr>
+            <tr>
+                <td>Releases major/minor range</td>
+                <td>No</td>
+                <td>Yes</td>
+            </tr>
+        </table>
+
+        <h3>Correct Cleanup Sequence</h3>
+
+        <pre><code>cdev_del(&amp;my_cdev);
+
+unregister_chrdev_region(dev, count);</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Device Model Cleanup</h2>
+
+        <p>
+            Some character drivers also create
+            device-model objects using
+            <code>class_create()</code> and
+            <code>device_create()</code>.
+        </p>
+
+        <p>
+            These objects require their own
+            cleanup operations.
+        </p>
+
+        <table>
+            <tr>
+                <th>Creation Function</th>
+                <th>Cleanup Function</th>
+            </tr>
+            <tr>
+                <td><code>device_create()</code></td>
+                <td><code>device_destroy()</code></td>
+            </tr>
+            <tr>
+                <td><code>class_create()</code></td>
+                <td><code>class_destroy()</code></td>
+            </tr>
+            <tr>
+                <td><code>cdev_add()</code></td>
+                <td><code>cdev_del()</code></td>
+            </tr>
+            <tr>
+                <td><code>alloc_chrdev_region()</code></td>
+                <td><code>unregister_chrdev_region()</code></td>
+            </tr>
+        </table>
+
+        <h3>Example Cleanup</h3>
+
+        <pre><code>device_destroy(my_class, dev);
+
+class_destroy(my_class);
+
+cdev_del(&amp;my_cdev);
+
+unregister_chrdev_region(dev, 1);</code></pre>
+
+        <p>
+            The exact cleanup order depends
+            on the resources and dependencies
+            created by the driver. The example
+            removes the device-model interface
+            before removing the cdev registration.
+        </p>
+
+        <div class="note">
+            device_destroy() removes the
+            device-model object. A /dev node
+            normally created through devtmpfs
+            or udev is removed as part of the
+            corresponding device-node management.
+            It is not a substitute for cdev_del().
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Existing Open Files and Safe Unregistration</h2>
+
+        <p>
+            Removing a cdev registration does
+            not automatically close existing
+            file descriptors.
+        </p>
+
+        <p>
+            A process that opened a device before
+            unregistration may still hold a
+            reference to the file and may attempt
+            further operations.
+        </p>
+
+        <h3>Important Considerations</h3>
+
+        <ul>
+            <li>Prevent new opens through the removed registration.</li>
+            <li>Manage existing open-file references.</li>
+            <li>Do not free buffers still used by callbacks.</li>
+            <li>Synchronize asynchronous work and hardware operations.</li>
+            <li>Ensure the device state remains valid until its users are finished.</li>
+        </ul>
+
+        <div class="note">
+            cdev_del() is not a synchronization
+            mechanism for all active driver
+            operations. Production drivers need
+            suitable reference counting,
+            synchronization and lifetime handling
+            before freeing device state.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Complete Practical Example</h2>
+
+        <p>
+            This module demonstrates allocation,
+            registration and unregistration of
+            one character-device number.
+        </p>
+
+        <h3>File: char_unregister_demo.c</h3>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/cdev.h&gt;
+#include &lt;linux/init.h&gt;
+
+#define DEVICE_NAME "char_unregister_demo"
+
+static dev_t dev;
+static struct cdev my_cdev;
+
+static int demo_open(struct inode *inode,
+                     struct file *file)
+{
+    pr_info("Device opened\n");
+    return 0;
+}
+
+static int demo_release(struct inode *inode,
+                        struct file *file)
+{
+    pr_info("Device released\n");
+    return 0;
+}
+
+static const struct file_operations demo_fops = {
+    .owner = THIS_MODULE,
+    .open = demo_open,
+    .release = demo_release,
+};
+
+static int __init demo_init(void)
+{
+    int ret;
+
+    ret = alloc_chrdev_region(
+        &amp;dev,
+        0,
+        1,
+        DEVICE_NAME
+    );
+
+    if (ret &lt; 0) {
+        pr_err("Device number allocation failed\n");
+        return ret;
+    }
+
+    cdev_init(&amp;my_cdev, &amp;demo_fops);
+
+    my_cdev.owner = THIS_MODULE;
+
+    ret = cdev_add(&amp;my_cdev, dev, 1);
+
+    if (ret &lt; 0) {
+        pr_err("cdev registration failed: %d\n", ret);
+        unregister_chrdev_region(dev, 1);
+        return ret;
+    }
+
+    pr_info("Character device registered\n");
+    pr_info("Major: %u Minor: %u\n",
+            MAJOR(dev), MINOR(dev));
+
+    return 0;
+}
+
+static void __exit demo_exit(void)
+{
+    cdev_del(&amp;my_cdev);
+
+    pr_info("Character device registration removed\n");
+
+    unregister_chrdev_region(dev, 1);
+
+    pr_info("Device-number range released\n");
+}
+
+module_init(demo_init);
+module_exit(demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Character Device Unregistration Demonstration");</code></pre>
+
+        <h3>Program Explanation</h3>
+
+        <ol>
+            <li>Allocate one device number dynamically.</li>
+            <li>Initialize the cdev object.</li>
+            <li>Associate file operations with the cdev.</li>
+            <li>Register the cdev using cdev_add().</li>
+            <li>During module cleanup, remove the cdev using cdev_del().</li>
+            <li>Release the device-number range using unregister_chrdev_region().</li>
+        </ol>
+
+        <div class="tip">
+            This example does not create a
+            /dev node or device-model class.
+            It focuses on the kernel-side
+            registration and unregistration process.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Makefile</h2>
+
+        <pre><code>obj-m += char_unregister_demo.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+        <p>
+            The recipe lines below
+            <code>all:</code> and
+            <code>clean:</code> must begin
+            with a tab character.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Compile and Test in Ubuntu</h2>
+
+        <h3>Step 1: Install Dependencies</h3>
+
+        <pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+        <h3>Step 2: Compile the Module</h3>
+
+        <pre><code>make</code></pre>
+
+        <h3>Step 3: Load the Module</h3>
+
+        <pre><code>sudo insmod char_unregister_demo.ko</code></pre>
+
+        <h3>Step 4: Inspect Registered Character Devices</h3>
+
+        <pre><code>cat /proc/devices</code></pre>
+
+        <h3>Step 5: View Kernel Messages</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <p>Example output:</p>
+
+        <pre><code>Character device registered
+Major: 240 Minor: 0</code></pre>
+
+        <h3>Step 6: Unload the Module</h3>
+
+        <pre><code>sudo rmmod char_unregister_demo</code></pre>
+
+        <h3>Step 7: Verify Cleanup</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <p>Expected cleanup messages:</p>
+
+        <pre><code>Character device registration removed
+Device-number range released</code></pre>
+
+        <h3>Step 8: Clean Build Files</h3>
+
+        <pre><code>make clean</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Common Mistakes</h2>
+
+        <table>
+            <tr>
+                <th>Mistake</th>
+                <th>Correct Approach</th>
+            </tr>
+            <tr>
+                <td>Releasing device numbers without removing the cdev</td>
+                <td>Remove the cdev registration first.</td>
+            </tr>
+            <tr>
+                <td>Calling cleanup on resources that were never created</td>
+                <td>Track successful initialization stages and clean up only acquired resources.</td>
+            </tr>
+            <tr>
+                <td>Forgetting device_destroy()</td>
+                <td>Remove device-model objects if they were created.</td>
+            </tr>
+            <tr>
+                <td>Forgetting class_destroy()</td>
+                <td>Destroy the class if the driver created one.</td>
+            </tr>
+            <tr>
+                <td>Freeing active device data immediately</td>
+                <td>Wait until active users and operations no longer reference the data.</td>
+            </tr>
+            <tr>
+                <td>Assuming cdev_del() closes all open files</td>
+                <td>Handle existing file descriptors and references safely.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Summary</h2>
+
+        <ul>
+            <li>Character-device unregistration removes the kernel registration and releases reserved device numbers.</li>
+            <li><code>cdev_del()</code> removes the cdev registration.</li>
+            <li><code>unregister_chrdev_region()</code> releases device numbers.</li>
+            <li><code>device_destroy()</code> removes a device-model object.</li>
+            <li><code>class_destroy()</code> removes a device class.</li>
+            <li>Existing open file descriptors require careful lifetime management.</li>
+            <li>Cleanup should release resources according to their initialization dependencies.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Practice Questions</h2>
+
+        <h3>A. Short Answer Questions</h3>
+
+        <p>1. What is character-device unregistration?</p>
+        <p>2. What is the purpose of cdev_del()?</p>
+        <p>3. What is unregister_chrdev_region()?</p>
+        <p>4. Differentiate cdev_del() and unregister_chrdev_region().</p>
+        <p>5. What is the purpose of device_destroy()?</p>
+        <p>6. What is the purpose of class_destroy()?</p>
+        <p>7. Why is cleanup order important?</p>
+        <p>8. What happens to existing open file descriptors after cdev_del()?</p>
+
+        <h3>B. Long Answer Questions</h3>
+
+        <p>1. Explain the complete character-device unregistration process.</p>
+        <p>2. Explain the responsibilities of cdev_del() and unregister_chrdev_region().</p>
+        <p>3. Describe cleanup of a character driver using a device class.</p>
+        <p>4. Explain safe resource management during driver removal.</p>
+        <p>5. Discuss the problems that can occur if device resources are released while callbacks are active.</p>
+
+        <h3>C. Practical Exercises</h3>
+
+        <p>1. Write a module that allocates a character-device number.</p>
+        <p>2. Initialize and register a cdev.</p>
+        <p>3. Implement module cleanup using cdev_del().</p>
+        <p>4. Release device numbers using unregister_chrdev_region().</p>
+        <p>5. Add class and device cleanup to a suitable driver example.</p>
+        <p>6. Compile, load and unload the module in Ubuntu.</p>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Expected Learning Outcomes</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Explain character-device unregistration.</li>
+            <li>Use cdev_del() correctly.</li>
+            <li>Release device numbers using unregister_chrdev_region().</li>
+            <li>Understand device-model cleanup operations.</li>
+            <li>Plan a safe character-driver cleanup sequence.</li>
+            <li>Compile and test a basic character-device module in Ubuntu.</li>
+        </ul>
+    </section>
+
+    <div class="navigation-buttons">
+        <a href="L05_cdev_del.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter Index
+        </a>
+
+        <a href="L07_file_operations_Structure.html">
+            Next Lesson →
+        </a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 8 – Lesson 6: Character Device Unregistration</p>
+</footer>
+
+</body>
+</html>
