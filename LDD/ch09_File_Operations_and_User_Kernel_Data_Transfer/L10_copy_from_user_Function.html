@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 10 - copy_from_user() Function | Linux Device Drivers</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{font-size:28px;margin-bottom:8px}
+nav{background:white;padding:12px;text-align:center;box-shadow:0 2px 5px rgba(0,0,0,.08)}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 12px}
+nav a:hover{color:#007bff}
+.container{max-width:1100px;margin:25px auto;padding:0 18px}
+.lesson-info{background:#e7f1ff;border-left:5px solid #2878d7;padding:18px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:23px;margin-bottom:22px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h2{color:#174ea6;border-bottom:2px solid #e5edf8;padding-bottom:8px;margin-bottom:15px}
+h3{color:#245b9e;margin:18px 0 10px}
+p{margin:10px 0}
+ul,ol{margin:10px 0 10px 25px}
+li{margin-bottom:7px}
+pre{background:#17212f;color:#eaf2ff;padding:17px;border-radius:7px;overflow-x:auto;margin:14px 0;font-size:13px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;vertical-align:top}
+th{background:#e7f1ff;color:#174ea6}
+.diagram{background:#f0f6ff;border:1px solid #b9d2f4;border-radius:8px;padding:18px;margin:15px 0;text-align:center}
+.diagram-box{display:inline-block;background:white;border:2px solid #2878d7;border-radius:7px;padding:12px 18px;margin:7px;font-weight:bold;color:#174ea6}
+.arrow{font-size:22px;color:#2878d7;font-weight:bold}
+.note{background:#fff8e5;border-left:4px solid #e0a000;padding:13px;margin:14px 0}
+.tip{background:#e9f7ef;border-left:4px solid #24965b;padding:13px;margin:14px 0}
+.warning{background:#fff0f0;border-left:4px solid #d9534f;padding:13px;margin:14px 0}
+.lesson-navigation{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 18px;border-radius:5px;text-decoration:none;font-weight:bold}
+.lesson-navigation a:hover{background:#2878d7}
+footer{background:#123b80;color:white;text-align:center;padding:18px;margin-top:30px}
+@media(max-width:650px){
+header h1{font-size:22px}
+nav a{display:inline-block;margin:5px 7px}
+section{padding:16px}
+table{display:block;overflow-x:auto}
+pre{font-size:12px}
+}
+</style>
+</head>
+<body>
+
+<header>
+<h1>Linux Device Drivers</h1>
+<p>Chapter 9 - File Operations and User-Kernel Data Transfer</p>
+<p>Lesson 10: copy_from_user() Function</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">LDD Course</a>
+<a href="index.html">Chapter 9</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+<strong>Lesson:</strong> 10 of 12<br>
+<strong>Topic:</strong> Safe User-to-Kernel Data Transfer<br>
+<strong>Prerequisites:</strong> User Space and Kernel Space, Character Drivers, write() callback and copy_to_user().
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Understand the purpose of copy_from_user().</li>
+<li>Explain user-to-kernel data transfer.</li>
+<li>Understand its parameters and return value.</li>
+<li>Use copy_from_user() in a character driver's write callback.</li>
+<li>Handle partial-copy failures correctly.</li>
+<li>Understand how user-space data is stored in kernel buffers.</li>
+<li>Use copy_from_user() in IOCTL operations.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to copy_from_user()</h2>
+
+<p>Linux device drivers frequently receive data from user-space applications. For example, an application may send a configuration value, command, or message to a character device.</p>
+
+<p>The driver must transfer that data into kernel memory before processing it.</p>
+
+<p><code>copy_from_user()</code> is a Linux kernel function that copies data from a user-space memory region into a kernel-space memory region.</p>
+
+<h3>Header File</h3>
+<pre><code>#include &lt;linux/uaccess.h&gt;</code></pre>
+
+<h3>Function Prototype</h3>
+<pre><code>unsigned long copy_from_user(
+    void *to,
+    const void __user *from,
+    unsigned long n
+);</code></pre>
+
+<h3>Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td>to</td><td>Destination address in kernel memory.</td></tr>
+<tr><td>from</td><td>Source address in user memory.</td></tr>
+<tr><td>n</td><td>Number of bytes requested to be copied.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>3. Direction of Data Transfer</h2>
+
+<p>The function name describes the source: data is copied <strong>from user space</strong>.</p>
+
+<div class="diagram">
+<h3>User-to-Kernel Data Transfer</h3>
+<div class="diagram-box">User Buffer</div>
+<div class="arrow">copy_from_user()</div>
+<div class="diagram-box">Kernel Buffer</div>
+<p>Direction: User Space → Kernel Space</p>
+</div>
+
+<h3>Example</h3>
+<pre><code>char kernel_buffer[100];
+char __user *user_buffer;
+
+/* Copy 100 bytes from user space */
+copy_from_user(
+    kernel_buffer,
+    user_buffer,
+    100
+);</code></pre>
+
+<p>The user buffer is the source, and the kernel buffer is the destination.</p>
+</section>
+
+<section>
+<h2>4. Return Value of copy_from_user()</h2>
+
+<p>The return value is the number of bytes that were <strong>not copied</strong>.</p>
+
+<table>
+<tr><th>Return Value</th><th>Meaning</th></tr>
+<tr><td>0</td><td>All requested bytes were copied successfully.</td></tr>
+<tr><td>Nonzero</td><td>Some bytes were not copied.</td></tr>
+</table>
+
+<h3>Example</h3>
+<pre><code>unsigned long not_copied;
+
+not_copied = copy_from_user(
+    kernel_buffer,
+    user_buffer,
+    100
+);
+
+if (not_copied == 0) {
+    pr_info("Data copied successfully\n");
+} else {
+    pr_err("Some data could not be copied\n");
+}</code></pre>
+
+<div class="warning">
+copy_from_user() does not return a negative error code. It returns the number of bytes not copied. A driver commonly returns <code>-EFAULT</code> when the requested transfer cannot be completed and no bytes can be reported as accepted.
+</div>
+</section>
+
+<section>
+<h2>5. Why Is copy_from_user() Required?</h2>
+
+<p>User-space memory is not ordinary kernel memory. A driver must not directly dereference an arbitrary user-space pointer.</p>
+
+<h3>Incorrect Approach</h3>
+<pre><code>memcpy(kernel_buffer,
+       user_buffer,
+       count);</code></pre>
+
+<p>This is not the correct way to access an arbitrary user-space pointer.</p>
+
+<h3>Correct Approach</h3>
+<pre><code>if (copy_from_user(
+        kernel_buffer,
+        user_buffer,
+        count)) {
+    return -EFAULT;
+}</code></pre>
+
+<p>The kernel user-access API handles the special requirements of transferring data across the user/kernel boundary.</p>
+</section>
+
+<section>
+<h2>6. Using copy_from_user() in a write() Callback</h2>
+
+<p>A character driver's write() callback receives a pointer to user-space data. The driver commonly uses copy_from_user() to move that data into a kernel buffer.</p>
+
+<h3>Write Callback Prototype</h3>
+<pre><code>ssize_t my_write(
+    struct file *file,
+    const char __user *buffer,
+    size_t count,
+    loff_t *position
+);</code></pre>
+
+<h3>Basic Example</h3>
+<pre><code>#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/errno.h&gt;
+
+#define BUFFER_SIZE 1024
+
+static char kernel_buffer[BUFFER_SIZE];
+static size_t data_size;
+
+static ssize_t my_write(
+    struct file *file,
+    const char __user *buffer,
+    size_t count,
+    loff_t *position)
+{
+    size_t bytes_to_copy;
+    unsigned long not_copied;
+
+    if (*position &lt; 0)
+        return -EINVAL;
+
+    if (*position &gt;= BUFFER_SIZE)
+        return -ENOSPC;
+
+    bytes_to_copy = min(
+        count,
+        BUFFER_SIZE - (size_t)*position
+    );
+
+    not_copied = copy_from_user(
+        kernel_buffer + *position,
+        buffer,
+        bytes_to_copy
+    );
+
+    if (not_copied == bytes_to_copy)
+        return -EFAULT;
+
+    bytes_to_copy -= not_copied;
+
+    *position += bytes_to_copy;
+
+    if ((size_t)*position &gt; data_size)
+        data_size = (size_t)*position;
+
+    return bytes_to_copy;
+}</code></pre>
+
+<h3>Explanation</h3>
+<ol>
+<li>Validate the current file position.</li>
+<li>Check that the position is within the kernel buffer.</li>
+<li>Calculate the maximum number of bytes that can be stored.</li>
+<li>Use copy_from_user() to copy the data into kernel memory.</li>
+<li>Calculate the number of bytes successfully copied.</li>
+<li>Update the file position.</li>
+<li>Update the amount of valid data stored in the buffer.</li>
+<li>Return the number of bytes accepted.</li>
+</ol>
+
+<div class="note">
+This is a simple educational example. It uses a global buffer without synchronization. A driver that permits concurrent access must protect shared state, for example with a mutex, and carefully define its write and overwrite semantics.
+</div>
+</section>
+
+<section>
+<h2>7. Handling Partial Copy</h2>
+
+<p>A copy operation may not be able to access every requested byte. The driver must account for the bytes that were successfully transferred.</p>
+
+<h3>Example</h3>
+<pre><code>Requested bytes = 100
+
+Bytes successfully copied = 80
+
+Bytes not copied = 20</code></pre>
+
+<p>Calculate the successful transfer:</p>
+<pre><code>copied = requested - not_copied;</code></pre>
+
+<h3>Robust Return-Value Pattern</h3>
+<pre><code>unsigned long not_copied;
+size_t copied;
+
+not_copied = copy_from_user(
+    kernel_buffer,
+    user_buffer,
+    bytes_to_copy
+);
+
+copied = bytes_to_copy - not_copied;
+
+if (copied == 0)
+    return -EFAULT;
+
+return copied;</code></pre>
+
+<p>This pattern reports partial progress when some bytes were copied. The driver must also update its file position and buffer length using the actual copied count.</p>
+
+<div class="tip">
+For a write callback, returning a positive byte count means the driver accepted that amount of data. User-space applications should handle partial writes and retry the remaining data when appropriate.
+</div>
+</section>
+
+<section>
+<h2>8. Using copy_from_user() in IOCTL</h2>
+
+<p>IOCTL operations may receive configuration structures or command parameters from an application.</p>
+
+<p>For example, an application may send a new device configuration to the driver.</p>
+
+<h3>Shared Header: my_ioctl.h</h3>
+<pre><code>#ifndef MY_IOCTL_H
+#define MY_IOCTL_H
+
+#include &lt;linux/ioctl.h&gt;
+
+#define MY_MAGIC 'N'
+
+struct device_config {
+    int mode;
+    int speed;
+};
+
+#define MY_IOCTL_SET_CONFIG \
+    _IOW(MY_MAGIC, 1, struct device_config)
+
+#endif</code></pre>
+
+<h3>Kernel-Space Callback Example</h3>
+<pre><code>#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/fs.h&gt;
+#include "my_ioctl.h"
+
+static struct device_config current_config;
+
+static long my_ioctl(
+    struct file *file,
+    unsigned int cmd,
+    unsigned long arg)
+{
+    struct device_config config;
+
+    switch (cmd) {
+
+    case MY_IOCTL_SET_CONFIG:
+
+        if (copy_from_user(
+                &amp;config,
+                (struct device_config __user *)arg,
+                sizeof(config))) {
+            return -EFAULT;
+        }
+
+        /* Validate application-supplied values */
+        if (config.mode &lt; 0 || config.mode &gt; 3)
+            return -EINVAL;
+
+        if (config.speed &lt; 1 || config.speed &gt; 1000)
+            return -EINVAL;
+
+        current_config = config;
+
+        break;
+
+    default:
+        return -ENOTTY;
+    }
+
+    return 0;
+}</code></pre>
+
+<p>The driver copies the user-supplied structure into a kernel-space variable before validating and using its fields.</p>
+
+<div class="warning">
+Never assume that data received from an application is valid merely because copy_from_user() succeeded. Validate ranges, lengths, enumerations and other application-specific rules before using the data.
+</div>
+</section>
+
+<section>
+<h2>9. User-Space Application Example</h2>
+
+<p>The following example sends a message to a character device.</p>
+
+<h3>File: test_write.c</h3>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;string.h&gt;
+
+int main(void)
+{
+    int fd;
+    const char message[] = "Hello Linux Driver";
+
+    fd = open("/dev/mychardev", O_WRONLY);
+
+    if (fd &lt; 0) {
+        perror("open");
+        return 1;
+    }
+
+    ssize_t written = write(
+        fd,
+        message,
+        strlen(message)
+    );
+
+    if (written &lt; 0) {
+        perror("write");
+        close(fd);
+        return 1;
+    }
+
+    printf("Bytes written: %zd\n", written);
+
+    close(fd);
+
+    return 0;
+}</code></pre>
+
+<h3>Compile</h3>
+<pre><code>gcc test_write.c -o test_write</code></pre>
+
+<h3>Execute</h3>
+<pre><code>sudo ./test_write</code></pre>
+
+<p>The application sends data to the device. The driver's write callback receives the data and uses copy_from_user() to place it into kernel memory.</p>
+</section>
+
+<section>
+<h2>10. Complete Simple Character Driver Example</h2>
+
+<p>This example demonstrates a memory-backed character device with both read and write operations. It uses copy_from_user() for writes and copy_to_user() for reads.</p>
+
+<h3>File: user_transfer_driver.c</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/cdev.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/mutex.h&gt;
+#include &lt;linux/errno.h&gt;
+
+#define DEVICE_NAME "mychardev"
+#define BUFFER_SIZE 1024
+
+static dev_t dev_num;
+static struct cdev my_cdev;
+
+static char device_buffer[BUFFER_SIZE];
+static size_t data_size;
+
+static DEFINE_MUTEX(buffer_mutex);
+
+static int my_open(
+    struct inode *inode,
+    struct file *file)
+{
+    pr_info("Device opened\n");
+    return 0;
+}
+
+static ssize_t my_read(
+    struct file *file,
+    char __user *buffer,
+    size_t count,
+    loff_t *position)
+{
+    size_t bytes_to_copy;
+    unsigned long not_copied;
+    ssize_t result;
+
+    if (*position &lt; 0)
+        return -EINVAL;
+
+    if (mutex_lock_interruptible(&amp;buffer_mutex))
+        return -ERESTARTSYS;
+
+    if (*position &gt;= data_size) {
+        result = 0;
+        goto out;
+    }
+
+    bytes_to_copy = min(
+        count,
+        data_size - (size_t)*position
+    );
+
+    not_copied = copy_to_user(
+        buffer,
+        device_buffer + *position,
+        bytes_to_copy
+    );
+
+    bytes_to_copy -= not_copied;
+
+    if (bytes_to_copy == 0) {
+        result = -EFAULT;
+        goto out;
+    }
+
+    *position += bytes_to_copy;
+    result = bytes_to_copy;
+
+out:
+    mutex_unlock(&amp;buffer_mutex);
+    return result;
+}
+
+static ssize_t my_write(
+    struct file *file,
+    const char __user *buffer,
+    size_t count,
+    loff_t *position)
+{
+    size_t bytes_to_copy;
+    unsigned long not_copied;
+    ssize_t result;
+
+    if (*position &lt; 0)
+        return -EINVAL;
+
+    if (mutex_lock_interruptible(&amp;buffer_mutex))
+        return -ERESTARTSYS;
+
+    if (*position &gt;= BUFFER_SIZE) {
+        result = -ENOSPC;
+        goto out;
+    }
+
+    bytes_to_copy = min(
+        count,
+        BUFFER_SIZE - (size_t)*position
+    );
+
+    not_copied = copy_from_user(
+        device_buffer + *position,
+        buffer,
+        bytes_to_copy
+    );
+
+    bytes_to_copy -= not_copied;
+
+    if (bytes_to_copy == 0) {
+        result = -EFAULT;
+        goto out;
+    }
+
+    *position += bytes_to_copy;
+
+    if ((size_t)*position &gt; data_size)
+        data_size = (size_t)*position;
+
+    result = bytes_to_copy;
+
+out:
+    mutex_unlock(&amp;buffer_mutex);
+    return result;
+}
+
+static int my_release(
+    struct inode *inode,
+    struct file *file)
+{
+    pr_info("Device closed\n");
+    return 0;
+}
+
+static const struct file_operations my_fops = {
+    .owner   = THIS_MODULE,
+    .open    = my_open,
+    .read    = my_read,
+    .write   = my_write,
+    .release = my_release,
+};
+
+static int __init my_driver_init(void)
+{
+    int ret;
+
+    ret = alloc_chrdev_region(
+        &amp;dev_num, 0, 1, DEVICE_NAME
+    );
+
+    if (ret &lt; 0) {
+        pr_err("Device number allocation failed\n");
+        return ret;
+    }
+
+    cdev_init(&amp;my_cdev, &amp;my_fops);
+    my_cdev.owner = THIS_MODULE;
+
+    ret = cdev_add(&amp;my_cdev, dev_num, 1);
+
+    if (ret &lt; 0) {
+        unregister_chrdev_region(dev_num, 1);
+        return ret;
+    }
+
+    pr_info("Device registered: major=%d minor=%d\n",
+            MAJOR(dev_num), MINOR(dev_num));
+
+    return 0;
+}
+
+static void __exit my_driver_exit(void)
+{
+    cdev_del(&amp;my_cdev);
+    unregister_chrdev_region(dev_num, 1);
+
+    pr_info("Device driver removed\n");
+}
+
+module_init(my_driver_init);
+module_exit(my_driver_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Character Driver User-Kernel Data Transfer");</code></pre>
+
+<h3>Important Design Notes</h3>
+<ul>
+<li>The mutex protects the shared kernel buffer and its data-size metadata.</li>
+<li>The example uses one shared buffer for all open instances.</li>
+<li>The mutex is held during user-memory copying. This is permitted because mutexes can be held in sleepable process context, but it can increase contention.</li>
+<li>The example demonstrates partial-copy accounting for both read and write.</li>
+<li>Production drivers may need per-open buffers, more detailed error handling and a carefully defined concurrency policy.</li>
+</ul>
+</section>
+
+<section>
+<h2>11. Makefile</h2>
+
+<p>Create a file named Makefile in the same directory.</p>
+
+<pre><code>obj-m += user_transfer_driver.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+<p>Use actual tab characters at the beginning of the two recipe lines.</p>
+</section>
+
+<section>
+<h2>12. Compile and Test in Ubuntu</h2>
+
+<h3>Install Dependencies</h3>
+<pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+<h3>Compile</h3>
+<pre><code>make</code></pre>
+
+<h3>Load the Module</h3>
+<pre><code>sudo insmod user_transfer_driver.ko</code></pre>
+
+<h3>Check the Kernel Log</h3>
+<pre><code>sudo dmesg | tail -20</code></pre>
+
+<p>Find the major number reported by the driver.</p>
+
+<h3>Create the Device Node</h3>
+<pre><code>sudo mknod /dev/mychardev c MAJOR_NUMBER 0
+sudo chmod 666 /dev/mychardev</code></pre>
+
+<p>Replace MAJOR_NUMBER with the actual number reported in the kernel log.</p>
+
+<h3>Write Data to the Device</h3>
+<pre><code>echo "Hello from user space" | sudo tee /dev/mychardev</code></pre>
+
+<h3>Read Data from the Device</h3>
+<pre><code>sudo cat /dev/mychardev</code></pre>
+
+<p>Expected output:</p>
+<pre><code>Hello from user space</code></pre>
+
+<h3>Unload the Driver</h3>
+<pre><code>sudo rmmod user_transfer_driver</code></pre>
+
+<h3>Clean Build Files</h3>
+<pre><code>make clean</code></pre>
+
+<div class="note">
+The device node is created manually in this exercise. The driver does not call device_create(), so loading the module alone does not create /dev/mychardev.
+</div>
+</section>
+
+<section>
+<h2>13. Common Errors and Solutions</h2>
+
+<table>
+<tr><th>Problem</th><th>Solution</th></tr>
+<tr><td>Using memcpy() with a user pointer</td><td>Use copy_from_user().</td></tr>
+<tr><td>Wrong argument order</td><td>First argument is kernel destination; second is user source.</td></tr>
+<tr><td>Ignoring the return value</td><td>Check the number of bytes not copied.</td></tr>
+<tr><td>Returning requested count after partial copy</td><td>Return the number of bytes actually accepted.</td></tr>
+<tr><td>Writing beyond kernel buffer</td><td>Limit the copy length to available buffer capacity.</td></tr>
+<tr><td>Using unvalidated application data</td><td>Validate all values and lengths after copying.</td></tr>
+<tr><td>Calling from interrupt context</td><td>Do not call copy_from_user() in contexts where sleeping is forbidden.</td></tr>
+<tr><td>Incorrect file position update</td><td>Update position using the successfully copied byte count.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>14. Important Technical Considerations</h2>
+
+<ul>
+<li>copy_from_user() may fault and sleep while accessing user memory.</li>
+<li>Do not call it from hard interrupt context or other atomic contexts where sleeping is forbidden.</li>
+<li>Use a valid kernel destination buffer with sufficient capacity.</li>
+<li>Always check the return value.</li>
+<li>Validate application-supplied data before using it.</li>
+<li>Protect shared kernel buffers against concurrent access.</li>
+<li>Do not hold a spinlock while calling copy_from_user().</li>
+<li>Use appropriate synchronization such as a mutex when the callback runs in sleepable process context.</li>
+<li>Do not assume the application supplied a valid pointer or trustworthy data.</li>
+</ul>
+
+<div class="warning">
+A successful copy only means that the requested bytes were transferred. It does not mean that the copied data is logically valid, safe for a device, or suitable for the driver's operation.
+</div>
+</section>
+
+<section>
+<h2>15. copy_from_user() vs copy_to_user()</h2>
+
+<table>
+<tr><th>Feature</th><th>copy_from_user()</th><th>copy_to_user()</th></tr>
+<tr><td>Direction</td><td>User to Kernel</td><td>Kernel to User</td></tr>
+<tr><td>Destination</td><td>Kernel memory</td><td>User memory</td></tr>
+<tr><td>Source</td><td>User memory</td><td>Kernel memory</td></tr>
+<tr><td>Typical callback</td><td>write()</td><td>read()</td></tr>
+<tr><td>IOCTL use</td><td>Receive configuration</td><td>Return device status</td></tr>
+<tr><td>Return value</td><td>Bytes not copied</td><td>Bytes not copied</td></tr>
+</table>
+
+<p>Both functions return the number of bytes that were not copied. Neither function returns a negative errno directly.</p>
+</section>
+
+<section>
+<h2>16. Lesson Summary</h2>
+
+<ul>
+<li>copy_from_user() transfers data from user space into kernel space.</li>
+<li>It is declared in linux/uaccess.h.</li>
+<li>The first parameter is the kernel destination.</li>
+<li>The second parameter is the user-space source.</li>
+<li>The third parameter specifies the requested byte count.</li>
+<li>Its return value represents the number of bytes not copied.</li>
+<li>It is commonly used in write() callbacks and IOCTL operations.</li>
+<li>Partial-copy handling is important.</li>
+<li>Validate all data received from applications.</li>
+<li>Never call it in interrupt context or another context where sleeping is forbidden.</li>
+</ul>
+</section>
+
+<section>
+<h2>17. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+<li>What is copy_from_user()?</li>
+<li>Which header file provides this function?</li>
+<li>What is the direction of data transfer?</li>
+<li>Write the function prototype.</li>
+<li>What does its return value indicate?</li>
+<li>Why is memcpy() unsuitable for arbitrary user-space pointers?</li>
+<li>Why is copy_from_user() used in a write() callback?</li>
+<li>What does the __user annotation indicate?</li>
+<li>What is a partial copy?</li>
+<li>Why must application-supplied data be validated?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+<li>Explain the working of copy_from_user().</li>
+<li>Explain its parameters and return value.</li>
+<li>Describe how it is used in a character driver's write callback.</li>
+<li>Explain partial-copy handling with an example.</li>
+<li>Compare copy_from_user() and copy_to_user().</li>
+<li>Explain the use of copy_from_user() in IOCTL operations.</li>
+</ol>
+
+<h3>C. Practical Exercises</h3>
+<ol>
+<li>Write a character-driver write callback using copy_from_user().</li>
+<li>Store received data in a kernel buffer.</li>
+<li>Implement file-position and buffer-boundary checks.</li>
+<li>Handle partial-copy results correctly.</li>
+<li>Use copy_from_user() to receive a configuration structure through IOCTL.</li>
+<li>Compile and test the driver in Ubuntu.</li>
+</ol>
+</section>
+
+<section>
+<h2>18. Expected Learning Outcome</h2>
+<p>After completing this lesson, you should be able to implement safe user-to-kernel data transfer in Linux device drivers. You should understand how to use copy_from_user() in write callbacks and IOCTL operations, handle incomplete transfers, validate application-supplied data and protect shared kernel buffers.</p>
+</section>
+
+<div class="lesson-navigation">
+<a href="L09_copy_to_user_Function.html">← Previous Lesson</a>
+<a href="index.html">Chapter 9 Index</a>
+<a href="L11_User_Space_and_Kernel_Space_Data_Transfer.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | Linux Device Drivers</p>
+<p>Chapter 9 - File Operations and User-Kernel Data Transfer</p>
+</footer>
+
+</body>
+</html>
