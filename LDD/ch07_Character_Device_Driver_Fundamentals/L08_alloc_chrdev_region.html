@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>alloc_chrdev_region() | Linux Device Drivers</title>
+    <link rel="stylesheet" href="../../style.css">
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f7fb;
+            color: #263238;
+            line-height: 1.7;
+        }
+
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 30px 15px;
+        }
+
+        header h1 { margin: 0; font-size: 30px; }
+        header p { margin: 8px 0 0; }
+
+        nav {
+            background: #092b5c;
+            padding: 12px;
+            text-align: center;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        nav a:hover { color: #b9dcff; }
+
+        .container {
+            max-width: 1050px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+
+        .lesson-info {
+            background: #e5f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 22px;
+        }
+
+        .content-section {
+            background: white;
+            padding: 22px;
+            margin-bottom: 22px;
+            border-radius: 9px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #dce8f7;
+            padding-bottom: 8px;
+            margin-top: 0;
+        }
+
+        h3 { color: #174ea6; margin-top: 22px; }
+
+        pre {
+            background: #172337;
+            color: #eaf2ff;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .diagram {
+            background: #edf5ff;
+            border: 1px solid #c8dcf5;
+            border-radius: 8px;
+            padding: 18px;
+            margin: 18px 0;
+            text-align: center;
+        }
+
+        .diagram-box {
+            background: white;
+            border: 2px solid #2878d7;
+            border-radius: 7px;
+            padding: 12px;
+            margin: 9px auto;
+            max-width: 680px;
+            font-weight: bold;
+        }
+
+        .arrow {
+            color: #174ea6;
+            font-size: 23px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        .two-column {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+            margin: 18px 0;
+        }
+
+        .info-card {
+            background: #f7faff;
+            border: 1px solid #c8dcf5;
+            border-radius: 8px;
+            padding: 17px;
+        }
+
+        .info-card h3 { margin-top: 0; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th { background: #e5f1ff; color: #123b80; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e5a000;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .tip {
+            background: #e8f6ed;
+            border-left: 5px solid #279653;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+
+        .navigation-buttons a {
+            background: #174ea6;
+            color: white;
+            padding: 11px 18px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .navigation-buttons a:hover { background: #0d3478; }
+
+        footer {
+            background: #092b5c;
+            color: white;
+            text-align: center;
+            padding: 18px;
+            margin-top: 35px;
+        }
+
+        @media (max-width: 650px) {
+            header h1 { font-size: 23px; }
+            nav a { margin: 5px 7px; }
+            .content-section { padding: 16px; }
+            .two-column { grid-template-columns: 1fr; }
+            table { display: block; overflow-x: auto; }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 7: Character Device Driver Fundamentals</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter 7</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson 8:</strong> alloc_chrdev_region() Function
+        <br>
+        <strong>Level:</strong> Intermediate
+        <br>
+        <strong>Prerequisites:</strong> Major and minor numbers, dev_t, MKDEV(), MAJOR() and MINOR().
+        <br>
+        <strong>Objective:</strong> Learn how to dynamically allocate a device-number range using alloc_chrdev_region() and release it correctly.
+    </div>
+
+    <section class="content-section">
+        <h2>1. Introduction</h2>
+
+        <p>
+            A Linux character device driver needs a
+            device-number range before it can register
+            its character-device interface.
+        </p>
+
+        <p>
+            A device-number range contains a major
+            number and one or more minor numbers.
+        </p>
+
+        <p>
+            The kernel provides
+            <code>alloc_chrdev_region()</code> to
+            dynamically allocate an available range.
+        </p>
+
+        <pre><code>alloc_chrdev_region()</code></pre>
+
+        <p>
+            The kernel selects an available major number
+            and reserves the requested number of
+            consecutive device numbers.
+        </p>
+
+        <div class="tip">
+            Dynamic allocation is generally preferred
+            for new character-device drivers because
+            the driver does not need to assume that
+            a particular major number is free.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>2. Function Prototype</h2>
+
+        <p>
+            The function is declared in the Linux
+            kernel headers, commonly through
+            <code>&lt;linux/fs.h&gt;</code>.
+        </p>
+
+        <pre><code>int alloc_chrdev_region(
+    dev_t *dev,
+    unsigned baseminor,
+    unsigned count,
+    const char *name
+);</code></pre>
+
+        <p>
+            It returns an integer status code and
+            stores the allocated starting device
+            number through the <code>dev</code>
+            pointer.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Understanding the Parameters</h2>
+
+        <h3>Parameter 1: dev_t *dev</h3>
+
+        <p>
+            This is a pointer to a
+            <code>dev_t</code> variable.
+            The kernel stores the allocated starting
+            device number in this variable.
+        </p>
+
+        <pre><code>dev_t dev;
+
+alloc_chrdev_region(&amp;dev, 0, 4, "mydevice");</code></pre>
+
+        <p>
+            The address operator <code>&amp;</code>
+            passes the address of the variable so that
+            the function can write the allocated value.
+        </p>
+
+        <h3>Parameter 2: unsigned baseminor</h3>
+
+        <p>
+            Specifies the starting minor number
+            for the allocated range.
+        </p>
+
+        <pre><code>alloc_chrdev_region(&amp;dev, 0, 4, "mydevice");</code></pre>
+
+        <p>
+            Here, the requested range begins at
+            minor number 0.
+        </p>
+
+        <h3>Parameter 3: unsigned count</h3>
+
+        <p>
+            Specifies how many consecutive device
+            numbers should be reserved.
+        </p>
+
+        <pre><code>alloc_chrdev_region(&amp;dev, 0, 4, "mydevice");</code></pre>
+
+        <p>
+            Here, four device numbers are requested.
+        </p>
+
+        <h3>Parameter 4: const char *name</h3>
+
+        <p>
+            Provides a name associated with the
+            allocated device-number range.
+        </p>
+
+        <pre><code>"mydevice"</code></pre>
+
+        <p>
+            This name is used for identification in
+            the kernel's device-number bookkeeping.
+        </p>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Example</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td><code>dev</code></td>
+                <td><code>&amp;dev</code></td>
+                <td>Receives the allocated starting device number.</td>
+            </tr>
+            <tr>
+                <td><code>baseminor</code></td>
+                <td><code>0</code></td>
+                <td>Starting minor number.</td>
+            </tr>
+            <tr>
+                <td><code>count</code></td>
+                <td><code>4</code></td>
+                <td>Number of consecutive device numbers.</td>
+            </tr>
+            <tr>
+                <td><code>name</code></td>
+                <td><code>"mydevice"</code></td>
+                <td>Range identification name.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>4. How Dynamic Allocation Works</h2>
+
+        <div class="diagram">
+            <div class="diagram-box">Driver Calls alloc_chrdev_region()</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Kernel Searches for an Available Major Number</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Kernel Reserves the Requested Range</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Allocated Starting dev_t Is Returned</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Driver Extracts Major and Minor Numbers</div>
+        </div>
+
+        <p>
+            Suppose a driver requests four device
+            numbers with a starting minor number of 0.
+            If the kernel allocates major number 240,
+            the range will be:
+        </p>
+
+        <table>
+            <tr>
+                <th>Device Instance</th>
+                <th>Major</th>
+                <th>Minor</th>
+            </tr>
+            <tr><td>Device 0</td><td>240</td><td>0</td></tr>
+            <tr><td>Device 1</td><td>240</td><td>1</td></tr>
+            <tr><td>Device 2</td><td>240</td><td>2</td></tr>
+            <tr><td>Device 3</td><td>240</td><td>3</td></tr>
+        </table>
+
+        <p>
+            The major number 240 is only an
+            illustrative example. The actual value
+            is selected by the kernel.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Return Value and Error Handling</h2>
+
+        <p>
+            The function returns an integer status.
+        </p>
+
+        <table>
+            <tr>
+                <th>Return Value</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>0</td>
+                <td>Device-number allocation succeeded.</td>
+            </tr>
+            <tr>
+                <td>Negative error code</td>
+                <td>Allocation failed.</td>
+            </tr>
+        </table>
+
+        <h3>Correct Error Handling</h3>
+
+        <pre><code>int ret;
+
+ret = alloc_chrdev_region(
+    &amp;dev,
+    0,
+    4,
+    "mydevice"
+);
+
+if (ret &lt; 0) {
+    pr_err("Device number allocation failed\n");
+    return ret;
+}</code></pre>
+
+        <p>
+            The driver must check the return value
+            before using the allocated device number.
+        </p>
+
+        <div class="note">
+            Never assume that allocation always succeeds.
+            Initialization should stop if the function
+            returns a negative error code.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Extracting the Allocated Major and Minor Numbers</h2>
+
+        <p>
+            After successful allocation, the starting
+            device number is stored in the supplied
+            <code>dev_t</code> variable.
+        </p>
+
+        <p>
+            Use the following macros:
+        </p>
+
+        <pre><code>MAJOR(dev)
+MINOR(dev)</code></pre>
+
+        <h3>Example</h3>
+
+        <pre><code>pr_info("Major number: %u\n", MAJOR(dev));
+pr_info("Starting minor: %u\n", MINOR(dev));</code></pre>
+
+        <p>
+            If the kernel allocated major 240 and
+            starting minor 0, the output would be:
+        </p>
+
+        <pre><code>Major number: 240
+Starting minor: 0</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Releasing the Allocated Device Numbers</h2>
+
+        <p>
+            A driver must release its reserved
+            device-number range when it is no longer
+            needed.
+        </p>
+
+        <p>
+            Use:
+        </p>
+
+        <pre><code>unregister_chrdev_region()</code></pre>
+
+        <h3>Function Prototype</h3>
+
+        <pre><code>void unregister_chrdev_region(
+    dev_t from,
+    unsigned count
+);</code></pre>
+
+        <h3>Example</h3>
+
+        <pre><code>unregister_chrdev_region(dev, 4);</code></pre>
+
+        <p>
+            This releases the four device numbers
+            beginning at the starting value stored
+            in <code>dev</code>.
+        </p>
+
+        <div class="note">
+            Use the same starting device number and
+            count that were successfully allocated.
+            Releasing the range does not automatically
+            remove a registered cdev or destroy a
+            device node; those resources need their
+            own cleanup.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Complete Kernel Module Example</h2>
+
+        <p>
+            This example demonstrates dynamic
+            device-number allocation and release.
+        </p>
+
+        <h3>File: alloc_device.c</h3>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/kdev_t.h&gt;
+#include &lt;linux/init.h&gt;
+
+#define DEVICE_COUNT 4
+
+static dev_t dev;
+
+static int __init alloc_device_init(void)
+{
+    int ret;
+
+    ret = alloc_chrdev_region(
+        &amp;dev,
+        0,
+        DEVICE_COUNT,
+        "mydevice"
+    );
+
+    if (ret &lt; 0) {
+        pr_err("Device number allocation failed\n");
+        return ret;
+    }
+
+    pr_info("Device number allocation successful\n");
+    pr_info("Major number: %u\n", MAJOR(dev));
+    pr_info("Starting minor: %u\n", MINOR(dev));
+
+    return 0;
+}
+
+static void __exit alloc_device_exit(void)
+{
+    unregister_chrdev_region(
+        dev,
+        DEVICE_COUNT
+    );
+
+    pr_info("Device number range released\n");
+}
+
+module_init(alloc_device_init);
+module_exit(alloc_device_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("alloc_chrdev_region Example");</code></pre>
+
+        <h3>Program Explanation</h3>
+
+        <ol>
+            <li><code>DEVICE_COUNT</code> defines the number of device numbers to allocate.</li>
+            <li><code>dev_t dev</code> stores the starting device number.</li>
+            <li><code>alloc_chrdev_region()</code> requests an available range.</li>
+            <li>The return value is checked for errors.</li>
+            <li><code>MAJOR()</code> and <code>MINOR()</code> display the allocated values.</li>
+            <li>The exit function releases the reserved range.</li>
+        </ol>
+
+        <div class="tip">
+            This example demonstrates device-number
+            allocation only. It does not yet implement
+            file operations or register a
+            <code>struct cdev</code>.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Makefile</h2>
+
+        <p>
+            Create a file named <code>Makefile</code>
+            in the same directory.
+        </p>
+
+        <pre><code>obj-m += alloc_device.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+        <p>
+            The commands below <code>all:</code>
+            and <code>clean:</code> must begin
+            with a tab character.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Compile and Test in Ubuntu</h2>
+
+        <h3>Step 1: Install Dependencies</h3>
+
+        <pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+        <h3>Step 2: Compile the Module</h3>
+
+        <pre><code>make</code></pre>
+
+        <h3>Step 3: Inspect Module Information</h3>
+
+        <pre><code>modinfo alloc_device.ko</code></pre>
+
+        <h3>Step 4: Load the Module</h3>
+
+        <pre><code>sudo insmod alloc_device.ko</code></pre>
+
+        <h3>Step 5: Check Kernel Messages</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <p>Example output:</p>
+
+        <pre><code>Device number allocation successful
+Major number: 240
+Starting minor: 0</code></pre>
+
+        <p>
+            The actual major number may differ.
+        </p>
+
+        <h3>Step 6: Remove the Module</h3>
+
+        <pre><code>sudo rmmod alloc_device</code></pre>
+
+        <h3>Step 7: Verify the Cleanup Message</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <h3>Step 8: Clean Build Files</h3>
+
+        <pre><code>make clean</code></pre>
+
+        <div class="tip">
+            This software-only module can be tested
+            in your Ubuntu VirtualBox environment.
+            It does not require physical peripheral
+            hardware.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Multiple Device Instances</h2>
+
+        <p>
+            One driver may manage multiple device
+            instances. The <code>count</code>
+            parameter reserves consecutive minor
+            numbers for these instances.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>alloc_chrdev_region(
+    &amp;dev,
+    0,
+    5,
+    "sensor_device"
+);</code></pre>
+
+        <p>
+            If the kernel assigns major number 240,
+            the reserved range is:
+        </p>
+
+        <table>
+            <tr>
+                <th>Instance</th>
+                <th>Major</th>
+                <th>Minor</th>
+            </tr>
+            <tr><td>Sensor 0</td><td>240</td><td>0</td></tr>
+            <tr><td>Sensor 1</td><td>240</td><td>1</td></tr>
+            <tr><td>Sensor 2</td><td>240</td><td>2</td></tr>
+            <tr><td>Sensor 3</td><td>240</td><td>3</td></tr>
+            <tr><td>Sensor 4</td><td>240</td><td>4</td></tr>
+        </table>
+
+        <p>
+            The driver can later associate each
+            minor number with a separate device
+            instance or data structure.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Common Mistakes and Best Practices</h2>
+
+        <table>
+            <tr>
+                <th>Common Mistake</th>
+                <th>Correct Practice</th>
+            </tr>
+            <tr>
+                <td>Passing <code>dev</code> instead of <code>&amp;dev</code>.</td>
+                <td>Pass the address of the <code>dev_t</code> variable.</td>
+            </tr>
+            <tr>
+                <td>Not checking the return value.</td>
+                <td>Check for a negative error code before continuing.</td>
+            </tr>
+            <tr>
+                <td>Assuming the kernel always assigns the same major.</td>
+                <td>Read the assigned number using <code>MAJOR(dev)</code>.</td>
+            </tr>
+            <tr>
+                <td>Using a different count during cleanup.</td>
+                <td>Release the exact range that was reserved.</td>
+            </tr>
+            <tr>
+                <td>Assuming allocation registers a character device.</td>
+                <td>Use cdev registration separately.</td>
+            </tr>
+            <tr>
+                <td>Forgetting cleanup after a later initialization failure.</td>
+                <td>Release previously acquired resources on every failure path.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Summary</h2>
+
+        <ul>
+            <li><code>alloc_chrdev_region()</code> dynamically allocates a device-number range.</li>
+            <li>The kernel chooses an available major number.</li>
+            <li>The <code>dev</code> pointer receives the starting device number.</li>
+            <li><code>baseminor</code> specifies the starting minor number.</li>
+            <li><code>count</code> specifies the number of consecutive device numbers.</li>
+            <li><code>name</code> identifies the reserved range in kernel bookkeeping.</li>
+            <li><code>MAJOR()</code> and <code>MINOR()</code> extract the allocated values.</li>
+            <li><code>unregister_chrdev_region()</code> releases the reserved range.</li>
+            <li>Device-number allocation is separate from cdev registration and device-node creation.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Practice Questions</h2>
+
+        <h3>A. Short Answer Questions</h3>
+
+        <p>1. What is <code>alloc_chrdev_region()</code>?</p>
+        <p>2. Why is dynamic allocation preferred?</p>
+        <p>3. What is the purpose of the <code>dev</code> parameter?</p>
+        <p>4. What is <code>baseminor</code>?</p>
+        <p>5. What does the <code>count</code> parameter specify?</p>
+        <p>6. What is the purpose of the <code>name</code> parameter?</p>
+        <p>7. What does the function return on success?</p>
+        <p>8. Which function releases an allocated device-number range?</p>
+
+        <h3>B. Long Answer Questions</h3>
+
+        <p>1. Explain the complete working of <code>alloc_chrdev_region()</code>.</p>
+        <p>2. Explain all four parameters with examples.</p>
+        <p>3. Explain how the kernel selects and returns a device number.</p>
+        <p>4. Describe error handling and cleanup.</p>
+        <p>5. Explain how a driver can reserve minor numbers for multiple device instances.</p>
+
+        <h3>C. Practical Exercises</h3>
+
+        <p>1. Write a kernel module that dynamically allocates one device number.</p>
+        <p>2. Modify the program to allocate four consecutive device numbers.</p>
+        <p>3. Display the allocated major and starting minor numbers.</p>
+        <p>4. Load and remove the module in Ubuntu.</p>
+        <p>5. Modify the starting minor number and observe the allocation result.</p>
+        <p>6. Explain why the example does not create a functional device node.</p>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Expected Learning Outcomes</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Explain dynamic device-number allocation.</li>
+            <li>Understand all parameters of <code>alloc_chrdev_region()</code>.</li>
+            <li>Write code to reserve device-number ranges.</li>
+            <li>Check allocation return values.</li>
+            <li>Extract major and minor numbers.</li>
+            <li>Release allocated numbers correctly.</li>
+            <li>Compile and test an allocation module in Ubuntu.</li>
+        </ul>
+    </section>
+
+    <div class="navigation-buttons">
+        <a href="L07_dev_t_Data_Type.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter Index
+        </a>
+
+        <a href="L09_register_chrdev_region.html">
+            Next Lesson →
+        </a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 7 – Lesson 8: alloc_chrdev_region()</p>
+</footer>
+
+</body>
+</html>
