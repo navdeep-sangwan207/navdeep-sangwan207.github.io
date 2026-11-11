@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kernel Execution Context</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+}
+header h1 { margin: 0; font-size: 28px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e8f1ff;
+    border-left: 5px solid #2878d7;
+    padding: 15px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #205ca8; margin-top: 22px; }
+.diagram {
+    background: #f0f5fc;
+    border: 1px solid #c8d9ef;
+    border-radius: 8px;
+    padding: 18px;
+    margin: 18px 0;
+    text-align: center;
+}
+.diagram-box {
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px;
+    margin: 8px auto;
+    max-width: 680px;
+    font-weight: bold;
+}
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d5deea;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f1ff; color: #174ea6; }
+code {
+    background: #edf2f8;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-family: Consolas, monospace;
+}
+pre {
+    background: #172334;
+    color: #e8f1ff;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+}
+.note {
+    background: #fff8e5;
+    border-left: 4px solid #e5a000;
+    padding: 12px 15px;
+    margin: 15px 0;
+}
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+.navigation-buttons a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 600px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 8px; }
+    section { padding: 16px; }
+    table { font-size: 14px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Kernel Execution Context</h1>
+    <p>Linux Device Drivers – Chapter 2 | Lesson 6</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 2</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson:</strong> 06 – Kernel Execution Context<br>
+    <strong>Chapter:</strong> Linux Kernel Architecture and Internals<br>
+    <strong>Level:</strong> Beginner to Intermediate<br>
+    <strong>Prerequisite:</strong> System Calls and Kernel Interfaces
+</div>
+
+<section>
+    <h2>1. Introduction</h2>
+
+    <p>
+        The Linux kernel executes code in different situations.
+        For example, a driver function may execute because a user
+        application called read(), because a hardware interrupt
+        occurred, or because a kernel worker was scheduled.
+    </p>
+
+    <p>
+        The circumstances under which kernel code executes are
+        called its <strong>execution context</strong>.
+    </p>
+
+    <p>
+        Execution context determines which kernel operations are
+        permitted, whether the code may sleep, and how it can
+        access resources.
+    </p>
+
+    <p>
+        This concept is particularly important in device driver
+        development because an operation that is valid in one
+        context may be unsafe in another.
+    </p>
+</section>
+
+<section>
+    <h2>2. What Is Kernel Execution Context?</h2>
+
+    <p>
+        Kernel execution context describes the environment in
+        which a piece of kernel code is currently running.
+    </p>
+
+    <p>
+        It includes information such as:
+    </p>
+
+    <ul>
+        <li>Whether execution is associated with a process or task.</li>
+        <li>Whether the CPU is handling an interrupt.</li>
+        <li>Whether the current code may sleep.</li>
+        <li>Which resources and locks are currently held.</li>
+        <li>Whether preemption or interrupts are disabled.</li>
+        <li>Which CPU is executing the code.</li>
+    </ul>
+
+    <div class="diagram">
+        <div class="diagram-box">Linux Kernel Execution</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Process Context</div>
+        <div class="diagram-box">Interrupt Context</div>
+        <div class="diagram-box">Softirq / Bottom-Half Context</div>
+        <div class="diagram-box">Workqueue Context</div>
+    </div>
+
+    <p>
+        These categories describe common execution situations.
+        They are not all mutually exclusive architectural modes.
+        For example, a workqueue callback executes in process
+        context.
+    </p>
+</section>
+
+<section>
+    <h2>3. Process Context</h2>
+
+    <p>
+        Process context is an execution environment associated
+        with a particular task, such as a user process or kernel
+        thread.
+    </p>
+
+    <p>
+        When a user application makes a system call, the kernel
+        performs the requested operation in the context of the
+        calling task.
+    </p>
+
+    <h3>Examples</h3>
+
+    <ul>
+        <li>A user application calls <code>open()</code>.</li>
+        <li>A user application calls <code>read()</code>.</li>
+        <li>A user application calls <code>write()</code>.</li>
+        <li>A kernel thread performs background processing.</li>
+        <li>A workqueue callback executes.</li>
+    </ul>
+
+    <h3>Characteristics</h3>
+
+    <ul>
+        <li>A current task is associated with execution.</li>
+        <li>Kernel code can often sleep when the operation permits it.</li>
+        <li>Blocking operations can wait for resources or events.</li>
+        <li>Task-specific information is available.</li>
+    </ul>
+
+    <div class="note">
+        Process context does not mean that the CPU is executing
+        ordinary user-space instructions. It means kernel code
+        is executing on behalf of a task.
+    </div>
+</section>
+
+<section>
+    <h2>4. Interrupt Context</h2>
+
+    <p>
+        Interrupt context occurs when the kernel executes code
+        in response to an interrupt event.
+    </p>
+
+    <p>
+        Hardware devices generate interrupts to notify the CPU
+        about events such as data arrival, transmission completion,
+        or a timer event.
+    </p>
+
+    <h3>Examples</h3>
+
+    <ul>
+        <li>UART receives data.</li>
+        <li>Network controller receives a packet.</li>
+        <li>Timer interrupt occurs.</li>
+        <li>Storage controller completes an operation.</li>
+        <li>GPIO controller detects a configured interrupt event.</li>
+    </ul>
+
+    <h3>Characteristics</h3>
+
+    <ul>
+        <li>Execution is triggered by an interrupt event.</li>
+        <li>The handler must complete its immediate work quickly.</li>
+        <li>Interrupt handlers must not perform operations that sleep.</li>
+        <li>They should avoid lengthy processing.</li>
+        <li>Deferred work can be scheduled for later processing.</li>
+    </ul>
+
+    <div class="note">
+        An interrupt handler does not execute as an ordinary
+        user process. It handles an event in interrupt context.
+    </div>
+</section>
+
+<section>
+    <h2>5. Process Context vs Interrupt Context</h2>
+
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Process Context</th>
+            <th>Interrupt Context</th>
+        </tr>
+        <tr>
+            <td>Execution trigger</td>
+            <td>Task execution or system call</td>
+            <td>Interrupt event</td>
+        </tr>
+        <tr>
+            <td>Current task</td>
+            <td>Associated with a current task</td>
+            <td>Interrupt handling is not an ordinary task execution</td>
+        </tr>
+        <tr>
+            <td>Sleeping</td>
+            <td>May sleep when permitted</td>
+            <td>Must not sleep</td>
+        </tr>
+        <tr>
+            <td>Blocking operations</td>
+            <td>Can be used when appropriate</td>
+            <td>Not allowed</td>
+        </tr>
+        <tr>
+            <td>Typical work</td>
+            <td>File operations and device requests</td>
+            <td>Immediate interrupt handling</td>
+        </tr>
+        <tr>
+            <td>Driver example</td>
+            <td>Character driver's read callback</td>
+            <td>Device interrupt handler</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>6. Why Sleeping Is Important in Kernel Programming</h2>
+
+    <p>
+        In Linux kernel programming, sleeping means temporarily
+        suspending the current task so that it can resume later
+        when a required event or resource becomes available.
+    </p>
+
+    <p>
+        Sleeping is useful when a task must wait for an event,
+        data, a lock, or another resource.
+    </p>
+
+    <h3>Examples of Operations That May Sleep</h3>
+
+    <ul>
+        <li>Waiting for data using a wait queue.</li>
+        <li>Acquiring a mutex when it is unavailable.</li>
+        <li>Allocating memory with a sleepable allocation mode.</li>
+        <li>Waiting for a completion.</li>
+        <li>Performing blocking I/O.</li>
+    </ul>
+
+    <h3>Why Interrupt Context Cannot Sleep</h3>
+
+    <p>
+        An interrupt handler is not executing as a normal
+        schedulable task that can simply be suspended and resumed
+        like a process-context operation.
+    </p>
+
+    <p>
+        Sleeping inside an interrupt handler can cause scheduling
+        problems, deadlocks or kernel warnings.
+    </p>
+
+    <div class="note">
+        Rule: Never call a function that may sleep from hard
+        interrupt context or another atomic context where sleeping
+        is forbidden.
+    </div>
+</section>
+
+<section>
+    <h2>7. Atomic Context</h2>
+
+    <p>
+        Atomic context refers to an execution situation in which
+        the current code must not sleep or be suspended in a way
+        that violates the required atomic operation.
+    </p>
+
+    <p>
+        Examples include:
+    </p>
+
+    <ul>
+        <li>Hard interrupt handlers.</li>
+        <li>Softirq handlers.</li>
+        <li>Code executing while holding a spinlock.</li>
+        <li>Other kernel sections where sleeping is prohibited.</li>
+    </ul>
+
+    <h3>Important Characteristics</h3>
+
+    <ul>
+        <li>Operations must complete without sleeping.</li>
+        <li>Suitable synchronization mechanisms must be used.</li>
+        <li>Execution time should be kept short.</li>
+        <li>Functions that may block must be avoided.</li>
+    </ul>
+
+    <p>
+        Atomic context is a restriction on execution behavior,
+        not simply another name for interrupt context.
+    </p>
+</section>
+
+<section>
+    <h2>8. Kernel Context and Memory Allocation</h2>
+
+    <p>
+        Memory allocation methods must be selected according to
+        the execution context.
+    </p>
+
+    <table>
+        <tr>
+            <th>Allocation Flag</th>
+            <th>Meaning</th>
+            <th>Typical Usage</th>
+        </tr>
+        <tr>
+            <td><code>GFP_KERNEL</code></td>
+            <td>Allows the allocator to perform operations that may sleep.</td>
+            <td>Normal process context.</td>
+        </tr>
+        <tr>
+            <td><code>GFP_ATOMIC</code></td>
+            <td>Allocation mode suitable for atomic contexts; does not sleep.</td>
+            <td>Some interrupt-related or atomic operations.</td>
+        </tr>
+        <tr>
+            <td><code>GFP_NOWAIT</code></td>
+            <td>Requests allocation without sleeping or direct reclaim.</td>
+            <td>Situations where waiting is not allowed.</td>
+        </tr>
+    </table>
+
+    <h3>Example: Process Context Allocation</h3>
+
+    <pre>
+#include &lt;linux/module.h&gt;
+#include &lt;linux/slab.h&gt;
+
+static int __init demo_init(void)
+{
+    char *buffer;
+
+    buffer = kmalloc(128, GFP_KERNEL);
+
+    if (!buffer)
+        return -ENOMEM;
+
+    kfree(buffer);
+
+    return 0;
+}
+
+static void __exit demo_exit(void)
+{
+    pr_info("Module removed\n");
+}
+
+module_init(demo_init);
+module_exit(demo_exit);
+
+MODULE_LICENSE("GPL");
+    </pre>
+
+    <p>
+        The initialization function is executed in a context
+        where sleepable allocation is generally permitted.
+    </p>
+
+    <div class="note">
+        GFP_ATOMIC should not be used as a universal replacement
+        for GFP_KERNEL. Atomic allocations may fail more readily
+        because they cannot rely on sleepable reclaim behavior.
+    </div>
+</section>
+
+<section>
+    <h2>9. Kernel Context and Locking</h2>
+
+    <p>
+        Synchronization mechanisms protect shared data when
+        multiple execution paths access it.
+    </p>
+
+    <h3>Common Locking Mechanisms</h3>
+
+    <table>
+        <tr>
+            <th>Mechanism</th>
+            <th>Can Sleep?</th>
+            <th>Typical Usage</th>
+        </tr>
+        <tr>
+            <td>Mutex</td>
+            <td>Yes, while waiting for the lock</td>
+            <td>Process context</td>
+        </tr>
+        <tr>
+            <td>Spinlock</td>
+            <td>No</td>
+            <td>Short critical sections and atomic contexts</td>
+        </tr>
+        <tr>
+            <td>Semaphore</td>
+            <td>Yes, while waiting</td>
+            <td>Sleepable synchronization</td>
+        </tr>
+        <tr>
+            <td>Atomic Operations</td>
+            <td>No sleeping is involved in the atomic operation</td>
+            <td>Simple shared-value updates</td>
+        </tr>
+    </table>
+
+    <div class="note">
+        Never hold a normal mutex across a hard interrupt handler.
+        Use synchronization methods appropriate to every execution
+        path that accesses the shared data.
+    </div>
+</section>
+
+<section>
+    <h2>10. Softirq Context</h2>
+
+    <p>
+        Softirqs are a mechanism for performing deferred interrupt
+        processing in a context that is separate from the immediate
+        hard interrupt handler.
+    </p>
+
+    <p>
+        A hard interrupt handler can schedule a softirq to perform
+        additional work later.
+    </p>
+
+    <h3>Characteristics</h3>
+
+    <ul>
+        <li>Used for deferred processing.</li>
+        <li>Does not execute as an ordinary user task.</li>
+        <li>Must not sleep.</li>
+        <li>Designed for short, efficient processing.</li>
+        <li>May execute on different CPUs depending on the subsystem and configuration.</li>
+    </ul>
+
+    <p>
+        Networking is a major user of softirq processing in Linux.
+    </p>
+</section>
+
+<section>
+    <h2>11. Workqueue Context</h2>
+
+    <p>
+        Workqueues allow kernel code to defer work to worker
+        threads. The callback runs in process context.
+    </p>
+
+    <h3>Characteristics</h3>
+
+    <ul>
+        <li>Runs through kernel worker threads.</li>
+        <li>Can generally sleep when the workqueue type and surrounding constraints permit it.</li>
+        <li>Suitable for longer deferred operations.</li>
+        <li>Useful when processing requires blocking operations.</li>
+    </ul>
+
+    <h3>Workqueue Example</h3>
+
+    <pre>
+#include &lt;linux/module.h&gt;
+#include &lt;linux/workqueue.h&gt;
+
+static struct work_struct my_work;
+
+static void work_handler(struct work_struct *work)
+{
+    pr_info("Workqueue function executing\n");
+}
+
+static int __init demo_init(void)
+{
+    INIT_WORK(&amp;my_work, work_handler);
+
+    schedule_work(&amp;my_work);
+
+    return 0;
+}
+
+static void __exit demo_exit(void)
+{
+    cancel_work_sync(&amp;my_work);
+    pr_info("Module removed\n");
+}
+
+module_init(demo_init);
+module_exit(demo_exit);
+
+MODULE_LICENSE("GPL");
+    </pre>
+
+    <p>
+        The example schedules a work item and waits for it to
+        finish or be cancelled during module cleanup.
+    </p>
+
+    <div class="note">
+        This is an illustrative kernel module example. Compile it
+        against the headers for the target kernel and test it in
+        a suitable development environment.
+    </div>
+</section>
+
+<section>
+    <h2>12. Tasklets and Deferred Work</h2>
+
+    <p>
+        Tasklets are a legacy mechanism for deferred interrupt
+        processing. They execute in a softirq-related atomic
+        context and must not sleep.
+    </p>
+
+    <p>
+        Modern driver development generally favors threaded
+        interrupts, workqueues or other subsystem-specific
+        mechanisms where appropriate.
+    </p>
+
+    <table>
+        <tr>
+            <th>Mechanism</th>
+            <th>Execution Context</th>
+            <th>Can Sleep?</th>
+        </tr>
+        <tr>
+            <td>Hard IRQ Handler</td>
+            <td>Interrupt context</td>
+            <td>No</td>
+        </tr>
+        <tr>
+            <td>Softirq</td>
+            <td>Softirq context</td>
+            <td>No</td>
+        </tr>
+        <tr>
+            <td>Tasklet</td>
+            <td>Softirq-related context</td>
+            <td>No</td>
+        </tr>
+        <tr>
+            <td>Workqueue</td>
+            <td>Worker thread / process context</td>
+            <td>Generally yes</td>
+        </tr>
+        <tr>
+            <td>Threaded IRQ Handler</td>
+            <td>Kernel thread / process context</td>
+            <td>Generally yes</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>13. Context Selection in Device Drivers</h2>
+
+    <p>
+        A device driver must choose the correct mechanism for
+        each operation.
+    </p>
+
+    <h3>Example: UART Driver</h3>
+
+    <div class="diagram">
+        <div class="diagram-box">UART Hardware Receives Data</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Hard Interrupt Handler</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Read Status / Capture Immediate Data</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Schedule Deferred Processing</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Workqueue or Other Suitable Mechanism</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Process Data and Notify Waiting Tasks</div>
+    </div>
+
+    <p>
+        The actual design depends on the UART controller,
+        subsystem APIs, data rate and latency requirements.
+        Many serial drivers use the kernel's serial framework
+        rather than implementing this complete path themselves.
+    </p>
+</section>
+
+<section>
+    <h2>14. Common Programming Mistakes</h2>
+
+    <table>
+        <tr>
+            <th>Mistake</th>
+            <th>Why It Is Dangerous</th>
+        </tr>
+        <tr>
+            <td>Calling a sleepable function from an interrupt handler</td>
+            <td>Can cause scheduling problems or kernel warnings.</td>
+        </tr>
+        <tr>
+            <td>Using a mutex in hard IRQ context</td>
+            <td>Mutex acquisition may sleep.</td>
+        </tr>
+        <tr>
+            <td>Holding a spinlock for too long</td>
+            <td>Can increase latency and reduce system responsiveness.</td>
+        </tr>
+        <tr>
+            <td>Using GFP_KERNEL in atomic context</td>
+            <td>The allocation may sleep.</td>
+        </tr>
+        <tr>
+            <td>Performing lengthy work in a hard IRQ handler</td>
+            <td>Delays other interrupt and system processing.</td>
+        </tr>
+        <tr>
+            <td>Incorrectly cancelling deferred work during cleanup</td>
+            <td>Can cause callbacks to access released driver resources.</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h2>15. Practical Exploration in Ubuntu</h2>
+
+    <h3>Display Kernel Version</h3>
+    <pre>uname -r</pre>
+
+    <h3>Display Running Processes</h3>
+    <pre>ps -e</pre>
+
+    <h3>Display Interrupt Information</h3>
+    <pre>cat /proc/interrupts</pre>
+
+    <h3>Display Kernel Messages</h3>
+    <pre>dmesg | tail -n 30</pre>
+
+    <h3>Display Loaded Kernel Modules</h3>
+    <pre>lsmod</pre>
+
+    <h3>Inspect CPU Information</h3>
+    <pre>lscpu</pre>
+
+    <p>
+        These commands help explore the running Linux system.
+        They do not directly reveal every internal execution
+        context.
+    </p>
+</section>
+
+<section>
+    <h2>16. Practical Exercise</h2>
+
+    <h3>Objective</h3>
+
+    <p>
+        Understand the differences between process context,
+        interrupt context and deferred execution mechanisms.
+    </p>
+
+    <h3>Procedure</h3>
+
+    <ol>
+        <li>Inspect the current kernel version using <code>uname -r</code>.</li>
+        <li>Display interrupt statistics using <code>cat /proc/interrupts</code>.</li>
+        <li>List running processes using <code>ps -e</code>.</li>
+        <li>Inspect recent kernel messages using <code>dmesg</code>.</li>
+        <li>Identify which driver operations normally execute in process context.</li>
+        <li>Compare hard IRQ handlers, softirqs and workqueues.</li>
+        <li>Explain why a hard IRQ handler must not sleep.</li>
+    </ol>
+
+    <h3>Expected Result</h3>
+
+    <p>
+        You should be able to identify common kernel execution
+        contexts and select appropriate mechanisms for driver
+        operations.
+    </p>
+</section>
+
+<section>
+    <h2>17. Summary</h2>
+
+    <ul>
+        <li>Execution context describes the environment in which kernel code runs.</li>
+        <li>Process context is associated with a task.</li>
+        <li>Interrupt context handles interrupt events.</li>
+        <li>Hard interrupt handlers must not sleep.</li>
+        <li>Atomic context prohibits sleeping.</li>
+        <li>Memory allocation flags must match the execution context.</li>
+        <li>Mutexes are sleepable synchronization mechanisms.</li>
+        <li>Spinlocks are used for short atomic critical sections.</li>
+        <li>Softirqs and tasklets perform deferred atomic processing.</li>
+        <li>Workqueues execute callbacks in worker-thread context.</li>
+        <li>Correct context selection is essential for reliable device drivers.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>18. Practice Questions</h2>
+
+    <h3>A. Short Answer Questions</h3>
+    <ol>
+        <li>What is kernel execution context?</li>
+        <li>Define process context.</li>
+        <li>What is interrupt context?</li>
+        <li>What is atomic context?</li>
+        <li>Why must an interrupt handler not sleep?</li>
+        <li>What is a softirq?</li>
+        <li>What is a workqueue?</li>
+        <li>Differentiate mutexes and spinlocks.</li>
+        <li>What is the purpose of GFP_KERNEL?</li>
+        <li>What is the purpose of GFP_ATOMIC?</li>
+    </ol>
+
+    <h3>B. Long Answer Questions</h3>
+    <ol>
+        <li>Explain the major execution contexts in the Linux kernel.</li>
+        <li>Differentiate process context and interrupt context.</li>
+        <li>Explain why sleeping is prohibited in interrupt context.</li>
+        <li>Describe atomic context and its restrictions.</li>
+        <li>Explain the relationship between execution context and memory allocation.</li>
+        <li>Compare hard IRQ handlers, softirqs, tasklets and workqueues.</li>
+        <li>Explain how a UART driver can use deferred processing.</li>
+    </ol>
+
+    <h3>C. Practical Questions</h3>
+    <ol>
+        <li>Display interrupt statistics in Ubuntu.</li>
+        <li>Display running processes.</li>
+        <li>Write a simple kernel module using a workqueue.</li>
+        <li>Explain why GFP_KERNEL is unsuitable for hard interrupt context.</li>
+        <li>Identify which driver operations may sleep.</li>
+    </ol>
+</section>
+
+<section>
+    <h2>19. Expected Learning Outcomes</h2>
+
+    <p>After completing this lesson, you should be able to:</p>
+
+    <ul>
+        <li>Define kernel execution context.</li>
+        <li>Differentiate process and interrupt contexts.</li>
+        <li>Understand atomic execution restrictions.</li>
+        <li>Explain why sleeping is prohibited in interrupt context.</li>
+        <li>Select suitable memory allocation flags.</li>
+        <li>Understand the roles of softirqs, tasklets and workqueues.</li>
+        <li>Choose appropriate execution mechanisms when designing Linux device drivers.</li>
+    </ul>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L05_System_Calls_and_Kernel_Interfaces.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L07_Process_Context_and_Interrupt_Context.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 2 – Linux Kernel Architecture and Internals</p>
+</footer>
+
+</body>
+</html>
