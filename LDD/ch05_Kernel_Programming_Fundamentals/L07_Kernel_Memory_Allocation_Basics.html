@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kernel Memory Allocation Basics | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { color: #007bff; }
+.container {
+    width: 92%;
+    max-width: 1100px;
+    margin: 25px auto;
+}
+.lesson-info {
+    background: #e8f1ff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.content-section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 22px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245a9c; }
+pre {
+    background: #17212b;
+    color: #e8f1f8;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.6;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d8e0ea;
+    padding: 11px;
+    text-align: left;
+}
+th {
+    background: #e8f1ff;
+    color: #174ea6;
+}
+.diagram {
+    background: #f0f5fc;
+    border: 1px solid #cbdcf2;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 20px;
+    margin: 6px;
+    font-weight: bold;
+    color: #174ea6;
+}
+.arrow {
+    font-size: 23px;
+    color: #2878d7;
+}
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 13px;
+    margin: 15px 0;
+}
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.navigation-buttons a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 5px;
+    text-decoration: none;
+    font-weight: bold;
+}
+.navigation-buttons a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 600px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 8px; }
+    .content-section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Kernel Memory Allocation Basics</h1>
+    <p>Chapter 5 – Kernel Programming Fundamentals | Linux Device Drivers</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter Index</a>
+</nav>
+
+<main class="container">
+
+<section class="lesson-info">
+    <strong>Lesson:</strong> 07<br>
+    <strong>Topic:</strong> Kernel Memory Allocation Basics<br>
+    <strong>Chapter:</strong> Kernel Programming Fundamentals<br>
+    <strong>Level:</strong> Beginner to Intermediate<br>
+    <strong>Prerequisites:</strong> C pointers, structures, dynamic memory allocation and kernel modules
+</section>
+
+<section class="content-section">
+    <h2>1. Introduction</h2>
+
+    <p>
+        Memory management is an important part of Linux kernel
+        and device driver development. A driver often needs
+        memory to store device information, configuration
+        parameters, buffers, counters and other runtime data.
+    </p>
+
+    <p>
+        In userspace C programming, dynamic memory is commonly
+        allocated using <code>malloc()</code> and released
+        using <code>free()</code>.
+    </p>
+
+    <p>
+        Kernel code cannot use the ordinary userspace
+        <code>malloc()</code> and <code>free()</code> functions.
+        Linux provides its own memory allocation interfaces
+        for kernel components.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>2. What Is Kernel Memory Allocation?</h2>
+
+    <p>
+        Kernel memory allocation is the process of reserving
+        memory for kernel components during system operation.
+    </p>
+
+    <p>Device drivers may require memory for:</p>
+
+    <ul>
+        <li>Device-specific data structures.</li>
+        <li>Temporary data buffers.</li>
+        <li>Communication packets.</li>
+        <li>Device configuration information.</li>
+        <li>Internal driver state.</li>
+        <li>Data received from or transmitted to hardware.</li>
+    </ul>
+
+    <div class="diagram">
+        <div class="diagram-box">Device Driver</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Kernel Memory Allocation API</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Kernel Memory Manager</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Allocated Memory</div>
+    </div>
+</section>
+
+<section class="content-section">
+    <h2>3. Userspace vs Kernel-Space Memory Allocation</h2>
+
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Userspace</th>
+            <th>Kernel Space</th>
+        </tr>
+        <tr>
+            <td>Common allocation API</td>
+            <td><code>malloc()</code></td>
+            <td><code>kmalloc()</code></td>
+        </tr>
+        <tr>
+            <td>Memory release</td>
+            <td><code>free()</code></td>
+            <td><code>kfree()</code></td>
+        </tr>
+        <tr>
+            <td>Zero-initialized allocation</td>
+            <td><code>calloc()</code></td>
+            <td><code>kzalloc()</code> or <code>kcalloc()</code></td>
+        </tr>
+        <tr>
+            <td>Execution environment</td>
+            <td>Userspace process</td>
+            <td>Kernel code</td>
+        </tr>
+        <tr>
+            <td>Memory management</td>
+            <td>Userspace allocator and virtual memory system</td>
+            <td>Kernel memory management subsystem</td>
+        </tr>
+    </table>
+
+    <div class="note">
+        Never call userspace <code>malloc()</code> or
+        <code>free()</code> directly from kernel module code.
+    </div>
+</section>
+
+<section class="content-section">
+    <h2>4. Why Do Device Drivers Need Dynamic Memory?</h2>
+
+    <p>
+        Some drivers cannot determine their complete memory
+        requirements at compile time. The amount of memory
+        required may depend on device configuration or
+        runtime conditions.
+    </p>
+
+    <h3>Example Situations</h3>
+
+    <ul>
+        <li>A driver allocates a buffer based on a device's reported capacity.</li>
+        <li>A character driver stores data in a dynamically allocated buffer.</li>
+        <li>A driver creates an internal structure for each detected device.</li>
+        <li>A communication driver manages variable-sized data.</li>
+    </ul>
+
+    <p>
+        Dynamic allocation allows a driver to request memory
+        when needed and release it when it is no longer
+        required.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>5. Kernel Memory Allocation Functions</h2>
+
+    <p>
+        Linux provides several memory allocation interfaces.
+        Different functions are suitable for different
+        requirements.
+    </p>
+
+    <table>
+        <tr>
+            <th>Function</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td><code>kmalloc()</code></td>
+            <td>Allocates physically contiguous memory for a requested small allocation.</td>
+        </tr>
+        <tr>
+            <td><code>kfree()</code></td>
+            <td>Releases memory allocated using compatible kernel allocation APIs.</td>
+        </tr>
+        <tr>
+            <td><code>kzalloc()</code></td>
+            <td>Allocates memory and initializes it to zero.</td>
+        </tr>
+        <tr>
+            <td><code>kcalloc()</code></td>
+            <td>Allocates an array and initializes the allocated memory to zero.</td>
+        </tr>
+        <tr>
+            <td><code>vmalloc()</code></td>
+            <td>Allocates virtually contiguous memory that may not be physically contiguous.</td>
+        </tr>
+        <tr>
+            <td><code>vfree()</code></td>
+            <td>Releases memory allocated using <code>vmalloc()</code>.</td>
+        </tr>
+    </table>
+
+    <p>
+        The following lessons and the dedicated Kernel Memory
+        Management chapter will examine these functions in
+        greater detail.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>6. What Is kmalloc()?</h2>
+
+    <p>
+        <code>kmalloc()</code> is a commonly used kernel
+        function for allocating a block of memory.
+    </p>
+
+    <h3>Syntax</h3>
+
+    <pre><code>void *kmalloc(size_t size, gfp_t flags);</code></pre>
+
+    <table>
+        <tr>
+            <th>Parameter</th>
+            <th>Description</th>
+        </tr>
+        <tr>
+            <td><code>size</code></td>
+            <td>Number of bytes requested.</td>
+        </tr>
+        <tr>
+            <td><code>flags</code></td>
+            <td>Allocation behavior and memory-reclaim constraints.</td>
+        </tr>
+    </table>
+
+    <p>
+        <code>kmalloc()</code> returns a pointer to the
+        allocated memory when successful. It returns
+        <code>NULL</code> if allocation fails.
+    </p>
+
+    <h3>Example</h3>
+
+    <pre><code>char *buffer;
+
+buffer = kmalloc(100, GFP_KERNEL);
+
+if (!buffer) {
+    pr_err("Memory allocation failed\n");
+    return -ENOMEM;
+}</code></pre>
+
+    <p>
+        The returned memory must be released when it is no
+        longer required.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>7. What Is GFP_KERNEL?</h2>
+
+    <p>
+        GFP stands for Get Free Pages. GFP allocation flags
+        describe the conditions under which the kernel should
+        attempt to allocate memory.
+    </p>
+
+    <p>
+        <code>GFP_KERNEL</code> is a common allocation flag
+        for normal kernel allocations made in contexts where
+        sleeping is permitted.
+    </p>
+
+    <pre><code>buffer = kmalloc(256, GFP_KERNEL);</code></pre>
+
+    <p>
+        An allocation using <code>GFP_KERNEL</code> may sleep
+        while the kernel attempts to obtain memory.
+    </p>
+
+    <div class="note">
+        Do not use <code>GFP_KERNEL</code> in atomic contexts,
+        such as an ordinary interrupt handler, where sleeping
+        is not allowed. Allocation flags are studied in detail
+        in Chapter 12 – Kernel Memory Management.
+    </div>
+</section>
+
+<section class="content-section">
+    <h2>8. What Is kfree()?</h2>
+
+    <p>
+        <code>kfree()</code> releases memory that was previously
+        allocated using a compatible kernel allocation API.
+    </p>
+
+    <h3>Syntax</h3>
+
+    <pre><code>void kfree(const void *objp);</code></pre>
+
+    <h3>Example</h3>
+
+    <pre><code>char *buffer;
+
+buffer = kmalloc(100, GFP_KERNEL);
+
+if (!buffer) {
+    return -ENOMEM;
+}
+
+/* Use the allocated memory. */
+
+kfree(buffer);
+buffer = NULL;</code></pre>
+
+    <p>
+        Setting the pointer to <code>NULL</code> after
+        releasing memory is a useful local programming
+        practice. It does not replace proper lifetime
+        management.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>9. Memory Allocation Failure</h2>
+
+    <p>
+        Kernel memory allocation can fail. A driver must
+        always check the returned pointer before accessing
+        allocated memory.
+    </p>
+
+    <h3>Incorrect Approach</h3>
+
+    <pre><code>char *buffer;
+
+buffer = kmalloc(100, GFP_KERNEL);
+
+buffer[0] = 'A';</code></pre>
+
+    <p>
+        This code does not check whether the allocation
+        succeeded. If <code>kmalloc()</code> returns
+        <code>NULL</code>, accessing the pointer can cause
+        a kernel fault.
+    </p>
+
+    <h3>Correct Approach</h3>
+
+    <pre><code>char *buffer;
+
+buffer = kmalloc(100, GFP_KERNEL);
+
+if (!buffer) {
+    pr_err("Unable to allocate memory\n");
+    return -ENOMEM;
+}
+
+buffer[0] = 'A';
+
+kfree(buffer);</code></pre>
+</section>
+
+<section class="content-section">
+    <h2>10. Kernel Memory Allocation Lifecycle</h2>
+
+    <div class="diagram">
+        <div class="diagram-box">Request Memory</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">kmalloc()</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Check Returned Pointer</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Use Allocated Memory</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">kfree()</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Memory Released</div>
+    </div>
+
+    <p>
+        Every successful allocation should have a clearly
+        defined ownership and release path.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>11. Memory Leak in Kernel Programming</h2>
+
+    <p>
+        A memory leak occurs when allocated memory is no longer
+        needed but is not released.
+    </p>
+
+    <h3>Example of a Memory Leak</h3>
+
+    <pre><code>static int __init leak_demo_init(void)
+{
+    char *buffer;
+
+    buffer = kmalloc(1024, GFP_KERNEL);
+
+    if (!buffer)
+        return -ENOMEM;
+
+    /* Memory is not released. */
+
+    return 0;
+}</code></pre>
+
+    <p>
+        If the module loads successfully, the allocated memory
+        remains reserved even though the driver has no
+        remaining need for it.
+    </p>
+
+    <h3>Correct Resource Management</h3>
+
+    <pre><code>static char *buffer;
+
+static int __init memory_demo_init(void)
+{
+    buffer = kmalloc(1024, GFP_KERNEL);
+
+    if (!buffer)
+        return -ENOMEM;
+
+    pr_info("Memory allocated successfully\n");
+
+    return 0;
+}
+
+static void __exit memory_demo_exit(void)
+{
+    kfree(buffer);
+    buffer = NULL;
+
+    pr_info("Memory released\n");
+}</code></pre>
+
+    <p>
+        The example stores the pointer in module-level state
+        so the cleanup function can release the allocation.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>12. Kernel Memory Allocation vs Stack Allocation</h2>
+
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Stack Allocation</th>
+            <th>Dynamic Kernel Allocation</th>
+        </tr>
+        <tr>
+            <td>Allocation</td>
+            <td>Automatic when entering a function or scope.</td>
+            <td>Requested through kernel allocation APIs.</td>
+        </tr>
+        <tr>
+            <td>Lifetime</td>
+            <td>Limited by function or scope lifetime.</td>
+            <td>Managed explicitly by the driver.</td>
+        </tr>
+        <tr>
+            <td>Typical use</td>
+            <td>Small temporary local variables.</td>
+            <td>Runtime data structures and buffers.</td>
+        </tr>
+        <tr>
+            <td>Risk</td>
+            <td>Stack overflow if excessive stack space is used.</td>
+            <td>Leaks or allocation failure if not managed correctly.</td>
+        </tr>
+    </table>
+
+    <div class="note">
+        Kernel stacks are limited. Avoid large local arrays and
+        large automatic structures in kernel functions.
+    </div>
+</section>
+
+<section class="content-section">
+    <h2>13. Basic Kernel Memory Allocation Example</h2>
+
+    <p>
+        This module allocates a buffer during initialization,
+        uses it to store a message and releases it during
+        module cleanup.
+    </p>
+
+    <h3>Source Code: memory_basic.c</h3>
+
+    <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/slab.h&gt;
+#include &lt;linux/printk.h&gt;
+#include &lt;linux/errno.h&gt;
+#include &lt;linux/string.h&gt;
+
+static char *buffer;
+
+static int __init memory_basic_init(void)
+{
+    buffer = kmalloc(100, GFP_KERNEL);
+
+    if (!buffer) {
+        pr_err("Memory allocation failed\n");
+        return -ENOMEM;
+    }
+
+    strcpy(buffer, "Linux Kernel Memory");
+
+    pr_info("Allocated memory: %s\n", buffer);
+
+    return 0;
+}
+
+static void __exit memory_basic_exit(void)
+{
+    kfree(buffer);
+    buffer = NULL;
+
+    pr_info("Allocated memory released\n");
+}
+
+module_init(memory_basic_init);
+module_exit(memory_basic_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Basic kernel memory allocation example");</code></pre>
+
+    <h3>Explanation</h3>
+
+    <ol>
+        <li><code>linux/slab.h</code> provides slab allocator interfaces including <code>kmalloc()</code> and <code>kfree()</code>.</li>
+        <li><code>kmalloc()</code> requests 100 bytes of memory.</li>
+        <li><code>GFP_KERNEL</code> specifies a normal sleepable allocation context.</li>
+        <li>The returned pointer is checked against <code>NULL</code>.</li>
+        <li><code>strcpy()</code> stores a message in the allocated buffer.</li>
+        <li>The cleanup function releases the memory using <code>kfree()</code>.</li>
+    </ol>
+
+    <div class="note">
+        The example uses a fixed, short source string that fits
+        within the allocated buffer. In production code, use
+        bounded operations and validate all lengths when
+        handling variable input.
+    </div>
+</section>
+
+<section class="content-section">
+    <h2>14. Makefile for the Practical</h2>
+
+    <p>Create a file named <code>Makefile</code> in the same
+    directory as <code>memory_basic.c</code>.</p>
+
+    <pre><code>obj-m += memory_basic.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+    <p>
+        Use a tab character at the beginning of each recipe
+        line in the Makefile.
+    </p>
+
+    <h3>Compile the Module</h3>
+
+    <pre><code>make</code></pre>
+
+    <h3>Load the Module</h3>
+
+    <pre><code>sudo insmod memory_basic.ko</code></pre>
+
+    <h3>Inspect Kernel Messages</h3>
+
+    <pre><code>sudo dmesg | tail -n 15</code></pre>
+
+    <h3>Remove the Module</h3>
+
+    <pre><code>sudo rmmod memory_basic</code></pre>
+
+    <h3>Clean the Build Directory</h3>
+
+    <pre><code>make clean</code></pre>
+</section>
+
+<section class="content-section">
+    <h2>15. Expected Output</h2>
+
+    <p>After loading the module, the kernel log should contain
+    a message similar to:</p>
+
+    <pre><code>Allocated memory: Linux Kernel Memory</code></pre>
+
+    <p>After removing the module, the log should contain:</p>
+
+    <pre><code>Allocated memory released</code></pre>
+
+    <p>
+        Actual output may include timestamps and unrelated
+        kernel messages.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>16. Important Memory Management Rules</h2>
+
+    <ul>
+        <li>Always check whether an allocation succeeded.</li>
+        <li>Release memory when it is no longer required.</li>
+        <li>Do not free the same allocation twice.</li>
+        <li>Do not access memory after it has been freed.</li>
+        <li>Do not use an uninitialized pointer.</li>
+        <li>Use the correct release function for each allocation API.</li>
+        <li>Consider execution context before choosing allocation flags.</li>
+        <li>Keep track of ownership and lifetime of allocated memory.</li>
+        <li>Avoid unnecessarily large allocations.</li>
+        <li>Handle partial initialization failures correctly.</li>
+    </ul>
+</section>
+
+<section class="content-section">
+    <h2>17. Common Errors and Their Solutions</h2>
+
+    <table>
+        <tr>
+            <th>Error</th>
+            <th>Cause</th>
+            <th>Solution</th>
+        </tr>
+        <tr>
+            <td>NULL pointer access</td>
+            <td>Allocation result was not checked.</td>
+            <td>Check the returned pointer before using it.</td>
+        </tr>
+        <tr>
+            <td>Memory leak</td>
+            <td>Allocated memory was not released.</td>
+            <td>Release resources in the cleanup path.</td>
+        </tr>
+        <tr>
+            <td>Double free</td>
+            <td>The same allocation was released more than once.</td>
+            <td>Maintain clear ownership and release exactly once.</td>
+        </tr>
+        <tr>
+            <td>Use-after-free</td>
+            <td>Accessing memory after it was released.</td>
+            <td>Stop using the pointer after release and coordinate concurrent access.</td>
+        </tr>
+        <tr>
+            <td>Allocation failure</td>
+            <td>Insufficient suitable memory or allocation constraints.</td>
+            <td>Handle failure and return an appropriate error.</td>
+        </tr>
+        <tr>
+            <td>Sleeping in atomic context</td>
+            <td>Using a sleepable allocation flag in a non-sleepable context.</td>
+            <td>Choose an appropriate allocation strategy for that context.</td>
+        </tr>
+    </table>
+</section>
+
+<section class="content-section">
+    <h2>18. Lesson Summary</h2>
+
+    <ul>
+        <li>Kernel memory allocation reserves memory for kernel components.</li>
+        <li>Kernel code uses kernel allocation APIs instead of userspace malloc().</li>
+        <li><code>kmalloc()</code> allocates a memory block.</li>
+        <li><code>kfree()</code> releases compatible allocations.</li>
+        <li><code>GFP_KERNEL</code> is commonly used in sleepable contexts.</li>
+        <li>Allocation failure must always be handled.</li>
+        <li>Memory leaks occur when allocated memory is not released.</li>
+        <li>Drivers must manage memory ownership and lifetime correctly.</li>
+    </ul>
+</section>
+
+<section class="content-section">
+    <h2>19. Practice Questions</h2>
+
+    <h3>Short Answer Questions</h3>
+    <ol>
+        <li>What is kernel memory allocation?</li>
+        <li>Why can't kernel code use ordinary malloc()?</li>
+        <li>What is the purpose of kmalloc()?</li>
+        <li>What is the purpose of kfree()?</li>
+        <li>What does GFP stand for?</li>
+        <li>What is GFP_KERNEL?</li>
+        <li>What happens if kmalloc() fails?</li>
+        <li>What is a kernel memory leak?</li>
+        <li>Why should large arrays be avoided on the kernel stack?</li>
+        <li>Why must dynamically allocated memory be released?</li>
+    </ol>
+
+    <h3>Long Answer Questions</h3>
+    <ol>
+        <li>Explain the need for dynamic memory allocation in device drivers.</li>
+        <li>Compare userspace and kernel-space memory allocation.</li>
+        <li>Explain the syntax and working of kmalloc() and kfree().</li>
+        <li>Explain the kernel memory allocation lifecycle.</li>
+        <li>Discuss common memory management errors in kernel programming.</li>
+    </ol>
+
+    <h3>Practical Questions</h3>
+    <ol>
+        <li>Write a module that allocates 100 bytes using kmalloc().</li>
+        <li>Store a string in the allocated memory.</li>
+        <li>Display the stored string using pr_info().</li>
+        <li>Release the allocated memory during module cleanup.</li>
+        <li>Modify the module to handle allocation failure.</li>
+        <li>Identify and correct a memory leak in a sample module.</li>
+    </ol>
+</section>
+
+<section class="content-section">
+    <h2>20. Expected Learning Outcomes</h2>
+
+    <p>After completing this lesson, you should be able to:</p>
+
+    <ul>
+        <li>Explain the need for kernel memory allocation.</li>
+        <li>Differentiate userspace and kernel memory APIs.</li>
+        <li>Understand the basic use of kmalloc() and kfree().</li>
+        <li>Explain the role of GFP_KERNEL.</li>
+        <li>Check and handle allocation failures.</li>
+        <li>Identify memory leaks and incorrect memory access.</li>
+        <li>Implement basic memory allocation in a kernel module.</li>
+    </ul>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L06_Viewing_Kernel_Logs_Using_dmesg.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L08_Kernel_Error_Handling.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 5 – Kernel Programming Fundamentals</p>
+</footer>
+
+</body>
+</html>
