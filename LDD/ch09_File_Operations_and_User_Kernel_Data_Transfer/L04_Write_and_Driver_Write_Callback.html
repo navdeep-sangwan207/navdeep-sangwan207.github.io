@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>write() and Driver Write Callback | Linux Device Drivers</title>
+    <link rel="stylesheet" href="../../style.css">
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f7fb;
+            color: #263238;
+            line-height: 1.7;
+        }
+
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 30px 15px;
+        }
+
+        header h1 { margin: 0; font-size: 30px; }
+        header p { margin: 8px 0 0; }
+
+        nav {
+            background: #092b5c;
+            padding: 12px;
+            text-align: center;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        nav a:hover { color: #b9dcff; }
+
+        .container {
+            max-width: 1050px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+
+        .lesson-info {
+            background: #e5f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 22px;
+        }
+
+        .content-section {
+            background: white;
+            padding: 22px;
+            margin-bottom: 22px;
+            border-radius: 9px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #dce8f7;
+            padding-bottom: 8px;
+            margin-top: 0;
+        }
+
+        h3 { color: #174ea6; margin-top: 22px; }
+
+        pre {
+            background: #172337;
+            color: #eaf2ff;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .diagram {
+            background: #edf5ff;
+            border: 1px solid #c8dcf5;
+            border-radius: 8px;
+            padding: 18px;
+            margin: 18px 0;
+            text-align: center;
+        }
+
+        .diagram-box {
+            background: white;
+            border: 2px solid #2878d7;
+            border-radius: 7px;
+            padding: 12px;
+            margin: 9px auto;
+            max-width: 720px;
+            font-weight: bold;
+        }
+
+        .arrow {
+            color: #174ea6;
+            font-size: 23px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th { background: #e5f1ff; color: #123b80; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e5a000;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .tip {
+            background: #e8f6ed;
+            border-left: 5px solid #279653;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+
+        .navigation-buttons a {
+            background: #174ea6;
+            color: white;
+            padding: 11px 18px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .navigation-buttons a:hover { background: #0d3478; }
+
+        footer {
+            background: #092b5c;
+            color: white;
+            text-align: center;
+            padding: 18px;
+            margin-top: 35px;
+        }
+
+        @media (max-width: 650px) {
+            header h1 { font-size: 23px; }
+            nav a { margin: 5px 7px; }
+            .content-section { padding: 16px; }
+            table { display: block; overflow-x: auto; }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 9: File Operations and User-Kernel Data Transfer</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter 9</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson 4:</strong> write() and Driver Write Callback
+        <br>
+        <strong>Level:</strong> Intermediate
+        <br>
+        <strong>Prerequisites:</strong> read(), file_operations, copy_to_user(), copy_from_user() basics and character driver implementation.
+        <br>
+        <strong>Objective:</strong> Understand the write() system call and implement a driver's .write callback to transfer data safely from user space into kernel space.
+    </div>
+
+    <section class="content-section">
+        <h2>1. Introduction</h2>
+
+        <p>
+            The <code>write()</code> system call
+            allows a user-space application
+            to send data to an opened file
+            or device.
+        </p>
+
+        <p>
+            In a Linux character driver,
+            the kernel invokes the driver's
+            <code>.write</code> callback
+            when an application writes
+            data to the device file.
+        </p>
+
+        <p>
+            The driver may store the
+            received data in a kernel
+            buffer, transmit it to hardware,
+            send it through a communication
+            interface or process it according
+            to the device's functionality.
+        </p>
+
+        <h3>Common Applications</h3>
+
+        <ul>
+            <li>Sending commands to hardware.</li>
+            <li>Writing data to a serial device.</li>
+            <li>Controlling an LED through a device interface.</li>
+            <li>Sending configuration information to a driver.</li>
+            <li>Transmitting buffered data to a peripheral.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Is the write() System Call?</h2>
+
+        <p>
+            The <code>write()</code> system
+            call requests that data be
+            transferred from a user-space
+            buffer to an opened file
+            descriptor.
+        </p>
+
+        <h3>Header File</h3>
+
+        <pre><code>#include &lt;unistd.h&gt;</code></pre>
+
+        <h3>Function Prototype</h3>
+
+        <pre><code>ssize_t write(int fd,
+              const void *buffer,
+              size_t count);</code></pre>
+
+        <h3>Parameters</h3>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><code>fd</code></td>
+                <td>File descriptor returned by open().</td>
+            </tr>
+            <tr>
+                <td><code>buffer</code></td>
+                <td>User-space source buffer containing data to write.</td>
+            </tr>
+            <tr>
+                <td><code>count</code></td>
+                <td>Maximum number of bytes requested for writing.</td>
+            </tr>
+        </table>
+
+        <h3>Return Value</h3>
+
+        <table>
+            <tr>
+                <th>Return Value</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>Positive value</td>
+                <td>Number of bytes successfully written.</td>
+            </tr>
+            <tr>
+                <td>Zero</td>
+                <td>No bytes were written. This can occur when zero bytes are requested.</td>
+            </tr>
+            <tr>
+                <td>-1</td>
+                <td>System-call failure; errno describes the error.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Basic write() Example in User Space</h2>
+
+        <pre><code>#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;string.h&gt;
+
+int main(void)
+{
+    int fd;
+    const char message[] = "Hello Driver\n";
+    ssize_t bytes;
+
+    fd = open("/dev/mychardev", O_WRONLY);
+
+    if (fd &lt; 0) {
+        perror("open failed");
+        return 1;
+    }
+
+    bytes = write(fd, message, strlen(message));
+
+    if (bytes &lt; 0) {
+        perror("write failed");
+        close(fd);
+        return 1;
+    }
+
+    printf("Bytes written: %zd\n", bytes);
+
+    close(fd);
+
+    return 0;
+}</code></pre>
+
+        <h3>Compile</h3>
+
+        <pre><code>gcc write_test.c -o write_test</code></pre>
+
+        <h3>Execute</h3>
+
+        <pre><code>sudo ./write_test</code></pre>
+
+        <p>
+            The application opens the
+            device in write-only mode,
+            sends a message and closes
+            the device.
+        </p>
+
+        <div class="note">
+            A successful write() return
+            means the driver accepted
+            the reported number of bytes.
+            It does not necessarily mean
+            that physical hardware has
+            completed the requested action.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Driver Write Callback</h2>
+
+        <p>
+            A character driver implements
+            its write operation using the
+            <code>.write</code> member of
+            <code>struct file_operations</code>.
+        </p>
+
+        <h3>Function Prototype</h3>
+
+        <pre><code>static ssize_t my_write(
+    struct file *file,
+    const char __user *buffer,
+    size_t count,
+    loff_t *position
+);</code></pre>
+
+        <h3>Parameters</h3>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><code>file</code></td>
+                <td>Represents the open-file description.</td>
+            </tr>
+            <tr>
+                <td><code>buffer</code></td>
+                <td>User-space source buffer containing the data to be written.</td>
+            </tr>
+            <tr>
+                <td><code>count</code></td>
+                <td>Maximum number of bytes requested.</td>
+            </tr>
+            <tr>
+                <td><code>position</code></td>
+                <td>Pointer to the current file offset.</td>
+            </tr>
+        </table>
+
+        <h3>Return Value</h3>
+
+        <ul>
+            <li>Positive value: number of bytes accepted.</li>
+            <li>Zero: no bytes accepted.</li>
+            <li>Negative value: error code.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Understanding copy_from_user()</h2>
+
+        <p>
+            The <code>copy_from_user()</code>
+            function transfers data from
+            a user-space source buffer
+            into a kernel-space destination
+            buffer.
+        </p>
+
+        <h3>Header File</h3>
+
+        <pre><code>#include &lt;linux/uaccess.h&gt;</code></pre>
+
+        <h3>Function Prototype</h3>
+
+        <pre><code>unsigned long copy_from_user(
+    void *to,
+    const void __user *from,
+    unsigned long n
+);</code></pre>
+
+        <h3>Parameters</h3>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><code>to</code></td>
+                <td>Destination address in kernel space.</td>
+            </tr>
+            <tr>
+                <td><code>from</code></td>
+                <td>Source address in user space.</td>
+            </tr>
+            <tr>
+                <td><code>n</code></td>
+                <td>Number of bytes requested for copying.</td>
+            </tr>
+        </table>
+
+        <h3>Return Value</h3>
+
+        <table>
+            <tr>
+                <th>Return Value</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>0</td>
+                <td>All requested bytes were copied.</td>
+            </tr>
+            <tr>
+                <td>Nonzero</td>
+                <td>Number of bytes that could not be copied.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            copy_from_user() does not
+            return a negative errno value.
+            A driver commonly returns
+            -EFAULT if the requested copy
+            is incomplete.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Difference Between copy_to_user() and copy_from_user()</h2>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>copy_to_user()</th>
+                <th>copy_from_user()</th>
+            </tr>
+            <tr>
+                <td>Data direction</td>
+                <td>Kernel to user</td>
+                <td>User to kernel</td>
+            </tr>
+            <tr>
+                <td>Destination</td>
+                <td>User-space memory</td>
+                <td>Kernel-space memory</td>
+            </tr>
+            <tr>
+                <td>Source</td>
+                <td>Kernel-space memory</td>
+                <td>User-space memory</td>
+            </tr>
+            <tr>
+                <td>Common use</td>
+                <td>Read callback</td>
+                <td>Write callback</td>
+            </tr>
+        </table>
+
+        <div class="diagram">
+            <div class="diagram-box">
+                WRITE: User-Space Buffer
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                copy_from_user()
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Kernel-Space Buffer
+            </div>
+            <br>
+            <div class="diagram-box">
+                READ: Kernel-Space Buffer
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                copy_to_user()
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                User-Space Buffer
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Basic Write Callback Example</h2>
+
+        <p>
+            Consider a driver that stores
+            received data in a kernel
+            buffer with a maximum capacity
+            of 1024 bytes.
+        </p>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/string.h&gt;
+
+#define BUFFER_SIZE 1024
+
+static char device_buffer[BUFFER_SIZE];
+static size_t data_size;
+
+static ssize_t my_write(
+    struct file *file,
+    const char __user *buffer,
+    size_t count,
+    loff_t *position
+)
+{
+    size_t offset;
+    size_t bytes_to_copy;
+
+    if (*position &lt; 0)
+        return -EINVAL;
+
+    offset = (size_t)*position;
+
+    if (offset &gt; BUFFER_SIZE)
+        return -EINVAL;
+
+    bytes_to_copy = min(
+        count,
+        BUFFER_SIZE - offset
+    );
+
+    if (bytes_to_copy == 0)
+        return 0;
+
+    if (copy_from_user(
+            device_buffer + offset,
+            buffer,
+            bytes_to_copy)) {
+        return -EFAULT;
+    }
+
+    *position += bytes_to_copy;
+
+    if (offset + bytes_to_copy &gt; data_size)
+        data_size = offset + bytes_to_copy;
+
+    return bytes_to_copy;
+}</code></pre>
+
+        <h3>Explanation</h3>
+
+        <ol>
+            <li>The driver checks whether the file position is valid.</li>
+            <li>It calculates the available buffer capacity.</li>
+            <li>It determines the maximum number of bytes to accept.</li>
+            <li>copy_from_user() transfers data into kernel memory.</li>
+            <li>The file position is updated after a successful copy.</li>
+            <li>The stored data size is extended when necessary.</li>
+            <li>The callback returns the actual number of bytes accepted.</li>
+        </ol>
+
+        <div class="note">
+            This example writes at the current
+            offset. Writing at offset zero
+            does not automatically erase
+            older bytes beyond the newly
+            written data. A driver that
+            needs replacement semantics
+            should define and implement
+            those semantics explicitly.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Understanding the File Position in write()</h2>
+
+        <p>
+            The <code>position</code>
+            parameter identifies the
+            offset at which the driver
+            should store incoming data.
+        </p>
+
+        <p>
+            Consider a kernel buffer
+            initially containing:
+        </p>
+
+        <pre><code>HELLO_____</code></pre>
+
+        <p>
+            If the next write begins
+            at offset 5, the data is
+            stored after the existing
+            five characters.
+        </p>
+
+        <pre><code>HELLOLINUX</code></pre>
+
+        <table>
+            <tr>
+                <th>Operation</th>
+                <th>Offset</th>
+                <th>Data Written</th>
+                <th>Result</th>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>0</td>
+                <td>HELLO</td>
+                <td>HELLO</td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>5</td>
+                <td>LINUX</td>
+                <td>HELLOLINUX</td>
+            </tr>
+        </table>
+
+        <p>
+            The driver must ensure that
+            the write operation never
+            exceeds the kernel buffer's
+            capacity.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Understanding Buffer Size and count</h2>
+
+        <p>
+            The <code>count</code> parameter
+            indicates how many bytes the
+            application wants to write.
+            It does not guarantee that
+            the driver has enough space
+            to accept all those bytes.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>bytes_to_copy = min(
+    count,
+    BUFFER_SIZE - offset
+);</code></pre>
+
+        <p>
+            Suppose:
+        </p>
+
+        <ul>
+            <li>Buffer size = 1024 bytes.</li>
+            <li>Current offset = 900.</li>
+            <li>Requested count = 200 bytes.</li>
+            <li>Available space = 124 bytes.</li>
+        </ul>
+
+        <p>
+            The driver can accept at
+            most 124 bytes in this
+            operation.
+        </p>
+
+        <div class="tip">
+            Always validate the buffer
+            boundary before copying user
+            data into kernel memory.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Complete Read/Write Buffer Logic</h2>
+
+        <p>
+            A practical character driver
+            often implements both read
+            and write callbacks using
+            the same kernel buffer.
+        </p>
+
+        <p>
+            The following example shows
+            the shared buffer and
+            synchronization logic.
+        </p>
+
+        <pre><code>#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/mutex.h&gt;
+
+#define BUFFER_SIZE 1024
+
+static char device_buffer[BUFFER_SIZE];
+static size_t data_size;
+
+static DEFINE_MUTEX(device_mutex);
+
+static ssize_t my_write(
+    struct file *file,
+    const char __user *buffer,
+    size_t count,
+    loff_t *position
+)
+{
+    size_t offset;
+    size_t bytes_to_copy;
+    ssize_t ret;
+
+    if (mutex_lock_interruptible(&amp;device_mutex))
+        return -ERESTARTSYS;
+
+    if (*position &lt; 0) {
+        ret = -EINVAL;
+        goto out;
+    }
+
+    offset = (size_t)*position;
+
+    if (offset &gt; BUFFER_SIZE) {
+        ret = -EINVAL;
+        goto out;
+    }
+
+    bytes_to_copy = min(
+        count,
+        BUFFER_SIZE - offset
+    );
+
+    if (bytes_to_copy == 0) {
+        ret = 0;
+        goto out;
+    }
+
+    if (copy_from_user(
+            device_buffer + offset,
+            buffer,
+            bytes_to_copy)) {
+        ret = -EFAULT;
+        goto out;
+    }
+
+    *position += bytes_to_copy;
+
+    if (offset + bytes_to_copy &gt; data_size)
+        data_size = offset + bytes_to_copy;
+
+    ret = bytes_to_copy;
+
+out:
+    mutex_unlock(&amp;device_mutex);
+    return ret;
+}
+
+static ssize_t my_read(
+    struct file *file,
+    char __user *buffer,
+    size_t count,
+    loff_t *position
+)
+{
+    size_t offset;
+    size_t bytes_to_copy;
+    ssize_t ret;
+
+    if (mutex_lock_interruptible(&amp;device_mutex))
+        return -ERESTARTSYS;
+
+    if (*position &lt; 0) {
+        ret = -EINVAL;
+        goto out;
+    }
+
+    offset = (size_t)*position;
+
+    if (offset &gt;= data_size) {
+        ret = 0;
+        goto out;
+    }
+
+    bytes_to_copy = min(
+        count,
+        data_size - offset
+    );
+
+    if (bytes_to_copy == 0) {
+        ret = 0;
+        goto out;
+    }
+
+    if (copy_to_user(
+            buffer,
+            device_buffer + offset,
+            bytes_to_copy)) {
+        ret = -EFAULT;
+        goto out;
+    }
+
+    *position += bytes_to_copy;
+    ret = bytes_to_copy;
+
+out:
+    mutex_unlock(&amp;device_mutex);
+    return ret;
+}</code></pre>
+
+        <h3>Why Use a Mutex?</h3>
+
+        <p>
+            Multiple processes or threads
+            may access the same device
+            simultaneously.
+        </p>
+
+        <p>
+            A mutex protects shared
+            data from concurrent access
+            while a read or write operation
+            is in progress.
+        </p>
+
+        <div class="note">
+            copy_from_user() and
+            copy_to_user() may sleep.
+            They must not be called while
+            holding a spinlock or from
+            interrupt context. A mutex
+            is suitable for this
+            process-context example.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Registering the Write Callback</h2>
+
+        <p>
+            The write callback is
+            registered through the
+            <code>.write</code> member
+            of <code>struct file_operations</code>.
+        </p>
+
+        <pre><code>static const struct file_operations my_fops = {
+    .owner   = THIS_MODULE,
+    .open    = my_open,
+    .read    = my_read,
+    .write   = my_write,
+    .release = my_release,
+};</code></pre>
+
+        <p>
+            When an application writes
+            to the character device,
+            the VFS uses the registered
+            file operations to dispatch
+            the request to the driver.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Write Operation Data Flow</h2>
+
+        <div class="diagram">
+            <div class="diagram-box">
+                User-Space Application
+                <br>
+                write(fd, buffer, count)
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                System Call Interface
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Linux VFS
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Driver .write Callback
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                copy_from_user()
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Kernel-Space Buffer
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Device Processing / Hardware Interface
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Handling Errors in the Write Callback</h2>
+
+        <table>
+            <tr>
+                <th>Error Code</th>
+                <th>Possible Reason</th>
+            </tr>
+            <tr>
+                <td><code>-EFAULT</code></td>
+                <td>User-space source could not be accessed or data could not be copied completely.</td>
+            </tr>
+            <tr>
+                <td><code>-EINVAL</code></td>
+                <td>Invalid file position or unsupported argument.</td>
+            </tr>
+            <tr>
+                <td><code>-ENOSPC</code></td>
+                <td>No space available for the requested data.</td>
+            </tr>
+            <tr>
+                <td><code>-EIO</code></td>
+                <td>Device-related input/output failure.</td>
+            </tr>
+            <tr>
+                <td><code>-ERESTARTSYS</code></td>
+                <td>An interruptible operation was interrupted and may be restarted.</td>
+            </tr>
+            <tr>
+                <td><code>-EAGAIN</code></td>
+                <td>Operation cannot proceed immediately in a nonblocking implementation.</td>
+            </tr>
+        </table>
+
+        <h3>Example</h3>
+
+        <pre><code>if (copy_from_user(kernel_buffer,
+                   user_buffer,
+                   bytes_to_copy)) {
+    return -EFAULT;
+}</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Partial Writes</h2>
+
+        <p>
+            A write operation may accept
+            fewer bytes than requested.
+            This is called a partial write.
+        </p>
+
+        <p>
+            For example, an application
+            requests 200 bytes, but the
+            driver has space for only
+            100 bytes.
+        </p>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Value</th>
+            </tr>
+            <tr>
+                <td>Requested bytes</td>
+                <td>200</td>
+            </tr>
+            <tr>
+                <td>Available capacity</td>
+                <td>100</td>
+            </tr>
+            <tr>
+                <td>Driver return value</td>
+                <td>100</td>
+            </tr>
+        </table>
+
+        <p>
+            The application can then
+            write the remaining bytes
+            using another write operation.
+        </p>
+
+        <div class="tip">
+            User-space programs should
+            check the return value of
+            write(). A positive value
+            smaller than count indicates
+            that only part of the data
+            was accepted.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Blocking and Nonblocking Write Operations</h2>
+
+        <p>
+            Some devices may not be ready
+            to accept data immediately.
+        </p>
+
+        <h3>Blocking Mode</h3>
+
+        <p>
+            In blocking mode, a write
+            operation may wait until
+            the device or buffer has
+            enough capacity.
+        </p>
+
+        <h3>Nonblocking Mode</h3>
+
+        <p>
+            When a device is opened with
+            <code>O_NONBLOCK</code>, the
+            driver may return
+            <code>-EAGAIN</code> or
+            <code>-EWOULDBLOCK</code>
+            when it cannot accept data
+            immediately.
+        </p>
+
+        <pre><code>int fd = open("/dev/mychardev",
+              O_WRONLY | O_NONBLOCK);</code></pre>
+
+        <div class="note">
+            O_NONBLOCK does not automatically
+            implement nonblocking behavior.
+            The driver must explicitly
+            define how its read and write
+            callbacks behave. Wait queues
+            and readiness notification
+            are covered in later lessons.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Testing Write Using an Existing Character Driver</h2>
+
+        <p>
+            Chapter 8 introduced a
+            memory-backed character driver
+            with both read and write
+            callbacks.
+        </p>
+
+        <p>
+            If that driver is available,
+            load it and create its device
+            node using the major and minor
+            numbers reported by the driver.
+        </p>
+
+        <h3>Write a Message</h3>
+
+        <pre><code>echo "Linux Driver Test" | sudo tee /dev/mychardev</code></pre>
+
+        <h3>Read the Stored Message</h3>
+
+        <pre><code>sudo cat /dev/mychardev</code></pre>
+
+        <p>
+            Expected output depends on
+            the buffer implementation
+            and the file-position behavior
+            of the driver.
+        </p>
+
+        <div class="note">
+            This test assumes the existing
+            driver supports both operations
+            and stores the written data.
+            The fixed-message driver from
+            the previous lesson is
+            read-only and will not accept
+            writes.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Important Differences Between read() and write()</h2>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>read()</th>
+                <th>write()</th>
+            </tr>
+            <tr>
+                <td>Purpose</td>
+                <td>Receive data</td>
+                <td>Send data</td>
+            </tr>
+            <tr>
+                <td>Data direction</td>
+                <td>Kernel to user</td>
+                <td>User to kernel</td>
+            </tr>
+            <tr>
+                <td>Callback</td>
+                <td>.read</td>
+                <td>.write</td>
+            </tr>
+            <tr>
+                <td>Transfer function</td>
+                <td>copy_to_user()</td>
+                <td>copy_from_user()</td>
+            </tr>
+            <tr>
+                <td>Typical EOF behavior</td>
+                <td>Returns 0 when no more data is available at the current position.</td>
+                <td>No general EOF indication; returns bytes accepted or an error.</td>
+            </tr>
+            <tr>
+                <td>File position</td>
+                <td>Usually advances by bytes read.</td>
+                <td>Usually advances by bytes written.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>18. Common Mistakes in Write Callbacks</h2>
+
+        <table>
+            <tr>
+                <th>Mistake</th>
+                <th>Correct Approach</th>
+            </tr>
+            <tr>
+                <td>Directly dereferencing a user-space pointer.</td>
+                <td>Use copy_from_user().</td>
+            </tr>
+            <tr>
+                <td>Copying more bytes than the kernel buffer can hold.</td>
+                <td>Validate the offset and remaining capacity.</td>
+            </tr>
+            <tr>
+                <td>Ignoring copy_from_user() failures.</td>
+                <td>Return an appropriate error, commonly -EFAULT.</td>
+            </tr>
+            <tr>
+                <td>Returning count without storing or processing data.</td>
+                <td>Return the number of bytes actually accepted.</td>
+            </tr>
+            <tr>
+                <td>Not updating the file position.</td>
+                <td>Update *position after successful transfer.</td>
+            </tr>
+            <tr>
+                <td>Accessing a shared buffer without synchronization.</td>
+                <td>Use an appropriate synchronization mechanism.</td>
+            </tr>
+            <tr>
+                <td>Calling copy_from_user() in interrupt context.</td>
+                <td>Perform user-memory transfers in a suitable process context.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>19. Summary</h2>
+
+        <ul>
+            <li>write() is a user-space system call used to send data.</li>
+            <li>The driver's .write callback handles write requests.</li>
+            <li>copy_from_user() transfers data from user space to kernel space.</li>
+            <li>The callback receives file, buffer, count and file position.</li>
+            <li>The driver must validate offsets and buffer capacity.</li>
+            <li>Partial writes are valid and must be handled by applications.</li>
+            <li>The callback should return the number of bytes actually accepted.</li>
+            <li>Shared buffers require suitable synchronization.</li>
+            <li>Blocking and nonblocking behavior must be implemented by the driver.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>20. Practice Questions</h2>
+
+        <h3>Short Answer Questions</h3>
+
+        <ol>
+            <li>What is the purpose of write()?</li>
+            <li>What is the prototype of the .write callback?</li>
+            <li>What is copy_from_user()?</li>
+            <li>What is the purpose of the count parameter?</li>
+            <li>What does the position parameter represent?</li>
+            <li>What does -EFAULT indicate?</li>
+            <li>What is a partial write?</li>
+            <li>Why should a driver validate buffer boundaries?</li>
+            <li>What is the purpose of O_NONBLOCK?</li>
+            <li>Why is a mutex useful when accessing a shared buffer?</li>
+        </ol>
+
+        <h3>Long Answer Questions</h3>
+
+        <ol>
+            <li>Explain the complete write operation in a Linux character driver.</li>
+            <li>Explain copy_from_user() with its parameters and return value.</li>
+            <li>Compare copy_to_user() and copy_from_user().</li>
+            <li>Explain file-position handling in a write callback.</li>
+            <li>Explain partial writes and nonblocking write behavior.</li>
+        </ol>
+
+        <h3>Practical Questions</h3>
+
+        <ol>
+            <li>Write a callback that stores user data in a kernel buffer.</li>
+            <li>Implement buffer-size validation.</li>
+            <li>Implement file-position handling.</li>
+            <li>Write a user-space program to send data to a character device.</li>
+            <li>Implement read and write callbacks using a shared buffer.</li>
+            <li>Protect shared data using a mutex.</li>
+            <li>Test the driver using echo and cat.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>21. Expected Learning Outcomes</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Explain the write() system call.</li>
+            <li>Understand the driver's .write callback.</li>
+            <li>Use copy_from_user() correctly.</li>
+            <li>Validate kernel buffer boundaries.</li>
+            <li>Handle file positions and partial writes.</li>
+            <li>Implement basic read/write buffer logic.</li>
+            <li>Understand synchronization requirements.</li>
+            <li>Test a write-enabled character driver in Ubuntu.</li>
+        </ul>
+    </section>
+
+    <div class="navigation-buttons">
+        <a href="L03_Read_and_Driver_Read_Callback.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter Index
+        </a>
+
+        <a href="L05_Release_and_Driver_Release_Callback.html">
+            Next Lesson →
+        </a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 9 – Lesson 4: write() and Driver Write Callback</p>
+</footer>
+
+</body>
+</html>
