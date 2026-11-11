@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compiling a Kernel Module</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+    border-radius: 10px;
+}
+.lesson-info {
+    background: #eaf3ff;
+    border-left: 5px solid #2878d7;
+    padding: 15px;
+    margin: 20px 0;
+    border-radius: 6px;
+}
+.lesson-content {
+    background: white;
+    padding: 22px;
+    margin: 18px 0;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+}
+.lesson-content h2 { color: #174ea6; }
+.lesson-content h3 { color: #245a9c; }
+.lesson-content pre {
+    background: #17202b;
+    color: #e8f1ff;
+    padding: 15px;
+    overflow-x: auto;
+    border-radius: 6px;
+}
+.lesson-content code {
+    background: #eef2f7;
+    padding: 2px 5px;
+    border-radius: 4px;
+}
+.lesson-content pre code {
+    background: transparent;
+    padding: 0;
+}
+.lesson-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+.lesson-content th, .lesson-content td {
+    border: 1px solid #d5dce5;
+    padding: 10px;
+    text-align: left;
+}
+.lesson-content th { background: #eaf3ff; }
+.info-diagram {
+    background: #f3f7fc;
+    border: 1px solid #cbd9eb;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    margin: 15px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: #dceaff;
+    border: 1px solid #2878d7;
+    padding: 12px 18px;
+    margin: 5px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+}
+.lesson-navigation {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-navigation a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+.lesson-navigation a:hover { background: #0d3475; }
+footer {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+}
+@media(max-width:600px) {
+    .lesson-content { padding: 15px; }
+    .lesson-content table { font-size: 13px; }
+}
+</style>
+</head>
+<body>
+
+<header class="lesson-banner">
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 3: Device Driver Development Environment</p>
+    <h2>Lesson 9: Compiling a Kernel Module</h2>
+</header>
+
+<nav style="text-align:center; padding:15px;">
+    <a href="../../index.html">Home</a> |
+    <a href="../ldd.html">Linux Device Drivers</a> |
+    <a href="index.html">Chapter 3</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson:</strong> 9 of Chapter 3<br>
+    <strong>Topic:</strong> Kernel Module Compilation Using GCC, Make and Kbuild<br>
+    <strong>Level:</strong> Beginner to Intermediate<br>
+    <strong>Prerequisite:</strong> Writing the First Kernel Module and Makefiles
+</div>
+
+<section class="lesson-content">
+<h2>1. Introduction</h2>
+
+<p>After writing a Linux kernel module, the next step is to compile it into a loadable kernel object file.</p>
+
+<p>Unlike an ordinary C program, a kernel module must be compiled using the Linux kernel build system called Kbuild. Kbuild applies the correct kernel configuration, compiler options, include paths and module-linking rules.</p>
+
+<p>In this lesson, we will study the complete compilation process, understand generated files, inspect compiler output and troubleshoot common build errors.</p>
+</section>
+
+<section class="lesson-content">
+<h2>2. What Is Kernel Module Compilation?</h2>
+
+<p>Kernel module compilation is the process of converting kernel module source code written in C into a loadable kernel module file.</p>
+
+<p>The resulting file generally has the extension:</p>
+
+<pre><code>.ko</code></pre>
+
+<p><code>.ko</code> stands for Kernel Object.</p>
+
+<h3>Compilation process</h3>
+
+<div class="info-diagram">
+    <div class="diagram-box">Source Code (.c)</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Preprocessing</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Compilation</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Object Files (.o)</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Module Linking</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Module (.ko)</div>
+</div>
+
+<p>Kbuild coordinates these operations and performs additional kernel-specific build steps.</p>
+</section>
+
+<section class="lesson-content">
+<h2>3. Requirements for Compilation</h2>
+
+<p>Before compiling an external kernel module, ensure that the following components are available:</p>
+
+<table>
+<tr><th>Component</th><th>Purpose</th></tr>
+<tr><td>Kernel source code</td><td>Contains kernel implementation and build information; a complete source checkout is not always required for ordinary external module builds.</td></tr>
+<tr><td>Kernel headers</td><td>Provide declarations required by module source code.</td></tr>
+<tr><td>Prepared kernel build tree</td><td>Provides the configuration and build rules used by Kbuild.</td></tr>
+<tr><td>GCC</td><td>Compiles C source code.</td></tr>
+<tr><td>GNU Make</td><td>Executes build instructions.</td></tr>
+<tr><td>Kbuild</td><td>Coordinates kernel module compilation.</td></tr>
+</table>
+
+<h3>Check the kernel version</h3>
+
+<pre><code>uname -r</code></pre>
+
+<h3>Check GCC</h3>
+
+<pre><code>gcc --version</code></pre>
+
+<h3>Check Make</h3>
+
+<pre><code>make --version</code></pre>
+
+<h3>Check kernel build directory</h3>
+
+<pre><code>ls -l /lib/modules/$(uname -r)/build</code></pre>
+</section>
+
+<section class="lesson-content">
+<h2>4. Install Required Packages on Ubuntu</h2>
+
+<p>Update the package information:</p>
+
+<pre><code>sudo apt update</code></pre>
+
+<p>Install the development tools:</p>
+
+<pre><code>sudo apt install build-essential</code></pre>
+
+<p>Install the matching kernel headers:</p>
+
+<pre><code>sudo apt install linux-headers-$(uname -r)</code></pre>
+
+<p>These commands are appropriate for standard Ubuntu kernels available through the configured repositories. For custom kernels, use the prepared build tree and matching headers supplied by that kernel's build process.</p>
+</section>
+
+<section class="lesson-content">
+<h2>5. Create the Kernel Module Source File</h2>
+
+<p>We will compile a simple module named <code>hello_module</code>.</p>
+
+<h3>Create the project directory</h3>
+
+<pre><code>mkdir -p ~/Linux_Driver_Projects/hello_module
+cd ~/Linux_Driver_Projects/hello_module</code></pre>
+
+<h3>Create the source file</h3>
+
+<pre><code>nano hello_module.c</code></pre>
+
+<h3>Source code: hello_module.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+
+static int __init hello_init(void)
+{
+    pr_info("Hello Module: Module initialized\n");
+    return 0;
+}
+
+static void __exit hello_exit(void)
+{
+    pr_info("Hello Module: Module cleanup completed\n");
+}
+
+module_init(hello_init);
+module_exit(hello_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Basic Hello World Kernel Module");
+MODULE_VERSION("1.0");</code></pre>
+
+<p>This source file contains the initialization function, cleanup function and module metadata.</p>
+</section>
+
+<section class="lesson-content">
+<h2>6. Create the External Module Makefile</h2>
+
+<p>Kbuild needs instructions describing which module to compile.</p>
+
+<h3>Create the Makefile</h3>
+
+<pre><code>nano Makefile</code></pre>
+
+<h3>Makefile contents</h3>
+
+<pre><code>obj-m += hello_module.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+<h3>Explanation</h3>
+
+<table>
+<tr><th>Expression</th><th>Meaning</th></tr>
+<tr><td><code>obj-m</code></td><td>Declares an external loadable module target.</td></tr>
+<tr><td><code>hello_module.o</code></td><td>Names the module object target.</td></tr>
+<tr><td><code>-C</code></td><td>Runs Make from the kernel build directory.</td></tr>
+<tr><td><code>$(shell uname -r)</code></td><td>Obtains the running kernel release.</td></tr>
+<tr><td><code>M=$(PWD)</code></td><td>Identifies the external module directory.</td></tr>
+<tr><td><code>modules</code></td><td>Requests module compilation.</td></tr>
+<tr><td><code>clean</code></td><td>Removes generated build files.</td></tr>
+</table>
+
+<p><strong>Important:</strong> Use a tab character before the two command lines under <code>all</code> and <code>clean</code>.</p>
+</section>
+
+<section class="lesson-content">
+<h2>7. Compile the Module Using Make</h2>
+
+<p>Ensure that you are inside the project directory.</p>
+
+<pre><code>cd ~/Linux_Driver_Projects/hello_module</code></pre>
+
+<p>Execute:</p>
+
+<pre><code>make</code></pre>
+
+<p>The default <code>all</code> target invokes the kernel build system.</p>
+
+<h3>What happens during compilation?</h3>
+
+<ol>
+<li>GNU Make reads the external module Makefile.</li>
+<li>Make changes to the selected kernel build directory.</li>
+<li>Kbuild reads the external module configuration.</li>
+<li>Kbuild invokes the compiler with kernel-specific options.</li>
+<li>Source code is compiled into object files.</li>
+<li>The module build process links the required objects.</li>
+<li>Kernel module metadata and symbol information are processed.</li>
+<li>The final <code>hello_module.ko</code> file is generated.</li>
+</ol>
+
+<div class="info-diagram">
+    <div class="diagram-box">make</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">External Makefile</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Build Directory</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kbuild Compilation</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">hello_module.ko</div>
+</div>
+</section>
+
+<section class="lesson-content">
+<h2>8. Understanding Generated Files</h2>
+
+<p>After successful compilation, inspect the project directory:</p>
+
+<pre><code>ls -la</code></pre>
+
+<p>Common generated files include:</p>
+
+<table>
+<tr><th>File</th><th>Purpose</th></tr>
+<tr><td><code>hello_module.o</code></td><td>Compiled object file.</td></tr>
+<tr><td><code>hello_module.ko</code></td><td>Loadable kernel module.</td></tr>
+<tr><td><code>hello_module.mod.c</code></td><td>Generated module-related source code.</td></tr>
+<tr><td><code>hello_module.mod.o</code></td><td>Compiled module metadata object.</td></tr>
+<tr><td><code>Module.symvers</code></td><td>Symbol version information produced during module builds.</td></tr>
+<tr><td><code>modules.order</code></td><td>Records module build ordering information.</td></tr>
+<tr><td><code>.hello_module.o.cmd</code></td><td>Hidden build command information, when generated.</td></tr>
+</table>
+
+<p>The exact generated files vary with kernel version and build configuration.</p>
+</section>
+
+<section class="lesson-content">
+<h2>9. Verify the Compiled Module</h2>
+
+<h3>Check the module file</h3>
+
+<pre><code>ls -l hello_module.ko</code></pre>
+
+<h3>Identify the file type</h3>
+
+<pre><code>file hello_module.ko</code></pre>
+
+<h3>Display module metadata</h3>
+
+<pre><code>modinfo hello_module.ko</code></pre>
+
+<p>Typical metadata includes:</p>
+
+<ul>
+<li>Module name.</li>
+<li>Module description.</li>
+<li>Module author.</li>
+<li>Module license.</li>
+<li>Module version.</li>
+<li>Kernel version information, when available.</li>
+</ul>
+</section>
+
+<section class="lesson-content">
+<h2>10. Verbose Compilation</h2>
+
+<p>Sometimes it is necessary to understand which compiler commands and options are being used.</p>
+
+<p>Kbuild supports verbose output using <code>V=1</code>.</p>
+
+<pre><code>make V=1 -C /lib/modules/$(uname -r)/build M=$PWD modules</code></pre>
+
+<p>This displays more detailed commands used during the build process.</p>
+
+<p>Verbose compilation is useful for:</p>
+
+<ul>
+<li>Debugging build failures.</li>
+<li>Inspecting compiler flags.</li>
+<li>Checking include paths.</li>
+<li>Understanding linking operations.</li>
+<li>Investigating kernel configuration issues.</li>
+</ul>
+</section>
+
+<section class="lesson-content">
+<h2>11. Compile a Module with Multiple Source Files</h2>
+
+<p>A device driver may contain several source files. Kbuild allows multiple object files to be combined into one module.</p>
+
+<h3>Project structure</h3>
+
+<pre><code>my_driver/
+|
+|-- Makefile
+|-- main.c
+|-- hardware.c
+|-- hardware.h</code></pre>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += my_driver.o
+
+my_driver-y := main.o hardware.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+<p>Here:</p>
+
+<ul>
+<li><code>obj-m</code> declares the loadable module target.</li>
+<li><code>my_driver-y</code> lists the component object files.</li>
+<li><code>main.o</code> and <code>hardware.o</code> are linked into the module.</li>
+<li>The final module is named <code>my_driver.ko</code>.</li>
+</ul>
+
+<p>The source files should contain valid kernel code and appropriate declarations in shared header files.</p>
+</section>
+
+<section class="lesson-content">
+<h2>12. Understanding Module Compilation Errors</h2>
+
+<h3>Error 1: Missing kernel headers</h3>
+
+<pre><code>fatal error: linux/module.h: No such file or directory</code></pre>
+
+<p><strong>Cause:</strong> The selected kernel build environment is missing or incorrectly configured.</p>
+
+<p><strong>Solution:</strong></p>
+
+<pre><code>sudo apt install linux-headers-$(uname -r)</code></pre>
+
+<h3>Error 2: Missing build directory</h3>
+
+<pre><code>/lib/modules/.../build: No such file or directory</code></pre>
+
+<p><strong>Cause:</strong> Matching headers or the prepared kernel build tree are unavailable.</p>
+
+<p><strong>Solution:</strong></p>
+
+<pre><code>ls -l /lib/modules/$(uname -r)/build</code></pre>
+
+<p>Install the correct headers or prepare the appropriate target kernel build tree.</p>
+
+<h3>Error 3: Missing separator</h3>
+
+<p><strong>Cause:</strong> A Makefile command starts with spaces instead of a tab.</p>
+
+<p><strong>Solution:</strong> Correct the indentation of the command line.</p>
+
+<h3>Error 4: Undefined reference or unresolved symbol</h3>
+
+<p><strong>Cause:</strong> A required function or symbol is unavailable, incorrectly declared or not exported for module use.</p>
+
+<p><strong>Solution:</strong> Verify the kernel API, exported symbols and required dependencies.</p>
+
+<h3>Error 5: Compiler version warning</h3>
+
+<p><strong>Cause:</strong> The compiler used for the module differs from the compiler used to build the target kernel.</p>
+
+<p><strong>Solution:</strong> Check the kernel compiler information and use a compatible compiler toolchain when required.</p>
+</section>
+
+<section class="lesson-content">
+<h2>13. Clean the Build Directory</h2>
+
+<p>During compilation, Kbuild creates object files and other intermediate files.</p>
+
+<p>To remove generated files, run:</p>
+
+<pre><code>make clean</code></pre>
+
+<p>Then inspect the directory:</p>
+
+<pre><code>ls -la</code></pre>
+
+<p>The source file and Makefile remain, while generated build files are removed according to the kernel build system's cleanup rules.</p>
+
+<p>Cleaning is useful when:</p>
+
+<ul>
+<li>Starting a fresh compilation.</li>
+<li>Changing source code or build configuration.</li>
+<li>Removing stale intermediate files.</li>
+<li>Preparing a project for distribution.</li>
+</ul>
+</section>
+
+<section class="lesson-content">
+<h2>14. Understanding Compilation vs Loading</h2>
+
+<p>Compilation and loading are two separate operations.</p>
+
+<table>
+<tr><th>Compilation</th><th>Loading</th></tr>
+<tr><td>Converts source code into a module file.</td><td>Inserts the compiled module into the running kernel.</td></tr>
+<tr><td>Uses Make and Kbuild.</td><td>Uses tools such as <code>insmod</code> or <code>modprobe</code>.</td></tr>
+<tr><td>Produces a <code>.ko</code> file.</td><td>Runs the module initialization function.</td></tr>
+<tr><td>Does not normally execute the module's initialization function.</td><td>Executes the initialization function when loading succeeds.</td></tr>
+</table>
+
+<p>A successfully compiled module is not automatically loaded into the kernel.</p>
+</section>
+
+<section class="lesson-content">
+<h2>15. Practical Exercise</h2>
+
+<p><strong>Objective:</strong> Compile a basic external Linux kernel module and inspect the generated output.</p>
+
+<h3>Tasks</h3>
+
+<ol>
+<li>Check the running kernel version.</li>
+<li>Verify GCC and Make installation.</li>
+<li>Install matching kernel headers.</li>
+<li>Create a project directory.</li>
+<li>Write <code>hello_module.c</code>.</li>
+<li>Create the external module Makefile.</li>
+<li>Compile using <code>make</code>.</li>
+<li>Inspect the generated <code>.ko</code> file.</li>
+<li>Display module information using <code>modinfo</code>.</li>
+<li>Repeat compilation with verbose output.</li>
+<li>Clean generated files.</li>
+</ol>
+
+<h3>Expected Result</h3>
+
+<p>The module should compile successfully and generate <code>hello_module.ko</code>. The file should be identifiable using the <code>file</code> command and its metadata should be visible using <code>modinfo</code>.</p>
+
+<p>This exercise focuses on compilation. Loading and testing the module are covered in the next lesson.</p>
+</section>
+
+<section class="lesson-content">
+<h2>16. Important Points to Remember</h2>
+
+<ul>
+<li>Kernel modules are compiled using Kbuild.</li>
+<li>The output file normally has a <code>.ko</code> extension.</li>
+<li>Matching kernel headers and a prepared build tree are required.</li>
+<li><code>obj-m</code> declares external module targets.</li>
+<li><code>M=$PWD</code> identifies the external module directory.</li>
+<li><code>make</code> starts the build using the Makefile.</li>
+<li><code>V=1</code> displays detailed build commands.</li>
+<li><code>modinfo</code> displays module metadata.</li>
+<li><code>make clean</code> removes generated build files.</li>
+<li>Compilation and loading are separate operations.</li>
+</ul>
+</section>
+
+<section class="lesson-content">
+<h2>17. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is kernel module compilation?</li>
+<li>What is the extension of a compiled kernel module?</li>
+<li>What is the role of Kbuild?</li>
+<li>Why are matching kernel headers required?</li>
+<li>What is the purpose of <code>obj-m</code>?</li>
+<li>What is the purpose of <code>M=$PWD</code>?</li>
+<li>What does the <code>V=1</code> option do?</li>
+<li>What is the purpose of <code>modinfo</code>?</li>
+<li>What does <code>make clean</code> do?</li>
+<li>Differentiate compilation and loading.</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain the complete external kernel module compilation process.</li>
+<li>Describe the role of GCC, GNU Make and Kbuild.</li>
+<li>Explain the generated files after module compilation.</li>
+<li>Explain how multiple source files can be combined into a single kernel module.</li>
+<li>Discuss common kernel module compilation errors and their solutions.</li>
+</ol>
+
+<h3>Practical Questions</h3>
+<ol>
+<li>Compile a Hello World kernel module using Kbuild.</li>
+<li>Inspect the generated module using <code>file</code>.</li>
+<li>Display its metadata using <code>modinfo</code>.</li>
+<li>Compile the module using verbose output.</li>
+<li>Write a Makefile for a multi-source-file module.</li>
+<li>Clean the build directory.</li>
+</ol>
+</section>
+
+<section class="lesson-content">
+<h2>18. Learning Outcomes</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+<li>Explain the kernel module compilation process.</li>
+<li>Prepare an external module build environment.</li>
+<li>Write a Kbuild-compatible Makefile.</li>
+<li>Compile a single-source-file kernel module.</li>
+<li>Understand the generated module and intermediate files.</li>
+<li>Compile a multi-source-file module.</li>
+<li>Use verbose compilation for troubleshooting.</li>
+<li>Inspect compiled module metadata.</li>
+<li>Identify and correct common build errors.</li>
+<li>Differentiate compilation from module loading.</li>
+</ul>
+</section>
+
+<div class="lesson-navigation">
+    <a href="L08_Writing_the_First_Kernel_Module.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L10_Loading_and_Testing_a_Kernel_Module.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 3 – Device Driver Development Environment</p>
+</footer>
+
+</body>
+</html>
