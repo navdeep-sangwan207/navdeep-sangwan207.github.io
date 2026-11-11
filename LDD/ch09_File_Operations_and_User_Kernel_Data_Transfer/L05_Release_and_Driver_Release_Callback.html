@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>release() and Driver Release Callback | Linux Device Drivers</title>
+    <link rel="stylesheet" href="../../style.css">
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f7fb;
+            color: #263238;
+            line-height: 1.7;
+        }
+
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 30px 15px;
+        }
+
+        header h1 { margin: 0; font-size: 30px; }
+        header p { margin: 8px 0 0; }
+
+        nav {
+            background: #092b5c;
+            padding: 12px;
+            text-align: center;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        nav a:hover { color: #b9dcff; }
+
+        .container {
+            max-width: 1050px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+
+        .lesson-info {
+            background: #e5f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 22px;
+        }
+
+        .content-section {
+            background: white;
+            padding: 22px;
+            margin-bottom: 22px;
+            border-radius: 9px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #dce8f7;
+            padding-bottom: 8px;
+            margin-top: 0;
+        }
+
+        h3 { color: #174ea6; margin-top: 22px; }
+
+        pre {
+            background: #172337;
+            color: #eaf2ff;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .diagram {
+            background: #edf5ff;
+            border: 1px solid #c8dcf5;
+            border-radius: 8px;
+            padding: 18px;
+            margin: 18px 0;
+            text-align: center;
+        }
+
+        .diagram-box {
+            background: white;
+            border: 2px solid #2878d7;
+            border-radius: 7px;
+            padding: 12px;
+            margin: 9px auto;
+            max-width: 720px;
+            font-weight: bold;
+        }
+
+        .arrow {
+            color: #174ea6;
+            font-size: 23px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th { background: #e5f1ff; color: #123b80; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e5a000;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .tip {
+            background: #e8f6ed;
+            border-left: 5px solid #279653;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+
+        .navigation-buttons a {
+            background: #174ea6;
+            color: white;
+            padding: 11px 18px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .navigation-buttons a:hover { background: #0d3478; }
+
+        footer {
+            background: #092b5c;
+            color: white;
+            text-align: center;
+            padding: 18px;
+            margin-top: 35px;
+        }
+
+        @media (max-width: 650px) {
+            header h1 { font-size: 23px; }
+            nav a { margin: 5px 7px; }
+            .content-section { padding: 16px; }
+            table { display: block; overflow-x: auto; }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 9: File Operations and User-Kernel Data Transfer</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter 9</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson 5:</strong> release() and Driver Release Callback
+        <br>
+        <strong>Level:</strong> Intermediate
+        <br>
+        <strong>Prerequisites:</strong> open(), read(), write(), struct file and file_operations.
+        <br>
+        <strong>Objective:</strong> Understand how a driver handles the final release of an open-file description and how per-open resources are cleaned up.
+    </div>
+
+    <section class="content-section">
+        <h2>1. Introduction</h2>
+
+        <p>
+            When an application finishes
+            using a file or device, it
+            normally calls the
+            <code>close()</code> system call.
+        </p>
+
+        <p>
+            For a character device, the
+            driver's <code>.release</code>
+            callback provides an opportunity
+            to free resources associated
+            with the open-file description.
+        </p>
+
+        <p>
+            A driver may allocate memory,
+            create per-open state or
+            acquire resources during
+            its <code>.open</code> callback.
+            The release callback can
+            clean up those resources.
+        </p>
+
+        <h3>Common Applications</h3>
+
+        <ul>
+            <li>Freeing per-open kernel memory.</li>
+            <li>Releasing exclusive-access state.</li>
+            <li>Cleaning up private data.</li>
+            <li>Releasing per-open buffers.</li>
+            <li>Recording when an open instance is finished.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Is close()?</h2>
+
+        <p>
+            The <code>close()</code>
+            system call closes a file
+            descriptor in a user-space
+            process.
+        </p>
+
+        <h3>Header File</h3>
+
+        <pre><code>#include &lt;unistd.h&gt;</code></pre>
+
+        <h3>Function Prototype</h3>
+
+        <pre><code>int close(int fd);</code></pre>
+
+        <h3>Example</h3>
+
+        <pre><code>int fd;
+
+fd = open("/dev/mychardev", O_RDONLY);
+
+if (fd &lt; 0) {
+    perror("open");
+    return 1;
+}
+
+close(fd);</code></pre>
+
+        <p>
+            When the descriptor is closed,
+            the kernel releases that
+            descriptor's reference to
+            the associated open-file
+            description.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>3. What Is the .release Callback?</h2>
+
+        <p>
+            The <code>.release</code>
+            callback is a member of
+            <code>struct file_operations</code>.
+        </p>
+
+        <p>
+            It is called when the
+            open-file description is
+            finally released, allowing
+            the driver to clean up
+            resources associated with it.
+        </p>
+
+        <h3>Function Prototype</h3>
+
+        <pre><code>static int my_release(
+    struct inode *inode,
+    struct file *file
+);</code></pre>
+
+        <h3>Parameters</h3>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><code>inode</code></td>
+                <td>Represents the device inode associated with the opened file.</td>
+            </tr>
+            <tr>
+                <td><code>file</code></td>
+                <td>Represents the open-file description being released.</td>
+            </tr>
+        </table>
+
+        <h3>Return Value</h3>
+
+        <p>
+            The callback returns an
+            integer. Normally, it returns
+            zero after successful cleanup.
+        </p>
+
+        <pre><code>static int my_release(struct inode *inode,
+                      struct file *file)
+{
+    pr_info("Device released\n");
+    return 0;
+}</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Registering the Release Callback</h2>
+
+        <p>
+            The release callback is
+            registered using the
+            <code>.release</code> member
+            of the file operations structure.
+        </p>
+
+        <pre><code>static const struct file_operations my_fops = {
+    .owner   = THIS_MODULE,
+    .open    = my_open,
+    .read    = my_read,
+    .write   = my_write,
+    .release = my_release,
+};</code></pre>
+
+        <p>
+            When the open-file description
+            is finally released, the
+            kernel invokes the registered
+            callback.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Difference Between close() and .release</h2>
+
+        <p>
+            These two operations are
+            related, but they are not
+            identical.
+        </p>
+
+        <table>
+            <tr>
+                <th>close()</th>
+                <th>.release</th>
+            </tr>
+            <tr>
+                <td>User-space system call.</td>
+                <td>Kernel driver callback.</td>
+            </tr>
+            <tr>
+                <td>Closes a file descriptor.</td>
+                <td>Cleans up the final open-file description.</td>
+            </tr>
+            <tr>
+                <td>Can be called by an application.</td>
+                <td>Invoked by the kernel when the open-file description is finally released.</td>
+            </tr>
+            <tr>
+                <td>Returns 0 or -1 to user space.</td>
+                <td>Returns an integer to the kernel.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            Important: .release is not
+            necessarily called for every
+            close() operation. If multiple
+            file descriptors refer to the
+            same open-file description,
+            the final release happens
+            only after the last reference
+            is closed.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Understanding the Open-File Description</h2>
+
+        <p>
+            A file descriptor is a
+            process-level reference to
+            an open-file description.
+            The open-file description
+            stores information such as
+            file status flags and the
+            current file offset.
+        </p>
+
+        <div class="diagram">
+            <div class="diagram-box">
+                User Process
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                File Descriptor 3
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Open-File Description
+                <br>
+                struct file
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Driver File Operations
+            </div>
+        </div>
+
+        <p>
+            When a file descriptor is
+            duplicated using
+            <code>dup()</code> or inherited
+            through <code>fork()</code>,
+            multiple descriptors may
+            refer to the same open-file
+            description.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>int fd1, fd2;
+
+fd1 = open("/dev/mychardev", O_RDONLY);
+
+fd2 = dup(fd1);
+
+close(fd1);
+
+/* fd2 still refers to the same
+   open-file description. */
+
+close(fd2);
+
+/* The open-file description can
+   now be finally released. */</code></pre>
+
+        <p>
+            In this example, closing
+            <code>fd1</code> does not
+            immediately cause the final
+            release because
+            <code>fd2</code> still
+            references the same
+            open-file description.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Difference Between .flush and .release</h2>
+
+        <p>
+            The <code>.flush</code>
+            callback is another member
+            of <code>struct file_operations</code>.
+        </p>
+
+        <p>
+            It is associated with
+            closing a file descriptor.
+            Unlike .release, it can
+            be invoked for individual
+            close operations even when
+            other descriptors still
+            refer to the same
+            open-file description.
+        </p>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>.flush</th>
+                <th>.release</th>
+            </tr>
+            <tr>
+                <td>Purpose</td>
+                <td>Handle close-related processing.</td>
+                <td>Final cleanup of the open-file description.</td>
+            </tr>
+            <tr>
+                <td>Invocation</td>
+                <td>Can run on individual close operations.</td>
+                <td>Runs when the open-file description is finally released.</td>
+            </tr>
+            <tr>
+                <td>Return type</td>
+                <td>int</td>
+                <td>int</td>
+            </tr>
+            <tr>
+                <td>Typical use</td>
+                <td>Close-related checks or reporting errors.</td>
+                <td>Freeing per-open resources.</td>
+            </tr>
+        </table>
+
+        <pre><code>static int my_flush(struct file *file,
+                    fl_owner_t id)
+{
+    pr_info("flush callback invoked\n");
+    return 0;
+}
+
+static int my_release(struct inode *inode,
+                      struct file *file)
+{
+    pr_info("release callback invoked\n");
+    return 0;
+}</code></pre>
+
+        <div class="note">
+            .flush and .release serve
+            different purposes. Do not
+            free per-open resources in
+            .flush if other descriptors
+            may still use the same
+            open-file description.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Using file->private_data</h2>
+
+        <p>
+            The <code>private_data</code>
+            member of <code>struct file</code>
+            allows a driver to store
+            a pointer to per-open state.
+        </p>
+
+        <p>
+            A driver can allocate memory
+            in its open callback and
+            release it in its release
+            callback.
+        </p>
+
+        <h3>Open Callback</h3>
+
+        <pre><code>#include &lt;linux/slab.h&gt;
+
+struct device_private {
+    int read_count;
+    int write_count;
+};
+
+static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    struct device_private *private;
+
+    private = kzalloc(sizeof(*private),
+                      GFP_KERNEL);
+
+    if (!private)
+        return -ENOMEM;
+
+    file->private_data = private;
+
+    pr_info("Device opened\n");
+
+    return 0;
+}</code></pre>
+
+        <h3>Release Callback</h3>
+
+        <pre><code>static int my_release(struct inode *inode,
+                      struct file *file)
+{
+    struct device_private *private;
+
+    private = file->private_data;
+
+    kfree(private);
+    file->private_data = NULL;
+
+    pr_info("Device released\n");
+
+    return 0;
+}</code></pre>
+
+        <h3>Explanation</h3>
+
+        <ol>
+            <li>open() allocates memory using kzalloc().</li>
+            <li>The memory is initialized to zero.</li>
+            <li>The pointer is stored in file->private_data.</li>
+            <li>Read and write callbacks can access this private state.</li>
+            <li>When the open-file description is finally released, .release frees the memory.</li>
+            <li>The pointer is set to NULL after cleanup.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Understanding Per-Open Resources</h2>
+
+        <p>
+            A character device can be
+            opened by multiple processes.
+            Each independent open operation
+            normally creates a separate
+            open-file description.
+        </p>
+
+        <p>
+            If the driver allocates
+            private data for each open,
+            every open-file description
+            has its own private state.
+        </p>
+
+        <div class="diagram">
+            <div class="diagram-box">
+                Character Device
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Process A: open()
+                <br>
+                struct file A
+                <br>
+                private_data A
+            </div>
+            <div class="diagram-box">
+                Process B: open()
+                <br>
+                struct file B
+                <br>
+                private_data B
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Each open-file description
+                has independent private state
+            </div>
+        </div>
+
+        <p>
+            This is useful for maintaining
+            per-client information such
+            as counters, configuration
+            values and temporary buffers.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Exclusive Device Access</h2>
+
+        <p>
+            Some devices should allow
+            only one independent open
+            operation at a time.
+        </p>
+
+        <p>
+            An atomic variable can be
+            used to control exclusive
+            access.
+        </p>
+
+        <pre><code>#include &lt;linux/atomic.h&gt;
+
+static atomic_t device_opened = ATOMIC_INIT(0);
+
+static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    if (atomic_cmpxchg(&amp;device_opened, 0, 1))
+        return -EBUSY;
+
+    pr_info("Exclusive device opened\n");
+
+    return 0;
+}
+
+static int my_release(struct inode *inode,
+                      struct file *file)
+{
+    atomic_set(&amp;device_opened, 0);
+
+    pr_info("Exclusive device released\n");
+
+    return 0;
+}</code></pre>
+
+        <h3>Explanation</h3>
+
+        <ul>
+            <li>Initial state is zero, meaning no exclusive open is active.</li>
+            <li>atomic_cmpxchg() changes zero to one if the previous value was zero.</li>
+            <li>If another independent open attempts access while the value is one, the callback returns -EBUSY.</li>
+            <li>The final release resets the variable to zero.</li>
+        </ul>
+
+        <div class="note">
+            This simple pattern assumes
+            the module and device have
+            a suitable lifetime and
+            cleanup model. Production
+            drivers must also consider
+            device removal, active users
+            and resource ownership.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Complete Character Driver Example</h2>
+
+        <p>
+            The following example
+            registers a character device
+            and implements open and
+            release callbacks.
+        </p>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/cdev.h&gt;
+#include &lt;linux/slab.h&gt;
+
+#define DEVICE_NAME "releasechardev"
+
+struct device_private {
+    int session_id;
+};
+
+static dev_t dev;
+static struct cdev my_cdev;
+static int session_counter;
+
+static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    struct device_private *private;
+
+    private = kzalloc(sizeof(*private),
+                      GFP_KERNEL);
+
+    if (!private)
+        return -ENOMEM;
+
+    private->session_id = ++session_counter;
+    file->private_data = private;
+
+    pr_info("releasechardev: opened session %d\n",
+            private->session_id);
+
+    return 0;
+}
+
+static int my_release(struct inode *inode,
+                      struct file *file)
+{
+    struct device_private *private;
+
+    private = file->private_data;
+
+    if (private) {
+        pr_info("releasechardev: released session %d\n",
+                private->session_id);
+
+        kfree(private);
+        file->private_data = NULL;
+    }
+
+    return 0;
+}
+
+static const struct file_operations my_fops = {
+    .owner = THIS_MODULE,
+    .open = my_open,
+    .release = my_release,
+};
+
+static int __init my_driver_init(void)
+{
+    int ret;
+
+    ret = alloc_chrdev_region(&amp;dev, 0, 1,
+                              DEVICE_NAME);
+
+    if (ret &lt; 0)
+        return ret;
+
+    cdev_init(&amp;my_cdev, &amp;my_fops);
+    my_cdev.owner = THIS_MODULE;
+
+    ret = cdev_add(&amp;my_cdev, dev, 1);
+
+    if (ret &lt; 0) {
+        unregister_chrdev_region(dev, 1);
+        return ret;
+    }
+
+    pr_info("releasechardev: registered\n");
+    pr_info("releasechardev: major=%u minor=%u\n",
+            MAJOR(dev), MINOR(dev));
+
+    return 0;
+}
+
+static void __exit my_driver_exit(void)
+{
+    cdev_del(&amp;my_cdev);
+    unregister_chrdev_region(dev, 1);
+
+    pr_info("releasechardev: unregistered\n");
+}
+
+module_init(my_driver_init);
+module_exit(my_driver_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Character Driver Release Callback Example");</code></pre>
+
+        <div class="note">
+            This example registers a cdev
+            but does not create a /dev node.
+            Create a temporary node using
+            the major and minor numbers
+            printed in the kernel log.
+            The .owner field helps prevent
+            ordinary module unloading
+            while active file operations
+            hold module references.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Create the Makefile</h2>
+
+        <pre><code>obj-m += release_char_driver.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+        <p>
+            Save the source code as
+            <code>release_char_driver.c</code>.
+        </p>
+
+        <div class="note">
+            Makefile recipe commands
+            must begin with a tab character.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Compile and Load the Driver</h2>
+
+        <h3>Install Build Dependencies</h3>
+
+        <pre><code>sudo apt update
+
+sudo apt install build-essential \
+linux-headers-$(uname -r)</code></pre>
+
+        <h3>Compile</h3>
+
+        <pre><code>make</code></pre>
+
+        <h3>Load the Module</h3>
+
+        <pre><code>sudo insmod release_char_driver.ko</code></pre>
+
+        <h3>Inspect Kernel Messages</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <p>Example output:</p>
+
+        <pre><code>releasechardev: registered
+releasechardev: major=240 minor=0</code></pre>
+
+        <p>
+            Your actual major number
+            may be different.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Create the Device Node and Test</h2>
+
+        <p>
+            Suppose the module reports
+            major number 240 and minor
+            number 0.
+        </p>
+
+        <h3>Create Device Node</h3>
+
+        <pre><code>sudo mknod /dev/releasechardev c 240 0</code></pre>
+
+        <p>
+            Replace 240 with the actual
+            major number reported by
+            the driver.
+        </p>
+
+        <h3>Set Permissions</h3>
+
+        <pre><code>sudo chmod 666 /dev/releasechardev</code></pre>
+
+        <h3>Open and Close the Device</h3>
+
+        <pre><code>cat /dev/releasechardev</code></pre>
+
+        <p>
+            The example has no read
+            callback, so it is intended
+            to demonstrate open and
+            release behavior rather
+            than return data.
+        </p>
+
+        <p>
+            A small open/close test
+            program can be used instead:
+        </p>
+
+        <pre><code>#include &lt;stdio.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+
+int main(void)
+{
+    int fd;
+
+    fd = open("/dev/releasechardev", O_RDONLY);
+
+    if (fd &lt; 0) {
+        perror("open");
+        return 1;
+    }
+
+    printf("Device opened successfully\n");
+
+    close(fd);
+
+    printf("Device closed successfully\n");
+
+    return 0;
+}</code></pre>
+
+        <h3>Compile and Run</h3>
+
+        <pre><code>gcc open_close_test.c -o open_close_test
+
+sudo ./open_close_test</code></pre>
+
+        <h3>Inspect Kernel Messages</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <p>Expected messages include:</p>
+
+        <pre><code>releasechardev: opened session 1
+releasechardev: released session 1</code></pre>
+
+        <h3>Cleanup</h3>
+
+        <pre><code>sudo rm /dev/releasechardev
+
+sudo rmmod release_char_driver
+
+make clean</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Module Unloading and Resource Management</h2>
+
+        <p>
+            A driver must manage its
+            resources carefully when
+            the device is being removed
+            or the module is unloaded.
+        </p>
+
+        <p>
+            The <code>cdev_del()</code>
+            function prevents new opens
+            through that cdev registration.
+            It does not automatically
+            terminate existing open
+            file descriptors.
+        </p>
+
+        <p>
+            The driver must ensure that
+            resources used by active
+            operations remain valid
+            until they are no longer
+            needed.
+        </p>
+
+        <ul>
+            <li>Free per-open allocations in .release.</li>
+            <li>Prevent new operations during device removal.</li>
+            <li>Coordinate active operations with removal.</li>
+            <li>Release device-number allocations during cleanup.</li>
+            <li>Do not free shared resources while active callbacks still use them.</li>
+        </ul>
+
+        <div class="tip">
+            The .owner = THIS_MODULE field
+            in file_operations supports
+            module reference management.
+            It helps prevent normal module
+            unloading while active file
+            operations hold references.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Common Mistakes</h2>
+
+        <table>
+            <tr>
+                <th>Mistake</th>
+                <th>Correct Approach</th>
+            </tr>
+            <tr>
+                <td>Assuming .release runs for every close().</td>
+                <td>Understand open-file description reference counting.</td>
+            </tr>
+            <tr>
+                <td>Freeing memory in .flush without considering shared descriptors.</td>
+                <td>Use .release for final per-open cleanup.</td>
+            </tr>
+            <tr>
+                <td>Forgetting to free private_data.</td>
+                <td>Release allocated memory in .release.</td>
+            </tr>
+            <tr>
+                <td>Freeing shared device resources too early.</td>
+                <td>Coordinate cleanup with active users and callbacks.</td>
+            </tr>
+            <tr>
+                <td>Registering .release incorrectly.</td>
+                <td>Use the .release member in file_operations.</td>
+            </tr>
+            <tr>
+                <td>Assuming module unloading calls .release for every open file.</td>
+                <td>Manage open references and module lifetime correctly.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Summary</h2>
+
+        <ul>
+            <li>close() is a user-space system call.</li>
+            <li>.release is a kernel driver callback.</li>
+            <li>.release is called when the open-file description is finally released.</li>
+            <li>Multiple descriptors can refer to the same open-file description.</li>
+            <li>.flush and .release have different invocation behavior.</li>
+            <li>file->private_data stores per-open driver state.</li>
+            <li>kzalloc() can allocate per-open memory.</li>
+            <li>kfree() can release allocated memory.</li>
+            <li>Drivers must carefully manage resource lifetime during device removal.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>18. Practice Questions</h2>
+
+        <h3>Short Answer Questions</h3>
+
+        <ol>
+            <li>What is the purpose of close()?</li>
+            <li>What is the .release callback?</li>
+            <li>What is the prototype of .release?</li>
+            <li>When is .release invoked?</li>
+            <li>What is the difference between close() and .release?</li>
+            <li>What is the purpose of .flush?</li>
+            <li>What is file->private_data?</li>
+            <li>Why is kzalloc() used in an open callback?</li>
+            <li>Why must allocated memory be freed?</li>
+            <li>What is the purpose of .owner = THIS_MODULE?</li>
+        </ol>
+
+        <h3>Long Answer Questions</h3>
+
+        <ol>
+            <li>Explain the complete lifecycle of a character-device open-file description.</li>
+            <li>Compare close(), .flush and .release.</li>
+            <li>Explain how file->private_data is used in a driver.</li>
+            <li>Explain per-open resource allocation and cleanup.</li>
+            <li>Describe resource-lifetime considerations during device removal.</li>
+        </ol>
+
+        <h3>Practical Questions</h3>
+
+        <ol>
+            <li>Implement an open callback that allocates private memory.</li>
+            <li>Implement a release callback that frees private memory.</li>
+            <li>Register .release in file_operations.</li>
+            <li>Compile and load the character driver in Ubuntu.</li>
+            <li>Create a device node and test open/close operations.</li>
+            <li>Use dup() to observe the difference between descriptor closure and final release.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>19. Expected Learning Outcomes</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Explain close() and .release.</li>
+            <li>Understand open-file description lifetime.</li>
+            <li>Differentiate .flush from .release.</li>
+            <li>Use file->private_data for per-open state.</li>
+            <li>Allocate and release kernel memory.</li>
+            <li>Implement a basic release callback.</li>
+            <li>Understand resource management during driver removal.</li>
+        </ul>
+    </section>
+
+    <div class="navigation-buttons">
+        <a href="L04_Write_and_Driver_Write_Callback.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter Index
+        </a>
+
+        <a href="L06_llseek_Operation.html">
+            Next Lesson →
+        </a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 9 – Lesson 5: release() and Driver Release Callback</p>
+</footer>
+
+</body>
+</html>
