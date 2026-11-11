@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kernel Logging with printk() | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+}
+
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+
+nav a:hover { color: #007bff; }
+
+.container {
+    width: 92%;
+    max-width: 1100px;
+    margin: 25px auto;
+}
+
+.lesson-info {
+    background: #e8f1ff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.content-section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 22px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+
+h3 { color: #245a9c; }
+
+pre {
+    background: #17212b;
+    color: #e8f1f8;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+code { font-family: Consolas, monospace; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d8e0ea;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f1ff;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f0f5fc;
+    border: 1px solid #cbdcf2;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 20px;
+    margin: 6px;
+    font-weight: bold;
+    color: #174ea6;
+}
+
+.arrow {
+    font-size: 23px;
+    color: #2878d7;
+}
+
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 13px;
+    margin: 15px 0;
+}
+
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.navigation-buttons a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 5px;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.navigation-buttons a:hover { background: #2878d7; }
+
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 600px) {
+    header h1 { font-size: 23px; }
+    nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    .content-section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Kernel Logging with printk()</h1>
+    <p>Chapter 5 – Kernel Programming Fundamentals | Linux Device Drivers</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter Index</a>
+</nav>
+
+<main class="container">
+
+<section class="lesson-info">
+    <strong>Lesson:</strong> 04<br>
+    <strong>Topic:</strong> Kernel Logging with printk()<br>
+    <strong>Chapter:</strong> Kernel Programming Fundamentals<br>
+    <strong>Level:</strong> Beginner to Intermediate<br>
+    <strong>Prerequisites:</strong> C functions, format specifiers, kernel modules and kernel header files
+</section>
+
+<section class="content-section">
+    <h2>1. Introduction</h2>
+
+    <p>
+        Logging is an important part of Linux kernel and device
+        driver development. Developers need a way to report
+        information about module loading, device initialization,
+        hardware operations, errors and unexpected conditions.
+    </p>
+
+    <p>
+        In userspace C programming, developers commonly use
+        <code>printf()</code> to display messages on the terminal.
+        Kernel code cannot use the ordinary userspace
+        <code>printf()</code> function.
+    </p>
+
+    <p>
+        Linux provides the <code>printk()</code> function for
+        writing messages to the kernel log buffer.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>2. What Is printk()?</h2>
+
+    <p>
+        <code>printk()</code> is a kernel logging function.
+        It allows kernel code and loadable kernel modules to
+        record messages in the kernel log buffer.
+    </p>
+
+    <p>It is useful for:</p>
+
+    <ul>
+        <li>Reporting module initialization and cleanup.</li>
+        <li>Displaying device initialization information.</li>
+        <li>Reporting errors and warnings.</li>
+        <li>Debugging kernel module execution.</li>
+        <li>Tracking driver operations.</li>
+        <li>Recording hardware and resource-related events.</li>
+    </ul>
+
+    <h3>Basic Syntax</h3>
+
+    <pre><code>printk("Message\n");</code></pre>
+
+    <p>
+        The newline character <code>\n</code> terminates the
+        message line. It is normally included in logging messages.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>3. printk() vs printf()</h2>
+
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>printf()</th>
+            <th>printk()</th>
+        </tr>
+        <tr>
+            <td>Environment</td>
+            <td>Userspace applications</td>
+            <td>Linux kernel</td>
+        </tr>
+        <tr>
+            <td>Purpose</td>
+            <td>Formatted output</td>
+            <td>Kernel logging</td>
+        </tr>
+        <tr>
+            <td>Output destination</td>
+            <td>Usually standard output</td>
+            <td>Kernel log buffer</td>
+        </tr>
+        <tr>
+            <td>Header</td>
+            <td><code>stdio.h</code></td>
+            <td>Kernel logging declarations</td>
+        </tr>
+        <tr>
+            <td>Typical use</td>
+            <td>Application messages</td>
+            <td>Kernel and driver messages</td>
+        </tr>
+    </table>
+
+    <div class="note">
+        Kernel messages do not automatically appear in the
+        terminal where a module was loaded. Use tools such as
+        <code>dmesg</code> or the system journal to inspect them.
+    </div>
+</section>
+
+<section class="content-section">
+    <h2>4. Header Files Required for Kernel Logging</h2>
+
+    <p>
+        Kernel logging interfaces are declared through kernel
+        headers. A module commonly includes:
+    </p>
+
+    <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/printk.h&gt;</code></pre>
+
+    <ul>
+        <li><code>linux/module.h</code> provides module-related declarations and macros.</li>
+        <li><code>linux/init.h</code> provides initialization and exit annotations.</li>
+        <li><code>linux/printk.h</code> provides kernel logging declarations.</li>
+    </ul>
+
+    <p>
+        Other kernel headers may expose logging macros indirectly.
+        Explicitly including the appropriate header makes the
+        source dependencies clearer.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>5. First Kernel Module Using printk()</h2>
+
+    <p>
+        The following example prints a message when the module
+        is loaded and another message when it is removed.
+    </p>
+
+    <h3>Source Code: printk_demo.c</h3>
+
+    <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/printk.h&gt;
+
+static int __init printk_demo_init(void)
+{
+    printk("printk Demo: Module loaded\n");
+
+    return 0;
+}
+
+static void __exit printk_demo_exit(void)
+{
+    printk("printk Demo: Module removed\n");
+}
+
+module_init(printk_demo_init);
+module_exit(printk_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Basic printk logging example");</code></pre>
+
+    <h3>Explanation</h3>
+
+    <ol>
+        <li><code>linux/module.h</code> provides module-related definitions.</li>
+        <li><code>linux/init.h</code> provides initialization and exit annotations.</li>
+        <li><code>printk()</code> writes a message to the kernel log.</li>
+        <li><code>module_init()</code> registers the initialization function.</li>
+        <li><code>module_exit()</code> registers the cleanup function.</li>
+        <li><code>MODULE_LICENSE()</code> declares the module license.</li>
+    </ol>
+</section>
+
+<section class="content-section">
+    <h2>6. Kernel Log Buffer</h2>
+
+    <p>
+        Kernel messages are recorded in a kernel-managed log
+        buffer. This buffer stores messages generated by
+        kernel subsystems, drivers and modules.
+    </p>
+
+    <div class="diagram">
+        <div class="diagram-box">Kernel Module</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">printk()</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">Kernel Log Buffer</div>
+        <div class="arrow">↓</div>
+        <div class="diagram-box">dmesg / System Journal</div>
+    </div>
+
+    <p>
+        The <code>dmesg</code> command displays messages from
+        the kernel ring buffer. System logging services may
+        also collect and store kernel messages.
+    </p>
+
+    <h3>View Kernel Messages</h3>
+
+    <pre><code>dmesg</code></pre>
+
+    <h3>Display Recent Messages</h3>
+
+    <pre><code>sudo dmesg | tail -n 20</code></pre>
+
+    <h3>Follow New Kernel Messages</h3>
+
+    <pre><code>sudo dmesg -w</code></pre>
+</section>
+
+<section class="content-section">
+    <h2>7. Formatted Output Using printk()</h2>
+
+    <p>
+        <code>printk()</code> supports formatted output using
+        format specifiers, similar to the familiar formatting
+        style used in C.
+    </p>
+
+    <table>
+        <tr>
+            <th>Specifier</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td><code>%d</code></td>
+            <td>Signed decimal integer.</td>
+        </tr>
+        <tr>
+            <td><code>%u</code></td>
+            <td>Unsigned decimal integer.</td>
+        </tr>
+        <tr>
+            <td><code>%x</code></td>
+            <td>Unsigned hexadecimal integer.</td>
+        </tr>
+        <tr>
+            <td><code>%o</code></td>
+            <td>Unsigned octal integer.</td>
+        </tr>
+        <tr>
+            <td><code>%c</code></td>
+            <td>Character.</td>
+        </tr>
+        <tr>
+            <td><code>%s</code></td>
+            <td>String.</td>
+        </tr>
+        <tr>
+            <td><code>%p</code></td>
+            <td>Pointer representation.</td>
+        </tr>
+        <tr>
+            <td><code>%zu</code></td>
+            <td><code>size_t</code> value.</td>
+        </tr>
+        <tr>
+            <td><code>%lld</code></td>
+            <td>Signed long long integer.</td>
+        </tr>
+    </table>
+
+    <h3>Example</h3>
+
+    <pre><code>int temperature = 35;
+unsigned int counter = 100;
+char status = 'A';
+
+printk("Temperature = %d\n", temperature);
+printk("Counter = %u\n", counter);
+printk("Status = %c\n", status);</code></pre>
+
+    <p>
+        The format specifier must match the type of the
+        corresponding argument. Incorrect formatting can
+        produce warnings or incorrect output.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>8. Printing Integer Values</h2>
+
+    <p>
+        Integer values are frequently used in device drivers
+        to represent counters, register values, device states
+        and error information.
+    </p>
+
+    <h3>Example</h3>
+
+    <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/printk.h&gt;
+
+static int __init integer_demo_init(void)
+{
+    int signed_value = -25;
+    unsigned int unsigned_value = 250;
+    unsigned int register_value = 0xAB;
+
+    printk("Signed value = %d\n", signed_value);
+    printk("Unsigned value = %u\n", unsigned_value);
+    printk("Register value = 0x%X\n", register_value);
+
+    return 0;
+}
+
+static void __exit integer_demo_exit(void)
+{
+    printk("Integer demo removed\n");
+}
+
+module_init(integer_demo_init);
+module_exit(integer_demo_exit);
+
+MODULE_LICENSE("GPL");</code></pre>
+</section>
+
+<section class="content-section">
+    <h2>9. Printing Strings</h2>
+
+    <p>
+        Kernel logging can also display string information,
+        such as device names, driver states and messages.
+    </p>
+
+    <h3>Example</h3>
+
+    <pre><code>char device_name[] = "VirtualDevice";
+
+printk("Device name: %s\n", device_name);</code></pre>
+
+    <p>
+        Ensure that the string pointer is valid and that the
+        string is properly terminated before using it in a
+        logging statement.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>10. Printing Pointer Values</h2>
+
+    <p>
+        The <code>%p</code> format specifier is used for
+        pointer representations in kernel logging.
+    </p>
+
+    <h3>Example</h3>
+
+    <pre><code>int value = 100;
+int *ptr = &amp;value;
+
+printk("Pointer address: %p\n", ptr);</code></pre>
+
+    <p>
+        Kernel pointer formatting has additional conventions
+        and security-related restrictions. For example,
+        ordinary pointer output may be restricted or hashed.
+        Use specialized format specifiers for particular
+        kernel objects when required.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>11. printk() Return Value</h2>
+
+    <p>
+        <code>printk()</code> returns an integer value indicating
+        the number of characters printed, with kernel-specific
+        details about the returned count.
+    </p>
+
+    <p>
+        In ordinary driver logging, developers generally use
+        it to record messages rather than relying on its
+        return value for application-style output processing.
+    </p>
+
+    <pre><code>int result;
+
+result = printk("Kernel logging example\n");</code></pre>
+</section>
+
+<section class="content-section">
+    <h2>12. printk() in Device Driver Development</h2>
+
+    <p>
+        Device drivers use logging to report important events
+        throughout their lifecycle.
+    </p>
+
+    <table>
+        <tr>
+            <th>Driver Stage</th>
+            <th>Example Log Message</th>
+        </tr>
+        <tr>
+            <td>Module loading</td>
+            <td>Driver module loaded.</td>
+        </tr>
+        <tr>
+            <td>Device initialization</td>
+            <td>Device initialized successfully.</td>
+        </tr>
+        <tr>
+            <td>Resource allocation</td>
+            <td>Memory allocation failed.</td>
+        </tr>
+        <tr>
+            <td>Open operation</td>
+            <td>Device file opened.</td>
+        </tr>
+        <tr>
+            <td>Read operation</td>
+            <td>Read request received.</td>
+        </tr>
+        <tr>
+            <td>Write operation</td>
+            <td>Write request received.</td>
+        </tr>
+        <tr>
+            <td>Cleanup</td>
+            <td>Device resources released.</td>
+        </tr>
+    </table>
+
+    <p>
+        Logging should be useful and selective. Repeated messages
+        in frequently executed paths can create excessive log
+        output and affect system performance.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>13. printk() vs pr_info() and Other Logging Macros</h2>
+
+    <p>
+        Linux provides convenient logging macros built around
+        the kernel logging infrastructure.
+    </p>
+
+    <table>
+        <tr>
+            <th>Logging Interface</th>
+            <th>Typical Purpose</th>
+        </tr>
+        <tr>
+            <td><code>printk()</code></td>
+            <td>General kernel logging with an explicit log-level prefix when needed.</td>
+        </tr>
+        <tr>
+            <td><code>pr_info()</code></td>
+            <td>Informational messages.</td>
+        </tr>
+        <tr>
+            <td><code>pr_err()</code></td>
+            <td>Error messages.</td>
+        </tr>
+        <tr>
+            <td><code>pr_warn()</code></td>
+            <td>Warning messages.</td>
+        </tr>
+        <tr>
+            <td><code>pr_debug()</code></td>
+            <td>Debug messages, subject to kernel debug configuration.</td>
+        </tr>
+    </table>
+
+    <p>
+        These macros are commonly preferred because their names
+        communicate the intended severity of the message.
+        The next lesson studies kernel log levels in detail.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>14. Practical: Create a Kernel Logging Module</h2>
+
+    <h3>Step 1: Create Source File</h3>
+
+    <p>Create <code>logging_demo.c</code>.</p>
+
+    <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/printk.h&gt;
+
+static int __init logging_demo_init(void)
+{
+    int device_id = 10;
+    unsigned int register_value = 0x55;
+
+    printk("Logging Demo: Module loaded\n");
+    printk("Device ID = %d\n", device_id);
+    printk("Register value = 0x%X\n", register_value);
+
+    return 0;
+}
+
+static void __exit logging_demo_exit(void)
+{
+    printk("Logging Demo: Module removed\n");
+}
+
+module_init(logging_demo_init);
+module_exit(logging_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Kernel printk demonstration");</code></pre>
+
+    <h3>Step 2: Create Makefile</h3>
+
+    <pre><code>obj-m += logging_demo.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+    <p>
+        Use a tab character at the beginning of each recipe
+        line in the Makefile.
+    </p>
+
+    <h3>Step 3: Compile the Module</h3>
+
+    <pre><code>make</code></pre>
+
+    <h3>Step 4: Load the Module</h3>
+
+    <pre><code>sudo insmod logging_demo.ko</code></pre>
+
+    <h3>Step 5: View Kernel Messages</h3>
+
+    <pre><code>sudo dmesg | tail -n 10</code></pre>
+
+    <h3>Step 6: Remove the Module</h3>
+
+    <pre><code>sudo rmmod logging_demo</code></pre>
+
+    <h3>Step 7: Clean the Build Directory</h3>
+
+    <pre><code>make clean</code></pre>
+
+    <h3>Expected Messages</h3>
+
+    <pre><code>Logging Demo: Module loaded
+Device ID = 10
+Register value = 0x55
+Logging Demo: Module removed</code></pre>
+
+    <p>
+        Kernel timestamps and additional system messages may
+        appear around these lines.
+    </p>
+</section>
+
+<section class="content-section">
+    <h2>15. Common printk() Problems</h2>
+
+    <table>
+        <tr>
+            <th>Problem</th>
+            <th>Possible Reason</th>
+            <th>Solution</th>
+        </tr>
+        <tr>
+            <td>Message not visible</td>
+            <td>Looking at the wrong output destination or insufficient log visibility.</td>
+            <td>Inspect using <code>dmesg</code> or system journal.</td>
+        </tr>
+        <tr>
+            <td>Incorrect printed value</td>
+            <td>Wrong format specifier.</td>
+            <td>Match the format specifier to the argument type.</td>
+        </tr>
+        <tr>
+            <td>Too many messages</td>
+            <td>Logging inside a frequently executed path.</td>
+            <td>Reduce logging frequency and use suitable log levels.</td>
+        </tr>
+        <tr>
+            <td>Compilation warning</td>
+            <td>Incorrect format string or argument type.</td>
+            <td>Check compiler diagnostics and format requirements.</td>
+        </tr>
+        <tr>
+            <td>Debug message absent</td>
+            <td>Debug logging may not be enabled.</td>
+            <td>Check dynamic debug and relevant kernel configuration.</td>
+        </tr>
+    </table>
+</section>
+
+<section class="content-section">
+    <h2>16. Best Practices for Kernel Logging</h2>
+
+    <ul>
+        <li>Use <code>pr_info()</code> for normal informational messages.</li>
+        <li>Use <code>pr_err()</code> for actual errors.</li>
+        <li>Use <code>pr_warn()</code> for warning conditions.</li>
+        <li>Use debug logging for detailed development diagnostics.</li>
+        <li>Include useful context such as device identifiers where appropriate.</li>
+        <li>Avoid logging repeatedly in high-frequency operations.</li>
+        <li>Do not expose sensitive information in kernel logs.</li>
+        <li>Use correct format specifiers for all arguments.</li>
+        <li>Remove unnecessary diagnostic messages before production deployment.</li>
+        <li>Do not treat a log message as a substitute for proper error handling.</li>
+    </ul>
+</section>
+
+<section class="content-section">
+    <h2>17. Lesson Summary</h2>
+
+    <ul>
+        <li><code>printk()</code> is a kernel logging function.</li>
+        <li>It records messages in the kernel log buffer.</li>
+        <li>Kernel modules use logging to report initialization, errors and driver activity.</li>
+        <li><code>printk()</code> supports formatted output.</li>
+        <li>Format specifiers must match the argument types.</li>
+        <li><code>dmesg</code> can display kernel log messages.</li>
+        <li><code>pr_info()</code>, <code>pr_err()</code> and <code>pr_warn()</code> provide convenient logging interfaces.</li>
+        <li>Excessive logging should be avoided.</li>
+    </ul>
+</section>
+
+<section class="content-section">
+    <h2>18. Practice Questions</h2>
+
+    <h3>Short Answer Questions</h3>
+    <ol>
+        <li>What is <code>printk()</code>?</li>
+        <li>Why can't a kernel module use ordinary <code>printf()</code>?</li>
+        <li>Where are kernel log messages stored?</li>
+        <li>Which command displays kernel log messages?</li>
+        <li>What is the purpose of <code>\n</code> in a logging message?</li>
+        <li>Which format specifier is used for an unsigned integer?</li>
+        <li>Which format specifier is used for a string?</li>
+        <li>What is the purpose of <code>pr_info()</code>?</li>
+        <li>What is the purpose of <code>pr_err()</code>?</li>
+        <li>Why should excessive logging be avoided?</li>
+    </ol>
+
+    <h3>Long Answer Questions</h3>
+    <ol>
+        <li>Explain the working and purpose of <code>printk()</code>.</li>
+        <li>Compare <code>printf()</code> and <code>printk()</code>.</li>
+        <li>Explain formatted output using kernel logging.</li>
+        <li>Describe how kernel messages can be inspected using <code>dmesg</code>.</li>
+        <li>Discuss best practices for logging in device drivers.</li>
+    </ol>
+
+    <h3>Practical Questions</h3>
+    <ol>
+        <li>Write a kernel module that prints a message during initialization.</li>
+        <li>Print integer, unsigned integer and hexadecimal values.</li>
+        <li>Print a message during module cleanup.</li>
+        <li>Load the module and inspect messages using <code>dmesg</code>.</li>
+        <li>Modify the module to use <code>pr_info()</code> and <code>pr_err()</code>.</li>
+        <li>Compare the output produced by the different logging interfaces.</li>
+    </ol>
+</section>
+
+<section class="content-section">
+    <h2>19. Expected Learning Outcomes</h2>
+
+    <p>After completing this lesson, you should be able to:</p>
+
+    <ul>
+        <li>Explain the purpose of kernel logging.</li>
+        <li>Use <code>printk()</code> in a kernel module.</li>
+        <li>Print integer, string and pointer values.</li>
+        <li>Choose suitable format specifiers.</li>
+        <li>Inspect kernel messages using <code>dmesg</code>.</li>
+        <li>Understand the role of logging macros.</li>
+        <li>Apply basic logging practices in device driver development.</li>
+    </ul>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L03_Kernel_Specific_Header_Files.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L05_Kernel_Log_Levels.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 5 – Kernel Programming Fundamentals</p>
+</footer>
+
+</body>
+</html>
