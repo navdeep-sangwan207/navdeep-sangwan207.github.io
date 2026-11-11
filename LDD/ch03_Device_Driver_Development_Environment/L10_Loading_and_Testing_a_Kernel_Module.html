@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loading and Testing a Kernel Module</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+    border-radius: 10px;
+}
+.lesson-info {
+    background: #eaf3ff;
+    border-left: 5px solid #2878d7;
+    padding: 15px;
+    margin: 20px 0;
+    border-radius: 6px;
+}
+.lesson-content {
+    background: white;
+    padding: 22px;
+    margin: 18px 0;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+}
+.lesson-content h2 { color: #174ea6; }
+.lesson-content h3 { color: #245a9c; }
+.lesson-content pre {
+    background: #17202b;
+    color: #e8f1ff;
+    padding: 15px;
+    overflow-x: auto;
+    border-radius: 6px;
+}
+.lesson-content code {
+    background: #eef2f7;
+    padding: 2px 5px;
+    border-radius: 4px;
+}
+.lesson-content pre code {
+    background: transparent;
+    padding: 0;
+}
+.lesson-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+.lesson-content th, .lesson-content td {
+    border: 1px solid #d5dce5;
+    padding: 10px;
+    text-align: left;
+}
+.lesson-content th { background: #eaf3ff; }
+.info-diagram {
+    background: #f3f7fc;
+    border: 1px solid #cbd9eb;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    margin: 15px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: #dceaff;
+    border: 1px solid #2878d7;
+    padding: 12px 18px;
+    margin: 5px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+}
+.lesson-navigation {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-navigation a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+.lesson-navigation a:hover { background: #0d3475; }
+footer {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+}
+@media(max-width:600px) {
+    .lesson-content { padding: 15px; }
+    .lesson-content table { font-size: 13px; }
+}
+</style>
+</head>
+<body>
+
+<header class="lesson-banner">
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 3: Device Driver Development Environment</p>
+    <h2>Lesson 10: Loading and Testing a Kernel Module</h2>
+</header>
+
+<nav style="text-align:center; padding:15px;">
+    <a href="../../index.html">Home</a> |
+    <a href="../ldd.html">Linux Device Drivers</a> |
+    <a href="index.html">Chapter 3</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson:</strong> 10 of Chapter 3<br>
+    <strong>Topic:</strong> Inserting, Inspecting, Testing and Removing Kernel Modules<br>
+    <strong>Level:</strong> Beginner to Intermediate<br>
+    <strong>Prerequisite:</strong> Writing and Compiling a Kernel Module
+</div>
+
+<section class="lesson-content">
+<h2>1. Introduction</h2>
+
+<p>After compiling a Linux kernel module, the next step is to load it into the running kernel and verify that it works correctly.</p>
+
+<p>A compiled module is normally stored as a <code>.ko</code> file. It is not automatically active simply because compilation succeeds.</p>
+
+<p>Linux provides utilities such as <code>insmod</code>, <code>modprobe</code>, <code>lsmod</code>, <code>rmmod</code> and <code>modinfo</code> to manage kernel modules.</p>
+
+<p>In this lesson, we will load a module, inspect its status, examine kernel log messages, test its initialization and cleanup functions, and remove it safely.</p>
+</section>
+
+<section class="lesson-content">
+<h2>2. Understanding the Kernel Module Lifecycle</h2>
+
+<p>A loadable kernel module follows a lifecycle consisting of compilation, loading, execution and removal.</p>
+
+<div class="info-diagram">
+    <div class="diagram-box">Write Module Source Code</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Compile Using Kbuild</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Generate .ko File</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Load Module</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Initialization Function Runs</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Module Active in Kernel</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Remove Module</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Cleanup Function Runs</div>
+</div>
+
+<p>Each stage has a specific purpose. The initialization function is executed when the module loads successfully, while the cleanup function is executed when the module is removed successfully.</p>
+</section>
+
+<section class="lesson-content">
+<h2>3. Kernel Module Management Commands</h2>
+
+<table>
+<tr><th>Command</th><th>Purpose</th></tr>
+<tr><td><code>insmod</code></td><td>Inserts a specified module file into the kernel.</td></tr>
+<tr><td><code>rmmod</code></td><td>Removes a loaded module by module name.</td></tr>
+<tr><td><code>lsmod</code></td><td>Displays currently loaded modules.</td></tr>
+<tr><td><code>modprobe</code></td><td>Loads or removes modules while handling dependencies.</td></tr>
+<tr><td><code>modinfo</code></td><td>Displays information about a module.</td></tr>
+<tr><td><code>dmesg</code></td><td>Displays kernel ring-buffer messages.</td></tr>
+</table>
+
+<p>These commands are commonly used during device driver development and troubleshooting.</p>
+</section>
+
+<section class="lesson-content">
+<h2>4. Prepare a Kernel Module for Testing</h2>
+
+<p>We will use the Hello World kernel module developed in the previous lesson.</p>
+
+<h3>Project directory</h3>
+
+<pre><code>cd ~/Linux_Driver_Projects/hello_module</code></pre>
+
+<h3>Check source and Makefile</h3>
+
+<pre><code>ls -l</code></pre>
+
+<h3>Compile the module</h3>
+
+<pre><code>make</code></pre>
+
+<h3>Verify the module file</h3>
+
+<pre><code>ls -l hello_module.ko</code></pre>
+
+<p>Ensure that compilation succeeds before attempting to load the module.</p>
+</section>
+
+<section class="lesson-content">
+<h2>5. Inspect Module Information Using modinfo</h2>
+
+<p>The <code>modinfo</code> command displays metadata associated with a kernel module.</p>
+
+<h3>Syntax</h3>
+
+<pre><code>modinfo module_name.ko</code></pre>
+
+<h3>Example</h3>
+
+<pre><code>modinfo hello_module.ko</code></pre>
+
+<p>Common information includes:</p>
+
+<table>
+<tr><th>Field</th><th>Description</th></tr>
+<tr><td>filename</td><td>Location of the module file.</td></tr>
+<tr><td>description</td><td>Description of the module.</td></tr>
+<tr><td>author</td><td>Module author.</td></tr>
+<tr><td>license</td><td>Declared module license.</td></tr>
+<tr><td>version</td><td>Module version, if supplied.</td></tr>
+<tr><td>depends</td><td>Declared module dependencies.</td></tr>
+<tr><td>vermagic</td><td>Kernel build compatibility information.</td></tr>
+</table>
+
+<p><strong>Important:</strong> <code>modinfo</code> inspects module metadata. It does not load the module.</p>
+</section>
+
+<section class="lesson-content">
+<h2>6. Loading a Module Using insmod</h2>
+
+<p>The <code>insmod</code> command inserts a module file into the running Linux kernel.</p>
+
+<h3>Syntax</h3>
+
+<pre><code>sudo insmod module_name.ko</code></pre>
+
+<h3>Example</h3>
+
+<pre><code>sudo insmod hello_module.ko</code></pre>
+
+<p>If the operation succeeds, the module is inserted into the kernel and its initialization function is executed.</p>
+
+<h3>Important characteristics</h3>
+
+<ul>
+<li><code>insmod</code> uses a specified module file path.</li>
+<li>It does not automatically resolve and load module dependencies in the same way as <code>modprobe</code>.</li>
+<li>It generally requires administrative privileges.</li>
+<li>The module must be compatible with the running kernel.</li>
+<li>Kernel security policies may restrict module loading.</li>
+</ul>
+</section>
+
+<section class="lesson-content">
+<h2>7. Verify Module Loading Using lsmod</h2>
+
+<p>The <code>lsmod</code> command displays the modules currently loaded into the kernel.</p>
+
+<h3>Syntax</h3>
+
+<pre><code>lsmod</code></pre>
+
+<h3>Search for a specific module</h3>
+
+<pre><code>lsmod | grep hello_module</code></pre>
+
+<p>A matching line indicates that the module appears in the loaded module list.</p>
+
+<h3>Understanding lsmod output</h3>
+
+<table>
+<tr><th>Column</th><th>Meaning</th></tr>
+<tr><td>Module</td><td>Name of the loaded module.</td></tr>
+<tr><td>Size</td><td>Module size in memory, as reported by the utility.</td></tr>
+<tr><td>Used by</td><td>Reference count and dependent modules information.</td></tr>
+</table>
+
+<p>The exact output depends on the kernel and module state.</p>
+</section>
+
+<section class="lesson-content">
+<h2>8. View Kernel Messages Using dmesg</h2>
+
+<p>The <code>dmesg</code> command displays messages from the kernel ring buffer.</p>
+
+<p>Kernel modules often use logging functions such as <code>pr_info()</code> to display messages during initialization and cleanup.</p>
+
+<h3>Display kernel messages</h3>
+
+<pre><code>sudo dmesg</code></pre>
+
+<h3>Display the latest messages</h3>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<h3>Filter messages for a module</h3>
+
+<pre><code>sudo dmesg | grep "Hello Module"</code></pre>
+
+<p>Depending on the distribution's permissions and logging configuration, reading kernel messages may require administrative privileges.</p>
+</section>
+
+<section class="lesson-content">
+<h2>9. Testing the Initialization Function</h2>
+
+<p>When a module is successfully loaded, the kernel calls the function registered through <code>module_init()</code>.</p>
+
+<p>Our example module contains:</p>
+
+<pre><code>static int __init hello_init(void)
+{
+    pr_info("Hello Module: Module initialized\n");
+    return 0;
+}</code></pre>
+
+<p>Load the module:</p>
+
+<pre><code>sudo insmod hello_module.ko</code></pre>
+
+<p>Check the latest kernel messages:</p>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<p>Expected message:</p>
+
+<pre><code>Hello Module: Module initialized</code></pre>
+
+<p>This confirms that the initialization function executed and its informational message was written to the kernel log.</p>
+</section>
+
+<section class="lesson-content">
+<h2>10. Removing a Module Using rmmod</h2>
+
+<p>The <code>rmmod</code> command requests removal of a loaded module from the running kernel.</p>
+
+<h3>Syntax</h3>
+
+<pre><code>sudo rmmod module_name</code></pre>
+
+<h3>Example</h3>
+
+<pre><code>sudo rmmod hello_module</code></pre>
+
+<p>Notice that the module name is used without the <code>.ko</code> extension.</p>
+
+<p>When removal succeeds, the cleanup function registered using <code>module_exit()</code> is executed.</p>
+
+<h3>Check the cleanup message</h3>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<p>Expected message:</p>
+
+<pre><code>Hello Module: Module cleanup completed</code></pre>
+</section>
+
+<section class="lesson-content">
+<h2>11. Verify Module Removal</h2>
+
+<p>After removing a module, check whether it is still listed.</p>
+
+<pre><code>lsmod | grep hello_module</code></pre>
+
+<p>If the module has been removed successfully, this command normally produces no matching output.</p>
+
+<p>You can also inspect the kernel module directory:</p>
+
+<pre><code>ls /lib/modules/$(uname -r)/</code></pre>
+
+<p><strong>Note:</strong> The module file in your project directory is not automatically deleted by <code>rmmod</code>. Removing a loaded module from the kernel and deleting its compiled file are separate operations.</p>
+</section>
+
+<section class="lesson-content">
+<h2>12. Difference Between insmod and modprobe</h2>
+
+<p>Both commands can load kernel modules, but they handle dependencies differently.</p>
+
+<table>
+<tr><th>insmod</th><th>modprobe</th></tr>
+<tr><td>Loads a specified module file.</td><td>Loads a module by name using module information installed in the system.</td></tr>
+<tr><td>Does not automatically resolve module dependencies.</td><td>Can automatically handle dependencies.</td></tr>
+<tr><td>Commonly used with a local <code>.ko</code> file during development.</td><td>Commonly used for system-installed modules.</td></tr>
+<tr><td>Uses a module file path.</td><td>Uses a module name or configured module alias.</td></tr>
+</table>
+
+<h3>Example using modprobe</h3>
+
+<pre><code>sudo modprobe module_name</code></pre>
+
+<p>For a newly built external module, additional installation and dependency-index steps may be needed before it can be loaded by name through <code>modprobe</code>.</p>
+</section>
+
+<section class="lesson-content">
+<h2>13. Using modprobe with an External Module</h2>
+
+<p>For a module that should be managed by <code>modprobe</code>, it is common to install it into the appropriate module directory and update the dependency information.</p>
+
+<h3>Install the module</h3>
+
+<pre><code>sudo install -D -m 644 hello_module.ko /lib/modules/$(uname -r)/extra/hello_module.ko</code></pre>
+
+<h3>Update module dependency information</h3>
+
+<pre><code>sudo depmod -a</code></pre>
+
+<h3>Load by module name</h3>
+
+<pre><code>sudo modprobe hello_module</code></pre>
+
+<h3>Remove by module name</h3>
+
+<pre><code>sudo modprobe -r hello_module</code></pre>
+
+<p>This is a simplified development example. Production installation should use an appropriate packaging or deployment process and account for Secure Boot signing requirements where applicable.</p>
+</section>
+
+<section class="lesson-content">
+<h2>14. Check Module Dependencies</h2>
+
+<p>Some kernel modules require other modules to be loaded before they can operate.</p>
+
+<p>Use <code>modinfo</code> to inspect declared dependency information:</p>
+
+<pre><code>modinfo hello_module.ko</code></pre>
+
+<p>Look for the <code>depends</code> field.</p>
+
+<p>For installed modules, the dependency database is maintained using:</p>
+
+<pre><code>sudo depmod -a</code></pre>
+
+<p>To inspect dependency information for a module:</p>
+
+<pre><code>modprobe --show-depends hello_module</code></pre>
+
+<p>This command displays the dependency-related loading information known to the module management system.</p>
+</section>
+
+<section class="lesson-content">
+<h2>15. Common Loading and Removal Errors</h2>
+
+<h3>Error 1: Operation not permitted</h3>
+
+<p><strong>Possible cause:</strong> Insufficient privileges or a kernel security restriction.</p>
+
+<p><strong>Check:</strong></p>
+
+<pre><code>sudo insmod hello_module.ko
+sudo dmesg | tail -n 30</code></pre>
+
+<p>Review Secure Boot, module-signing policy and kernel security settings.</p>
+
+<h3>Error 2: Invalid module format</h3>
+
+<p><strong>Possible cause:</strong> The module was built against an incompatible kernel build.</p>
+
+<p><strong>Check:</strong></p>
+
+<pre><code>uname -r
+modinfo hello_module.ko</code></pre>
+
+<p>Recompile against the correct target kernel build tree.</p>
+
+<h3>Error 3: Unknown symbol</h3>
+
+<p><strong>Possible cause:</strong> A required symbol is unavailable or a dependency is missing.</p>
+
+<p><strong>Check:</strong></p>
+
+<pre><code>sudo dmesg | tail -n 30</code></pre>
+
+<p>Check symbol exports and module dependencies.</p>
+
+<h3>Error 4: Module is in use</h3>
+
+<p><strong>Possible cause:</strong> The module has active references or is being used by another kernel component.</p>
+
+<p><strong>Solution:</strong> Release the resources and dependencies that prevent removal.</p>
+
+<h3>Error 5: Module not found</h3>
+
+<p><strong>Possible cause:</strong> Incorrect module name or unavailable module file.</p>
+
+<p><strong>Check:</strong></p>
+
+<pre><code>lsmod | grep module_name
+find /lib/modules/$(uname -r) -name 'module_name.ko*'</code></pre>
+</section>
+
+<section class="lesson-content">
+<h2>16. Complete Practical: Load and Test Hello Module</h2>
+
+<p><strong>Objective:</strong> Compile, load, inspect and remove a Linux kernel module.</p>
+
+<h3>Step 1: Open the project directory</h3>
+
+<pre><code>cd ~/Linux_Driver_Projects/hello_module</code></pre>
+
+<h3>Step 2: Compile</h3>
+
+<pre><code>make</code></pre>
+
+<h3>Step 3: Inspect the module</h3>
+
+<pre><code>modinfo hello_module.ko</code></pre>
+
+<h3>Step 4: Load the module</h3>
+
+<pre><code>sudo insmod hello_module.ko</code></pre>
+
+<h3>Step 5: Verify its presence</h3>
+
+<pre><code>lsmod | grep hello_module</code></pre>
+
+<h3>Step 6: Inspect initialization messages</h3>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<h3>Step 7: Remove the module</h3>
+
+<pre><code>sudo rmmod hello_module</code></pre>
+
+<h3>Step 8: Inspect cleanup messages</h3>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<h3>Step 9: Verify removal</h3>
+
+<pre><code>lsmod | grep hello_module</code></pre>
+
+<h3>Step 10: Clean the project</h3>
+
+<pre><code>make clean</code></pre>
+
+<h3>Expected Result</h3>
+
+<p>The module should compile successfully, appear in the loaded module list after insertion, display its initialization message in the kernel log and disappear from the loaded module list after successful removal.</p>
+
+<p>The cleanup message should also appear in the kernel log.</p>
+</section>
+
+<section class="lesson-content">
+<h2>17. Testing Checklist</h2>
+
+<ul>
+<li>Verify the running kernel version.</li>
+<li>Verify matching kernel headers.</li>
+<li>Compile the module successfully.</li>
+<li>Confirm that the <code>.ko</code> file exists.</li>
+<li>Inspect metadata using <code>modinfo</code>.</li>
+<li>Load the module using <code>insmod</code>.</li>
+<li>Verify its presence using <code>lsmod</code>.</li>
+<li>Check initialization messages using <code>dmesg</code>.</li>
+<li>Remove the module using <code>rmmod</code>.</li>
+<li>Check cleanup messages using <code>dmesg</code>.</li>
+<li>Verify that the module is no longer loaded.</li>
+<li>Clean generated build files.</li>
+</ul>
+</section>
+
+<section class="lesson-content">
+<h2>18. Safety Precautions</h2>
+
+<ul>
+<li>Only load modules that you have written or reviewed and trust.</li>
+<li>Kernel modules execute with kernel privileges.</li>
+<li>A faulty module can crash the operating system.</li>
+<li>Use a virtual machine for initial experiments where possible.</li>
+<li>Take a recoverable VM snapshot before risky testing.</li>
+<li>Do not force-remove a module that is actively in use.</li>
+<li>Release allocated resources before module removal.</li>
+<li>Check kernel logs when module operations fail.</li>
+</ul>
+</section>
+
+<section class="lesson-content">
+<h2>19. Important Points to Remember</h2>
+
+<ul>
+<li><code>insmod</code> inserts a specified module file.</li>
+<li><code>rmmod</code> removes a loaded module.</li>
+<li><code>lsmod</code> lists loaded modules.</li>
+<li><code>modprobe</code> handles module dependencies.</li>
+<li><code>modinfo</code> displays module metadata.</li>
+<li><code>dmesg</code> displays kernel log messages.</li>
+<li>Loading invokes the module initialization function.</li>
+<li>Successful removal invokes the cleanup function.</li>
+<li>Compilation and loading are separate operations.</li>
+<li>Kernel module testing should be performed carefully.</li>
+</ul>
+</section>
+
+<section class="lesson-content">
+<h2>20. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is the purpose of <code>insmod</code>?</li>
+<li>What is the purpose of <code>rmmod</code>?</li>
+<li>What does <code>lsmod</code> display?</li>
+<li>What is the difference between <code>insmod</code> and <code>modprobe</code>?</li>
+<li>What information does <code>modinfo</code> display?</li>
+<li>What is the purpose of <code>dmesg</code>?</li>
+<li>Which function runs when a module is loaded?</li>
+<li>Which function runs when a module is removed?</li>
+<li>Why might a module fail to load?</li>
+<li>Why should a module not be forcefully removed while in use?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain the complete lifecycle of a Linux kernel module.</li>
+<li>Explain how to load and remove a module using Linux commands.</li>
+<li>Differentiate <code>insmod</code> and <code>modprobe</code>.</li>
+<li>Explain how to test initialization and cleanup functions.</li>
+<li>Discuss common module loading and removal errors.</li>
+<li>Explain the role of kernel logs in driver debugging.</li>
+</ol>
+
+<h3>Practical Questions</h3>
+<ol>
+<li>Compile a basic kernel module.</li>
+<li>Load the module using <code>insmod</code>.</li>
+<li>Verify it using <code>lsmod</code>.</li>
+<li>Display its metadata using <code>modinfo</code>.</li>
+<li>Inspect kernel messages using <code>dmesg</code>.</li>
+<li>Remove the module using <code>rmmod</code>.</li>
+<li>Verify successful removal.</li>
+<li>Install an external module and test it using <code>modprobe</code>.</li>
+</ol>
+</section>
+
+<section class="lesson-content">
+<h2>21. Learning Outcomes</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+<li>Explain the kernel module loading and removal process.</li>
+<li>Load an external module using <code>insmod</code>.</li>
+<li>Remove a module using <code>rmmod</code>.</li>
+<li>List loaded modules using <code>lsmod</code>.</li>
+<li>Inspect module metadata using <code>modinfo</code>.</li>
+<li>Understand the role of <code>modprobe</code> and <code>depmod</code>.</li>
+<li>Read kernel log messages using <code>dmesg</code>.</li>
+<li>Test initialization and cleanup functions.</li>
+<li>Identify common module loading and removal errors.</li>
+<li>Perform a complete basic kernel module testing exercise.</li>
+</ul>
+</section>
+
+<div class="lesson-navigation">
+    <a href="L09_Compiling_a_Kernel_Module.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="../ch04_Linux_Kernel_Modules/index.html">Next Chapter →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 3 – Device Driver Development Environment</p>
+</footer>
+
+</body>
+</html>
