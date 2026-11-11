@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>read() and Driver Read Callback | Linux Device Drivers</title>
+    <link rel="stylesheet" href="../../style.css">
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f7fb;
+            color: #263238;
+            line-height: 1.7;
+        }
+
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 30px 15px;
+        }
+
+        header h1 { margin: 0; font-size: 30px; }
+        header p { margin: 8px 0 0; }
+
+        nav {
+            background: #092b5c;
+            padding: 12px;
+            text-align: center;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        nav a:hover { color: #b9dcff; }
+
+        .container {
+            max-width: 1050px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+
+        .lesson-info {
+            background: #e5f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 22px;
+        }
+
+        .content-section {
+            background: white;
+            padding: 22px;
+            margin-bottom: 22px;
+            border-radius: 9px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #dce8f7;
+            padding-bottom: 8px;
+            margin-top: 0;
+        }
+
+        h3 { color: #174ea6; margin-top: 22px; }
+
+        pre {
+            background: #172337;
+            color: #eaf2ff;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .diagram {
+            background: #edf5ff;
+            border: 1px solid #c8dcf5;
+            border-radius: 8px;
+            padding: 18px;
+            margin: 18px 0;
+            text-align: center;
+        }
+
+        .diagram-box {
+            background: white;
+            border: 2px solid #2878d7;
+            border-radius: 7px;
+            padding: 12px;
+            margin: 9px auto;
+            max-width: 720px;
+            font-weight: bold;
+        }
+
+        .arrow {
+            color: #174ea6;
+            font-size: 23px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th { background: #e5f1ff; color: #123b80; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e5a000;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .tip {
+            background: #e8f6ed;
+            border-left: 5px solid #279653;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+
+        .navigation-buttons a {
+            background: #174ea6;
+            color: white;
+            padding: 11px 18px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .navigation-buttons a:hover { background: #0d3478; }
+
+        footer {
+            background: #092b5c;
+            color: white;
+            text-align: center;
+            padding: 18px;
+            margin-top: 35px;
+        }
+
+        @media (max-width: 650px) {
+            header h1 { font-size: 23px; }
+            nav a { margin: 5px 7px; }
+            .content-section { padding: 16px; }
+            table { display: block; overflow-x: auto; }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 9: File Operations and User-Kernel Data Transfer</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter 9</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson 3:</strong> read() and Driver Read Callback
+        <br>
+        <strong>Level:</strong> Intermediate
+        <br>
+        <strong>Prerequisites:</strong> VFS, struct file, file_operations, open() callback and user-kernel memory concepts.
+        <br>
+        <strong>Objective:</strong> Understand the read() system call, implement the driver's .read callback and transfer data safely from kernel space to user space.
+    </div>
+
+    <section class="content-section">
+        <h2>1. Introduction</h2>
+
+        <p>
+            The <code>read()</code> system call
+            is used by a user-space application
+            to receive data from an opened
+            file or device.
+        </p>
+
+        <p>
+            In a character-device driver,
+            the kernel invokes the driver's
+            <code>.read</code> callback when
+            a read operation is performed
+            on the device file.
+        </p>
+
+        <p>
+            The driver typically obtains
+            data from a device, internal
+            kernel buffer or another
+            data source and transfers it
+            to the user-space application.
+        </p>
+
+        <h3>Common Applications</h3>
+
+        <ul>
+            <li>Reading sensor measurements.</li>
+            <li>Receiving data from a serial device.</li>
+            <li>Reading buffered data from a character device.</li>
+            <li>Retrieving device status information.</li>
+            <li>Reading data received through an interrupt-driven interface.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Is the read() System Call?</h2>
+
+        <p>
+            The <code>read()</code> system
+            call requests data from an
+            opened file descriptor.
+        </p>
+
+        <h3>Header File</h3>
+
+        <pre><code>#include &lt;unistd.h&gt;</code></pre>
+
+        <h3>Function Prototype</h3>
+
+        <pre><code>ssize_t read(int fd,
+             void *buffer,
+             size_t count);</code></pre>
+
+        <h3>Parameters</h3>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><code>fd</code></td>
+                <td>File descriptor returned by open().</td>
+            </tr>
+            <tr>
+                <td><code>buffer</code></td>
+                <td>User-space memory address where received data will be stored.</td>
+            </tr>
+            <tr>
+                <td><code>count</code></td>
+                <td>Maximum number of bytes requested.</td>
+            </tr>
+        </table>
+
+        <h3>Return Value</h3>
+
+        <table>
+            <tr>
+                <th>Return Value</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>Positive value</td>
+                <td>Number of bytes successfully read.</td>
+            </tr>
+            <tr>
+                <td>Zero</td>
+                <td>End of file (EOF) for an ordinary file-like read operation.</td>
+            </tr>
+            <tr>
+                <td>-1</td>
+                <td>System-call failure; errno describes the error.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Basic read() Example in User Space</h2>
+
+        <pre><code>#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;fcntl.h&gt;
+
+int main(void)
+{
+    int fd;
+    char buffer[100];
+    ssize_t bytes;
+
+    fd = open("/dev/mychardev", O_RDONLY);
+
+    if (fd &lt; 0) {
+        perror("open failed");
+        return 1;
+    }
+
+    bytes = read(fd, buffer, sizeof(buffer) - 1);
+
+    if (bytes &lt; 0) {
+        perror("read failed");
+        close(fd);
+        return 1;
+    }
+
+    buffer[bytes] = '\0';
+
+    printf("Received data: %s\n", buffer);
+
+    close(fd);
+
+    return 0;
+}</code></pre>
+
+        <h3>Compile</h3>
+
+        <pre><code>gcc read_test.c -o read_test</code></pre>
+
+        <h3>Execute</h3>
+
+        <pre><code>sudo ./read_test</code></pre>
+
+        <p>
+            The application opens the
+            character device, requests
+            data, displays the received
+            bytes and closes the device.
+        </p>
+
+        <div class="note">
+            The code above assumes the
+            device returns text data.
+            For binary data, use the
+            returned byte count rather
+            than treating the buffer
+            as a null-terminated string.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Driver Read Callback</h2>
+
+        <p>
+            A character driver implements
+            the read operation using the
+            <code>.read</code> member of
+            <code>struct file_operations</code>.
+        </p>
+
+        <h3>Function Prototype</h3>
+
+        <pre><code>static ssize_t my_read(
+    struct file *file,
+    char __user *buffer,
+    size_t count,
+    loff_t *position
+);</code></pre>
+
+        <h3>Parameters</h3>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><code>file</code></td>
+                <td>Represents the open-file description.</td>
+            </tr>
+            <tr>
+                <td><code>buffer</code></td>
+                <td>User-space destination buffer.</td>
+            </tr>
+            <tr>
+                <td><code>count</code></td>
+                <td>Maximum number of bytes requested.</td>
+            </tr>
+            <tr>
+                <td><code>position</code></td>
+                <td>Pointer to the current file offset.</td>
+            </tr>
+        </table>
+
+        <h3>Return Value</h3>
+
+        <ul>
+            <li>Positive value: number of bytes transferred.</li>
+            <li>Zero: end of available data.</li>
+            <li>Negative value: error code.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>5. What Is char __user *buffer?</h2>
+
+        <p>
+            The <code>__user</code> annotation
+            identifies a pointer that refers
+            to user-space memory.
+        </p>
+
+        <pre><code>char __user *buffer</code></pre>
+
+        <p>
+            The driver must not normally
+            access this pointer by directly
+            dereferencing it.
+        </p>
+
+        <p>
+            Instead, Linux provides
+            special functions to transfer
+            data between kernel space
+            and user space.
+        </p>
+
+        <pre><code>copy_to_user()
+copy_from_user()</code></pre>
+
+        <p>
+            In a read callback, the driver
+            generally uses
+            <code>copy_to_user()</code>
+            because data moves from
+            kernel memory into the
+            application's buffer.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Understanding copy_to_user()</h2>
+
+        <p>
+            <code>copy_to_user()</code>
+            copies data from a kernel-space
+            source buffer to a user-space
+            destination buffer.
+        </p>
+
+        <h3>Header File</h3>
+
+        <pre><code>#include &lt;linux/uaccess.h&gt;</code></pre>
+
+        <h3>Function Prototype</h3>
+
+        <pre><code>unsigned long copy_to_user(
+    void __user *to,
+    const void *from,
+    unsigned long n
+);</code></pre>
+
+        <h3>Parameters</h3>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><code>to</code></td>
+                <td>Destination address in user space.</td>
+            </tr>
+            <tr>
+                <td><code>from</code></td>
+                <td>Source address in kernel space.</td>
+            </tr>
+            <tr>
+                <td><code>n</code></td>
+                <td>Number of bytes to copy.</td>
+            </tr>
+        </table>
+
+        <h3>Return Value</h3>
+
+        <p>
+            The function returns the number
+            of bytes that could not be copied.
+        </p>
+
+        <table>
+            <tr>
+                <th>Return Value</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>0</td>
+                <td>All requested bytes were copied.</td>
+            </tr>
+            <tr>
+                <td>Nonzero</td>
+                <td>Some bytes were not copied.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            copy_to_user() does not return
+            a negative errno value. A driver
+            commonly converts a nonzero
+            return into -EFAULT.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Basic Read Callback Example</h2>
+
+        <p>
+            Consider a driver that stores
+            a fixed message in kernel memory.
+        </p>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/string.h&gt;
+
+static const char message[] =
+    "Hello from Linux Kernel Driver\n";
+
+static ssize_t my_read(
+    struct file *file,
+    char __user *buffer,
+    size_t count,
+    loff_t *position
+)
+{
+    size_t message_size;
+    size_t bytes_to_copy;
+
+    message_size = sizeof(message) - 1;
+
+    if (*position &lt; 0)
+        return -EINVAL;
+
+    if (*position &gt;= message_size)
+        return 0;
+
+    bytes_to_copy = min(
+        count,
+        message_size - (size_t)*position
+    );
+
+    if (copy_to_user(
+            buffer,
+            message + (size_t)*position,
+            bytes_to_copy)) {
+        return -EFAULT;
+    }
+
+    *position += bytes_to_copy;
+
+    return bytes_to_copy;
+}</code></pre>
+
+        <h3>Explanation</h3>
+
+        <ol>
+            <li>The message is stored in kernel memory.</li>
+            <li>The driver checks the current file position.</li>
+            <li>If the position reaches the message size, it returns zero.</li>
+            <li>The driver calculates how many bytes can be copied.</li>
+            <li>copy_to_user() transfers data to the application.</li>
+            <li>The file position is updated.</li>
+            <li>The callback returns the number of bytes transferred.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Understanding the File Position</h2>
+
+        <p>
+            The <code>position</code>
+            parameter points to the
+            current offset in the
+            open-file description.
+        </p>
+
+        <p>
+            It allows a driver to support
+            reading data in multiple
+            operations.
+        </p>
+
+        <h3>Example</h3>
+
+        <p>
+            Assume the kernel buffer contains:
+        </p>
+
+        <pre><code>LINUXDRIVER</code></pre>
+
+        <p>
+            The application requests
+            four bytes per read operation.
+        </p>
+
+        <table>
+            <tr>
+                <th>Read Operation</th>
+                <th>Starting Position</th>
+                <th>Data Returned</th>
+                <th>New Position</th>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>0</td>
+                <td>LINU</td>
+                <td>4</td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>4</td>
+                <td>XDRI</td>
+                <td>8</td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>8</td>
+                <td>VER</td>
+                <td>11</td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>11</td>
+                <td>EOF</td>
+                <td>11</td>
+            </tr>
+        </table>
+
+        <p>
+            After the final byte is read,
+            the driver returns zero to
+            indicate EOF.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Understanding count and Partial Reads</h2>
+
+        <p>
+            The <code>count</code> parameter
+            specifies the maximum number
+            of bytes requested by the
+            application.
+        </p>
+
+        <p>
+            A driver is not required to
+            return the entire requested
+            amount in one operation.
+            It can return fewer bytes.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>bytes_to_copy = min(count, remaining);</code></pre>
+
+        <p>
+            This ensures that the driver
+            never copies more than the
+            requested amount or the
+            remaining available data.
+        </p>
+
+        <div class="tip">
+            Partial reads are normal in
+            Linux. Applications should
+            process the number of bytes
+            actually returned by read(),
+            not assume that the entire
+            request was satisfied.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Read Operation Data Flow</h2>
+
+        <div class="diagram">
+            <div class="diagram-box">
+                User-Space Application
+                <br>
+                read(fd, buffer, count)
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                System Call Interface
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Linux VFS
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Driver .read Callback
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Kernel-Space Data Buffer
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                copy_to_user()
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                User-Space Buffer
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Handling Errors in the Read Callback</h2>
+
+        <p>
+            A read callback must validate
+            its arguments and handle
+            transfer failures.
+        </p>
+
+        <table>
+            <tr>
+                <th>Error Code</th>
+                <th>Possible Reason</th>
+            </tr>
+            <tr>
+                <td><code>-EFAULT</code></td>
+                <td>User-space destination could not be accessed or data could not be copied completely.</td>
+            </tr>
+            <tr>
+                <td><code>-EINVAL</code></td>
+                <td>Invalid file position or unsupported argument.</td>
+            </tr>
+            <tr>
+                <td><code>-EIO</code></td>
+                <td>Device-related input/output failure.</td>
+            </tr>
+            <tr>
+                <td><code>-ERESTARTSYS</code></td>
+                <td>An interruptible operation was interrupted and the kernel may restart the system call.</td>
+            </tr>
+        </table>
+
+        <h3>Example</h3>
+
+        <pre><code>if (copy_to_user(buffer, kernel_buffer, bytes)) {
+    return -EFAULT;
+}</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Complete Read Callback with a Character Driver</h2>
+
+        <p>
+            The following example demonstrates
+            a simple character driver
+            that returns a fixed message.
+        </p>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/cdev.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/string.h&gt;
+
+#define DEVICE_NAME "readchardev"
+
+static dev_t dev;
+static struct cdev my_cdev;
+
+static const char message[] =
+    "Linux Device Driver Read Example\n";
+
+static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    pr_info("readchardev: opened\n");
+    return 0;
+}
+
+static ssize_t my_read(
+    struct file *file,
+    char __user *buffer,
+    size_t count,
+    loff_t *position
+)
+{
+    size_t message_size;
+    size_t bytes_to_copy;
+
+    message_size = sizeof(message) - 1;
+
+    if (*position &lt; 0)
+        return -EINVAL;
+
+    if (*position &gt;= message_size)
+        return 0;
+
+    bytes_to_copy = min(
+        count,
+        message_size - (size_t)*position
+    );
+
+    if (copy_to_user(
+            buffer,
+            message + (size_t)*position,
+            bytes_to_copy)) {
+        return -EFAULT;
+    }
+
+    *position += bytes_to_copy;
+
+    pr_info("readchardev: read %zu bytes\n",
+            bytes_to_copy);
+
+    return bytes_to_copy;
+}
+
+static int my_release(struct inode *inode,
+                      struct file *file)
+{
+    pr_info("readchardev: released\n");
+    return 0;
+}
+
+static const struct file_operations my_fops = {
+    .owner = THIS_MODULE,
+    .open = my_open,
+    .read = my_read,
+    .release = my_release,
+};
+
+static int __init my_driver_init(void)
+{
+    int ret;
+
+    ret = alloc_chrdev_region(&amp;dev, 0, 1,
+                              DEVICE_NAME);
+
+    if (ret &lt; 0)
+        return ret;
+
+    cdev_init(&amp;my_cdev, &amp;my_fops);
+    my_cdev.owner = THIS_MODULE;
+
+    ret = cdev_add(&amp;my_cdev, dev, 1);
+
+    if (ret &lt; 0) {
+        unregister_chrdev_region(dev, 1);
+        return ret;
+    }
+
+    pr_info("readchardev: registered\n");
+    pr_info("readchardev: major=%u minor=%u\n",
+            MAJOR(dev), MINOR(dev));
+
+    return 0;
+}
+
+static void __exit my_driver_exit(void)
+{
+    cdev_del(&amp;my_cdev);
+    unregister_chrdev_region(dev, 1);
+
+    pr_info("readchardev: unloaded\n");
+}
+
+module_init(my_driver_init);
+module_exit(my_driver_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Basic Character Driver Read Example");</code></pre>
+
+        <div class="note">
+            This example registers a cdev
+            but does not create a /dev node.
+            Create a temporary device node
+            using the major number printed
+            in the kernel log before testing.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Create the Makefile</h2>
+
+        <pre><code>obj-m += read_char_driver.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+        <p>
+            Save the C source as
+            <code>read_char_driver.c</code>.
+            The object name in the Makefile
+            must match the source filename.
+        </p>
+
+        <div class="note">
+            The recipe commands under
+            all: and clean: must begin
+            with a tab character.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Compile and Load the Driver</h2>
+
+        <h3>Install Dependencies</h3>
+
+        <pre><code>sudo apt update
+
+sudo apt install build-essential \
+linux-headers-$(uname -r)</code></pre>
+
+        <h3>Compile</h3>
+
+        <pre><code>make</code></pre>
+
+        <h3>Load the Module</h3>
+
+        <pre><code>sudo insmod read_char_driver.ko</code></pre>
+
+        <h3>Inspect Kernel Messages</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <p>
+            Example:
+        </p>
+
+        <pre><code>readchardev: registered
+readchardev: major=240 minor=0</code></pre>
+
+        <p>
+            Your actual major number
+            may be different.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Create the Device Node and Test</h2>
+
+        <p>
+            Suppose the driver reports
+            major number 240 and minor
+            number 0.
+        </p>
+
+        <h3>Create the Device Node</h3>
+
+        <pre><code>sudo mknod /dev/readchardev c 240 0</code></pre>
+
+        <p>
+            Replace 240 with the actual
+            major number printed by your
+            module.
+        </p>
+
+        <h3>Set Permissions</h3>
+
+        <pre><code>sudo chmod 666 /dev/readchardev</code></pre>
+
+        <h3>Read from the Device</h3>
+
+        <pre><code>sudo cat /dev/readchardev</code></pre>
+
+        <p>Expected output:</p>
+
+        <pre><code>Linux Device Driver Read Example</code></pre>
+
+        <h3>Observe the Kernel Log</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <h3>Cleanup</h3>
+
+        <pre><code>sudo rm /dev/readchardev
+sudo rmmod read_char_driver
+make clean</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Why Does cat Stop Reading?</h2>
+
+        <p>
+            The <code>cat</code> command
+            repeatedly reads data until
+            the read operation indicates
+            end of file.
+        </p>
+
+        <p>
+            In our example, the driver
+            checks the file position:
+        </p>
+
+        <pre><code>if (*position &gt;= message_size)
+    return 0;</code></pre>
+
+        <p>
+            Once the entire message has
+            been read, the next read
+            returns zero. This tells
+            <code>cat</code> that no more
+            data is currently available
+            from this file position.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Common Mistakes in Read Callbacks</h2>
+
+        <table>
+            <tr>
+                <th>Mistake</th>
+                <th>Correct Approach</th>
+            </tr>
+            <tr>
+                <td>Directly dereferencing a user-space pointer.</td>
+                <td>Use copy_to_user() for kernel-to-user transfers.</td>
+            </tr>
+            <tr>
+                <td>Copying more bytes than available.</td>
+                <td>Calculate the remaining data size.</td>
+            </tr>
+            <tr>
+                <td>Ignoring the file position.</td>
+                <td>Track and update *position correctly.</td>
+            </tr>
+            <tr>
+                <td>Returning zero before data is consumed.</td>
+                <td>Return zero only when the current read reaches EOF or the device's defined no-data condition.</td>
+            </tr>
+            <tr>
+                <td>Returning count without copying data.</td>
+                <td>Return the actual number of bytes transferred.</td>
+            </tr>
+            <tr>
+                <td>Ignoring copy_to_user() failures.</td>
+                <td>Handle incomplete copies, commonly by returning -EFAULT.</td>
+            </tr>
+            <tr>
+                <td>Writing beyond the kernel buffer.</td>
+                <td>Validate offsets and available capacity.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>18. Summary</h2>
+
+        <ul>
+            <li>read() is a user-space system call used to receive data.</li>
+            <li>The driver's .read callback implements device read behavior.</li>
+            <li>The callback receives file, user buffer, count and file position.</li>
+            <li>copy_to_user() transfers data from kernel space to user space.</li>
+            <li>The return value indicates the number of bytes transferred.</li>
+            <li>Zero from read indicates EOF for the current read position.</li>
+            <li>Partial reads are valid and common.</li>
+            <li>The file position must be updated correctly.</li>
+            <li>Drivers must validate buffer boundaries and handle transfer errors.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>19. Practice Questions</h2>
+
+        <h3>Short Answer Questions</h3>
+
+        <ol>
+            <li>What is the purpose of read()?</li>
+            <li>What is the prototype of the .read callback?</li>
+            <li>What is the purpose of the count parameter?</li>
+            <li>What does the position parameter represent?</li>
+            <li>What is copy_to_user()?</li>
+            <li>What does a zero return value from read indicate?</li>
+            <li>What is a partial read?</li>
+            <li>What is the meaning of -EFAULT?</li>
+            <li>What does the __user annotation indicate?</li>
+            <li>Why must a driver validate the file position?</li>
+        </ol>
+
+        <h3>Long Answer Questions</h3>
+
+        <ol>
+            <li>Explain the complete read operation in a Linux character driver.</li>
+            <li>Explain copy_to_user() with its parameters and return value.</li>
+            <li>Explain the role of the file position in read operations.</li>
+            <li>Describe partial reads with a suitable example.</li>
+            <li>Explain how EOF is reported by a character driver.</li>
+        </ol>
+
+        <h3>Practical Questions</h3>
+
+        <ol>
+            <li>Write a read callback that returns a fixed kernel message.</li>
+            <li>Modify the callback to support partial reads.</li>
+            <li>Implement correct file-position handling.</li>
+            <li>Test the driver using cat.</li>
+            <li>Write a user-space program that reads five bytes at a time.</li>
+            <li>Observe read callback messages using dmesg.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>20. Expected Learning Outcomes</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Explain the read() system call.</li>
+            <li>Understand the driver's .read callback.</li>
+            <li>Use copy_to_user() correctly.</li>
+            <li>Handle the file position and partial reads.</li>
+            <li>Implement EOF handling.</li>
+            <li>Handle read-operation errors.</li>
+            <li>Compile and test a basic read-enabled character driver in Ubuntu.</li>
+        </ul>
+    </section>
+
+    <div class="navigation-buttons">
+        <a href="L02_Open_and_Driver_Open_Callback.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter Index
+        </a>
+
+        <a href="L04_Write_and_Driver_Write_Callback.html">
+            Next Lesson →
+        </a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 9 – Lesson 3: read() and Driver Read Callback</p>
+</footer>
+
+</body>
+</html>
