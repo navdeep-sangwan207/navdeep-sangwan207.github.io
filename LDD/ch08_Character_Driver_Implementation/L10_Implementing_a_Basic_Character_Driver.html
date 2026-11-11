@@ -1,0 +1,1441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Implementing a Basic Character Driver | Linux Device Drivers</title>
+    <link rel="stylesheet" href="../../style.css">
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f4f7fb;
+            color: #263238;
+            line-height: 1.7;
+        }
+
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 30px 15px;
+        }
+
+        header h1 { margin: 0; font-size: 30px; }
+        header p { margin: 8px 0 0; }
+
+        nav {
+            background: #092b5c;
+            padding: 12px;
+            text-align: center;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        nav a:hover { color: #b9dcff; }
+
+        .container {
+            max-width: 1050px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+
+        .lesson-info {
+            background: #e5f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 22px;
+        }
+
+        .content-section {
+            background: white;
+            padding: 22px;
+            margin-bottom: 22px;
+            border-radius: 9px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #dce8f7;
+            padding-bottom: 8px;
+            margin-top: 0;
+        }
+
+        h3 { color: #174ea6; margin-top: 22px; }
+
+        pre {
+            background: #172337;
+            color: #eaf2ff;
+            padding: 16px;
+            border-radius: 7px;
+            overflow-x: auto;
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .diagram {
+            background: #edf5ff;
+            border: 1px solid #c8dcf5;
+            border-radius: 8px;
+            padding: 18px;
+            margin: 18px 0;
+            text-align: center;
+        }
+
+        .diagram-box {
+            background: white;
+            border: 2px solid #2878d7;
+            border-radius: 7px;
+            padding: 12px;
+            margin: 9px auto;
+            max-width: 720px;
+            font-weight: bold;
+        }
+
+        .arrow {
+            color: #174ea6;
+            font-size: 23px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th { background: #e5f1ff; color: #123b80; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e5a000;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .tip {
+            background: #e8f6ed;
+            border-left: 5px solid #279653;
+            padding: 13px 16px;
+            margin: 16px 0;
+            border-radius: 5px;
+        }
+
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+
+        .navigation-buttons a {
+            background: #174ea6;
+            color: white;
+            padding: 11px 18px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .navigation-buttons a:hover { background: #0d3478; }
+
+        footer {
+            background: #092b5c;
+            color: white;
+            text-align: center;
+            padding: 18px;
+            margin-top: 35px;
+        }
+
+        @media (max-width: 650px) {
+            header h1 { font-size: 23px; }
+            nav a { margin: 5px 7px; }
+            .content-section { padding: 16px; }
+            table { display: block; overflow-x: auto; }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 8: Character Driver Implementation</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter 8</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson 10:</strong> Implementing a Basic Character Driver
+        <br>
+        <strong>Level:</strong> Intermediate – Practical
+        <br>
+        <strong>Prerequisites:</strong> Character device registration, cdev_init(), cdev_add(), file_operations, open() and release().
+        <br>
+        <strong>Objective:</strong> Develop, compile, load, test and unload a basic Linux character-device driver.
+    </div>
+
+    <section class="content-section">
+        <h2>1. Introduction</h2>
+
+        <p>
+            In the previous lessons, we studied
+            the individual components required
+            to implement a character-device driver.
+        </p>
+
+        <p>
+            These components include:
+        </p>
+
+        <ul>
+            <li>Device-number allocation.</li>
+            <li>struct cdev.</li>
+            <li>cdev_init().</li>
+            <li>cdev_add().</li>
+            <li>struct file_operations.</li>
+            <li>Driver open callback.</li>
+            <li>Driver release callback.</li>
+            <li>Device-number cleanup.</li>
+        </ul>
+
+        <p>
+            In this practical lesson, we combine
+            these concepts into a working
+            character driver that supports
+            reading and writing data.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Are We Going to Build?</h2>
+
+        <p>
+            We will implement a simple
+            memory-backed character device.
+            It will store data in a kernel
+            buffer and allow user-space
+            applications to read and write it.
+        </p>
+
+        <h3>Driver Features</h3>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td>Device registration</td>
+                <td>Allocate one major/minor device-number range and register a cdev.</td>
+            </tr>
+            <tr>
+                <td>Open operation</td>
+                <td>Handle applications opening the device.</td>
+            </tr>
+            <tr>
+                <td>Read operation</td>
+                <td>Copy stored data from kernel space to user space.</td>
+            </tr>
+            <tr>
+                <td>Write operation</td>
+                <td>Copy data from user space into the kernel buffer.</td>
+            </tr>
+            <tr>
+                <td>Release operation</td>
+                <td>Handle final release of an open-file instance.</td>
+            </tr>
+            <tr>
+                <td>Cleanup</td>
+                <td>Remove cdev registration and release allocated resources.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            This is a software-based demonstration
+            driver. It does not control physical
+            hardware. It is suitable for learning
+            character-driver fundamentals in
+            an Ubuntu virtual machine.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Character Driver Architecture</h2>
+
+        <div class="diagram">
+            <div class="diagram-box">
+                User-Space Application
+                <br>
+                C Program / Shell Commands
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Device File
+                <br>
+                /dev/mychardev
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Linux VFS
+                <br>
+                Virtual File System
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Character Device Infrastructure
+                <br>
+                struct cdev
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                struct file_operations
+                <br>
+                open / read / write / release
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Character Driver
+                <br>
+                Kernel Buffer
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Driver Development Workflow</h2>
+
+        <ol>
+            <li>Install kernel build dependencies.</li>
+            <li>Write the kernel module source code.</li>
+            <li>Create the Makefile.</li>
+            <li>Compile the module.</li>
+            <li>Load the module.</li>
+            <li>Identify the allocated major and minor numbers.</li>
+            <li>Create a device node for testing.</li>
+            <li>Test open, read, write and release operations.</li>
+            <li>Remove the device node and unload the module.</li>
+            <li>Clean the build files.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Create the Project Directory</h2>
+
+        <p>
+            Open Ubuntu Terminal and create
+            a project directory.
+        </p>
+
+        <pre><code>mkdir basic_char_driver
+cd basic_char_driver</code></pre>
+
+        <p>
+            Create the following two files:
+        </p>
+
+        <pre><code>basic_char_driver/
+|
+|-- basic_char_driver.c
+|
+|-- Makefile</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Complete Character Driver Source Code</h2>
+
+        <p>
+            Create the file
+            <code>basic_char_driver.c</code>.
+        </p>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/cdev.h&gt;
+#include &lt;linux/slab.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/mutex.h&gt;
+#include &lt;linux/string.h&gt;
+#include &lt;linux/errno.h&gt;
+
+#define DEVICE_NAME "mychardev"
+#define BUFFER_SIZE 1024
+
+static dev_t dev;
+static struct cdev my_cdev;
+
+static char *device_buffer;
+static size_t data_size;
+
+static DEFINE_MUTEX(device_mutex);
+
+/* Open callback */
+static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    pr_info("mychardev: device opened\n");
+
+    return 0;
+}
+
+/* Read callback */
+static ssize_t my_read(
+    struct file *file,
+    char __user *user_buffer,
+    size_t count,
+    loff_t *position
+)
+{
+    size_t bytes_to_copy;
+    size_t remaining;
+    ssize_t ret;
+
+    if (mutex_lock_interruptible(&amp;device_mutex))
+        return -ERESTARTSYS;
+
+    if (*position &lt; 0) {
+        ret = -EINVAL;
+        goto out;
+    }
+
+    if (*position &gt;= data_size) {
+        ret = 0;
+        goto out;
+    }
+
+    remaining = data_size - (size_t)*position;
+
+    bytes_to_copy = min(count, remaining);
+
+    if (copy_to_user(
+            user_buffer,
+            device_buffer + (size_t)*position,
+            bytes_to_copy)) {
+        ret = -EFAULT;
+        goto out;
+    }
+
+    *position += bytes_to_copy;
+
+    ret = bytes_to_copy;
+
+    pr_info("mychardev: read %zu bytes\n",
+            bytes_to_copy);
+
+out:
+    mutex_unlock(&amp;device_mutex);
+    return ret;
+}
+
+/* Write callback */
+static ssize_t my_write(
+    struct file *file,
+    const char __user *user_buffer,
+    size_t count,
+    loff_t *position
+)
+{
+    size_t bytes_to_copy;
+    size_t available;
+    ssize_t ret;
+
+    if (mutex_lock_interruptible(&amp;device_mutex))
+        return -ERESTARTSYS;
+
+    if (*position &lt; 0 ||
+        *position &gt;= BUFFER_SIZE) {
+        ret = -ENOSPC;
+        goto out;
+    }
+
+    available = BUFFER_SIZE - (size_t)*position;
+
+    bytes_to_copy = min(count, available);
+
+    if (bytes_to_copy == 0) {
+        ret = -ENOSPC;
+        goto out;
+    }
+
+    if (copy_from_user(
+            device_buffer + (size_t)*position,
+            user_buffer,
+            bytes_to_copy)) {
+        ret = -EFAULT;
+        goto out;
+    }
+
+    *position += bytes_to_copy;
+
+    if ((size_t)*position &gt; data_size)
+        data_size = (size_t)*position;
+
+    ret = bytes_to_copy;
+
+    pr_info("mychardev: wrote %zu bytes\n",
+            bytes_to_copy);
+
+out:
+    mutex_unlock(&amp;device_mutex);
+    return ret;
+}
+
+/* Release callback */
+static int my_release(struct inode *inode,
+                      struct file *file)
+{
+    pr_info("mychardev: device released\n");
+
+    return 0;
+}
+
+/* File operations */
+static const struct file_operations my_fops = {
+    .owner = THIS_MODULE,
+    .open = my_open,
+    .read = my_read,
+    .write = my_write,
+    .release = my_release,
+};
+
+/* Module initialization */
+static int __init my_driver_init(void)
+{
+    int ret;
+
+    device_buffer = kzalloc(BUFFER_SIZE, GFP_KERNEL);
+
+    if (!device_buffer) {
+        pr_err("mychardev: buffer allocation failed\n");
+        return -ENOMEM;
+    }
+
+    data_size = 0;
+
+    ret = alloc_chrdev_region(
+        &amp;dev,
+        0,
+        1,
+        DEVICE_NAME
+    );
+
+    if (ret &lt; 0) {
+        pr_err("mychardev: device number allocation failed\n");
+        kfree(device_buffer);
+        return ret;
+    }
+
+    cdev_init(&amp;my_cdev, &amp;my_fops);
+    my_cdev.owner = THIS_MODULE;
+
+    ret = cdev_add(&amp;my_cdev, dev, 1);
+
+    if (ret &lt; 0) {
+        pr_err("mychardev: cdev_add failed: %d\n", ret);
+
+        unregister_chrdev_region(dev, 1);
+        kfree(device_buffer);
+
+        return ret;
+    }
+
+    pr_info("mychardev: driver loaded\n");
+    pr_info("mychardev: major=%u minor=%u\n",
+            MAJOR(dev), MINOR(dev));
+
+    return 0;
+}
+
+/* Module cleanup */
+static void __exit my_driver_exit(void)
+{
+    cdev_del(&amp;my_cdev);
+
+    unregister_chrdev_region(dev, 1);
+
+    kfree(device_buffer);
+
+    pr_info("mychardev: driver unloaded\n");
+}
+
+module_init(my_driver_init);
+module_exit(my_driver_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Basic Memory-Backed Character Device Driver");</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Understanding the Source Code</h2>
+
+        <h3>A. Header Files</h3>
+
+        <table>
+            <tr>
+                <th>Header</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td><code>linux/module.h</code></td>
+                <td>Kernel module support.</td>
+            </tr>
+            <tr>
+                <td><code>linux/kernel.h</code></td>
+                <td>Common kernel definitions and helpers.</td>
+            </tr>
+            <tr>
+                <td><code>linux/init.h</code></td>
+                <td>Module initialization and exit annotations.</td>
+            </tr>
+            <tr>
+                <td><code>linux/fs.h</code></td>
+                <td>File operations and file-system interfaces.</td>
+            </tr>
+            <tr>
+                <td><code>linux/cdev.h</code></td>
+                <td>Character-device registration.</td>
+            </tr>
+            <tr>
+                <td><code>linux/slab.h</code></td>
+                <td>Kernel memory allocation.</td>
+            </tr>
+            <tr>
+                <td><code>linux/uaccess.h</code></td>
+                <td>User-space data transfer functions.</td>
+            </tr>
+            <tr>
+                <td><code>linux/mutex.h</code></td>
+                <td>Mutex synchronization.</td>
+            </tr>
+        </table>
+
+        <h3>B. Global Variables</h3>
+
+        <pre><code>static dev_t dev;
+static struct cdev my_cdev;
+
+static char *device_buffer;
+static size_t data_size;
+
+static DEFINE_MUTEX(device_mutex);</code></pre>
+
+        <ul>
+            <li><code>dev</code> stores the allocated device number.</li>
+            <li><code>my_cdev</code> represents the character device.</li>
+            <li><code>device_buffer</code> points to the kernel data buffer.</li>
+            <li><code>data_size</code> stores the number of valid data bytes.</li>
+            <li><code>device_mutex</code> protects shared buffer operations.</li>
+        </ul>
+
+        <h3>C. Open Callback</h3>
+
+        <pre><code>static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    pr_info("mychardev: device opened\n");
+    return 0;
+}</code></pre>
+
+        <p>
+            This callback reports that the
+            device has been opened.
+            It does not allocate additional
+            per-open resources.
+        </p>
+
+        <h3>D. Read Callback</h3>
+
+        <pre><code>if (copy_to_user(
+        user_buffer,
+        device_buffer + (size_t)*position,
+        bytes_to_copy)) {
+    ret = -EFAULT;
+    goto out;
+}</code></pre>
+
+        <p>
+            <code>copy_to_user()</code> transfers
+            data from the kernel buffer to
+            the application buffer.
+        </p>
+
+        <p>
+            The read callback also updates
+            the file position and returns
+            the number of bytes transferred.
+        </p>
+
+        <h3>E. Write Callback</h3>
+
+        <pre><code>if (copy_from_user(
+        device_buffer + (size_t)*position,
+        user_buffer,
+        bytes_to_copy)) {
+    ret = -EFAULT;
+    goto out;
+}</code></pre>
+
+        <p>
+            <code>copy_from_user()</code>
+            transfers data from user space
+            into the kernel buffer.
+        </p>
+
+        <p>
+            The callback checks the buffer
+            boundary and updates the valid
+            data size after a successful transfer.
+        </p>
+
+        <h3>F. Release Callback</h3>
+
+        <pre><code>static int my_release(struct inode *inode,
+                      struct file *file)
+{
+    pr_info("mychardev: device released\n");
+    return 0;
+}</code></pre>
+
+        <p>
+            This callback reports final release
+            of the open-file instance.
+            The shared device buffer remains
+            allocated until module cleanup.
+        </p>
+
+        <h3>G. File Operations</h3>
+
+        <pre><code>static const struct file_operations my_fops = {
+    .owner = THIS_MODULE,
+    .open = my_open,
+    .read = my_read,
+    .write = my_write,
+    .release = my_release,
+};</code></pre>
+
+        <p>
+            This structure connects the
+            kernel's file-operation requests
+            to the driver callbacks.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Create the Makefile</h2>
+
+        <p>
+            Create a file named
+            <code>Makefile</code>.
+        </p>
+
+        <pre><code>obj-m += basic_char_driver.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+        <div class="note">
+            The recipe commands under
+            <code>all:</code> and
+            <code>clean:</code> must start
+            with a tab character, not spaces.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Install Build Dependencies</h2>
+
+        <p>
+            Before compiling the driver,
+            install the required packages.
+        </p>
+
+        <pre><code>sudo apt update
+
+sudo apt install build-essential \
+linux-headers-$(uname -r)</code></pre>
+
+        <p>
+            Verify that the kernel build
+            directory exists:
+        </p>
+
+        <pre><code>ls /lib/modules/$(uname -r)/build</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Compile the Character Driver</h2>
+
+        <p>
+            From the project directory,
+            execute:
+        </p>
+
+        <pre><code>make</code></pre>
+
+        <p>
+            If compilation is successful,
+            the kernel module file
+            <code>basic_char_driver.ko</code>
+            will be generated.
+        </p>
+
+        <p>Inspect the generated module:</p>
+
+        <pre><code>ls -l</code></pre>
+
+        <p>Check module information:</p>
+
+        <pre><code>modinfo basic_char_driver.ko</code></pre>
+
+        <div class="tip">
+            Always compile against the kernel
+            headers corresponding to the kernel
+            you intend to run the module on.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Load the Kernel Module</h2>
+
+        <p>
+            Load the module using:
+        </p>
+
+        <pre><code>sudo insmod basic_char_driver.ko</code></pre>
+
+        <p>
+            Check whether it is loaded:
+        </p>
+
+        <pre><code>lsmod | grep basic_char_driver</code></pre>
+
+        <p>
+            Inspect the kernel log:
+        </p>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <p>Example output:</p>
+
+        <pre><code>mychardev: driver loaded
+mychardev: major=240 minor=0</code></pre>
+
+        <p>
+            The major number is assigned
+            dynamically. Your system may
+            show a different value.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Create the Device Node</h2>
+
+        <p>
+            The driver has registered a
+            character device, but it has
+            not created a device node in
+            <code>/dev</code>.
+        </p>
+
+        <p>
+            We can create a temporary node
+            manually using <code>mknod</code>.
+        </p>
+
+        <h3>Step 1: Obtain the Major Number</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <p>
+            Note the major and minor numbers
+            printed by the driver.
+        </p>
+
+        <h3>Step 2: Create the Device Node</h3>
+
+        <p>
+            Suppose the allocated major number
+            is 240 and the minor number is 0.
+            Use:
+        </p>
+
+        <pre><code>sudo mknod /dev/mychardev c 240 0</code></pre>
+
+        <p>
+            Replace 240 with the actual major
+            number reported by your driver.
+        </p>
+
+        <h3>Step 3: Set Device Permissions</h3>
+
+        <pre><code>sudo chmod 666 /dev/mychardev</code></pre>
+
+        <h3>Step 4: Verify the Device Node</h3>
+
+        <pre><code>ls -l /dev/mychardev</code></pre>
+
+        <p>
+            The first character in the
+            permission display should be
+            <code>c</code>, indicating a
+            character device.
+        </p>
+
+        <div class="note">
+            The manual node is only a temporary
+            testing interface. In a production
+            driver, device-model registration
+            using class_create() and
+            device_create() is commonly used
+            so that devtmpfs/udev can provide
+            the device node.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Test the Write Operation</h2>
+
+        <p>
+            Write a string into the device:
+        </p>
+
+        <pre><code>echo "Hello Linux Device Driver" | sudo tee /dev/mychardev</code></pre>
+
+        <p>
+            The write callback receives the
+            user-space data and copies it into
+            the kernel buffer.
+        </p>
+
+        <p>
+            Inspect kernel messages:
+        </p>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <p>Expected message includes:</p>
+
+        <pre><code>mychardev: device opened
+mychardev: wrote 26 bytes
+mychardev: device released</code></pre>
+
+        <p>
+            The exact byte count depends on
+            the text and newline written.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Test the Read Operation</h2>
+
+        <p>
+            Read the data from the device:
+        </p>
+
+        <pre><code>sudo cat /dev/mychardev</code></pre>
+
+        <p>Expected output:</p>
+
+        <pre><code>Hello Linux Device Driver</code></pre>
+
+        <p>
+            The read callback transfers
+            the stored kernel-buffer contents
+            into the user-space read buffer.
+        </p>
+
+        <div class="note">
+            The demonstration uses a shared
+            kernel buffer. A new open file
+            normally starts with its own file
+            position at zero. This allows
+            another application to read the
+            stored data from the beginning.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Test Using a C User-Space Program</h2>
+
+        <p>
+            We can also access the device
+            through a normal C application.
+        </p>
+
+        <h3>File: test_driver.c</h3>
+
+        <pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;string.h&gt;
+
+int main(void)
+{
+    int fd;
+    char write_data[] = "Hello from user space";
+    char read_buffer[128] = {0};
+    ssize_t bytes;
+
+    fd = open("/dev/mychardev", O_RDWR);
+
+    if (fd &lt; 0) {
+        perror("open failed");
+        return 1;
+    }
+
+    bytes = write(fd, write_data,
+                  strlen(write_data));
+
+    if (bytes &lt; 0) {
+        perror("write failed");
+        close(fd);
+        return 1;
+    }
+
+    printf("Written bytes: %zd\n", bytes);
+
+    if (lseek(fd, 0, SEEK_SET) &lt; 0) {
+        perror("lseek failed");
+        close(fd);
+        return 1;
+    }
+
+    bytes = read(fd, read_buffer,
+                 sizeof(read_buffer) - 1);
+
+    if (bytes &lt; 0) {
+        perror("read failed");
+        close(fd);
+        return 1;
+    }
+
+    read_buffer[bytes] = '\0';
+
+    printf("Read data: %s\n", read_buffer);
+
+    close(fd);
+
+    return 0;
+}</code></pre>
+
+        <h3>Compile the User-Space Program</h3>
+
+        <pre><code>gcc test_driver.c -o test_driver</code></pre>
+
+        <h3>Run the Program</h3>
+
+        <pre><code>sudo ./test_driver</code></pre>
+
+        <p>Expected output:</p>
+
+        <pre><code>Written bytes: 21
+Read data: Hello from user space</code></pre>
+
+        <p>
+            The program performs the following:
+        </p>
+
+        <ol>
+            <li>Opens the character device.</li>
+            <li>Writes a string to the device.</li>
+            <li>Moves the file position to the beginning using lseek().</li>
+            <li>Reads the stored string.</li>
+            <li>Closes the device file.</li>
+        </ol>
+
+        <div class="note">
+            This driver does not implement
+            a custom .llseek callback. The
+            default seek behavior is sufficient
+            for this simple memory-backed example.
+            The read and write callbacks validate
+            positions and buffer boundaries.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Understanding the Complete Data Flow</h2>
+
+        <h3>Write Flow</h3>
+
+        <div class="diagram">
+            <div class="diagram-box">
+                User-Space Data
+                <br>
+                "Hello Linux"
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                write() System Call
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Driver .write Callback
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                copy_from_user()
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Kernel Device Buffer
+            </div>
+        </div>
+
+        <h3>Read Flow</h3>
+
+        <div class="diagram">
+            <div class="diagram-box">
+                Kernel Device Buffer
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                Driver .read Callback
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                copy_to_user()
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                read() System Call
+            </div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">
+                User-Space Application
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Remove the Device Node and Unload the Driver</h2>
+
+        <p>
+            Before unloading the module,
+            close all applications using
+            the device.
+        </p>
+
+        <h3>Step 1: Remove the Device Node</h3>
+
+        <pre><code>sudo rm /dev/mychardev</code></pre>
+
+        <h3>Step 2: Unload the Module</h3>
+
+        <pre><code>sudo rmmod basic_char_driver</code></pre>
+
+        <h3>Step 3: Verify Unloading</h3>
+
+        <pre><code>lsmod | grep basic_char_driver</code></pre>
+
+        <h3>Step 4: Check Kernel Messages</h3>
+
+        <pre><code>sudo dmesg | tail -20</code></pre>
+
+        <h3>Step 5: Clean the Project</h3>
+
+        <pre><code>make clean</code></pre>
+
+        <div class="note">
+            Do not unload the module while
+            applications are still using the
+            device. The .owner = THIS_MODULE
+            reference normally prevents ordinary
+            unloading while open file operations
+            are active. The driver must also
+            manage shared-resource lifetime
+            correctly.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>18. Common Errors and Troubleshooting</h2>
+
+        <table>
+            <tr>
+                <th>Error</th>
+                <th>Possible Cause and Solution</th>
+            </tr>
+            <tr>
+                <td>Invalid module format</td>
+                <td>Check the running kernel version and rebuild against its matching headers.</td>
+            </tr>
+            <tr>
+                <td>Operation not permitted</td>
+                <td>Use appropriate administrator privileges for module operations.</td>
+            </tr>
+            <tr>
+                <td>Device or resource busy</td>
+                <td>Check whether the device is already in use or the module is still referenced.</td>
+            </tr>
+            <tr>
+                <td>No such file or directory</td>
+                <td>Verify that /dev/mychardev exists.</td>
+            </tr>
+            <tr>
+                <td>Permission denied</td>
+                <td>Check device-node permissions and access privileges.</td>
+            </tr>
+            <tr>
+                <td>Wrong major number</td>
+                <td>Use the major number printed by the currently loaded driver.</td>
+            </tr>
+            <tr>
+                <td>Read returns no data</td>
+                <td>Check whether data was written and whether the file position is at the end.</td>
+            </tr>
+            <tr>
+                <td>Compilation error</td>
+                <td>Check kernel headers, function signatures and source-code syntax.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>19. Important Concepts Learned</h2>
+
+        <table>
+            <tr>
+                <th>Concept</th>
+                <th>Kernel API or Function</th>
+            </tr>
+            <tr>
+                <td>Dynamic device-number allocation</td>
+                <td><code>alloc_chrdev_region()</code></td>
+            </tr>
+            <tr>
+                <td>Character-device initialization</td>
+                <td><code>cdev_init()</code></td>
+            </tr>
+            <tr>
+                <td>Character-device registration</td>
+                <td><code>cdev_add()</code></td>
+            </tr>
+            <tr>
+                <td>File-operation registration</td>
+                <td><code>struct file_operations</code></td>
+            </tr>
+            <tr>
+                <td>Device open</td>
+                <td><code>.open</code></td>
+            </tr>
+            <tr>
+                <td>Device read</td>
+                <td><code>.read</code></td>
+            </tr>
+            <tr>
+                <td>Device write</td>
+                <td><code>.write</code></td>
+            </tr>
+            <tr>
+                <td>Device release</td>
+                <td><code>.release</code></td>
+            </tr>
+            <tr>
+                <td>User-to-kernel data transfer</td>
+                <td><code>copy_from_user()</code></td>
+            </tr>
+            <tr>
+                <td>Kernel-to-user data transfer</td>
+                <td><code>copy_to_user()</code></td>
+            </tr>
+            <tr>
+                <td>Device unregistration</td>
+                <td><code>cdev_del()</code></td>
+            </tr>
+            <tr>
+                <td>Device-number release</td>
+                <td><code>unregister_chrdev_region()</code></td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>20. Practical Exercises</h2>
+
+        <h3>Exercise 1: Modify the Buffer Size</h3>
+        <p>
+            Change BUFFER_SIZE from 1024
+            to 2048 bytes and test writing
+            a larger message.
+        </p>
+
+        <h3>Exercise 2: Multiple Writes</h3>
+        <p>
+            Write multiple strings to the
+            device using separate write()
+            operations and inspect the
+            resulting data.
+        </p>
+
+        <h3>Exercise 3: Buffer Boundary</h3>
+        <p>
+            Attempt to write more data than
+            the available buffer capacity.
+            Observe how the driver handles
+            the remaining capacity.
+        </p>
+
+        <h3>Exercise 4: Read in Small Chunks</h3>
+        <p>
+            Modify the user-space program
+            to read only five bytes at a time.
+            Observe how the file position
+            changes.
+        </p>
+
+        <h3>Exercise 5: Add a Device Status Message</h3>
+        <p>
+            Modify the driver so that it
+            logs the current data size whenever
+            a read or write operation occurs.
+        </p>
+
+        <h3>Exercise 6: Create a Device Interface</h3>
+        <p>
+            Extend the driver using
+            class_create() and device_create()
+            to provide automatic device-node
+            creation through devtmpfs/udev.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>21. Interview Questions</h2>
+
+        <p>1. What is a character device driver?</p>
+        <p>2. What is the purpose of struct cdev?</p>
+        <p>3. Differentiate cdev_init() and cdev_add().</p>
+        <p>4. What is struct file_operations?</p>
+        <p>5. What is the purpose of alloc_chrdev_region()?</p>
+        <p>6. Differentiate major and minor numbers.</p>
+        <p>7. What is the role of the open callback?</p>
+        <p>8. What is the role of the release callback?</p>
+        <p>9. Differentiate copy_to_user() and copy_from_user().</p>
+        <p>10. Why should a driver not directly dereference a user-space pointer?</p>
+        <p>11. What is the purpose of cdev_del()?</p>
+        <p>12. Does cdev_add() create a /dev node?</p>
+        <p>13. What is the purpose of device_create()?</p>
+        <p>14. Why is synchronization needed in a character driver?</p>
+        <p>15. What happens when a user application opens a device file?</p>
+    </section>
+
+    <section class="content-section">
+        <h2>22. Expected Learning Outcomes</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Develop a basic memory-backed character-device driver.</li>
+            <li>Allocate and register character-device numbers.</li>
+            <li>Initialize and register a cdev.</li>
+            <li>Implement open, read, write and release callbacks.</li>
+            <li>Transfer data safely between user space and kernel space.</li>
+            <li>Compile and load a kernel module in Ubuntu.</li>
+            <li>Create and test a device node.</li>
+            <li>Unload the module and release resources safely.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>23. Chapter 8 Completion</h2>
+
+        <p>
+            You have completed all ten lessons
+            of Chapter 8: Character Driver
+            Implementation.
+        </p>
+
+        <p>
+            You have now studied the process
+            of registering a character device
+            and connecting user-space file
+            operations to kernel driver callbacks.
+        </p>
+
+        <h3>Chapter 8 Lessons Completed</h3>
+
+        <ol>
+            <li>Introduction to struct cdev</li>
+            <li>Character Device Registration</li>
+            <li>cdev_init() Function</li>
+            <li>cdev_add() Function</li>
+            <li>cdev_del() Function</li>
+            <li>Character Device Unregistration</li>
+            <li>file_operations Structure</li>
+            <li>Driver Open Operation</li>
+            <li>Driver Release Operation</li>
+            <li>Implementing a Basic Character Driver</li>
+        </ol>
+
+        <div class="tip">
+            <strong>Chapter milestone:</strong>
+            You have completed the basic
+            character-driver registration
+            and implementation workflow.
+            The next chapter develops more
+            detailed file-operation callbacks
+            and user-kernel data-transfer
+            techniques.
+        </div>
+    </section>
+
+    <div class="navigation-buttons">
+        <a href="L09_Driver_Release_Operation.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter Index
+        </a>
+
+        <a href="../ch09_File_Operations_and_User_Kernel_Data_Transfer/index.html">
+            Chapter 9 →
+        </a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers Course</p>
+    <p>Chapter 8 – Lesson 10: Implementing a Basic Character Driver</p>
+</footer>
+
+</body>
+</html>
