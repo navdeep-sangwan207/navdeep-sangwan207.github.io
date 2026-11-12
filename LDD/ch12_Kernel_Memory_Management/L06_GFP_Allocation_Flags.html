@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GFP Allocation Flags | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>GFP Allocation Flags</h1>
+    <p>Linux Device Drivers – Chapter 12, Lesson 6</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 12</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> Kernel Memory Management</p>
+    <p><strong>Lesson:</strong> 6 – GFP Allocation Flags</p>
+    <p><strong>Prerequisites:</strong> kmalloc(), kfree(), kzalloc(), kcalloc(), process context and interrupt context.</p>
+    <p><strong>Objective:</strong> Understand GFP allocation flags, select suitable allocation behavior and avoid sleeping in atomic contexts.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction to GFP Flags</h2>
+
+<p>Linux kernel memory allocation functions often accept a parameter called <strong>GFP flags</strong>.</p>
+
+<p>GFP stands for <strong>Get Free Pages</strong>. These flags describe the allocation constraints and permitted behavior when the kernel attempts to obtain memory.</p>
+
+<p>For example:</p>
+
+<pre><code>buffer = kmalloc(256, GFP_KERNEL);</code></pre>
+
+<p>Here:</p>
+<ul>
+    <li><code>kmalloc()</code> requests memory.</li>
+    <li><code>256</code> specifies the requested size in bytes.</li>
+    <li><code>GFP_KERNEL</code> specifies the allocation behavior.</li>
+</ul>
+
+<p>The allocator uses these flags to determine which memory-reclaim and allocation operations are permitted.</p>
+</section>
+
+<section class="section">
+<h2>2. Why Are GFP Flags Required?</h2>
+
+<p>The Linux kernel executes in different contexts. Some contexts permit sleeping, while others require immediate, non-blocking execution.</p>
+
+<p>For example:</p>
+
+<ul>
+    <li>A normal process-context function may be allowed to sleep.</li>
+    <li>A hard interrupt handler must not sleep.</li>
+    <li>A function holding a spinlock must not sleep.</li>
+</ul>
+
+<p>The allocation request must respect these execution constraints.</p>
+
+<div class="diagram">
+    <div class="diagram-box">Memory Allocation Request</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">GFP Flags</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Allowed Allocation Behavior</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Allocation Result</div>
+</div>
+</section>
+
+<section class="section">
+<h2>3. GFP_KERNEL</h2>
+
+<p><code>GFP_KERNEL</code> is the most commonly used allocation flag for normal kernel operations where sleeping is permitted.</p>
+
+<h3>Example</h3>
+
+<pre><code>char *buffer;
+
+buffer = kmalloc(512, GFP_KERNEL);
+
+if (!buffer) {
+    pr_err("Allocation failed\n");
+    return -ENOMEM;
+}</code></pre>
+
+<h3>Characteristics</h3>
+
+<ul>
+    <li>Suitable for sleepable process context.</li>
+    <li>Allows allocation paths that may block.</li>
+    <li>Can allow memory reclaim operations.</li>
+    <li>Commonly used in module initialization and ordinary driver operations when the context permits sleeping.</li>
+</ul>
+
+<div class="important">
+    GFP_KERNEL must not be used in hard interrupt context or while holding a spinlock because the allocation may sleep.
+</div>
+</section>
+
+<section class="section">
+<h2>4. GFP_ATOMIC</h2>
+
+<p><code>GFP_ATOMIC</code> is used when an allocation must not sleep.</p>
+
+<p>It is relevant to certain atomic contexts where the kernel cannot block the current execution path.</p>
+
+<h3>Example</h3>
+
+<pre><code>char *buffer;
+
+buffer = kmalloc(128, GFP_ATOMIC);
+
+if (!buffer) {
+    pr_err("Atomic allocation failed\n");
+    return -ENOMEM;
+}</code></pre>
+
+<h3>Characteristics</h3>
+
+<ul>
+    <li>Does not permit sleeping.</li>
+    <li>Can be used in suitable atomic contexts.</li>
+    <li>Has more restrictive allocation behavior than GFP_KERNEL.</li>
+    <li>Allocation failure is possible, particularly under memory pressure.</li>
+</ul>
+
+<div class="note">
+    GFP_ATOMIC is not a guarantee that allocation will succeed. Avoid unnecessary allocations in interrupt handlers; preallocate buffers whenever practical.
+</div>
+</section>
+
+<section class="section">
+<h2>5. GFP_KERNEL vs GFP_ATOMIC</h2>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>GFP_KERNEL</th>
+    <th>GFP_ATOMIC</th>
+</tr>
+<tr>
+    <td>May sleep</td>
+    <td>Yes</td>
+    <td>No</td>
+</tr>
+<tr>
+    <td>Normal process context</td>
+    <td>Suitable when sleeping is permitted</td>
+    <td>Can be used, but usually unnecessary</td>
+</tr>
+<tr>
+    <td>Hard interrupt context</td>
+    <td>Not suitable</td>
+    <td>Suitable for certain non-sleeping allocations</td>
+</tr>
+<tr>
+    <td>While holding spinlock</td>
+    <td>Not suitable</td>
+    <td>May be suitable if allocation is truly required</td>
+</tr>
+<tr>
+    <td>Allocation behavior</td>
+    <td>Can use reclaim paths that block</td>
+    <td>Uses more restrictive non-blocking behavior</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>6. Process Context and Interrupt Context</h2>
+
+<h3>Process Context</h3>
+
+<p>Process context refers to kernel code executing on behalf of a process or kernel thread. Such code can generally sleep when the surrounding operation permits it.</p>
+
+<pre><code>static int device_open(struct inode *inode,
+                       struct file *file)
+{
+    char *buffer;
+
+    buffer = kmalloc(256, GFP_KERNEL);
+
+    if (!buffer)
+        return -ENOMEM;
+
+    kfree(buffer);
+
+    return 0;
+}</code></pre>
+
+<h3>Interrupt Context</h3>
+
+<p>Interrupt handlers execute in a non-sleeping context. They must not perform operations that may block.</p>
+
+<pre><code>static irqreturn_t device_irq_handler(
+    int irq, void *dev_id)
+{
+    /* Do not use GFP_KERNEL here. */
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<p>If interrupt processing needs a memory buffer, a common design is to allocate it in advance during initialization or another sleepable context.</p>
+
+<div class="diagram">
+    <div class="diagram-box">Process Context</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">GFP_KERNEL Allocation</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Prepare Buffer</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Interrupt Uses Prepared Buffer</div>
+</div>
+</section>
+
+<section class="section">
+<h2>7. Other Important GFP Flags</h2>
+
+<p>Linux provides additional allocation flags for specialized situations. The exact behavior and availability can depend on the kernel version and configuration.</p>
+
+<table>
+<tr>
+    <th>Flag</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>GFP_NOIO</code></td>
+    <td>Restricts memory reclaim from initiating I/O. Useful in contexts where reclaim-triggered I/O could cause recursion or deadlock.</td>
+</tr>
+<tr>
+    <td><code>GFP_NOFS</code></td>
+    <td>Restricts filesystem-related reclaim activity. Useful in certain filesystem paths to avoid recursive filesystem operations.</td>
+</tr>
+<tr>
+    <td><code>GFP_NOWAIT</code></td>
+    <td>Requests allocation without waiting or performing reclaim that may block. It can fail readily.</td>
+</tr>
+<tr>
+    <td><code>__GFP_ZERO</code></td>
+    <td>Requests zero initialization of allocated memory.</td>
+</tr>
+<tr>
+    <td><code>__GFP_HIGH</code></td>
+    <td>Allows access to certain high-priority allocation reserves, subject to kernel rules.</td>
+</tr>
+<tr>
+    <td><code>__GFP_NOWARN</code></td>
+    <td>Suppresses the usual allocation-failure warning for that request.</td>
+</tr>
+</table>
+
+<div class="note">
+    These flags are not interchangeable. Specialized flags should be selected only after understanding the allocation path and the reason for restricting reclaim behavior.
+</div>
+</section>
+
+<section class="section">
+<h2>8. Combining GFP Flags</h2>
+
+<p>Some GFP flags can be combined using the bitwise OR operator.</p>
+
+<h3>Example</h3>
+
+<pre><code>buffer = kmalloc(
+    256,
+    GFP_KERNEL | __GFP_ZERO
+);</code></pre>
+
+<p>This requests a sleepable allocation and zero initialization.</p>
+
+<p>However, when zero-initialized memory is required, the clearer interface is usually:</p>
+
+<pre><code>buffer = kzalloc(256, GFP_KERNEL);</code></pre>
+
+<p>Another example of a specialized combination is:</p>
+
+<pre><code>buffer = kmalloc(
+    128,
+    GFP_NOIO
+);</code></pre>
+
+<p>This restricts reclaim-related I/O. It does not mean that the allocation can never block.</p>
+</section>
+
+<section class="section">
+<h2>9. GFP Flags and Memory Reclaim</h2>
+
+<p>When the kernel receives a memory allocation request, it may not have a suitable free block immediately available.</p>
+
+<p>Depending on the GFP flags, the allocator may attempt memory reclaim to obtain memory.</p>
+
+<p>Memory reclaim can involve operations such as:</p>
+
+<ul>
+    <li>Reclaiming eligible page-cache pages.</li>
+    <li>Writing dirty pages back to storage where appropriate.</li>
+    <li>Reclaiming eligible slab objects.</li>
+    <li>Other kernel memory-management activities.</li>
+</ul>
+
+<div class="diagram">
+    <div class="diagram-box">Allocation Request</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Free Memory Available?</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">If Necessary: Reclaim Permitted Memory</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Return Memory or Fail</div>
+</div>
+
+<p>Not every allocation performs reclaim. If suitable memory is already available, the request may be satisfied immediately.</p>
+</section>
+
+<section class="section">
+<h2>10. Choosing the Correct GFP Flag</h2>
+
+<table>
+<tr>
+    <th>Situation</th>
+    <th>Typical Choice</th>
+    <th>Reason</th>
+</tr>
+<tr>
+    <td>Normal driver initialization</td>
+    <td><code>GFP_KERNEL</code></td>
+    <td>Sleeping is generally permitted.</td>
+</tr>
+<tr>
+    <td>Normal process-context operation</td>
+    <td><code>GFP_KERNEL</code></td>
+    <td>Reclaim may be permitted.</td>
+</tr>
+<tr>
+    <td>Hard interrupt handler</td>
+    <td><code>GFP_ATOMIC</code> if allocation is unavoidable</td>
+    <td>Must not sleep; preallocation is preferable.</td>
+</tr>
+<tr>
+    <td>Allocation while holding a spinlock</td>
+    <td>Preallocate or use an appropriate atomic allocation strategy</td>
+    <td>Sleeping is forbidden while holding the spinlock.</td>
+</tr>
+<tr>
+    <td>Filesystem-sensitive reclaim path</td>
+    <td><code>GFP_NOFS</code> where required</td>
+    <td>Avoids certain recursive filesystem reclaim paths.</td>
+</tr>
+<tr>
+    <td>I/O-sensitive reclaim path</td>
+    <td><code>GFP_NOIO</code> where required</td>
+    <td>Restricts reclaim-triggered I/O.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>11. Practical Example: GFP_KERNEL Allocation</h2>
+
+<p>Create a file named <code>gfp_kernel_demo.c</code>.</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/slab.h&gt;
+
+#define BUFFER_SIZE 256
+
+static char *buffer;
+
+static int __init gfp_demo_init(void)
+{
+    buffer = kmalloc(BUFFER_SIZE, GFP_KERNEL);
+
+    if (!buffer) {
+        pr_err("GFP_KERNEL allocation failed\n");
+        return -ENOMEM;
+    }
+
+    snprintf(buffer, BUFFER_SIZE,
+             "Memory allocated using GFP_KERNEL");
+
+    pr_info("%s\n", buffer);
+
+    return 0;
+}
+
+static void __exit gfp_demo_exit(void)
+{
+    kfree(buffer);
+    buffer = NULL;
+
+    pr_info("GFP_KERNEL memory released\n");
+}
+
+module_init(gfp_demo_init);
+module_exit(gfp_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("GFP_KERNEL allocation demonstration");</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li>The module requests 256 bytes.</li>
+    <li>GFP_KERNEL allows a sleepable allocation.</li>
+    <li>The allocation result is checked.</li>
+    <li>A message is stored in the buffer.</li>
+    <li>The module cleanup function releases the memory.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>12. Practical Example: GFP_ATOMIC Allocation</h2>
+
+<p>The following example demonstrates a non-sleeping allocation flag in module initialization. It is not an interrupt-handler demonstration; module initialization itself is normally sleepable.</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/slab.h&gt;
+
+#define BUFFER_SIZE 128
+
+static char *buffer;
+
+static int __init gfp_atomic_demo_init(void)
+{
+    buffer = kmalloc(BUFFER_SIZE, GFP_ATOMIC);
+
+    if (!buffer) {
+        pr_err("GFP_ATOMIC allocation failed\n");
+        return -ENOMEM;
+    }
+
+    snprintf(buffer, BUFFER_SIZE,
+             "GFP_ATOMIC allocation successful");
+
+    pr_info("%s\n", buffer);
+
+    return 0;
+}
+
+static void __exit gfp_atomic_demo_exit(void)
+{
+    kfree(buffer);
+    buffer = NULL;
+
+    pr_info("GFP_ATOMIC memory released\n");
+}
+
+module_init(gfp_atomic_demo_init);
+module_exit(gfp_atomic_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("GFP_ATOMIC allocation demonstration");</code></pre>
+
+<div class="note">
+    This example demonstrates the flag, not a recommendation to use GFP_ATOMIC in ordinary initialization code. Prefer GFP_KERNEL when sleeping is permitted.
+</div>
+</section>
+
+<section class="section">
+<h2>13. Makefile</h2>
+
+<p>For the GFP_KERNEL example:</p>
+
+<pre><code>obj-m += gfp_kernel_demo.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>For the GFP_ATOMIC example, change the first line to:</p>
+
+<pre><code>obj-m += gfp_atomic_demo.o</code></pre>
+
+<p>Build each example separately or configure the Makefile for the intended module.</p>
+</section>
+
+<section class="section">
+<h2>14. Compile and Test in Ubuntu</h2>
+
+<h3>Install Dependencies</h3>
+
+<pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+<h3>Compile</h3>
+
+<pre><code>make</code></pre>
+
+<h3>Load the Module</h3>
+
+<pre><code>sudo insmod gfp_kernel_demo.ko</code></pre>
+
+<h3>View Kernel Messages</h3>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<p>Illustrative output:</p>
+
+<pre><code>Memory allocated using GFP_KERNEL</code></pre>
+
+<h3>Remove the Module</h3>
+
+<pre><code>sudo rmmod gfp_kernel_demo</code></pre>
+
+<h3>Clean Build Files</h3>
+
+<pre><code>make clean</code></pre>
+</section>
+
+<section class="section">
+<h2>15. Common Mistakes</h2>
+
+<table>
+<tr>
+    <th>Mistake</th>
+    <th>Why It Is Wrong</th>
+    <th>Correct Approach</th>
+</tr>
+<tr>
+    <td>Using GFP_KERNEL in an interrupt handler</td>
+    <td>The allocation may sleep.</td>
+    <td>Preallocate or use an appropriate non-sleeping strategy.</td>
+</tr>
+<tr>
+    <td>Using GFP_ATOMIC everywhere</td>
+    <td>It unnecessarily uses restrictive allocation behavior.</td>
+    <td>Prefer GFP_KERNEL in sleepable contexts.</td>
+</tr>
+<tr>
+    <td>Assuming GFP_ATOMIC never fails</td>
+    <td>Non-blocking allocation can fail.</td>
+    <td>Always check the return value.</td>
+</tr>
+<tr>
+    <td>Allocating while holding a spinlock with GFP_KERNEL</td>
+    <td>May sleep while holding a spinlock.</td>
+    <td>Allocate before taking the lock or use a suitable atomic strategy.</td>
+</tr>
+<tr>
+    <td>Ignoring reclaim recursion</td>
+    <td>Can cause deadlocks in sensitive filesystem or I/O paths.</td>
+    <td>Use specialized flags only when the calling path requires them.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>16. Lesson Summary</h2>
+
+<ul>
+    <li>GFP flags control kernel memory allocation behavior.</li>
+    <li>GFP_KERNEL is commonly used in sleepable process context.</li>
+    <li>GFP_ATOMIC is used for certain non-sleeping allocation requirements.</li>
+    <li>GFP_NOFS and GFP_NOIO restrict specific reclaim operations.</li>
+    <li>GFP_NOWAIT requests allocation without waiting or blocking reclaim.</li>
+    <li>Allocation flags must match the execution context.</li>
+    <li>Allocation failure must always be handled.</li>
+    <li>Preallocation is often preferable in interrupt-time paths.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>17. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>What does GFP stand for?</li>
+    <li>What is the purpose of GFP flags?</li>
+    <li>What is GFP_KERNEL?</li>
+    <li>What is GFP_ATOMIC?</li>
+    <li>Why must GFP_KERNEL not be used in hard interrupt context?</li>
+    <li>What is the purpose of GFP_NOFS?</li>
+    <li>What is the purpose of GFP_NOIO?</li>
+    <li>What does GFP_NOWAIT request?</li>
+    <li>Can GFP_ATOMIC allocation fail?</li>
+    <li>Why is preallocation useful in interrupt handlers?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain GFP allocation flags in Linux kernel programming.</li>
+    <li>Compare GFP_KERNEL and GFP_ATOMIC.</li>
+    <li>Explain process context and interrupt context in relation to memory allocation.</li>
+    <li>Discuss the purpose of GFP_NOFS and GFP_NOIO.</li>
+    <li>Explain memory reclaim and its relationship with allocation flags.</li>
+    <li>Describe how to select appropriate allocation flags in a device driver.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Write a module using kmalloc() with GFP_KERNEL.</li>
+    <li>Modify the example to use GFP_ATOMIC.</li>
+    <li>Handle allocation failure using -ENOMEM.</li>
+    <li>Compare the two examples in a normal module initialization context.</li>
+    <li>Identify why GFP_KERNEL cannot be used while holding a spinlock.</li>
+    <li>Design a preallocation strategy for a hypothetical interrupt-driven device.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>18. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Explain the purpose of GFP allocation flags.</li>
+    <li>Differentiate between sleepable and non-sleepable allocation.</li>
+    <li>Select appropriate flags for common driver contexts.</li>
+    <li>Understand memory reclaim restrictions.</li>
+    <li>Avoid sleeping in interrupt and atomic contexts.</li>
+    <li>Design safer memory allocation strategies for Linux device drivers.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L05_kzalloc_and_kcalloc.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 12 Index</a>
+    <a href="L07_Kernel_Stack_and_Heap.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 12 – Kernel Memory Management</p>
+</footer>
+
+</body>
+</html>
