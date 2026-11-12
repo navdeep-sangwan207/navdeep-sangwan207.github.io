@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Device Interface Testing from User Space | Linux Device Drivers</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+
+header h1 { margin: 0; font-size: 28px; }
+header p { margin: 8px 0 0; }
+
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+
+nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+
+h3 { color: #245b9e; margin-top: 22px; }
+
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+code { font-family: Consolas, monospace; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-weight: bold;
+    font-size: 20px;
+}
+
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+
+.lesson-nav a:hover { background: #2878d7; }
+
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Device Interface Testing from User Space</h1>
+    <p>Linux Device Drivers – Chapter 10, Lesson 10</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 10</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson Information</strong>
+        <p><strong>Chapter:</strong> Device Files and Device Interfaces</p>
+        <p><strong>Lesson:</strong> 10 – Device Interface Testing from User Space</p>
+        <p><strong>Prerequisites:</strong> Character Device Drivers, file_operations, read(), write(), device nodes, device_create(), and device permissions.</p>
+        <p><strong>Objective:</strong> Learn how user-space applications interact with character-device interfaces and how to test device drivers using Linux commands and C programs.</p>
+    </div>
+
+    <section class="section">
+        <h2>1. Introduction</h2>
+
+        <p>A Linux device driver provides an interface through which user-space applications can communicate with devices.</p>
+
+        <p>For a character driver, this communication commonly takes place through a device node under the <code>/dev</code> directory.</p>
+
+        <p>User-space programs can use standard system calls such as:</p>
+
+        <ul>
+            <li><code>open()</code> – Open a device file.</li>
+            <li><code>read()</code> – Request data from a device.</li>
+            <li><code>write()</code> – Send data to a device.</li>
+            <li><code>ioctl()</code> – Send device-specific control commands.</li>
+            <li><code>close()</code> – Close the file descriptor.</li>
+        </ul>
+
+        <p>Testing verifies that the driver is registered correctly, its device node is accessible, and its implemented operations behave as expected.</p>
+    </section>
+
+    <section class="section">
+        <h2>2. User Space and Kernel Space Communication</h2>
+
+        <p>User applications normally execute in user space, while device drivers execute in kernel space.</p>
+
+        <div class="diagram">
+            <div class="diagram-box">User Application</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">open() / read() / write() / ioctl()</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">System Call Interface</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Virtual File System (VFS)</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Character Device Driver</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Device or Driver-Managed Data</div>
+        </div>
+
+        <p>The VFS provides a common interface for file operations. It routes operations on a device node to the appropriate registered driver operations.</p>
+
+        <p>The actual device interaction depends on the driver implementation. A driver may communicate with physical hardware or manage a virtual device entirely in software.</p>
+    </section>
+
+    <section class="section">
+        <h2>3. Verify Device Driver Registration</h2>
+
+        <p>Before testing a device interface, confirm that the driver module is loaded.</p>
+
+        <h3>List Loaded Modules</h3>
+
+        <pre><code>lsmod</code></pre>
+
+        <p>To search for a particular module:</p>
+
+        <pre><code>lsmod | grep my_driver</code></pre>
+
+        <p><code>lsmod</code> displays loadable kernel modules currently loaded. Built-in kernel components do not appear as independently loaded modules.</p>
+
+        <h3>Inspect Kernel Messages</h3>
+
+        <pre><code>dmesg | tail -n 20</code></pre>
+
+        <p>This displays recent messages from the kernel ring buffer.</p>
+
+        <h3>Inspect Registered Character Device Numbers</h3>
+
+        <pre><code>cat /proc/devices</code></pre>
+
+        <p>This helps identify the major number associated with a registered character-device driver.</p>
+    </section>
+
+    <section class="section">
+        <h2>4. Verify the Device Node</h2>
+
+        <p>A device node provides the filesystem interface used by user-space programs.</p>
+
+        <p>For example:</p>
+
+        <pre><code>ls -l /dev/mydevice</code></pre>
+
+        <p>A typical device-node listing may look like:</p>
+
+        <pre><code>crw------- 1 root root 240, 0 Nov 12 10:30 /dev/mydevice</code></pre>
+
+        <p>Explanation:</p>
+
+        <table>
+            <tr>
+                <th>Field</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td><code>c</code></td>
+                <td>Character device.</td>
+            </tr>
+            <tr>
+                <td><code>rw-------</code></td>
+                <td>Permissions for owner, group and others.</td>
+            </tr>
+            <tr>
+                <td><code>root</code></td>
+                <td>Owner of the device node.</td>
+            </tr>
+            <tr>
+                <td><code>240</code></td>
+                <td>Example major number.</td>
+            </tr>
+            <tr>
+                <td><code>0</code></td>
+                <td>Example minor number.</td>
+            </tr>
+            <tr>
+                <td><code>/dev/mydevice</code></td>
+                <td>Device-node path.</td>
+            </tr>
+        </table>
+
+        <p>The major and minor values above are illustrative. Actual values depend on the device number allocated by the driver.</p>
+
+        <h3>Inspect Device Information</h3>
+
+        <pre><code>stat /dev/mydevice</code></pre>
+
+        <p>The <code>stat</code> command displays filesystem metadata, including device type and device-number information.</p>
+    </section>
+
+    <section class="section">
+        <h2>5. Test Device Permissions</h2>
+
+        <p>Linux checks device-node permissions when a process attempts to open a device.</p>
+
+        <p>For example:</p>
+
+        <pre><code>ls -l /dev/mydevice</code></pre>
+
+        <p>If the current user does not have permission, an attempt to open the device may fail with <code>Permission denied</code>.</p>
+
+        <p>For a controlled test, use:</p>
+
+        <pre><code>sudo ls -l /dev/mydevice</code></pre>
+
+        <p>To test access with elevated privileges, run the test application using:</p>
+
+        <pre><code>sudo ./test_device</code></pre>
+
+        <div class="note">
+            Use elevated privileges only when required. Do not change device permissions broadly with commands such as <code>chmod 777</code>. Production device permissions should be managed through appropriate udev rules and system policy.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>6. Testing with Basic Linux Commands</h2>
+
+        <p>Some device interfaces can be inspected using standard Linux commands, depending on the operations implemented by the driver.</p>
+
+        <h3>Check Device Node</h3>
+
+        <pre><code>ls -l /dev/mydevice</code></pre>
+
+        <h3>Check Device Class in Sysfs</h3>
+
+        <pre><code>ls -l /sys/class/my_class/</code></pre>
+
+        <h3>Inspect Device Information</h3>
+
+        <pre><code>ls -l /sys/class/my_class/mydevice/</code></pre>
+
+        <h3>Check Kernel Messages</h3>
+
+        <pre><code>dmesg | tail -n 20</code></pre>
+
+        <div class="important">
+            Commands such as <code>cat</code>, <code>echo</code>, and <code>dd</code> are useful only when the driver implements compatible read/write behavior. Do not assume every device node supports ordinary text input or output.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>7. Testing open() and close() Using a C Program</h2>
+
+        <p>The following user-space program opens a device node and closes it.</p>
+
+        <p>Save the program as <code>test_device.c</code>.</p>
+
+        <pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+
+int main(void)
+{
+    int fd;
+
+    fd = open("/dev/mydevice", O_RDONLY);
+
+    if (fd &lt; 0) {
+        perror("open failed");
+        return EXIT_FAILURE;
+    }
+
+    printf("Device opened successfully\n");
+
+    if (close(fd) &lt; 0) {
+        perror("close failed");
+        return EXIT_FAILURE;
+    }
+
+    printf("Device closed successfully\n");
+
+    return EXIT_SUCCESS;
+}</code></pre>
+
+        <h3>Compile the Program</h3>
+
+        <pre><code>gcc test_device.c -o test_device</code></pre>
+
+        <h3>Run the Program</h3>
+
+        <pre><code>sudo ./test_device</code></pre>
+
+        <h3>Expected Output</h3>
+
+        <pre><code>Device opened successfully
+Device closed successfully</code></pre>
+
+        <p>This test checks whether the device can be opened and closed. The driver's <code>.open</code> and <code>.release</code> callbacks are involved when implemented.</p>
+    </section>
+
+    <section class="section">
+        <h2>8. Testing read() and write() Operations</h2>
+
+        <p>To test data transfer, the driver must implement suitable read and write callbacks in its <code>file_operations</code> structure.</p>
+
+        <h3>Driver-Side Operations</h3>
+
+        <pre><code>static const struct file_operations my_fops = {
+    .owner   = THIS_MODULE,
+    .open    = my_open,
+    .read    = my_read,
+    .write   = my_write,
+    .release = my_release,
+};</code></pre>
+
+        <p>The user-space program can then use the standard system calls.</p>
+
+        <h3>Example User-Space Program</h3>
+
+        <pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;string.h&gt;
+
+int main(void)
+{
+    int fd;
+    char write_buffer[] = "Hello Linux Driver";
+    char read_buffer[128];
+    ssize_t bytes;
+
+    fd = open("/dev/mydevice", O_RDWR);
+
+    if (fd &lt; 0) {
+        perror("open");
+        return EXIT_FAILURE;
+    }
+
+    bytes = write(fd, write_buffer, strlen(write_buffer));
+
+    if (bytes &lt; 0) {
+        perror("write");
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    printf("Bytes written: %zd\n", bytes);
+
+    if (lseek(fd, 0, SEEK_SET) &lt; 0) {
+        perror("lseek");
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    bytes = read(fd, read_buffer, sizeof(read_buffer) - 1);
+
+    if (bytes &lt; 0) {
+        perror("read");
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    read_buffer[bytes] = '\0';
+
+    printf("Bytes read: %zd\n", bytes);
+    printf("Received: %s\n", read_buffer);
+
+    close(fd);
+
+    return EXIT_SUCCESS;
+}</code></pre>
+
+        <div class="note">
+            This example assumes the driver implements compatible read/write callbacks and supports seeking through its <code>.llseek</code> operation or another appropriate file-position mechanism. A driver that does not support seeking must be tested according to its own file-position behavior. A successful write does not guarantee that a later read returns the same data unless the driver is designed to store and return it.
+        </div>
+
+        <h3>Important Data Transfer Rules</h3>
+
+        <ul>
+            <li><code>read()</code> may return fewer bytes than requested.</li>
+            <li><code>write()</code> may accept fewer bytes than requested.</li>
+            <li>A return value of zero from <code>read()</code> indicates end-of-file.</li>
+            <li>A negative return value indicates an error; inspect <code>errno</code>.</li>
+            <li>Kernel drivers must use <code>copy_to_user()</code> and <code>copy_from_user()</code> for appropriate user-kernel buffer transfers.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>9. Testing with ioctl()</h2>
+
+        <p>The <code>ioctl()</code> system call allows user applications to send device-specific control commands to a driver.</p>
+
+        <p>Examples include:</p>
+
+        <ul>
+            <li>Changing a device operating mode.</li>
+            <li>Configuring a hardware parameter.</li>
+            <li>Reading device status.</li>
+            <li>Starting or stopping a device operation.</li>
+        </ul>
+
+        <p>A user-space application typically includes:</p>
+
+        <pre><code>#include &lt;sys/ioctl.h&gt;
+
+int ret = ioctl(fd, command, argument);</code></pre>
+
+        <p>The driver must implement the corresponding ioctl handling, commonly through <code>unlocked_ioctl</code> in its file operations.</p>
+
+        <p>Detailed ioctl command design and implementation will be covered in Chapter 11.</p>
+    </section>
+
+    <section class="section">
+        <h2>10. Testing Device Interfaces with strace</h2>
+
+        <p><code>strace</code> traces system calls made by a user-space program. It is useful for understanding how an application interacts with a device node.</p>
+
+        <p>Example:</p>
+
+        <pre><code>strace ./test_device</code></pre>
+
+        <p>To focus on common device operations:</p>
+
+        <pre><code>strace -e trace=openat,read,write,close ./test_device</code></pre>
+
+        <p>Possible observations include:</p>
+
+        <ul>
+            <li><code>openat()</code> opens the device path.</li>
+            <li><code>read()</code> requests data.</li>
+            <li><code>write()</code> sends data.</li>
+            <li><code>close()</code> releases the file descriptor.</li>
+        </ul>
+
+        <p>On modern Linux systems, the C library's <code>open()</code> call commonly appears as <code>openat()</code> in a system-call trace.</p>
+
+        <div class="note">
+            Install strace if it is not available:
+            <pre><code>sudo apt update
+sudo apt install strace</code></pre>
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>11. Testing Workflow</h2>
+
+        <div class="diagram">
+            <div class="diagram-box">Compile Kernel Module</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Load Module</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Check Kernel Logs</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Verify Device Node</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Check Permissions</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Run User-Space Test</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Inspect Results and Errors</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Unload Module and Verify Cleanup</div>
+        </div>
+
+        <p>This workflow can be used as a basic validation procedure for a character-device driver.</p>
+    </section>
+
+    <section class="section">
+        <h2>12. Common Testing Errors</h2>
+
+        <table>
+            <tr>
+                <th>Error</th>
+                <th>Possible Cause</th>
+                <th>Suggested Check</th>
+            </tr>
+            <tr>
+                <td><code>No such file or directory</code></td>
+                <td>Device node does not exist.</td>
+                <td>Check <code>/dev</code>, device registration and devtmpfs/udev.</td>
+            </tr>
+            <tr>
+                <td><code>Permission denied</code></td>
+                <td>Insufficient device-node permissions.</td>
+                <td>Inspect ownership and permissions; use an authorized account.</td>
+            </tr>
+            <tr>
+                <td><code>No such device</code></td>
+                <td>Device node exists but no suitable registered driver handles the device number.</td>
+                <td>Check major/minor values and cdev registration.</td>
+            </tr>
+            <tr>
+                <td><code>Invalid argument</code></td>
+                <td>Unsupported operation or invalid parameter.</td>
+                <td>Check driver callbacks and arguments.</td>
+            </tr>
+            <tr>
+                <td><code>Bad file descriptor</code></td>
+                <td>Invalid or already closed file descriptor.</td>
+                <td>Check the result of <code>open()</code> and file-descriptor handling.</td>
+            </tr>
+            <tr>
+                <td>Read returns zero</td>
+                <td>End-of-file or driver-defined behavior.</td>
+                <td>Inspect the read callback and file position.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="section">
+        <h2>13. Testing in Ubuntu VirtualBox</h2>
+
+        <p>A virtual Ubuntu environment is suitable for learning and testing software-based character drivers.</p>
+
+        <p>You can practise:</p>
+
+        <ul>
+            <li>Loading and unloading kernel modules.</li>
+            <li>Creating device nodes.</li>
+            <li>Registering character devices.</li>
+            <li>Testing open, read, write and release operations.</li>
+            <li>Inspecting sysfs and procfs information.</li>
+            <li>Debugging system-call interactions.</li>
+        </ul>
+
+        <div class="important">
+            Physical GPIO, I2C, SPI and other hardware tests require access to suitable hardware or an appropriate emulation environment. A standard VirtualBox Ubuntu guest does not automatically expose the host computer's physical peripheral controllers as Linux devices.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>14. Chapter 10 Revision</h2>
+
+        <p>Chapter 10 covered the complete device-file and device-interface workflow.</p>
+
+        <table>
+            <tr>
+                <th>Lesson</th>
+                <th>Topic</th>
+            </tr>
+            <tr><td>01</td><td>Introduction to Device Files</td></tr>
+            <tr><td>02</td><td>/dev Directory</td></tr>
+            <tr><td>03</td><td>Device Nodes</td></tr>
+            <tr><td>04</td><td>Creating Device Nodes Using mknod</td></tr>
+            <tr><td>05</td><td>Major and Minor Number Mapping</td></tr>
+            <tr><td>06</td><td>Device File Permissions</td></tr>
+            <tr><td>07</td><td>udev and Device Management</td></tr>
+            <tr><td>08</td><td>Automatic Device Node Creation</td></tr>
+            <tr><td>09</td><td>class_create() and device_create()</td></tr>
+            <tr><td>10</td><td>Device Interface Testing from User Space</td></tr>
+        </table>
+    </section>
+
+    <section class="section">
+        <h2>15. Practice Questions</h2>
+
+        <h3>Short Answer Questions</h3>
+        <ol>
+            <li>What is a device interface?</li>
+            <li>How does a user-space application communicate with a character driver?</li>
+            <li>What is the purpose of the <code>open()</code> system call?</li>
+            <li>How can you check whether a device node exists?</li>
+            <li>What information does <code>stat</code> provide?</li>
+            <li>What is the purpose of <code>strace</code>?</li>
+            <li>Why can a device node return Permission denied?</li>
+            <li>What is the role of <code>ioctl()</code>?</li>
+        </ol>
+
+        <h3>Long Answer Questions</h3>
+        <ol>
+            <li>Explain the communication path between user space and a character-device driver.</li>
+            <li>Describe the complete device-interface testing workflow.</li>
+            <li>Explain how to test open and close operations using a C application.</li>
+            <li>Discuss common device-node errors and their troubleshooting methods.</li>
+            <li>Explain the use of strace in device-driver testing.</li>
+        </ol>
+
+        <h3>Practical Exercises</h3>
+        <ol>
+            <li>Load a character-device module in Ubuntu.</li>
+            <li>Verify the module using <code>lsmod</code>.</li>
+            <li>Inspect the major number using <code>/proc/devices</code>.</li>
+            <li>Inspect the device node using <code>ls -l</code> and <code>stat</code>.</li>
+            <li>Write a C program to open and close the device.</li>
+            <li>Trace the program using <code>strace</code>.</li>
+            <li>Test read and write operations using a driver that implements them.</li>
+            <li>Unload the module and verify that its device node is removed when automatically managed.</li>
+        </ol>
+    </section>
+
+    <section class="section">
+        <h2>16. Expected Learning Outcome</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Understand how user applications access character-device interfaces.</li>
+            <li>Verify driver registration and device-node creation.</li>
+            <li>Inspect device numbers and permissions.</li>
+            <li>Write a simple C application to test a device.</li>
+            <li>Understand how open, read, write, ioctl and close interact with driver callbacks.</li>
+            <li>Use Linux commands and strace for basic device-interface troubleshooting.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>Chapter 10 Completed</h2>
+
+        <div class="important">
+            You have completed all 10 lessons of Chapter 10 – Device Files and Device Interfaces.
+        </div>
+
+        <p>The next chapter introduces IOCTL-based device control, which allows user-space applications to configure and control character devices through custom commands.</p>
+    </section>
+
+    <div class="lesson-nav">
+        <a href="L09_class_create_and_device_create.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="../ch11_IOCTL_and_Device_Control/index.html">Next Chapter: Chapter 11 →</a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 10 – Device Files and Device Interfaces</p>
+</footer>
+
+</body>
+</html>
