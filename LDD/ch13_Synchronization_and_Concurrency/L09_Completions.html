@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 9: Completions | Linux Device Drivers</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 20px;
+}
+
+header h1 {
+    margin: 0 0 10px;
+    font-size: 30px;
+}
+
+header p {
+    margin: 0;
+}
+
+nav {
+    background: white;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+
+nav a {
+    display: inline-block;
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 5px 12px;
+}
+
+nav a:hover {
+    color: #007bff;
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e4efff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e2eaf5;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9c;
+    margin-top: 24px;
+}
+
+pre {
+    background: #17212e;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    line-height: 1.55;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+
+th, td {
+    border: 1px solid #d5dfeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #edf4ff;
+    border: 1px solid #bfd4f3;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+    font-weight: bold;
+}
+
+.diagram .arrow {
+    color: #174ea6;
+    font-size: 23px;
+    margin: 5px;
+}
+
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #fff0f0;
+    border-left: 5px solid #d9534f;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.navigation-buttons a:hover {
+    background: #2878d7;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 650px) {
+    header h1 {
+        font-size: 23px;
+    }
+
+    section {
+        padding: 17px;
+    }
+
+    table {
+        display: block;
+        overflow-x: auto;
+    }
+
+    .navigation-buttons {
+        flex-direction: column;
+    }
+
+    .navigation-buttons a {
+        text-align: center;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Lesson 9: Completions</h1>
+    <p>Linux Device Drivers – Synchronization and Concurrency</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> 13 – Synchronization and Concurrency<br>
+    <strong>Lesson:</strong> 9 – Completions<br>
+    <strong>Level:</strong> Intermediate<br>
+    <strong>Prerequisites:</strong> Semaphores, Wait Queues, Mutexes and Kernel Threads.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Define Linux kernel completions.</li>
+    <li>Understand event-based task synchronization.</li>
+    <li>Understand the <code>struct completion</code> data type.</li>
+    <li>Initialize completion objects.</li>
+    <li>Use <code>complete()</code> and <code>complete_all()</code>.</li>
+    <li>Use completion waiting functions.</li>
+    <li>Understand timeout-based and interruptible completion waits.</li>
+    <li>Apply completions to asynchronous device operations.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Completions</h2>
+
+<p>A <strong>completion</strong> is a Linux kernel synchronization mechanism that allows one execution context to wait until another execution context signals that an operation has finished.</p>
+
+<p>It is especially useful when a task starts an asynchronous operation and must wait for its completion.</p>
+
+<h3>Example Scenario</h3>
+
+<p>Consider a driver that starts a hardware operation.</p>
+
+<ol>
+    <li>The driver starts a device operation.</li>
+    <li>The operation continues asynchronously.</li>
+    <li>The calling task waits for the operation to finish.</li>
+    <li>The hardware generates an interrupt when the operation completes.</li>
+    <li>The interrupt handler signals the completion.</li>
+    <li>The waiting task resumes.</li>
+</ol>
+
+<div class="diagram">
+    <div>Process Context</div>
+    <div class="arrow">↓</div>
+    <div>Start Hardware Operation</div>
+    <div class="arrow">↓</div>
+    <div>wait_for_completion()</div>
+    <div class="arrow">↓</div>
+    <div>Task Sleeps</div>
+    <hr>
+    <div>Hardware Finishes Operation</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Handler</div>
+    <div class="arrow">↓</div>
+    <div>complete()</div>
+    <div class="arrow">↓</div>
+    <div>Waiting Task Resumes</div>
+</div>
+</section>
+
+<section>
+<h2>3. Why Are Completions Required?</h2>
+
+<p>Many device operations do not finish immediately.</p>
+
+<p>Examples include:</p>
+
+<ul>
+    <li>Waiting for a hardware command to finish.</li>
+    <li>Waiting for a DMA transfer to complete.</li>
+    <li>Waiting for a firmware-loading operation to finish.</li>
+    <li>Waiting for a kernel thread to complete a task.</li>
+    <li>Waiting for an asynchronous device response.</li>
+</ul>
+
+<p>A completion provides a direct way to communicate that a particular event has occurred.</p>
+
+<h3>Without Completion</h3>
+
+<p>A task might repeatedly check whether an operation has finished. This wastes CPU resources if the operation takes a long time.</p>
+
+<h3>With Completion</h3>
+
+<p>The task sleeps until another execution context signals that the event has occurred.</p>
+
+</section>
+
+<section>
+<h2>4. Completion Data Structure</h2>
+
+<p>Linux defines the completion mechanism using:</p>
+
+<pre><code>struct completion</code></pre>
+
+<p>Include the following header:</p>
+
+<pre><code>#include &lt;linux/completion.h&gt;</code></pre>
+
+<p>A completion object maintains internal state and a wait queue. Drivers should use the public completion API instead of accessing its internal fields directly.</p>
+
+<h3>Basic Declaration</h3>
+
+<pre><code>static struct completion my_completion;</code></pre>
+
+<p>This declares a completion object. It must be initialized before use.</p>
+</section>
+
+<section>
+<h2>5. Initializing Completion Objects</h2>
+
+<h3>5.1 Static Initialization</h3>
+
+<pre><code>static DECLARE_COMPLETION(my_completion);</code></pre>
+
+<p><code>DECLARE_COMPLETION()</code> declares and initializes a completion object.</p>
+
+<h3>5.2 Dynamic Initialization</h3>
+
+<pre><code>static struct completion my_completion;
+
+static int __init my_init(void)
+{
+    init_completion(&amp;my_completion);
+
+    return 0;
+}</code></pre>
+
+<p><code>init_completion()</code> initializes a completion object at runtime.</p>
+
+<div class="note">
+    Initialize the completion before any task can wait on it or signal it. Do not reinitialize a completion while other tasks may still be waiting on it or using it.
+</div>
+</section>
+
+<section>
+<h2>6. Completion Signaling Operations</h2>
+
+<h3>6.1 complete()</h3>
+
+<p><code>complete()</code> signals that an event has occurred.</p>
+
+<pre><code>complete(&amp;my_completion);</code></pre>
+
+<p>If a task is waiting, one waiter can be awakened. If no task is waiting, the completion records a signal so that a later waiter can consume it.</p>
+
+<h3>6.2 complete_all()</h3>
+
+<p><code>complete_all()</code> signals the completion for all current and future waiters until the completion is reinitialized.</p>
+
+<pre><code>complete_all(&amp;my_completion);</code></pre>
+
+<p>It is useful when multiple tasks must be informed that a common event has occurred.</p>
+
+<table>
+    <tr>
+        <th>Operation</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>complete()</code></td>
+        <td>Signals one completion event; normally wakes one waiting task.</td>
+    </tr>
+    <tr>
+        <td><code>complete_all()</code></td>
+        <td>Signals completion for all waiters.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>7. Completion Waiting Operations</h2>
+
+<h3>7.1 wait_for_completion()</h3>
+
+<p>Waits until the completion is signaled.</p>
+
+<pre><code>wait_for_completion(&amp;my_completion);</code></pre>
+
+<p>The calling task sleeps until another context calls <code>complete()</code> or <code>complete_all()</code>.</p>
+
+<h3>7.2 wait_for_completion_interruptible()</h3>
+
+<p>Allows the wait to be interrupted by a signal.</p>
+
+<pre><code>int ret;
+
+ret = wait_for_completion_interruptible(&amp;my_completion);
+
+if (ret) {
+    pr_info("Completion wait interrupted\n");
+    return ret;
+}
+
+pr_info("Operation completed\n");</code></pre>
+
+<p>Returns 0 on success or a negative error value if interrupted.</p>
+
+<h3>7.3 wait_for_completion_timeout()</h3>
+
+<p>Waits until the completion is signaled or a timeout expires.</p>
+
+<pre><code>unsigned long ret;
+
+ret = wait_for_completion_timeout(
+    &amp;my_completion,
+    5 * HZ
+);
+
+if (ret == 0) {
+    pr_info("Operation timed out\n");
+} else {
+    pr_info("Operation completed\n");
+}</code></pre>
+
+<p>The timeout is specified in jiffies. A positive return value indicates completion was signaled, while zero indicates timeout.</p>
+
+<h3>7.4 wait_for_completion_interruptible_timeout()</h3>
+
+<p>Combines signal-interruptible waiting with a timeout.</p>
+
+<pre><code>long ret;
+
+ret = wait_for_completion_interruptible_timeout(
+    &amp;my_completion,
+    5 * HZ
+);
+
+if (ret &lt; 0) {
+    pr_info("Wait interrupted\n");
+} else if (ret == 0) {
+    pr_info("Wait timed out\n");
+} else {
+    pr_info("Completion received\n");
+}</code></pre>
+
+<h3>Completion API Summary</h3>
+
+<table>
+    <tr>
+        <th>Function</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>wait_for_completion()</code></td>
+        <td>Waits until signaled.</td>
+    </tr>
+    <tr>
+        <td><code>wait_for_completion_interruptible()</code></td>
+        <td>Waits with signal interruption support.</td>
+    </tr>
+    <tr>
+        <td><code>wait_for_completion_timeout()</code></td>
+        <td>Waits with a timeout.</td>
+    </tr>
+    <tr>
+        <td><code>wait_for_completion_interruptible_timeout()</code></td>
+        <td>Waits with signal interruption and a timeout.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>8. How Completions Work</h2>
+
+<p>Consider a process that starts a device operation and waits for it to finish.</p>
+
+<div class="diagram">
+    <div>Initialize Completion</div>
+    <div class="arrow">↓</div>
+    <div>Start Asynchronous Operation</div>
+    <div class="arrow">↓</div>
+    <div>Task Calls wait_for_completion()</div>
+    <div class="arrow">↓</div>
+    <div>Task Sleeps</div>
+    <div class="arrow">↓</div>
+    <div>Operation Finishes</div>
+    <div class="arrow">↓</div>
+    <div>Another Context Calls complete()</div>
+    <div class="arrow">↓</div>
+    <div>Waiting Task Resumes</div>
+</div>
+
+<p>The completion mechanism avoids continuous polling. The waiting task can sleep while the operation proceeds independently.</p>
+</section>
+
+<section>
+<h2>9. Completion vs Wait Queue</h2>
+
+<p>Completions and wait queues both allow tasks to sleep and resume later, but their programming models differ.</p>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Completion</th>
+        <th>Wait Queue</th>
+    </tr>
+    <tr>
+        <td>Purpose</td>
+        <td>Signal that a specific event has occurred.</td>
+        <td>Wait until a specified condition becomes true.</td>
+    </tr>
+    <tr>
+        <td>Initialization</td>
+        <td><code>init_completion()</code></td>
+        <td><code>init_waitqueue_head()</code></td>
+    </tr>
+    <tr>
+        <td>Signal/wake</td>
+        <td><code>complete()</code></td>
+        <td><code>wake_up()</code> and related functions</td>
+    </tr>
+    <tr>
+        <td>Waiting</td>
+        <td><code>wait_for_completion()</code></td>
+        <td><code>wait_event()</code> and related macros</td>
+    </tr>
+    <tr>
+        <td>Condition handling</td>
+        <td>Completion state is maintained internally.</td>
+        <td>Driver supplies and manages the condition.</td>
+    </tr>
+    <tr>
+        <td>Typical use</td>
+        <td>Waiting for a specific operation to finish.</td>
+        <td>Waiting for data or a condition to become available.</td>
+    </tr>
+</table>
+
+<h3>When Should You Use a Completion?</h3>
+
+<ul>
+    <li>When a task needs to wait for a specific operation to finish.</li>
+    <li>When an interrupt handler must notify a waiting process that work is complete.</li>
+    <li>When one kernel thread must notify another that initialization or processing has finished.</li>
+</ul>
+</section>
+
+<section>
+<h2>10. Completion vs Semaphore vs Mutex</h2>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Completion</th>
+        <th>Semaphore</th>
+        <th>Mutex</th>
+    </tr>
+    <tr>
+        <td>Primary purpose</td>
+        <td>Event signaling</td>
+        <td>Permit counting</td>
+        <td>Exclusive ownership</td>
+    </tr>
+    <tr>
+        <td>Wait operation</td>
+        <td><code>wait_for_completion()</code></td>
+        <td><code>down()</code></td>
+        <td><code>mutex_lock()</code></td>
+    </tr>
+    <tr>
+        <td>Signal/release</td>
+        <td><code>complete()</code></td>
+        <td><code>up()</code></td>
+        <td><code>mutex_unlock()</code></td>
+    </tr>
+    <tr>
+        <td>Typical use</td>
+        <td>Operation finished</td>
+        <td>Resource available</td>
+        <td>Protect shared data</td>
+    </tr>
+</table>
+
+<p>These mechanisms are not interchangeable in every situation. Choose the mechanism whose semantics match the synchronization requirement.</p>
+</section>
+
+<section>
+<h2>11. Practical Kernel Module: Basic Completion</h2>
+
+<p>This example demonstrates signaling a completion and waiting for it.</p>
+
+<h3>Source Code: completion_basic.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/completion.h&gt;
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Linux Device Drivers Course");
+MODULE_DESCRIPTION("Basic Completion Demonstration");
+MODULE_VERSION("1.0");
+
+static struct completion my_completion;
+
+static int __init completion_init(void)
+{
+    pr_info("Completion module loaded\n");
+
+    init_completion(&amp;my_completion);
+
+    pr_info("Signaling completion\n");
+
+    complete(&amp;my_completion);
+
+    pr_info("Waiting for completion\n");
+
+    wait_for_completion(&amp;my_completion);
+
+    pr_info("Completion received successfully\n");
+
+    return 0;
+}
+
+static void __exit completion_exit(void)
+{
+    pr_info("Completion module unloaded\n");
+}
+
+module_init(completion_init);
+module_exit(completion_exit);</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li>Declare a completion object.</li>
+    <li>Initialize it using <code>init_completion()</code>.</li>
+    <li>Call <code>complete()</code> to signal the event.</li>
+    <li>Call <code>wait_for_completion()</code>.</li>
+    <li>Because the completion was already signaled, the wait returns immediately.</li>
+</ol>
+
+<div class="note">
+    This is a basic API demonstration. It does not demonstrate concurrent waiting because the completion is signaled before the wait begins.
+</div>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += completion_basic.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<h3>Compile and Test in Ubuntu</h3>
+
+<pre><code>make
+
+sudo insmod completion_basic.ko
+
+sudo dmesg | tail -20
+
+sudo rmmod completion_basic
+
+make clean</code></pre>
+
+<h3>Expected Output</h3>
+
+<pre><code>Completion module loaded
+Signaling completion
+Waiting for completion
+Completion received successfully
+Completion module unloaded</code></pre>
+</section>
+
+<section>
+<h2>12. Practical Kernel Module: Producer and Consumer</h2>
+
+<p>This example uses a kernel thread as a producer and the module initialization function as a consumer.</p>
+
+<p>The producer simulates an operation that takes two seconds. The consumer waits until the producer signals completion.</p>
+
+<h3>Source Code: completion_producer_consumer.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/completion.h&gt;
+#include &lt;linux/kthread.h&gt;
+#include &lt;linux/delay.h&gt;
+#include &lt;linux/sched.h&gt;
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Linux Device Drivers Course");
+MODULE_DESCRIPTION("Completion Producer Consumer Example");
+MODULE_VERSION("1.0");
+
+static DECLARE_COMPLETION(operation_done);
+
+static struct task_struct *worker_task;
+
+static int worker_function(void *data)
+{
+    pr_info("Worker: Operation started\n");
+
+    msleep(2000);
+
+    if (kthread_should_stop())
+        return 0;
+
+    pr_info("Worker: Operation finished\n");
+
+    complete(&amp;operation_done);
+
+    return 0;
+}
+
+static int __init completion_pc_init(void)
+{
+    int ret;
+
+    pr_info("Completion producer-consumer module loaded\n");
+
+    worker_task = kthread_run(
+        worker_function,
+        NULL,
+        "completion_worker"
+    );
+
+    if (IS_ERR(worker_task)) {
+        ret = PTR_ERR(worker_task);
+        worker_task = NULL;
+        return ret;
+    }
+
+    pr_info("Consumer: Waiting for operation\n");
+
+    wait_for_completion(&amp;operation_done);
+
+    pr_info("Consumer: Operation completed successfully\n");
+
+    return 0;
+}
+
+static void __exit completion_pc_exit(void)
+{
+    if (worker_task) {
+        kthread_stop(worker_task);
+        worker_task = NULL;
+    }
+
+    pr_info("Completion producer-consumer module unloaded\n");
+}
+
+module_init(completion_pc_init);
+module_exit(completion_pc_exit);</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li>A completion object is declared using <code>DECLARE_COMPLETION()</code>.</li>
+    <li>A worker kernel thread is created using <code>kthread_run()</code>.</li>
+    <li>The worker simulates a time-consuming operation.</li>
+    <li>The consumer calls <code>wait_for_completion()</code>.</li>
+    <li>The worker calls <code>complete()</code> when its operation finishes.</li>
+    <li>The waiting consumer resumes.</li>
+</ol>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += completion_producer_consumer.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<h3>Compile and Test</h3>
+
+<pre><code>make
+
+sudo insmod completion_producer_consumer.ko
+
+sudo dmesg | tail -30
+
+sudo rmmod completion_producer_consumer
+
+make clean</code></pre>
+
+<h3>Expected Output</h3>
+
+<pre><code>Completion producer-consumer module loaded
+Consumer: Waiting for operation
+Worker: Operation started
+Worker: Operation finished
+Consumer: Operation completed successfully
+Completion producer-consumer module unloaded</code></pre>
+
+<div class="note">
+    Log ordering can vary due to concurrent execution. The example uses an uninterruptible completion wait for simplicity. In production code, consider cancellation, timeout, error handling and worker lifetime carefully.
+</div>
+</section>
+
+<section>
+<h2>13. Completions in Hardware Device Drivers</h2>
+
+<p>Completions are particularly useful when a hardware operation is started in process context and finished asynchronously.</p>
+
+<h3>Example: DMA Transfer</h3>
+
+<p>Consider a device driver that starts a DMA transfer.</p>
+
+<ol>
+    <li>The driver prepares the DMA operation.</li>
+    <li>The driver starts the transfer.</li>
+    <li>The process waits for completion.</li>
+    <li>The hardware finishes transferring data.</li>
+    <li>The device generates an interrupt.</li>
+    <li>The interrupt handler acknowledges the interrupt and signals completion.</li>
+    <li>The waiting process resumes and processes the result.</li>
+</ol>
+
+<div class="diagram">
+    <div>Process Context</div>
+    <div class="arrow">↓</div>
+    <div>Prepare and Start DMA</div>
+    <div class="arrow">↓</div>
+    <div>wait_for_completion()</div>
+    <hr>
+    <div>DMA Hardware Transfers Data</div>
+    <div class="arrow">↓</div>
+    <div>Hardware Interrupt</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Handler</div>
+    <div class="arrow">↓</div>
+    <div>complete()</div>
+    <hr>
+    <div>Process Resumes</div>
+    <div class="arrow">↓</div>
+    <div>Process Transfer Result</div>
+</div>
+
+<h3>Important Design Considerations</h3>
+
+<ul>
+    <li>Initialize the completion before starting the asynchronous operation.</li>
+    <li>Use an appropriate reinitialization strategy before reusing the completion for another operation.</li>
+    <li>Ensure that the interrupt handler signals only the correct operation's completion.</li>
+    <li>Handle timeout and device-error conditions.</li>
+    <li>Do not release buffers or driver state while asynchronous hardware activity may still access them.</li>
+</ul>
+
+<div class="warning">
+    A completion only signals an event. It does not perform DMA mapping, synchronize DMA buffers, stop hardware, or guarantee that a device has safely released a buffer. Use the Linux DMA API and device-specific completion protocol correctly.
+</div>
+</section>
+
+<section>
+<h2>14. Reinitializing Completion Objects</h2>
+
+<p>A completion may be reused for multiple operations, but its state must be managed carefully.</p>
+
+<p>Linux provides:</p>
+
+<pre><code>reinit_completion(&amp;my_completion);</code></pre>
+
+<p>This resets the completion state so it can be used for a new event.</p>
+
+<h3>Conceptual Sequence</h3>
+
+<pre><code>init_completion(&amp;my_completion);
+
+/* First operation */
+start_operation();
+wait_for_completion(&amp;my_completion);
+
+/* Prepare for another operation */
+reinit_completion(&amp;my_completion);
+
+/* Second operation */
+start_operation();
+wait_for_completion(&amp;my_completion);</code></pre>
+
+<div class="warning">
+    Do not call <code>reinit_completion()</code> while tasks may still be waiting on the completion or while a previous operation can still signal it. Otherwise, a valid signal can be lost or the wrong operation can be associated with the signal.
+</div>
+</section>
+
+<section>
+<h2>15. Important Rules for Completions</h2>
+
+<ol>
+    <li>Initialize a completion before using it.</li>
+    <li>Call <code>complete()</code> when the intended event occurs.</li>
+    <li>Use <code>complete_all()</code> when all relevant waiters must be awakened.</li>
+    <li>Use timeout-based waits when indefinite waiting is unacceptable.</li>
+    <li>Check return values from interruptible and timeout-based waits.</li>
+    <li>Do not reinitialize a completion while previous waiters or operations may still use it.</li>
+    <li>Ensure the completion object remains valid until all users finish.</li>
+    <li>Do not confuse event signaling with protection of shared data.</li>
+    <li>Ensure module cleanup does not free resources while asynchronous work is still active.</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Common Completion Programming Mistakes</h2>
+
+<table>
+    <tr>
+        <th>Mistake</th>
+        <th>Why It Is Wrong</th>
+    </tr>
+    <tr>
+        <td>Using an uninitialized completion.</td>
+        <td>The completion object is not ready for use.</td>
+    </tr>
+    <tr>
+        <td>Waiting without a signaling path.</td>
+        <td>The waiting task may remain blocked indefinitely.</td>
+    </tr>
+    <tr>
+        <td>Calling <code>complete()</code> for the wrong operation.</td>
+        <td>A task may resume before its actual operation finishes.</td>
+    </tr>
+    <tr>
+        <td>Reinitializing while another task is waiting.</td>
+        <td>A signal or waiter may be lost.</td>
+    </tr>
+    <tr>
+        <td>Ignoring timeout results.</td>
+        <td>The driver may incorrectly assume the operation succeeded.</td>
+    </tr>
+    <tr>
+        <td>Freeing the completion object too early.</td>
+        <td>Other execution contexts may still reference it.</td>
+    </tr>
+    <tr>
+        <td>Using a completion as a mutex.</td>
+        <td>A completion signals an event; it does not provide mutex ownership.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>17. Debugging Completion Problems</h2>
+
+<p>Useful commands for inspecting kernel logs:</p>
+
+<pre><code>sudo dmesg | tail -50
+
+sudo journalctl -k -n 50
+
+lsmod | grep completion</code></pre>
+
+<p>When investigating a completion-related issue, check:</p>
+
+<ul>
+    <li>Whether the completion was initialized.</li>
+    <li>Whether the signaling code path executes.</li>
+    <li>Whether the correct completion object is signaled.</li>
+    <li>Whether the waiting task handles timeout or interruption correctly.</li>
+    <li>Whether the completion is reinitialized safely.</li>
+    <li>Whether asynchronous operations are stopped or completed before cleanup.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Lesson Summary</h2>
+
+<ul>
+    <li>A completion is a Linux kernel event-signaling mechanism.</li>
+    <li>It allows a task to wait until an operation finishes.</li>
+    <li><code>struct completion</code> represents a completion object.</li>
+    <li><code>DECLARE_COMPLETION()</code> provides static initialization.</li>
+    <li><code>init_completion()</code> performs runtime initialization.</li>
+    <li><code>complete()</code> signals a completion event.</li>
+    <li><code>complete_all()</code> signals completion for all waiters.</li>
+    <li><code>wait_for_completion()</code> waits for the event.</li>
+    <li>Interruptible and timeout-based waiting variants are also available.</li>
+    <li><code>reinit_completion()</code> resets a completion for reuse when safe.</li>
+    <li>Completions are useful for DMA, asynchronous hardware operations and kernel-thread coordination.</li>
+    <li>Completions do not replace mutexes, spinlocks or DMA synchronization.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Short Answer Questions</h2>
+
+<ol>
+    <li>What is a Linux kernel completion?</li>
+    <li>Why are completions required?</li>
+    <li>What is <code>struct completion</code>?</li>
+    <li>Which header file provides completion functions?</li>
+    <li>What does <code>DECLARE_COMPLETION()</code> do?</li>
+    <li>What is the purpose of <code>init_completion()</code>?</li>
+    <li>What does <code>complete()</code> do?</li>
+    <li>What is the difference between <code>complete()</code> and <code>complete_all()</code>?</li>
+    <li>What does <code>wait_for_completion()</code> do?</li>
+    <li>What is the purpose of <code>reinit_completion()</code>?</li>
+    <li>How can a completion be used with an interrupt handler?</li>
+    <li>What is the difference between a completion and a wait queue?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Long Answer Questions</h2>
+
+<ol>
+    <li>Explain Linux kernel completions with a diagram.</li>
+    <li>Discuss the completion data structure and initialization methods.</li>
+    <li>Explain completion signaling and waiting operations.</li>
+    <li>Compare <code>complete()</code> and <code>complete_all()</code>.</li>
+    <li>Explain interruptible and timeout-based completion waiting.</li>
+    <li>Compare completions, wait queues, semaphores and mutexes.</li>
+    <li>Explain the use of completions in DMA-based device drivers.</li>
+    <li>Discuss completion reinitialization and lifecycle management.</li>
+    <li>Describe common completion-related programming mistakes.</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Practical Exercises</h2>
+
+<ol>
+    <li>Write a kernel module that declares a completion object.</li>
+    <li>Initialize it using <code>init_completion()</code>.</li>
+    <li>Signal the completion using <code>complete()</code>.</li>
+    <li>Wait using <code>wait_for_completion()</code>.</li>
+    <li>Create a producer kernel thread that signals a completion.</li>
+    <li>Modify the consumer to use <code>wait_for_completion_timeout()</code>.</li>
+    <li>Demonstrate the use of <code>complete_all()</code> with multiple waiting tasks.</li>
+    <li>Explain how a DMA interrupt handler can signal completion.</li>
+    <li>Demonstrate safe completion reinitialization between operations.</li>
+</ol>
+
+<h3>Expected Learning Outcome</h3>
+
+<p>You should be able to implement completion-based synchronization, signal asynchronous operation results, handle waiting and timeout conditions, and apply completions to Linux device-driver development.</p>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L08_Wait_Queues.html">← Previous: Wait Queues</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L10_Read_Write_Locks.html">Next: Read-Write Locks →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 13 – Synchronization and Concurrency</p>
+</footer>
+
+</body>
+</html>
