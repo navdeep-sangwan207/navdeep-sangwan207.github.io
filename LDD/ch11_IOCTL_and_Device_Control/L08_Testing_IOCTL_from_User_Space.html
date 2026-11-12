@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Testing IOCTL from User Space | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Testing IOCTL from User Space</h1>
+    <p>Linux Device Drivers – Chapter 11, Lesson 8</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 11</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> IOCTL and Device Control</p>
+    <p><strong>Lesson:</strong> 8 – Testing IOCTL from User Space</p>
+    <p><strong>Prerequisites:</strong> IOCTL command macros, character drivers, unlocked_ioctl(), user-kernel data transfer and C programming.</p>
+    <p><strong>Objective:</strong> Learn to compile and execute a user-space test application, invoke IOCTL commands, verify driver responses and troubleshoot common errors.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction</h2>
+
+<p>After implementing an IOCTL handler in a Linux character driver, the next step is to test it from a user-space application.</p>
+
+<p>The application uses the <code>ioctl()</code> system call to send request codes and arguments to the driver.</p>
+
+<p>Testing helps verify:</p>
+<ul>
+    <li>Whether the device file can be opened.</li>
+    <li>Whether the IOCTL request reaches the correct callback.</li>
+    <li>Whether the driver recognizes the command.</li>
+    <li>Whether input data is copied correctly.</li>
+    <li>Whether output data is returned correctly.</li>
+    <li>Whether invalid requests are handled safely.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. Testing Architecture</h2>
+
+<div class="diagram">
+    <div class="diagram-box">User-Space Test Program</div>
+    <div class="arrow">ioctl() ↓</div>
+    <div class="diagram-box">Linux System Call Interface</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Character Driver</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">unlocked_ioctl()</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Device Operation</div>
+</div>
+
+<p>The test application acts as a client of the character driver. It sends commands and checks the returned results.</p>
+</section>
+
+<section class="section">
+<h2>3. Requirements for Testing</h2>
+
+<p>Before testing, ensure that the following components are available:</p>
+
+<table>
+<tr>
+    <th>Component</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>Linux kernel headers</td>
+    <td>Required to build the kernel module against the selected kernel.</td>
+</tr>
+<tr>
+    <td>GCC compiler</td>
+    <td>Compiles the user-space test program.</td>
+</tr>
+<tr>
+    <td>Kernel module</td>
+    <td>Contains the character driver and IOCTL handler.</td>
+</tr>
+<tr>
+    <td>Device number registration</td>
+    <td>Associates the driver with a major/minor device number.</td>
+</tr>
+<tr>
+    <td>Device node</td>
+    <td>Provides the application with a path such as /dev/mydevice.</td>
+</tr>
+<tr>
+    <td>IOCTL header</td>
+    <td>Provides matching request codes and structure definitions.</td>
+</tr>
+</table>
+
+<p>This lesson uses a memory-backed software device for demonstration. It does not require a physical peripheral.</p>
+</section>
+
+<section class="section">
+<h2>4. Define IOCTL Commands</h2>
+
+<p>Create a shared header named <code>my_device_ioctl.h</code>.</p>
+
+<pre><code>#ifndef MY_DEVICE_IOCTL_H
+#define MY_DEVICE_IOCTL_H
+
+#ifdef __KERNEL__
+#include &lt;linux/ioctl.h&gt;
+#else
+#include &lt;sys/ioctl.h&gt;
+#endif
+
+#define MY_DEVICE_MAGIC 'N'
+
+#define DEVICE_RESET \
+    _IO(MY_DEVICE_MAGIC, 1)
+
+#define SET_DEVICE_VALUE \
+    _IOW(MY_DEVICE_MAGIC, 2, int)
+
+#define GET_DEVICE_VALUE \
+    _IOR(MY_DEVICE_MAGIC, 3, int)
+
+#endif</code></pre>
+
+<p>The header defines three commands:</p>
+
+<ul>
+    <li><code>DEVICE_RESET</code> – resets the stored value.</li>
+    <li><code>SET_DEVICE_VALUE</code> – sends an integer to the driver.</li>
+    <li><code>GET_DEVICE_VALUE</code> – retrieves an integer from the driver.</li>
+</ul>
+
+<div class="note">
+    In a production interface, use compatible shared types and structure definitions. The user-space and kernel-space command definitions must produce matching request codes.
+</div>
+</section>
+
+<section class="section">
+<h2>5. User-Space Test Application</h2>
+
+<p>Create a file named <code>test_ioctl.c</code>.</p>
+
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/ioctl.h&gt;
+
+#include "my_device_ioctl.h"
+
+int main(void)
+{
+    int fd;
+    int value;
+
+    fd = open("/dev/mydevice", O_RDWR);
+
+    if (fd == -1) {
+        perror("open");
+        return EXIT_FAILURE;
+    }
+
+    printf("Device opened successfully\n");
+
+    /* Reset device */
+
+    if (ioctl(fd, DEVICE_RESET) == -1) {
+        perror("DEVICE_RESET");
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    printf("Device reset successful\n");
+
+    /* Send value to driver */
+
+    value = 250;
+
+    if (ioctl(fd, SET_DEVICE_VALUE, &amp;value) == -1) {
+        perror("SET_DEVICE_VALUE");
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    printf("Value sent: %d\n", value);
+
+    /* Retrieve value from driver */
+
+    value = 0;
+
+    if (ioctl(fd, GET_DEVICE_VALUE, &amp;value) == -1) {
+        perror("GET_DEVICE_VALUE");
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    printf("Value received: %d\n", value);
+
+    close(fd);
+
+    return EXIT_SUCCESS;
+}</code></pre>
+
+<p>The application performs three IOCTL operations and checks each return value.</p>
+</section>
+
+<section class="section">
+<h2>6. Understanding the Test Program</h2>
+
+<h3>Step 1: Open the Device</h3>
+
+<pre><code>fd = open("/dev/mydevice", O_RDWR);</code></pre>
+
+<p>The <code>open()</code> function returns a file descriptor if the device is opened successfully. Otherwise, it returns -1 and sets <code>errno</code>.</p>
+
+<h3>Step 2: Reset the Device</h3>
+
+<pre><code>ioctl(fd, DEVICE_RESET);</code></pre>
+
+<p>This sends a command without a pointer-based data argument.</p>
+
+<h3>Step 3: Send Data</h3>
+
+<pre><code>value = 250;
+ioctl(fd, SET_DEVICE_VALUE, &amp;value);</code></pre>
+
+<p>The driver receives the integer through <code>copy_from_user()</code>.</p>
+
+<h3>Step 4: Receive Data</h3>
+
+<pre><code>value = 0;
+ioctl(fd, GET_DEVICE_VALUE, &amp;value);</code></pre>
+
+<p>The driver returns the integer through <code>copy_to_user()</code>.</p>
+
+<h3>Step 5: Close the Device</h3>
+
+<pre><code>close(fd);</code></pre>
+
+<p>This releases the application's file descriptor.</p>
+</section>
+
+<section class="section">
+<h2>7. Compile the Application</h2>
+
+<p>Open an Ubuntu terminal and move to the directory containing the source file and shared header.</p>
+
+<pre><code>gcc -Wall -Wextra test_ioctl.c -o test_ioctl</code></pre>
+
+<p>The compiler creates an executable named <code>test_ioctl</code>.</p>
+
+<p>Check that the executable exists:</p>
+
+<pre><code>ls -l test_ioctl</code></pre>
+
+<p>If compilation fails, check:</p>
+<ul>
+    <li>Whether the shared header is in the correct directory.</li>
+    <li>Whether all command definitions are present.</li>
+    <li>Whether the application includes <code>&lt;sys/ioctl.h&gt;</code>.</li>
+    <li>Whether the C source contains syntax errors.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>8. Verify the Character Device</h2>
+
+<p>Before running the application, verify that the driver is loaded.</p>
+
+<pre><code>lsmod | grep my_device</code></pre>
+
+<p>Check the kernel log:</p>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<p>Check whether the device node exists:</p>
+
+<pre><code>ls -l /dev/mydevice</code></pre>
+
+<p>Inspect the device number:</p>
+
+<pre><code>stat /dev/mydevice</code></pre>
+
+<p>The device node's major and minor numbers must correspond to the character device registered by the driver.</p>
+
+<div class="note">
+    A device node does not by itself create or register a driver. It must refer to a registered device number handled by the appropriate driver.
+</div>
+</section>
+
+<section class="section">
+<h2>9. Run the Test Application</h2>
+
+<p>Execute the application:</p>
+
+<pre><code>sudo ./test_ioctl</code></pre>
+
+<p>Using <code>sudo</code> is only for a controlled learning environment where device permissions require elevated access. In normal deployments, configure appropriate device ownership and permissions instead.</p>
+
+<h3>Expected Output</h3>
+
+<pre><code>Device opened successfully
+Device reset successful
+Value sent: 250
+Value received: 250</code></pre>
+
+<p>The returned value should match the value stored by the driver.</p>
+
+<p>Actual output depends on the implementation of the character driver and its initial state.</p>
+</section>
+
+<section class="section">
+<h2>10. Verify Driver Kernel Logs</h2>
+
+<p>The driver can use kernel logging functions such as <code>pr_info()</code> to report important events.</p>
+
+<p>View recent kernel messages:</p>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<p>For example, a driver may log:</p>
+
+<pre><code>Device reset successful
+Device value updated: 250
+IOCTL GET_DEVICE_VALUE received</code></pre>
+
+<p>These messages help confirm whether the driver processed the expected commands.</p>
+
+<div class="note">
+    Kernel logs are diagnostic information, not a replacement for checking the application's return values. Also, <code>dmesg</code> reads the kernel ring buffer; persistent journal records can be inspected separately with <code>journalctl -k</code>.
+</div>
+</section>
+
+<section class="section">
+<h2>11. Test Invalid IOCTL Commands</h2>
+
+<p>A good test program should also verify that unsupported commands are rejected.</p>
+
+<p>For example, define an unknown request:</p>
+
+<pre><code>#define INVALID_COMMAND _IO('N', 99)</code></pre>
+
+<p>Test it from user space:</p>
+
+<pre><code>if (ioctl(fd, INVALID_COMMAND) == -1) {
+    perror("INVALID_COMMAND");
+}</code></pre>
+
+<p>If the driver returns <code>-ENOTTY</code>, the user-space application normally observes an <code>ioctl()</code> failure with <code>errno</code> set to <code>ENOTTY</code>.</p>
+
+<p>This test checks whether the driver's default command-handling case works correctly.</p>
+</section>
+
+<section class="section">
+<h2>12. Test Invalid Input Values</h2>
+
+<p>Suppose the driver accepts values only between 0 and 1000.</p>
+
+<p>Send an invalid value:</p>
+
+<pre><code>value = 5000;
+
+if (ioctl(fd, SET_DEVICE_VALUE, &amp;value) == -1) {
+    perror("SET_DEVICE_VALUE");
+}</code></pre>
+
+<p>The driver should validate the value and return <code>-EINVAL</code> for an invalid range.</p>
+
+<p>The application should observe the failure and handle it appropriately.</p>
+
+<div class="important">
+    Input validation must happen in the kernel driver. User-space validation is useful for application quality, but it cannot be trusted as the only security boundary.
+</div>
+</section>
+
+<section class="section">
+<h2>13. Common Errors and Troubleshooting</h2>
+
+<table>
+<tr>
+    <th>Error</th>
+    <th>Possible Cause</th>
+    <th>What to Check</th>
+</tr>
+<tr>
+    <td><code>ENOENT</code></td>
+    <td>Device path does not exist.</td>
+    <td>Check /dev/mydevice.</td>
+</tr>
+<tr>
+    <td><code>EACCES</code> or <code>EPERM</code></td>
+    <td>Insufficient permissions.</td>
+    <td>Check device-node permissions and access policy.</td>
+</tr>
+<tr>
+    <td><code>ENOTTY</code></td>
+    <td>Unsupported IOCTL command.</td>
+    <td>Compare command definitions and driver switch cases.</td>
+</tr>
+<tr>
+    <td><code>EFAULT</code></td>
+    <td>User-memory copy failed.</td>
+    <td>Check the pointer and data size.</td>
+</tr>
+<tr>
+    <td><code>EINVAL</code></td>
+    <td>Invalid argument or value.</td>
+    <td>Check the driver's validation rules.</td>
+</tr>
+<tr>
+    <td>Unexpected output</td>
+    <td>Incorrect state or data handling.</td>
+    <td>Check copy operations and driver logic.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>14. Testing Checklist</h2>
+
+<ul>
+    <li>Confirm that the kernel module builds successfully.</li>
+    <li>Confirm that the module loads successfully.</li>
+    <li>Confirm that the character device is registered.</li>
+    <li>Confirm that the device node uses the correct major/minor numbers.</li>
+    <li>Compile the user-space application.</li>
+    <li>Test every supported IOCTL command.</li>
+    <li>Verify data returned by the driver.</li>
+    <li>Test invalid command numbers.</li>
+    <li>Test invalid input values.</li>
+    <li>Check kernel logs for unexpected errors.</li>
+    <li>Close the device and unload the module safely.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>15. Lesson Summary</h2>
+
+<ul>
+    <li>User-space programs invoke IOCTL commands through <code>ioctl()</code>.</li>
+    <li>The application must open the correct device node first.</li>
+    <li>Request codes must match the definitions used by the driver.</li>
+    <li>Input and output arguments must follow the driver's expected data format.</li>
+    <li>The application should check every <code>ioctl()</code> return value.</li>
+    <li>Kernel logs help diagnose driver-side problems.</li>
+    <li>Invalid commands and invalid data should be tested.</li>
+    <li>Testing should cover normal operation and error conditions.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>16. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>Which system call is used to test IOCTL commands?</li>
+    <li>Why must the application open the device file first?</li>
+    <li>Which header is normally included by a user-space IOCTL program?</li>
+    <li>What does ioctl() return when a command fails?</li>
+    <li>How can kernel logs be inspected?</li>
+    <li>What does ENOTTY indicate?</li>
+    <li>Why should invalid input values be tested?</li>
+    <li>Why must the device node have the correct major and minor numbers?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain the complete procedure for testing IOCTL from user space.</li>
+    <li>Describe how to compile and run a user-space IOCTL application.</li>
+    <li>Explain how to test input and output data transfer.</li>
+    <li>Discuss common IOCTL testing errors and their solutions.</li>
+    <li>Explain the importance of negative testing in device-driver development.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Write a C program to open a character device.</li>
+    <li>Send a reset command using ioctl().</li>
+    <li>Send an integer to the driver and retrieve it.</li>
+    <li>Write a test for an unsupported IOCTL request.</li>
+    <li>Test an invalid integer value and inspect the returned error.</li>
+    <li>Use dmesg to inspect driver messages.</li>
+    <li>Prepare a test checklist for a character driver's IOCTL interface.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>17. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Compile a user-space IOCTL test program.</li>
+    <li>Open and communicate with a character device.</li>
+    <li>Invoke IOCTL commands with appropriate arguments.</li>
+    <li>Verify input and output data transfer.</li>
+    <li>Test invalid commands and invalid values.</li>
+    <li>Use kernel logs to troubleshoot IOCTL operations.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L07_IOCTL_Data_Transfer.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L09_IOCTL_Error_Handling.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 11 – IOCTL and Device Control</p>
+</footer>
+
+</body>
+</html>
