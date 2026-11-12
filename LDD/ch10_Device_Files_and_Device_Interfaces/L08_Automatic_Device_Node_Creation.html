@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Automatic Device Node Creation | Linux Device Drivers</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+
+nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+
+h3 { color: #245b9e; margin-top: 22px; }
+
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+code { font-family: Consolas, monospace; }
+
+.inline-code {
+    background: #edf2f8;
+    color: #b42318;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-family: Consolas, monospace;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-weight: bold;
+    font-size: 20px;
+}
+
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+
+.lesson-nav a:hover { background: #2878d7; }
+
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Automatic Device Node Creation</h1>
+    <p>Linux Device Drivers – Chapter 10, Lesson 8</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 10</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson Information</strong>
+        <p><strong>Chapter:</strong> Device Files and Device Interfaces</p>
+        <p><strong>Lesson:</strong> 8 – Automatic Device Node Creation</p>
+        <p><strong>Prerequisites:</strong> Device Nodes, Major and Minor Number Mapping, udev and Device Management.</p>
+        <p><strong>Objective:</strong> Understand how Linux automatically provides device nodes using devtmpfs and how device drivers and udev participate in device-node management.</p>
+    </div>
+
+    <section class="section">
+        <h2>1. Introduction</h2>
+
+        <p>A device driver may register a device with the Linux kernel, but user-space applications generally need a device node under <code>/dev</code> to access a character or block device through the normal file interface.</p>
+
+        <p>Traditionally, administrators could create device nodes manually using <code>mknod</code>. Modern Linux systems commonly automate this process through kernel device registration, devtmpfs, and user-space device management.</p>
+
+        <p>Automatic device-node management reduces manual work and supports dynamically detected devices.</p>
+
+        <div class="important">
+            Automatic device-node creation does not mean that every driver automatically gets a working device interface. The driver must register the relevant device correctly, and the system must provide the required device-node management support.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>2. What Is Automatic Device Node Creation?</h2>
+
+        <p>Automatic device-node creation is the process through which a device node becomes available under <code>/dev</code> without an administrator manually executing <code>mknod</code> for every device.</p>
+
+        <p>On many Linux systems, the kernel's devtmpfs filesystem provides the device node when the appropriate device is registered. udev can then apply additional configuration, such as permissions, ownership, and symbolic links.</p>
+
+        <p>For example, when a suitable USB serial device is detected, a device node such as the following may become available:</p>
+
+        <pre><code>/dev/ttyUSB0</code></pre>
+
+        <p>The exact name depends on the device, driver, and system configuration.</p>
+    </section>
+
+    <section class="section">
+        <h2>3. Components Involved in Automatic Device Node Creation</h2>
+
+        <table>
+            <tr>
+                <th>Component</th>
+                <th>Responsibility</th>
+            </tr>
+            <tr>
+                <td>Device Driver</td>
+                <td>Registers and implements the device interface.</td>
+            </tr>
+            <tr>
+                <td>Linux Device Model</td>
+                <td>Represents devices and their relationships in the kernel.</td>
+            </tr>
+            <tr>
+                <td>devtmpfs</td>
+                <td>Provides device nodes for registered devices on systems using devtmpfs.</td>
+            </tr>
+            <tr>
+                <td>udev</td>
+                <td>Processes device events and applies user-space rules.</td>
+            </tr>
+            <tr>
+                <td>/dev</td>
+                <td>Provides the filesystem location through which applications access device nodes.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="section">
+        <h2>4. Automatic Device Node Creation Architecture</h2>
+
+        <div class="diagram">
+            <div class="diagram-box">Device Detection or Driver Initialization</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Device Number Allocation</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Character or Block Device Registration</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Linux Device Model Registration</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">devtmpfs Provides Device Node</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">udev Applies Matching Rules</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Device Node Available Under /dev</div>
+        </div>
+
+        <p>This is a simplified view. The exact sequence depends on the device type, registration method, kernel configuration, and user-space device-management setup.</p>
+    </section>
+
+    <section class="section">
+        <h2>5. What Is devtmpfs?</h2>
+
+        <p><code>devtmpfs</code> is a virtual filesystem implemented in the Linux kernel. It provides device nodes for registered devices.</p>
+
+        <p>It is commonly mounted at:</p>
+
+        <pre><code>/dev</code></pre>
+
+        <p>When a driver registers a device with the appropriate device-model information, devtmpfs can provide the corresponding node in the mounted filesystem.</p>
+
+        <h3>Important Characteristics</h3>
+
+        <ul>
+            <li>It is implemented in the kernel.</li>
+            <li>It provides device nodes dynamically.</li>
+            <li>It reduces the need for manual <code>mknod</code> operations.</li>
+            <li>It works with the Linux device model.</li>
+            <li>It can provide initial device-node ownership and permission metadata.</li>
+        </ul>
+
+        <h3>Check Whether devtmpfs Is Mounted</h3>
+
+        <pre><code>mount | grep devtmpfs</code></pre>
+
+        <p>Another way to inspect the mount is:</p>
+
+        <pre><code>findmnt /dev</code></pre>
+
+        <p>On a typical Ubuntu installation, <code>/dev</code> is managed using devtmpfs.</p>
+    </section>
+
+    <section class="section">
+        <h2>6. Role of the Device Driver</h2>
+
+        <p>The device driver is responsible for registering the device interface with the kernel.</p>
+
+        <p>For a character driver, a typical sequence includes:</p>
+
+        <ol>
+            <li>Allocate a device-number range.</li>
+            <li>Initialize the <code>struct cdev</code> object.</li>
+            <li>Register the cdev using <code>cdev_add()</code>.</li>
+            <li>Create the device-model object when automatic device-node management through that interface is required.</li>
+            <li>Handle user-space operations through the driver's file operations.</li>
+        </ol>
+
+        <p>The driver does not normally write a regular file into <code>/dev</code>. It registers the device interface and provides the information used by the kernel device model and device-node management mechanisms.</p>
+    </section>
+
+    <section class="section">
+        <h2>7. Role of device_create()</h2>
+
+        <p>The kernel provides the <code>device_create()</code> function to create a device-model object associated with a device class.</p>
+
+        <p>Its commonly used declaration is:</p>
+
+        <pre><code>struct device *device_create(
+    struct class *class,
+    struct device *parent,
+    dev_t devt,
+    void *drvdata,
+    const char *fmt,
+    ...
+);</code></pre>
+
+        <p>Important parameters:</p>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td><code>class</code></td>
+                <td>Device class to which the device belongs.</td>
+            </tr>
+            <tr>
+                <td><code>parent</code></td>
+                <td>Parent device, or NULL when no parent is specified.</td>
+            </tr>
+            <tr>
+                <td><code>devt</code></td>
+                <td>Device number associated with the device.</td>
+            </tr>
+            <tr>
+                <td><code>drvdata</code></td>
+                <td>Optional driver-specific data.</td>
+            </tr>
+            <tr>
+                <td><code>fmt</code></td>
+                <td>Format string used to construct the device name.</td>
+            </tr>
+        </table>
+
+        <p>Example:</p>
+
+        <pre><code>device_create(my_class, NULL, dev,
+              NULL, "mydevice");</code></pre>
+
+        <p>This creates a device-model object named <code>mydevice</code> associated with the supplied device number.</p>
+
+        <div class="important">
+            <code>device_create()</code> does not itself implement the character driver's file operations or register the cdev. On systems using devtmpfs and udev, the device-model event normally leads to a corresponding device node under <code>/dev</code>.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>8. Role of udev</h2>
+
+        <p>udev is the user-space component that processes device events generated by the kernel.</p>
+
+        <p>After a device is registered, udev can apply rules to configure the device node.</p>
+
+        <p>Typical operations include:</p>
+
+        <ul>
+            <li>Assigning device-node permissions.</li>
+            <li>Changing owner and group.</li>
+            <li>Creating symbolic links.</li>
+            <li>Setting device-related properties.</li>
+            <li>Running configured helper programs.</li>
+        </ul>
+
+        <p>For example, a rule might assign a serial device to the <code>dialout</code> group and set mode <code>0660</code>.</p>
+
+        <pre><code>SUBSYSTEM=="tty", KERNEL=="ttyUSB0", \
+    GROUP="dialout", MODE="0660"</code></pre>
+
+        <p>This is an illustrative rule. Actual matching conditions must correspond to the real device.</p>
+    </section>
+
+    <section class="section">
+        <h2>9. Difference Between mknod and Automatic Device Node Creation</h2>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>Manual mknod</th>
+                <th>Automatic Management</th>
+            </tr>
+            <tr>
+                <td>Creation method</td>
+                <td>Administrator creates a device node manually.</td>
+                <td>Kernel device registration and device-management mechanisms provide the node.</td>
+            </tr>
+            <tr>
+                <td>Device number</td>
+                <td>Must be supplied by the administrator.</td>
+                <td>Obtained from the registered device interface.</td>
+            </tr>
+            <tr>
+                <td>Dynamic devices</td>
+                <td>Manual maintenance may be required.</td>
+                <td>Can respond to device registration and removal events.</td>
+            </tr>
+            <tr>
+                <td>Permissions</td>
+                <td>Specified or changed manually.</td>
+                <td>Can be configured through device metadata and udev rules.</td>
+            </tr>
+            <tr>
+                <td>Typical use</td>
+                <td>Manual or special-purpose device-node creation.</td>
+                <td>Normal device management on modern Linux systems.</td>
+            </tr>
+        </table>
+
+        <p>Both methods create or provide device nodes, but neither method replaces the driver implementation required to make the device functional.</p>
+    </section>
+
+    <section class="section">
+        <h2>10. Kernel Code: Automatic Device Node Setup</h2>
+
+        <p>The following example demonstrates the main registration sequence for a simple character device. It is a teaching example, not a complete production driver.</p>
+
+        <p>It uses dynamic device-number allocation, cdev registration, class creation, and device creation.</p>
+
+        <pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/cdev.h&gt;
+#include &lt;linux/device.h&gt;
+
+#define DEVICE_NAME "example_device"
+
+static dev_t dev;
+static struct cdev example_cdev;
+static struct class *example_class;
+static struct device *example_device;
+
+static const struct file_operations example_fops = {
+    .owner = THIS_MODULE,
+};
+
+static int __init example_init(void)
+{
+    int ret;
+
+    /* 1. Allocate one device number */
+    ret = alloc_chrdev_region(&amp;dev, 0, 1, DEVICE_NAME);
+    if (ret &lt; 0)
+        return ret;
+
+    /* 2. Initialize the character device */
+    cdev_init(&amp;example_cdev, &amp;example_fops);
+    example_cdev.owner = THIS_MODULE;
+
+    /* 3. Register the character device */
+    ret = cdev_add(&amp;example_cdev, dev, 1);
+    if (ret &lt; 0)
+        goto err_unregister;
+
+    /*
+     * 4. Create a device class.
+     * Linux 6.4 and newer use the one-argument form.
+     */
+    example_class = class_create("example_class");
+    if (IS_ERR(example_class)) {
+        ret = PTR_ERR(example_class);
+        goto err_cdev;
+    }
+
+    /* 5. Create the device-model object */
+    example_device = device_create(
+        example_class,
+        NULL,
+        dev,
+        NULL,
+        DEVICE_NAME
+    );
+
+    if (IS_ERR(example_device)) {
+        ret = PTR_ERR(example_device);
+        goto err_class;
+    }
+
+    pr_info("Device initialized successfully\n");
+    return 0;
+
+err_class:
+    class_destroy(example_class);
+
+err_cdev:
+    cdev_del(&amp;example_cdev);
+
+err_unregister:
+    unregister_chrdev_region(dev, 1);
+    return ret;
+}
+
+static void __exit example_exit(void)
+{
+    device_destroy(example_class, dev);
+    class_destroy(example_class);
+    cdev_del(&amp;example_cdev);
+    unregister_chrdev_region(dev, 1);
+
+    pr_info("Device removed\n");
+}
+
+module_init(example_init);
+module_exit(example_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Automatic device node creation example");
+MODULE_AUTHOR("NS Learning Hub");</code></pre>
+
+        <h3>Important Kernel Version Note</h3>
+
+        <p>The example uses the one-argument <code>class_create()</code> form for Linux kernel 6.4 and newer. Older kernel versions use:</p>
+
+        <pre><code>class_create(THIS_MODULE, "example_class");</code></pre>
+
+        <p>Use the signature supported by the kernel headers against which the module is compiled.</p>
+
+        <h3>Code Explanation</h3>
+
+        <table>
+            <tr>
+                <th>Function</th>
+                <th>Role</th>
+            </tr>
+            <tr>
+                <td><code>alloc_chrdev_region()</code></td>
+                <td>Reserves a device-number range.</td>
+            </tr>
+            <tr>
+                <td><code>cdev_init()</code></td>
+                <td>Initializes the cdev and associates file operations.</td>
+            </tr>
+            <tr>
+                <td><code>cdev_add()</code></td>
+                <td>Registers the character device.</td>
+            </tr>
+            <tr>
+                <td><code>class_create()</code></td>
+                <td>Creates a device class.</td>
+            </tr>
+            <tr>
+                <td><code>device_create()</code></td>
+                <td>Creates a device-model object associated with the device number.</td>
+            </tr>
+            <tr>
+                <td><code>device_destroy()</code></td>
+                <td>Removes the device-model object.</td>
+            </tr>
+            <tr>
+                <td><code>class_destroy()</code></td>
+                <td>Destroys the device class.</td>
+            </tr>
+            <tr>
+                <td><code>cdev_del()</code></td>
+                <td>Removes the cdev registration.</td>
+            </tr>
+            <tr>
+                <td><code>unregister_chrdev_region()</code></td>
+                <td>Releases the allocated device-number range.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            The example has no read or write callbacks. Its purpose is to demonstrate registration and device-node management. A usable driver needs appropriate file operations and careful lifetime management for active users.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>11. Building and Testing the Example</h2>
+
+        <p>Save the kernel source as:</p>
+
+        <pre><code>example_device.c</code></pre>
+
+        <h3>Makefile</h3>
+
+        <pre><code>obj-m += example_device.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+        <p>Make sure the recipe lines beginning with <code>make</code> use a real tab character in the Makefile.</p>
+
+        <h3>Compile</h3>
+
+        <pre><code>make</code></pre>
+
+        <h3>Load the Module</h3>
+
+        <pre><code>sudo insmod example_device.ko</code></pre>
+
+        <h3>Check the Device Node</h3>
+
+        <pre><code>ls -l /dev/example_device</code></pre>
+
+        <p>If devtmpfs and the relevant device-management support are active, the device node should normally appear after successful registration.</p>
+
+        <h3>Inspect Kernel Messages</h3>
+
+        <pre><code>dmesg | tail -n 20</code></pre>
+
+        <h3>Inspect the Registered Device</h3>
+
+        <pre><code>cat /proc/devices</code></pre>
+
+        <h3>Unload the Module</h3>
+
+        <pre><code>sudo rmmod example_device</code></pre>
+
+        <p>After successful cleanup, the device-model object is removed and the associated device node is normally removed by the system's device-node management mechanism.</p>
+
+        <div class="important">
+            This example is for a Linux 6.4+ API. Confirm the kernel version and headers in Ubuntu before compiling. Do not force-load a module built for a different kernel.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>12. Why Can a Device Node Fail to Appear?</h2>
+
+        <table>
+            <tr>
+                <th>Possible Cause</th>
+                <th>Explanation</th>
+            </tr>
+            <tr>
+                <td>Device number allocation failed</td>
+                <td>The driver did not reserve a valid device-number range.</td>
+            </tr>
+            <tr>
+                <td>cdev registration failed</td>
+                <td>The character-device interface was not successfully registered.</td>
+            </tr>
+            <tr>
+                <td>Class creation failed</td>
+                <td>The driver could not create the required device class.</td>
+            </tr>
+            <tr>
+                <td>device_create() failed</td>
+                <td>The device-model object could not be created.</td>
+            </tr>
+            <tr>
+                <td>devtmpfs unavailable or not mounted</td>
+                <td>The expected automatic device-node mechanism may not be active.</td>
+            </tr>
+            <tr>
+                <td>Device-management configuration problem</td>
+                <td>udev rules or system configuration may affect the resulting node.</td>
+            </tr>
+        </table>
+
+        <h3>Diagnostic Commands</h3>
+
+        <pre><code>mount | grep devtmpfs
+findmnt /dev
+cat /proc/devices
+ls -l /dev/
+dmesg | tail -n 30
+systemctl status systemd-udevd</code></pre>
+    </section>
+
+    <section class="section">
+        <h2>13. Important Concepts to Remember</h2>
+
+        <ul>
+            <li><code>mknod</code> manually creates a device node.</li>
+            <li><code>devtmpfs</code> is a kernel-managed filesystem that can provide device nodes.</li>
+            <li><code>udev</code> processes device events and applies user-space rules.</li>
+            <li><code>cdev_add()</code> registers a character-device interface.</li>
+            <li><code>device_create()</code> creates a device-model object.</li>
+            <li>devtmpfs and udev commonly make the device node available under <code>/dev</code>.</li>
+            <li>Device-node creation does not implement hardware communication.</li>
+            <li>A driver must still provide the required file operations and device behavior.</li>
+            <li>Cleanup must remove the device-model object and cdev registration and release the device-number range.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>14. Lesson Summary</h2>
+
+        <p>Automatic device-node creation is an important part of modern Linux device management. Instead of manually creating every node, Linux can provide device nodes through devtmpfs when drivers register devices appropriately.</p>
+
+        <p>udev complements this mechanism by applying rules for ownership, permissions, symbolic links, and other device properties.</p>
+
+        <p>The combination of driver registration, the Linux device model, devtmpfs, and udev provides a convenient device interface for user-space applications.</p>
+    </section>
+
+    <section class="section">
+        <h2>15. Practice Questions</h2>
+
+        <h3>Short Answer Questions</h3>
+        <ol>
+            <li>What is automatic device-node creation?</li>
+            <li>What is devtmpfs?</li>
+            <li>What is the role of udev?</li>
+            <li>What is the purpose of <code>device_create()</code>?</li>
+            <li>Does <code>device_create()</code> register a character device?</li>
+            <li>What is the difference between <code>mknod</code> and automatic device-node management?</li>
+            <li>Which command checks whether devtmpfs is mounted?</li>
+        </ol>
+
+        <h3>Long Answer Questions</h3>
+        <ol>
+            <li>Explain the architecture of automatic device-node creation.</li>
+            <li>Describe the roles of a device driver, devtmpfs, and udev.</li>
+            <li>Explain the sequence of operations involved in registering a character device and making its node available.</li>
+            <li>Explain the purpose and parameters of <code>device_create()</code>.</li>
+            <li>Describe common reasons why an expected device node may not appear.</li>
+        </ol>
+
+        <h3>Practical Exercises</h3>
+        <ol>
+            <li>Check whether devtmpfs is mounted in Ubuntu.</li>
+            <li>Inspect registered device majors using <code>cat /proc/devices</code>.</li>
+            <li>Write a simple module that allocates a device number and registers a cdev.</li>
+            <li>Extend the module using <code>class_create()</code> and <code>device_create()</code>.</li>
+            <li>Load the module and inspect the resulting device node under <code>/dev</code>.</li>
+            <li>Unload the module and verify that its device node is removed.</li>
+        </ol>
+    </section>
+
+    <section class="section">
+        <h2>16. Expected Learning Outcome</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Explain automatic device-node creation in Linux.</li>
+            <li>Understand the role of devtmpfs and udev.</li>
+            <li>Describe how driver registration connects to device-node management.</li>
+            <li>Understand the purpose of <code>class_create()</code> and <code>device_create()</code>.</li>
+            <li>Build and test a basic device-registration example.</li>
+            <li>Diagnose common device-node creation failures.</li>
+        </ul>
+    </section>
+
+    <div class="lesson-nav">
+        <a href="L07_udev_and_Device_Management.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L09_class_create_and_device_create.html">Next Lesson →</a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 10 – Device Files and Device Interfaces</p>
+</footer>
+
+</body>
+</html>
