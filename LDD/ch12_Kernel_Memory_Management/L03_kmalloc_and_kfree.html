@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>kmalloc() and kfree() | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>kmalloc() and kfree()</h1>
+    <p>Linux Device Drivers – Chapter 12, Lesson 3</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 12</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> Kernel Memory Management</p>
+    <p><strong>Lesson:</strong> 3 – kmalloc() and kfree()</p>
+    <p><strong>Prerequisites:</strong> C pointers, dynamic memory allocation and kernel allocation fundamentals.</p>
+    <p><strong>Objective:</strong> Understand how to allocate and release physically contiguous kernel memory using kmalloc() and kfree().</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction to kmalloc()</h2>
+
+<p><code>kmalloc()</code> is a Linux kernel function used to allocate a requested number of bytes from kernel-managed memory.</p>
+
+<p>It is commonly used in Linux device drivers to allocate:</p>
+<ul>
+    <li>Character-driver data buffers.</li>
+    <li>Device-specific data structures.</li>
+    <li>Temporary kernel data.</li>
+    <li>Small arrays and objects.</li>
+    <li>Internal driver management structures.</li>
+</ul>
+
+<p>Unlike the standard C library function <code>malloc()</code>, kmalloc() is designed for kernel-space allocation and accepts allocation flags that specify the permitted allocation behavior.</p>
+
+</section>
+
+<section class="section">
+<h2>2. Syntax of kmalloc()</h2>
+
+<pre><code>#include &lt;linux/slab.h&gt;
+
+void *kmalloc(size_t size, gfp_t flags);</code></pre>
+
+<h3>Parameters</h3>
+
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr>
+    <td><code>size</code></td>
+    <td>Number of bytes requested by the caller.</td>
+</tr>
+<tr>
+    <td><code>flags</code></td>
+    <td>Allocation flags describing the context and permitted allocation behavior.</td>
+</tr>
+</table>
+
+<h3>Return Value</h3>
+
+<ul>
+    <li>Returns a pointer to allocated kernel memory when successful.</li>
+    <li>Returns <code>NULL</code> when allocation fails.</li>
+</ul>
+
+<pre><code>char *buffer;
+
+buffer = kmalloc(256, GFP_KERNEL);
+
+if (buffer == NULL) {
+    pr_err("Allocation failed\n");
+    return -ENOMEM;
+}</code></pre>
+
+<div class="note">
+    The returned pointer is a kernel virtual address. It must not be directly dereferenced from user space.
+</div>
+</section>
+
+<section class="section">
+<h2>3. How kmalloc() Works</h2>
+
+<p>Linux kernel memory allocation uses multiple layers of memory management.</p>
+
+<p>For many relatively small allocations, kmalloc() obtains memory through the kernel's slab allocator infrastructure. SLUB is the default slab allocator on many Linux configurations.</p>
+
+<p>For larger requests, the implementation may use page-level allocation mechanisms. The exact internal path depends on the kernel version, configuration and requested size.</p>
+
+<div class="diagram">
+    <div class="diagram-box">Device Driver</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">kmalloc(size, flags)</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Allocation Infrastructure</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Slab Allocator / Page Allocator</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Memory</div>
+</div>
+
+<h3>Important Properties</h3>
+
+<ul>
+    <li>Returns memory that is virtually contiguous.</li>
+    <li>Provides physical contiguity for the requested allocation.</li>
+    <li>Suitable for many ordinary driver data structures and buffers.</li>
+    <li>Does not automatically initialize the returned memory.</li>
+    <li>Does not automatically make the memory DMA-safe.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>4. Physically Contiguous Memory</h2>
+
+<p>Physical contiguity means that the allocated memory occupies adjacent physical addresses.</p>
+
+<div class="diagram">
+    <div class="diagram-box">Physical Address 1000</div>
+    <div class="diagram-box">Physical Address 1001</div>
+    <div class="diagram-box">Physical Address 1002</div>
+    <div class="diagram-box">Physical Address 1003</div>
+    <p>Conceptual sequence of adjacent physical memory units</p>
+</div>
+
+<p>For example, a driver requests a 1024-byte allocation. kmalloc() provides a suitable contiguous region for that request.</p>
+
+<div class="note">
+    Physical contiguity alone does not guarantee that a device can access the memory. DMA-capable devices may use different address spaces, IOMMUs and architecture-specific mappings. Use the Linux DMA API for DMA buffers.
+</div>
+</section>
+
+<section class="section">
+<h2>5. Understanding GFP_KERNEL</h2>
+
+<p>The second argument of kmalloc() specifies allocation flags.</p>
+
+<pre><code>buffer = kmalloc(256, GFP_KERNEL);</code></pre>
+
+<p><code>GFP_KERNEL</code> is the common choice when allocation occurs in a context where sleeping is permitted.</p>
+
+<p>The allocation may trigger memory reclaim or other operations that can block the current task.</p>
+
+<h3>Where Can GFP_KERNEL Be Used?</h3>
+
+<ul>
+    <li>Module initialization routines, when the surrounding operation permits sleeping.</li>
+    <li>Ordinary process-context driver operations.</li>
+    <li>Driver callbacks that execute in sleepable context and do not hold incompatible locks.</li>
+</ul>
+
+<h3>Where Must It Not Be Used?</h3>
+
+<ul>
+    <li>Hard interrupt handlers.</li>
+    <li>While holding a spinlock.</li>
+    <li>Other atomic contexts where sleeping is forbidden.</li>
+</ul>
+
+<p>For non-sleeping contexts, an appropriate strategy may use GFP_ATOMIC, but preallocating buffers before the critical path is often preferable.</p>
+
+</section>
+
+<section class="section">
+<h2>6. Introduction to kfree()</h2>
+
+<p><code>kfree()</code> releases memory that was previously allocated using kmalloc-family functions.</p>
+
+<h3>Syntax</h3>
+
+<pre><code>void kfree(const void *objp);</code></pre>
+
+<h3>Example</h3>
+
+<pre><code>char *buffer;
+
+buffer = kmalloc(256, GFP_KERNEL);
+
+if (!buffer)
+    return -ENOMEM;
+
+/* Use the allocated memory */
+
+kfree(buffer);
+buffer = NULL;</code></pre>
+
+<p>After kfree() releases the allocation, the memory must no longer be accessed through the old pointer.</p>
+
+<div class="important">
+    Setting a pointer to NULL after freeing it can help prevent accidental reuse through that particular pointer. It does not fix other pointers that may still refer to the freed allocation.
+</div>
+</section>
+
+<section class="section">
+<h2>7. Memory Allocation and Deallocation Lifecycle</h2>
+
+<div class="diagram">
+    <div class="diagram-box">Declare Pointer</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">kmalloc()</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Check for NULL</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Initialize Memory</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Use Memory</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">kfree()</div>
+</div>
+
+<p>This lifecycle is important in kernel modules because memory allocated during initialization may need to remain available until the module is unloaded.</p>
+</section>
+
+<section class="section">
+<h2>8. Practical Example: Basic kmalloc() and kfree() Module</h2>
+
+<p>Create a source file named <code>kmalloc_demo.c</code>.</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/slab.h&gt;
+#include &lt;linux/string.h&gt;
+
+#define BUFFER_SIZE 256
+
+static char *buffer;
+
+static int __init kmalloc_demo_init(void)
+{
+    buffer = kmalloc(BUFFER_SIZE, GFP_KERNEL);
+
+    if (!buffer) {
+        pr_err("kmalloc: allocation failed\n");
+        return -ENOMEM;
+    }
+
+    memset(buffer, 0, BUFFER_SIZE);
+
+    snprintf(buffer, BUFFER_SIZE,
+             "Hello from kmalloc");
+
+    pr_info("kmalloc: allocated %d bytes\n",
+            BUFFER_SIZE);
+
+    pr_info("Buffer content: %s\n", buffer);
+
+    return 0;
+}
+
+static void __exit kmalloc_demo_exit(void)
+{
+    kfree(buffer);
+    buffer = NULL;
+
+    pr_info("kmalloc: memory released\n");
+}
+
+module_init(kmalloc_demo_init);
+module_exit(kmalloc_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("kmalloc and kfree demonstration");</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li><code>buffer</code> is a pointer to the allocated memory.</li>
+    <li><code>kmalloc()</code> requests 256 bytes.</li>
+    <li><code>GFP_KERNEL</code> permits a sleepable allocation.</li>
+    <li>The NULL check handles allocation failure.</li>
+    <li><code>memset()</code> initializes the buffer.</li>
+    <li><code>snprintf()</code> writes a string within the specified buffer size.</li>
+    <li><code>kfree()</code> releases the memory during module cleanup.</li>
+</ol>
+
+</section>
+
+<section class="section">
+<h2>9. Makefile</h2>
+
+<p>Create a file named <code>Makefile</code> in the same directory.</p>
+
+<pre><code>obj-m += kmalloc_demo.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>Ensure the recipe lines begin with actual tab characters.</p>
+</section>
+
+<section class="section">
+<h2>10. Compile and Test in Ubuntu</h2>
+
+<h3>Step 1: Install Build Dependencies</h3>
+
+<pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+<h3>Step 2: Compile the Module</h3>
+
+<pre><code>make</code></pre>
+
+<p>Successful compilation produces <code>kmalloc_demo.ko</code>.</p>
+
+<h3>Step 3: Load the Module</h3>
+
+<pre><code>sudo insmod kmalloc_demo.ko</code></pre>
+
+<h3>Step 4: Check Kernel Messages</h3>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<p>Illustrative output:</p>
+
+<pre><code>kmalloc: allocated 256 bytes
+Buffer content: Hello from kmalloc</code></pre>
+
+<h3>Step 5: Remove the Module</h3>
+
+<pre><code>sudo rmmod kmalloc_demo</code></pre>
+
+<p>Illustrative cleanup message:</p>
+
+<pre><code>kmalloc: memory released</code></pre>
+
+<h3>Step 6: Clean Build Files</h3>
+
+<pre><code>make clean</code></pre>
+
+<div class="note">
+    Kernel messages shown above are illustrative. Actual output may include timestamps, log-level prefixes and messages from other kernel components.
+</div>
+</section>
+
+<section class="section">
+<h2>11. Common Errors in kmalloc() and kfree()</h2>
+
+<table>
+<tr>
+    <th>Error</th>
+    <th>Explanation</th>
+    <th>Prevention</th>
+</tr>
+<tr>
+    <td>NULL pointer dereference</td>
+    <td>Using the pointer after allocation failure.</td>
+    <td>Check the return value of kmalloc().</td>
+</tr>
+<tr>
+    <td>Memory leak</td>
+    <td>Allocated memory is never released.</td>
+    <td>Free allocations on all applicable cleanup paths.</td>
+</tr>
+<tr>
+    <td>Double free</td>
+    <td>Releasing the same allocation more than once.</td>
+    <td>Maintain clear ownership and release exactly once.</td>
+</tr>
+<tr>
+    <td>Use-after-free</td>
+    <td>Accessing memory after kfree().</td>
+    <td>Ensure no active users remain before freeing memory.</td>
+</tr>
+<tr>
+    <td>Buffer overflow</td>
+    <td>Writing beyond the allocated size.</td>
+    <td>Validate lengths and use bounded operations.</td>
+</tr>
+<tr>
+    <td>Wrong allocator pairing</td>
+    <td>Passing a vmalloc() pointer to kfree().</td>
+    <td>Use the matching deallocation function.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>12. kmalloc() vs malloc()</h2>
+
+<table>
+<tr>
+    <th>kmalloc()</th>
+    <th>malloc()</th>
+</tr>
+<tr>
+    <td>Used in kernel space.</td>
+    <td>Used in user space through the C library.</td>
+</tr>
+<tr>
+    <td>Declared through kernel headers such as linux/slab.h.</td>
+    <td>Declared in stdlib.h.</td>
+</tr>
+<tr>
+    <td>Accepts allocation flags.</td>
+    <td>Does not accept GFP allocation flags.</td>
+</tr>
+<tr>
+    <td>Released using kfree().</td>
+    <td>Released using free().</td>
+</tr>
+<tr>
+    <td>Returns a kernel virtual address.</td>
+    <td>Returns a user-space virtual address.</td>
+</tr>
+</table>
+
+<div class="note">
+    Never call the user-space free() function on a kernel allocation. Likewise, kernel kfree() is not a user-space memory deallocator.
+</div>
+</section>
+
+<section class="section">
+<h2>13. When Should You Use kmalloc()?</h2>
+
+<p>Use kmalloc() when:</p>
+
+<ul>
+    <li>The requested allocation is reasonably sized.</li>
+    <li>Physical contiguity is required by the kernel operation.</li>
+    <li>The allocation is not required to be zero-initialized automatically.</li>
+    <li>The calling context permits the selected allocation flags.</li>
+    <li>The buffer does not require a different specialized allocation API.</li>
+</ul>
+
+<p>Consider alternatives when:</p>
+
+<ul>
+    <li>A large virtually contiguous buffer is needed: consider vmalloc().</li>
+    <li>Zero-initialized memory is required: consider kzalloc().</li>
+    <li>A zero-initialized array is needed: consider kcalloc().</li>
+    <li>DMA memory is required: use the DMA API.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>14. Lesson Summary</h2>
+
+<ul>
+    <li>kmalloc() dynamically allocates kernel memory.</li>
+    <li>It returns physically contiguous memory for the requested allocation.</li>
+    <li>GFP_KERNEL is commonly used in sleepable process context.</li>
+    <li>Allocation failure is indicated by NULL.</li>
+    <li>kmalloc() memory is not automatically zero-initialized.</li>
+    <li>kfree() releases kmalloc-family allocations.</li>
+    <li>Memory must not be accessed after it is freed.</li>
+    <li>Every allocation needs a clear ownership and cleanup strategy.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>15. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>What is kmalloc()?</li>
+    <li>Which header file declares kmalloc()?</li>
+    <li>What are the parameters of kmalloc()?</li>
+    <li>What does kmalloc() return when allocation fails?</li>
+    <li>What is the purpose of GFP_KERNEL?</li>
+    <li>Which function releases kmalloc() memory?</li>
+    <li>Is kmalloc() memory automatically initialized to zero?</li>
+    <li>What is a memory leak?</li>
+    <li>What is a double-free error?</li>
+    <li>Why is kmalloc() memory not automatically suitable for DMA?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain the syntax, parameters and return value of kmalloc().</li>
+    <li>Explain how kmalloc() uses Linux kernel memory allocation infrastructure.</li>
+    <li>Describe the purpose and usage of kfree().</li>
+    <li>Differentiate between kmalloc() and malloc().</li>
+    <li>Explain common errors associated with dynamic kernel memory allocation.</li>
+    <li>Describe the complete lifecycle of a kernel memory allocation.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Write a kernel module that allocates 128 bytes using kmalloc().</li>
+    <li>Modify the module to allocate 512 bytes.</li>
+    <li>Initialize the buffer using memset().</li>
+    <li>Store a message using snprintf() and print it with pr_info().</li>
+    <li>Release the memory in the module exit function.</li>
+    <li>Modify the initialization function to handle allocation failure.</li>
+    <li>Inspect kernel logs after loading and unloading the module.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>16. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Explain the purpose of kmalloc() and kfree().</li>
+    <li>Understand physical contiguity in kernel memory allocation.</li>
+    <li>Choose appropriate allocation flags for a permitted execution context.</li>
+    <li>Handle allocation failures safely.</li>
+    <li>Write, compile, load and unload a kernel module using kmalloc().</li>
+    <li>Identify common memory-management bugs.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L02_Kernel_Memory_Allocation.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 12 Index</a>
+    <a href="L04_vmalloc_and_vfree.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 12 – Kernel Memory Management</p>
+</footer>
+
+</body>
+</html>
