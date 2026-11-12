@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Device Nodes | Linux Device Drivers</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 20px}
+header h1{font-size:30px;margin-bottom:8px}
+nav{background:#082b60;padding:13px;text-align:center}
+nav a{color:white;text-decoration:none;margin:0 12px;font-weight:bold;font-size:14px}
+nav a:hover{color:#8ec5ff}
+.container{width:92%;max-width:1100px;margin:25px auto}
+.lesson-info{background:#e5f1ff;border-left:5px solid #2878d7;padding:18px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:24px;margin-bottom:22px;border-radius:8px;box-shadow:0 2px 7px rgba(0,0,0,.07)}
+h2{color:#174ea6;margin-bottom:15px;border-bottom:2px solid #e5eefb;padding-bottom:8px}
+h3{color:#1764ad;margin:18px 0 8px}
+p{margin-bottom:12px}
+ul,ol{margin:10px 0 15px 25px}
+li{margin-bottom:7px}
+pre{background:#172435;color:#e8f1ff;padding:17px;border-radius:6px;overflow-x:auto;margin:12px 0;font-size:14px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0;font-size:14px}
+th,td{border:1px solid #d7e0ec;padding:11px;text-align:left;vertical-align:top}
+th{background:#e5f1ff;color:#123b80}
+.diagram{background:#eef5ff;border:1px solid #b9d5f5;border-radius:8px;padding:18px;text-align:center;margin:18px 0}
+.diagram-box{display:inline-block;background:white;border:2px solid #2878d7;border-radius:7px;padding:12px 18px;margin:7px;font-weight:bold;color:#174ea6}
+.arrow{color:#174ea6;font-size:22px;font-weight:bold}
+.note{background:#fff8e6;border-left:4px solid #e5a000;padding:14px;margin:15px 0}
+.warning{background:#fff0f0;border-left:4px solid #d9534f;padding:14px;margin:15px 0}
+.navigation{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 18px;border-radius:5px;text-decoration:none;font-weight:bold}
+.navigation a:hover{background:#2878d7}
+footer{background:#082b60;color:white;text-align:center;padding:20px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 7px}section{padding:17px}table{font-size:12px}th,td{padding:7px}}
+</style>
+</head>
+<body>
+
+<header>
+<h1>Linux Device Drivers</h1>
+<p>Chapter 10: Device Files and Device Interfaces</p>
+<p>Lesson 3: Device Nodes</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">All Chapters</a>
+<a href="index.html">Chapter 10</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+<strong>Lesson Information</strong>
+<p><strong>Chapter:</strong> 10 – Device Files and Device Interfaces</p>
+<p><strong>Lesson:</strong> 3 – Device Nodes</p>
+<p><strong>Level:</strong> Beginner to Intermediate</p>
+<p><strong>Prerequisites:</strong> Device files, /dev directory, character and block devices, major and minor numbers.</p>
+<p><strong>Learning Goal:</strong> Understand device nodes, their metadata, device numbers and their relationship with registered Linux device drivers.</p>
+</div>
+
+<section>
+<h2>1. Introduction to Device Nodes</h2>
+<p>A <strong>device node</strong> is a special filesystem entry that represents a character or block device interface. Device nodes are commonly located in the Linux <code>/dev</code> directory.</p>
+<p>A user-space application can open a device node and use supported system calls to communicate with the corresponding kernel device interface.</p>
+<p>A device node contains information such as:</p>
+<ul>
+<li>Device type: character or block.</li>
+<li>Major device number.</li>
+<li>Minor device number.</li>
+<li>Ownership and permission information.</li>
+</ul>
+<div class="diagram">
+<div class="diagram-box">User Application</div>
+<div class="arrow">↓ open()</div>
+<div class="diagram-box">Device Node: /dev/example</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">VFS and Device Subsystem</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">Registered Device Driver</div>
+</div>
+<p>The device node identifies an interface; the driver or relevant kernel subsystem implements the operations.</p>
+</section>
+
+<section>
+<h2>2. What Is a Device Node?</h2>
+<p>A device node is not an ordinary file containing application data. It is a special filesystem object whose metadata identifies a device interface.</p>
+<p>For example, <code>/dev/null</code> is a character device node. Writing to it discards the supplied data, while reading from it returns end-of-file.</p>
+<h3>Important characteristics</h3>
+<ul>
+<li>Device nodes are filesystem entries.</li>
+<li>They can represent physical or virtual devices.</li>
+<li>They are associated with device numbers.</li>
+<li>They have ownership and permission bits.</li>
+<li>They provide a route to kernel-managed device operations.</li>
+</ul>
+<div class="note"><strong>Important:</strong> A device node alone does not implement hardware functionality. The corresponding driver or kernel subsystem must be registered and operational.</div>
+</section>
+
+<section>
+<h2>3. Types of Device Nodes</h2>
+<h3>3.1 Character Device Node</h3>
+<p>A character device node represents a character-device interface. Such interfaces commonly transfer data as streams of bytes or support device-specific operations.</p>
+<p>Examples include:</p>
+<ul>
+<li><code>/dev/null</code></li>
+<li><code>/dev/tty</code></li>
+<li><code>/dev/ttyS0</code>, when a corresponding serial interface exists.</li>
+<li>Custom character-device nodes created by drivers.</li>
+</ul>
+<p>In the output of <code>ls -l</code>, the first character is <code>c</code>.</p>
+<h3>3.2 Block Device Node</h3>
+<p>A block device node represents a block-oriented storage interface. The Linux block layer manages storage requests and related I/O operations.</p>
+<p>Examples include:</p>
+<ul>
+<li><code>/dev/sda</code>, when a disk uses this naming scheme.</li>
+<li><code>/dev/nvme0n1</code>, for a possible NVMe namespace.</li>
+<li><code>/dev/loop0</code>, for a loop device when present.</li>
+</ul>
+<p>In the output of <code>ls -l</code>, the first character is <code>b</code>.</p>
+<table>
+<tr><th>Feature</th><th>Character Node</th><th>Block Node</th></tr>
+<tr><td>File type indicator</td><td>c</td><td>b</td></tr>
+<tr><td>Typical data model</td><td>Stream-oriented</td><td>Block-oriented storage</td></tr>
+<tr><td>Kernel infrastructure</td><td>Character-device framework</td><td>Block I/O subsystem</td></tr>
+<tr><td>Examples</td><td>/dev/null, /dev/tty</td><td>/dev/sda, /dev/nvme0n1</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. Major and Minor Numbers</h2>
+<p>Each character or block device node has a device number containing two components.</p>
+<h3>Major number</h3>
+<p>The major number identifies a registered device-number range associated with a driver or device subsystem.</p>
+<h3>Minor number</h3>
+<p>The minor number distinguishes device instances or interfaces within the major-number range.</p>
+<div class="diagram">
+<div class="diagram-box">Device Number</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">Major Number</div>
+<div class="diagram-box">Minor Number</div>
+<p>Major: registered device-number range</p>
+<p>Minor: particular device instance or interface</p>
+</div>
+<p>In kernel code, the combined device number is represented by <code>dev_t</code>.</p>
+<pre><code>#include &lt;linux/types.h&gt;
+#include &lt;linux/kdev_t.h&gt;
+
+dev_t dev;
+
+unsigned int major_number = MAJOR(dev);
+unsigned int minor_number = MINOR(dev);</code></pre>
+<p><code>MAJOR()</code> and <code>MINOR()</code> extract the corresponding components from a device number.</p>
+<div class="note">A major number does not necessarily identify one physical hardware model. A driver can manage multiple instances using different minor numbers.</div>
+</section>
+
+<section>
+<h2>5. Understanding Device Node Metadata</h2>
+<p>Use the following command to inspect a device node:</p>
+<pre><code>ls -l /dev/null</code></pre>
+<p>A typical output is:</p>
+<pre><code>crw-rw-rw- 1 root root 1, 3 Nov 12 06:00 /dev/null</code></pre>
+<table>
+<tr><th>Field</th><th>Meaning</th></tr>
+<tr><td>c</td><td>Character special file.</td></tr>
+<tr><td>rw-rw-rw-</td><td>Permission bits.</td></tr>
+<tr><td>1</td><td>Link count.</td></tr>
+<tr><td>root</td><td>Owner.</td></tr>
+<tr><td>root</td><td>Group.</td></tr>
+<tr><td>1, 3</td><td>Major and minor numbers.</td></tr>
+<tr><td>Date and time</td><td>Displayed timestamp information.</td></tr>
+<tr><td>/dev/null</td><td>Device-node path.</td></tr>
+</table>
+<p>The exact owner, permissions and timestamps can vary according to system configuration.</p>
+<h3>Inspect with stat</h3>
+<pre><code>stat /dev/null</code></pre>
+<p>The <code>stat</code> command displays metadata, including file type and device numbers.</p>
+</section>
+
+<section>
+<h2>6. Device Node Creation and Driver Registration</h2>
+<p>Creating a device node and registering a driver are separate operations.</p>
+<table>
+<tr><th>Step</th><th>Operation</th><th>Purpose</th></tr>
+<tr><td>1</td><td><code>alloc_chrdev_region()</code></td><td>Allocates a device-number range.</td></tr>
+<tr><td>2</td><td><code>cdev_init()</code></td><td>Initializes a character-device object and associates file operations.</td></tr>
+<tr><td>3</td><td><code>cdev_add()</code></td><td>Registers the character device with the kernel.</td></tr>
+<tr><td>4</td><td><code>device_create()</code></td><td>Creates a device-model object.</td></tr>
+<tr><td>5</td><td>devtmpfs/udev or <code>mknod</code></td><td>Provides the corresponding filesystem device node.</td></tr>
+</table>
+<div class="warning"><strong>Do not confuse these operations:</strong> <code>cdev_add()</code> does not create a device node. <code>device_create()</code> creates a device-model object; devtmpfs and/or udev normally make the corresponding node available under <code>/dev</code>.</div>
+<p>The exact behavior of automatic node creation depends on the kernel and user-space device-management configuration.</p>
+</section>
+
+<section>
+<h2>7. Creating a Device Node with mknod</h2>
+<p>The <code>mknod</code> command can manually create a character or block device node.</p>
+<h3>General syntax</h3>
+<pre><code>sudo mknod PATH TYPE MAJOR MINOR</code></pre>
+<p>Where:</p>
+<ul>
+<li><code>PATH</code> is the desired device-node path.</li>
+<li><code>TYPE</code> is <code>c</code> for character or <code>b</code> for block.</li>
+<li><code>MAJOR</code> is the major number.</li>
+<li><code>MINOR</code> is the minor number.</li>
+</ul>
+<h3>Illustrative example</h3>
+<pre><code>sudo mknod /dev/mydevice c 240 0</code></pre>
+<p>This requests a character device node with major number 240 and minor number 0.</p>
+<div class="warning">The numbers are examples only. Use the actual numbers allocated and registered by the driver. Arbitrary numbers do not create a working driver interface.</div>
+<h3>Verify the node</h3>
+<pre><code>ls -l /dev/mydevice
+stat /dev/mydevice</code></pre>
+<p>These commands inspect the newly created node and its metadata.</p>
+</section>
+
+<section>
+<h2>8. Device Node Permissions</h2>
+<p>Device nodes use standard Linux ownership and permission mechanisms. These determine which users and groups can access the device interface.</p>
+<p>Permission categories include:</p>
+<ul>
+<li><strong>Owner:</strong> Permissions for the file owner.</li>
+<li><strong>Group:</strong> Permissions for members of the assigned group.</li>
+<li><strong>Others:</strong> Permissions for all other users.</li>
+</ul>
+<p>Common permission symbols are:</p>
+<table>
+<tr><th>Permission</th><th>Meaning</th></tr>
+<tr><td>r</td><td>Read access.</td></tr>
+<tr><td>w</td><td>Write access.</td></tr>
+<tr><td>x</td><td>Execute/search permission where applicable.</td></tr>
+<tr><td>-</td><td>Permission not granted.</td></tr>
+</table>
+<p>Inspect permissions:</p>
+<pre><code>ls -l /dev/tty
+stat /dev/tty</code></pre>
+<p>Device access can also be affected by security policies and driver-specific checks, not just the filesystem permission bits.</p>
+</section>
+
+<section>
+<h2>9. How Applications Use Device Nodes</h2>
+<p>A user-space application generally opens a device node to obtain a file descriptor. It then uses supported operations to communicate with the device interface.</p>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+
+int main(void)
+{
+    int fd;
+
+    fd = open("/dev/null", O_WRONLY);
+
+    if (fd &lt; 0)
+    {
+        perror("open");
+        return 1;
+    }
+
+    if (write(fd, "Device node test", 16) &lt; 0)
+    {
+        perror("write");
+        close(fd);
+        return 1;
+    }
+
+    close(fd);
+
+    printf("Write operation completed\n");
+
+    return 0;
+}</code></pre>
+<h3>Compile and execute</h3>
+<pre><code>gcc node_test.c -o node_test
+./node_test</code></pre>
+<h3>Expected output</h3>
+<pre><code>Write operation completed</code></pre>
+<p>The example writes to <code>/dev/null</code>, which discards the data. The application message confirms that its write call completed without reporting an error.</p>
+</section>
+
+<section>
+<h2>10. Device Nodes and the Virtual Filesystem</h2>
+<p>Linux uses the Virtual Filesystem (VFS) to provide a common interface to different filesystem and device operations.</p>
+<p>When a process opens a device node:</p>
+<ol>
+<li>The application calls <code>open()</code>.</li>
+<li>The VFS resolves the path and identifies the special filesystem entry.</li>
+<li>The device number and device type identify the relevant device interface.</li>
+<li>The kernel routes the operation through the corresponding device infrastructure.</li>
+<li>The driver or subsystem handles the requested operation.</li>
+</ol>
+<div class="diagram">
+<div class="diagram-box">Application</div>
+<div class="arrow">↓ open()</div>
+<div class="diagram-box">VFS</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">Device Node Metadata</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">Device Subsystem</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">Driver Operations</div>
+</div>
+<p>The precise routing mechanism depends on the device type and the kernel subsystem involved.</p>
+</section>
+
+<section>
+<h2>11. Device Nodes in Virtual Machines</h2>
+<p>Ubuntu running inside VirtualBox also contains device nodes. These can represent virtual hardware and kernel-provided interfaces.</p>
+<p>For example:</p>
+<ul>
+<li>Virtual storage devices.</li>
+<li>Terminal and pseudo-terminal devices.</li>
+<li>Virtual serial interfaces, when configured.</li>
+<li>Kernel-provided devices such as <code>/dev/null</code>.</li>
+</ul>
+<p>However, a device node for a physical GPIO, I2C or SPI controller will not necessarily be available inside a virtual machine.</p>
+<div class="note">For physical peripheral driver exercises, suitable hardware access, USB passthrough, supported host interfaces or hardware emulation may be required.</div>
+</section>
+
+<section>
+<h2>12. Common Errors and Troubleshooting</h2>
+<table>
+<tr><th>Problem</th><th>Possible Explanation</th></tr>
+<tr><td>No such file or directory</td><td>The requested device node does not exist at that path.</td></tr>
+<tr><td>Permission denied</td><td>The user lacks required permissions or access is restricted by a security policy.</td></tr>
+<tr><td>No such device</td><td>The relevant device interface may not be registered or available.</td></tr>
+<tr><td>Device or resource busy</td><td>The device or resource may already be in use or unavailable for the requested operation.</td></tr>
+<tr><td>Invalid argument</td><td>The operation or supplied argument may not be supported.</td></tr>
+</table>
+<p>Useful diagnostic commands:</p>
+<pre><code>ls -l /dev/mydevice
+stat /dev/mydevice
+cat /proc/devices
+dmesg | tail -n 30
+journalctl -k -n 30</code></pre>
+<p>Use the kernel log commands to inspect recent kernel messages. Access to some logs may require elevated privileges.</p>
+</section>
+
+<section>
+<h2>13. Practical Exercise</h2>
+<h3>Objective</h3>
+<p>Identify device nodes and inspect their device types, permissions and device numbers in Ubuntu.</p>
+<h3>Commands</h3>
+<pre><code>ls -l /dev/null
+ls -l /dev/zero
+ls -l /dev/tty
+
+stat /dev/null
+file /dev/null
+
+cat /proc/devices
+
+ls /sys/dev/char
+ls /sys/dev/block</code></pre>
+<h3>Tasks</h3>
+<ol>
+<li>Identify the file type of <code>/dev/null</code>.</li>
+<li>Record its major and minor numbers.</li>
+<li>Compare the metadata of <code>/dev/null</code> and <code>/dev/zero</code>.</li>
+<li>Identify the difference between character and block device nodes.</li>
+<li>Inspect the registered device information in <code>/proc/devices</code>.</li>
+<li>Explain why a device node can exist even when the corresponding hardware is unavailable.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>You should be able to recognize device nodes, inspect their metadata and explain how they relate to registered kernel device interfaces.</p>
+</section>
+
+<section>
+<h2>14. Summary</h2>
+<ul>
+<li>A device node is a special filesystem entry representing a device interface.</li>
+<li>Device nodes are commonly located in <code>/dev</code>.</li>
+<li>Character device nodes begin with <code>c</code> in long-listing output.</li>
+<li>Block device nodes begin with <code>b</code>.</li>
+<li>Device numbers contain major and minor components.</li>
+<li>Device nodes have ownership and permissions.</li>
+<li><code>mknod</code> creates a node but does not register a driver.</li>
+<li><code>cdev_add()</code> registers a character device but does not create its filesystem node.</li>
+<li>VFS and the relevant device subsystem route operations to the appropriate driver interface.</li>
+</ul>
+</section>
+
+<section>
+<h2>15. Practice Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is a device node?</li>
+<li>Where are device nodes commonly located?</li>
+<li>What is the difference between a character and block device node?</li>
+<li>What information is represented by a device number?</li>
+<li>What does <code>dev_t</code> represent?</li>
+<li>What is the purpose of the <code>mknod</code> command?</li>
+<li>Does <code>cdev_add()</code> create a device node?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain the structure and purpose of a Linux device node.</li>
+<li>Describe how major and minor numbers are used to identify device interfaces.</li>
+<li>Explain the difference between driver registration and device-node creation.</li>
+<li>Describe how VFS routes operations initiated through a device node.</li>
+</ol>
+<h3>Practical Questions</h3>
+<ol>
+<li>Write a command to inspect the metadata of <code>/dev/null</code>.</li>
+<li>How can you identify a block device node?</li>
+<li>Write the general syntax of <code>mknod</code>.</li>
+<li>Why is it unsafe to select arbitrary major and minor numbers?</li>
+<li>Which commands can help diagnose a device-node access problem?</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Expected Learning Outcomes</h2>
+<p>After completing this lesson, you should be able to:</p>
+<ul>
+<li>Define a Linux device node.</li>
+<li>Distinguish character and block device nodes.</li>
+<li>Interpret major and minor device numbers.</li>
+<li>Inspect device-node metadata and permissions.</li>
+<li>Explain how device nodes relate to driver registration.</li>
+<li>Understand the role of VFS in device access.</li>
+<li>Use basic commands to troubleshoot device-node problems.</li>
+</ul>
+</section>
+
+<div class="navigation">
+<a href="L02_dev_Directory.html">← Previous Lesson</a>
+<a href="index.html">Chapter 10 Index</a>
+<a href="L04_Creating_Device_Nodes_Using_mknod.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | Linux Device Drivers</p>
+<p>Chapter 10 – Device Files and Device Interfaces</p>
+</footer>
+
+</body>
+</html>
