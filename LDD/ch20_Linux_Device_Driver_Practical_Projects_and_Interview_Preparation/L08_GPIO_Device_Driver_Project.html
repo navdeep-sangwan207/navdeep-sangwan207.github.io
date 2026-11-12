@@ -1,1 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 8: GPIO Device Driver Project</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 18px}
+header h1{margin:0;font-size:27px}
+nav{background:white;text-align:center;padding:14px;box-shadow:0 2px 6px #00000012}
+nav a{display:inline-block;margin:5px 12px;color:#174ea6;text-decoration:none;font-weight:bold}
+.container{max-width:1050px;margin:25px auto;padding:0 16px}
+.info{background:#e8f1ff;border-left:5px solid #2878d7;padding:15px 20px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:22px 25px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 8px #0000000b}
+h2{color:#174ea6;border-bottom:2px solid #e5edf8;padding-bottom:8px}
+h3{color:#245b9e}
+pre{background:#172334;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note{background:#fff6df;border-left:4px solid #e0a000;padding:12px 15px;margin:15px 0}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #dce3ed;padding:10px;text-align:left}
+th{background:#eaf1fb}
+footer{text-align:center;padding:22px;color:#64748b}
+@media(max-width:600px){header h1{font-size:22px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 20: Linux Device Driver Practical Projects and Interview Preparation</h1>
+<p>Lesson 8: GPIO Device Driver Project</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">Linux Device Drivers</a>
+<a href="index.html">Chapter 20</a>
+<a href="L07_Sysfs_Based_Device_Interface_Project.html">Previous Lesson</a>
+</nav>
+
+<div class="container">
+
+<div class="info">
+<strong>Lesson:</strong> L08 – GPIO Device Driver Project<br>
+<strong>Level:</strong> Intermediate to Advanced<br>
+<strong>Environment:</strong> Ubuntu Linux, Device Tree and GPIO-capable hardware
+</div>
+
+<section>
+<h2>1. Introduction to GPIO</h2>
+<p>GPIO stands for General Purpose Input/Output. GPIO pins are configurable digital pins available on microcontrollers, processors and embedded Linux boards.</p>
+
+<p>A GPIO pin can generally operate in two modes:</p>
+<ul>
+<li><strong>Input:</strong> Reads a digital signal from an external device.</li>
+<li><strong>Output:</strong> Drives a digital signal to an external circuit.</li>
+</ul>
+
+<p>Common applications include LEDs, push buttons, relays, switches, sensors and control signals.</p>
+</section>
+
+<section>
+<h2>2. Project Objectives</h2>
+<ul>
+<li>Understand GPIO operation in embedded Linux.</li>
+<li>Understand GPIO controllers and GPIO descriptors.</li>
+<li>Learn the Linux GPIO descriptor API.</li>
+<li>Configure a GPIO as input or output.</li>
+<li>Control an LED using a GPIO output.</li>
+<li>Read a push button using a GPIO input.</li>
+<li>Understand GPIO mapping through Device Tree.</li>
+<li>Test a GPIO driver on suitable embedded hardware.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. GPIO Driver Architecture</h2>
+<pre><code>             User Application
+                    |
+                    v
+             Linux Kernel
+                    |
+                    v
+             GPIO Consumer
+                    |
+                    v
+          GPIO Descriptor API
+                    |
+                    v
+             GPIO Controller
+                    |
+                    v
+               GPIO Pin
+                    |
+          +---------+---------+
+          |                   |
+          v                   v
+         LED              Push Button
+       (Output)             (Input)</code></pre>
+</section>
+
+<section>
+<h2>4. GPIO Terminology</h2>
+<table>
+<tr><th>Term</th><th>Description</th></tr>
+<tr><td>GPIO Controller</td><td>Hardware block that manages GPIO pins.</td></tr>
+<tr><td>GPIO Consumer</td><td>Driver or subsystem that uses a GPIO.</td></tr>
+<tr><td>GPIO Descriptor</td><td>Kernel representation of a GPIO connection.</td></tr>
+<tr><td>GPIO Chip</td><td>Kernel representation of a GPIO controller.</td></tr>
+<tr><td>Active High</td><td>Logical active state corresponds to a high electrical level.</td></tr>
+<tr><td>Active Low</td><td>Logical active state corresponds to a low electrical level.</td></tr>
+<tr><td>Device Tree</td><td>Describes hardware and its connections to the kernel.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5. Linux GPIO Descriptor API</h2>
+<p>Modern Linux GPIO consumer drivers should normally use the GPIO descriptor-based API.</p>
+
+<table>
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>gpiod_get()</td><td>Obtains a GPIO descriptor.</td></tr>
+<tr><td>gpiod_put()</td><td>Releases a GPIO descriptor.</td></tr>
+<tr><td>gpiod_direction_input()</td><td>Configures a GPIO as input.</td></tr>
+<tr><td>gpiod_direction_output()</td><td>Configures a GPIO as output.</td></tr>
+<tr><td>gpiod_set_value_cansleep()</td><td>Sets an output GPIO that may sleep.</td></tr>
+<tr><td>gpiod_get_value_cansleep()</td><td>Reads an input GPIO that may sleep.</td></tr>
+<tr><td>devm_gpiod_get()</td><td>Obtains a managed GPIO descriptor.</td></tr>
+</table>
+
+<div class="note">
+<strong>Important:</strong> The descriptor API uses logical active/inactive values. Device Tree polarity information is handled by the GPIO framework. Do not assume logical 1 always means an electrical high level.
+</div>
+</section>
+
+<section>
+<h2>6. Project Hardware Requirements</h2>
+<ul>
+<li>Embedded Linux development board with GPIO support.</li>
+<li>One LED and a suitable current-limiting resistor.</li>
+<li>One push button or switch.</li>
+<li>Connecting wires and a breadboard.</li>
+<li>Linux kernel source and matching build environment.</li>
+</ul>
+
+<div class="note">
+<strong>Hardware safety:</strong> Check the board's GPIO voltage limits and pinout before connecting anything. Use a suitable LED resistor. Never connect a GPIO directly to a voltage above its permitted input level.
+</div>
+</section>
+
+<section>
+<h2>7. Device Tree GPIO Mapping</h2>
+<p>A device driver can obtain GPIO connections through Device Tree. The following is an illustrative node for a board-specific device.</p>
+
+<pre><code>my_gpio_device {
+    compatible = "ns,my-gpio-device";
+
+    led-gpios = &lt;&amp;gpio1 5 GPIO_ACTIVE_HIGH&gt;;
+    button-gpios = &lt;&amp;gpio1 6 GPIO_ACTIVE_LOW&gt;;
+};</code></pre>
+
+<p>Explanation:</p>
+<ul>
+<li><code>compatible</code> identifies the device.</li>
+<li><code>led-gpios</code> describes the LED GPIO connection.</li>
+<li><code>button-gpios</code> describes the button GPIO connection.</li>
+<li><code>GPIO_ACTIVE_HIGH</code> and <code>GPIO_ACTIVE_LOW</code> specify logical polarity.</li>
+</ul>
+
+<div class="note">
+The controller label, pin numbers, Device Tree placement and compatible string must match the actual board. This example is not a universal Device Tree overlay and cannot be loaded unchanged on every board.
+</div>
+</section>
+
+<section>
+<h2>8. Project Directory Structure</h2>
+<pre><code>gpio_project/
+|
+|-- gpio_driver.c
+|-- Makefile
+|-- gpio_device.dts</code></pre>
+
+<pre><code>mkdir -p ~/Linux_Driver_Projects/gpio_project
+cd ~/Linux_Driver_Projects/gpio_project</code></pre>
+</section>
+
+<section>
+<h2>9. Complete GPIO Driver Source Code</h2>
+<p>This example uses a platform driver and obtains the LED and button GPIOs through Device Tree.</p>
+
+<p>Create the source file:</p>
+<pre><code>nano gpio_driver.c</code></pre>
+
+<h3>File: gpio_driver.c</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/platform_device.h&gt;
+#include &lt;linux/gpio/consumer.h&gt;
+#include &lt;linux/of.h&gt;
+#include &lt;linux/err.h&gt;
+#include &lt;linux/delay.h&gt;
+
+struct my_gpio_data {
+    struct gpio_desc *led_gpio;
+    struct gpio_desc *button_gpio;
+};
+
+/* Probe callback */
+static int my_gpio_probe(struct platform_device *pdev)
+{
+    struct my_gpio_data *data;
+    int button_value;
+    int ret;
+
+    data = devm_kzalloc(&amp;pdev-&gt;dev,
+                        sizeof(*data),
+                        GFP_KERNEL);
+
+    if (!data)
+        return -ENOMEM;
+
+    /* Obtain LED GPIO as output, initially OFF */
+    data-&gt;led_gpio = devm_gpiod_get(
+        &amp;pdev-&gt;dev,
+        "led",
+        GPIOD_OUT_LOW
+    );
+
+    if (IS_ERR(data-&gt;led_gpio))
+        return dev_err_probe(
+            &amp;pdev-&gt;dev,
+            PTR_ERR(data-&gt;led_gpio),
+            "Failed to obtain LED GPIO\n"
+        );
+
+    /* Obtain button GPIO as input */
+    data-&gt;button_gpio = devm_gpiod_get(
+        &amp;pdev-&gt;dev,
+        "button",
+        GPIOD_IN
+    );
+
+    if (IS_ERR(data-&gt;button_gpio))
+        return dev_err_probe(
+            &amp;pdev-&gt;dev,
+            PTR_ERR(data-&gt;button_gpio),
+            "Failed to obtain button GPIO\n"
+        );
+
+    platform_set_drvdata(pdev, data);
+
+    dev_info(&amp;pdev-&gt;dev,
+             "GPIO driver initialized\n");
+
+    /* Demonstration: read button and control LED */
+    button_value = gpiod_get_value_cansleep(
+        data-&gt;button_gpio
+    );
+
+    if (button_value &lt; 0)
+        return button_value;
+
+    gpiod_set_value_cansleep(
+        data-&gt;led_gpio,
+        button_value
+    );
+
+    dev_info(&amp;pdev-&gt;dev,
+             "Initial button state: %d\n",
+             button_value);
+
+    return 0;
+}
+
+/* Remove callback */
+static void my_gpio_remove(struct platform_device *pdev)
+{
+    struct my_gpio_data *data =
+        platform_get_drvdata(pdev);
+
+    gpiod_set_value_cansleep(data-&gt;led_gpio, 0);
+
+    dev_info(&amp;pdev-&gt;dev,
+             "GPIO driver removed\n");
+}
+
+static const struct of_device_id my_gpio_of_match[] = {
+    { .compatible = "ns,my-gpio-device" },
+    { }
+};
+MODULE_DEVICE_TABLE(of, my_gpio_of_match);
+
+static struct platform_driver my_gpio_driver = {
+    .probe = my_gpio_probe,
+    .remove = my_gpio_remove,
+    .driver = {
+        .name = "ns_gpio_driver",
+        .of_match_table = my_gpio_of_match,
+    },
+};
+
+module_platform_driver(my_gpio_driver);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Device Tree Based GPIO Consumer Driver");
+MODULE_VERSION("1.0");</code></pre>
+</section>
+
+<section>
+<h2>10. Understanding the Driver Code</h2>
+
+<h3>10.1 Platform Driver</h3>
+<p>The platform driver binds to a platform device using its Device Tree compatible string.</p>
+
+<h3>10.2 Obtaining the LED GPIO</h3>
+<pre><code>data-&gt;led_gpio = devm_gpiod_get(
+    &amp;pdev-&gt;dev,
+    "led",
+    GPIOD_OUT_LOW
+);</code></pre>
+<p>The driver requests the GPIO named <code>led</code> and configures it as an output initially set to logical inactive.</p>
+
+<h3>10.3 Obtaining the Button GPIO</h3>
+<pre><code>data-&gt;button_gpio = devm_gpiod_get(
+    &amp;pdev-&gt;dev,
+    "button",
+    GPIOD_IN
+);</code></pre>
+<p>The driver requests the GPIO named <code>button</code> and configures it as an input.</p>
+
+<h3>10.4 Reading the Button</h3>
+<pre><code>button_value = gpiod_get_value_cansleep(
+    data-&gt;button_gpio
+);</code></pre>
+<p>This reads the logical button state. A negative return value indicates an error.</p>
+
+<h3>10.5 Controlling the LED</h3>
+<pre><code>gpiod_set_value_cansleep(
+    data-&gt;led_gpio,
+    button_value
+);</code></pre>
+<p>The LED output is set according to the logical button state, taking the configured GPIO polarity into account.</p>
+
+<h3>10.6 Managed Resource Allocation</h3>
+<p>The <code>devm_</code> functions automatically release resources when the device is detached or probe fails. This reduces manual cleanup code.</p>
+</section>
+
+<section>
+<h2>11. Create the Makefile</h2>
+<pre><code>nano Makefile</code></pre>
+
+<h3>File: Makefile</h3>
+<pre><code>obj-m += gpio_driver.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>Use a real tab character before each command under the targets.</p>
+</section>
+
+<section>
+<h2>12. Compile the Driver</h2>
+<pre><code>make
+
+modinfo gpio_driver.ko</code></pre>
+
+<p>The module is compiled against the running kernel headers. The target board must also have the matching driver and Device Tree configuration.</p>
+</section>
+
+<section>
+<h2>13. GPIO Input and Output Testing</h2>
+<p>After the driver is correctly deployed on the target board with its Device Tree node:</p>
+
+<pre><code># Inspect kernel messages
+sudo dmesg | tail -30
+
+# Check GPIO character-device controllers
+gpiodetect
+
+# List GPIO lines, if supported
+gpioinfo</code></pre>
+
+<p>These commands are provided by the libgpiod tools package on many Linux distributions.</p>
+
+<p>Expected driver messages may look like:</p>
+<pre><code>GPIO driver initialized
+Initial button state: 0</code></pre>
+
+<p>Actual messages and line information depend on the hardware and Device Tree configuration.</p>
+</section>
+
+<section>
+<h2>14. Important: This Example Is Not a Continuous Button Monitor</h2>
+<p>The sample driver reads the button once during probe and sets the LED once. It does not continuously monitor button changes.</p>
+
+<p>To implement continuous monitoring, a driver would normally use one of these approaches:</p>
+<ul>
+<li>GPIO interrupts for edge-triggered button events.</li>
+<li>A threaded IRQ handler when operations may sleep.</li>
+<li>A delayed work item for periodic polling when appropriate.</li>
+</ul>
+
+<p>These approaches require additional synchronization, debouncing and resource-management logic.</p>
+</section>
+
+<section>
+<h2>15. GPIO Interrupts and Debouncing</h2>
+<p>Mechanical buttons can produce multiple rapid transitions when pressed or released. This behavior is called switch bouncing.</p>
+
+<p>Common techniques include:</p>
+<ul>
+<li>Hardware RC debounce circuits.</li>
+<li>GPIO controller debounce support.</li>
+<li>Software delayed work.</li>
+<li>Interrupt masking and delayed state verification.</li>
+</ul>
+
+<p>For interrupt-based GPIO handling, the driver can obtain an IRQ using <code>gpiod_to_irq()</code> and register an interrupt handler using the Linux IRQ API.</p>
+</section>
+
+<section>
+<h2>16. GPIO Legacy API vs Descriptor API</h2>
+<table>
+<tr><th>Legacy Integer GPIO API</th><th>Modern Descriptor API</th></tr>
+<tr><td>gpio_request()</td><td>gpiod_get()</td></tr>
+<tr><td>gpio_direction_input()</td><td>gpiod_direction_input()</td></tr>
+<tr><td>gpio_direction_output()</td><td>gpiod_direction_output()</td></tr>
+<tr><td>gpio_get_value()</td><td>gpiod_get_value()</td></tr>
+<tr><td>gpio_set_value()</td><td>gpiod_set_value()</td></tr>
+<tr><td>gpio_free()</td><td>gpiod_put()</td></tr>
+</table>
+
+<p>New driver development should generally prefer the descriptor-based API.</p>
+</section>
+
+<section>
+<h2>17. VirtualBox and GPIO Hardware Limitations</h2>
+<p>Ubuntu running inside VirtualBox does not automatically receive direct access to the host computer's physical GPIO pins.</p>
+
+<p>Therefore, this project has two different testing possibilities:</p>
+
+<h3>Software Study</h3>
+<ul>
+<li>Study the GPIO API and driver source code.</li>
+<li>Compile the module against the Ubuntu kernel headers.</li>
+<li>Understand Device Tree mappings and probe behavior.</li>
+<li>Use kernel documentation and simulated examples.</li>
+</ul>
+
+<h3>Physical Hardware Testing</h3>
+<ul>
+<li>Use a GPIO-capable embedded Linux board.</li>
+<li>Configure the board-specific Device Tree.</li>
+<li>Connect the LED and button safely.</li>
+<li>Build and load the driver on the target board.</li>
+<li>Verify actual GPIO input and output behavior.</li>
+</ul>
+
+<div class="note">
+<strong>Important for your learning setup:</strong> A successful compilation inside VirtualBox does not prove that the host laptop has usable GPIO hardware or that the driver can control a physical pin. Physical testing requires a compatible GPIO controller and correctly configured target hardware.
+</div>
+</section>
+
+<section>
+<h2>18. Common Errors and Troubleshooting</h2>
+<table>
+<tr><th>Error</th><th>Possible Cause</th><th>Solution</th></tr>
+<tr><td>Probe not called</td><td>Device Tree compatible string mismatch</td><td>Verify the compatible property.</td></tr>
+<tr><td>Failed to obtain GPIO</td><td>GPIO mapping missing or invalid</td><td>Check the GPIO controller and Device Tree property.</td></tr>
+<tr><td>GPIO busy</td><td>Another driver owns the line</td><td>Inspect GPIO ownership and avoid conflicting consumers.</td></tr>
+<tr><td>Invalid GPIO value</td><td>Read operation failed</td><td>Check the return value and controller support.</td></tr>
+<tr><td>LED does not respond</td><td>Incorrect wiring or polarity</td><td>Verify pin mapping, voltage and active level.</td></tr>
+<tr><td>Invalid module format</td><td>Kernel version mismatch</td><td>Build for the target kernel.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>19. Practical Exercises</h2>
+<ol>
+<li>Modify the driver to control two LEDs.</li>
+<li>Read two independent push buttons.</li>
+<li>Implement continuous button monitoring using GPIO interrupts.</li>
+<li>Add software debouncing.</li>
+<li>Change the LED to active-low operation using Device Tree.</li>
+<li>Study the output of <code>gpiodetect</code> and <code>gpioinfo</code>.</li>
+<li>Investigate GPIO access on a Raspberry Pi or another embedded Linux board.</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Interview Questions</h2>
+<ol>
+<li>What is GPIO?</li>
+<li>What is the difference between GPIO input and output?</li>
+<li>What is a GPIO controller?</li>
+<li>What is a GPIO descriptor?</li>
+<li>Why is the descriptor-based GPIO API preferred?</li>
+<li>What is the purpose of gpiod_get()?</li>
+<li>What is the difference between gpiod_get_value() and gpiod_get_value_cansleep()?</li>
+<li>What is the purpose of gpiod_set_value_cansleep()?</li>
+<li>What is Device Tree?</li>
+<li>How are GPIO pins described in Device Tree?</li>
+<li>What is active-low GPIO configuration?</li>
+<li>What is switch debouncing?</li>
+<li>How can GPIO interrupts be used in a device driver?</li>
+<li>Why is direct GPIO access not automatically available inside VirtualBox?</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Lesson Summary</h2>
+<ul>
+<li>GPIO provides digital input and output functionality.</li>
+<li>Linux drivers should generally use the GPIO descriptor API.</li>
+<li>Device Tree describes GPIO connections for embedded hardware.</li>
+<li>gpiod_get() obtains a GPIO descriptor.</li>
+<li>gpiod_get_value_cansleep() reads a GPIO that may sleep.</li>
+<li>gpiod_set_value_cansleep() controls a GPIO that may sleep.</li>
+<li>GPIO interrupts and debouncing are important for responsive input handling.</li>
+<li>Physical testing requires compatible embedded Linux hardware.</li>
+</ul>
+</section>
+
+<div class="info">
+<strong>Next Lesson:</strong> Lesson 9 – I2C Sensor Driver Project
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | Linux Device Drivers Course</p>
+</footer>
+
+</body>
+</html>
