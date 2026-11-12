@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Practical IOCTL Driver | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Practical IOCTL Driver</h1>
+    <p>Linux Device Drivers – Chapter 11, Lesson 10</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 11</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> IOCTL and Device Control</p>
+    <p><strong>Lesson:</strong> 10 – Practical IOCTL Driver</p>
+    <p><strong>Prerequisites:</strong> Character driver registration, file operations, IOCTL commands, user-kernel data transfer and error handling.</p>
+    <p><strong>Objective:</strong> Develop, compile, load and test a complete memory-backed character driver that supports reset, set-value and get-value IOCTL operations.</p>
+    <p><strong>Development Environment:</strong> Ubuntu Linux running in VirtualBox, GCC and matching Linux kernel headers.</p>
+</div>
+
+<section class="section">
+<h2>1. Project Introduction</h2>
+
+<p>In this practical project, we will develop a character device driver that accepts control commands from a user-space application through the IOCTL interface.</p>
+
+<p>The driver will maintain an integer value in kernel memory and provide three operations:</p>
+
+<table>
+<tr>
+    <th>Command</th>
+    <th>Operation</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>DEVICE_RESET</code></td>
+    <td>Reset</td>
+    <td>Set the stored value to zero.</td>
+</tr>
+<tr>
+    <td><code>SET_DEVICE_VALUE</code></td>
+    <td>Write</td>
+    <td>Transfer an integer from user space to kernel space.</td>
+</tr>
+<tr>
+    <td><code>GET_DEVICE_VALUE</code></td>
+    <td>Read</td>
+    <td>Transfer the stored integer from kernel space to user space.</td>
+</tr>
+</table>
+
+<p>This project demonstrates the complete path from application command to driver execution.</p>
+</section>
+
+<section class="section">
+<h2>2. Project Architecture</h2>
+
+<div class="diagram">
+    <div class="diagram-box">User-Space Application</div>
+    <div class="arrow">↓ ioctl()</div>
+    <div class="diagram-box">Linux System Call Interface</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Character Device Driver</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">unlocked_ioctl()</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Device Value</div>
+</div>
+
+<p>The user application sends IOCTL commands through a device file such as <code>/dev/mydevice</code>.</p>
+
+<p>The kernel routes each request to the driver's <code>unlocked_ioctl()</code> callback. The callback identifies the command and performs the requested operation.</p>
+</section>
+
+<section class="section">
+<h2>3. Project Directory Structure</h2>
+
+<p>Create a project directory named <code>practical_ioctl</code>.</p>
+
+<pre><code>practical_ioctl/
+|
+|-- my_device_ioctl.h
+|-- ioctl_driver.c
+|-- test_ioctl.c
+|-- Makefile</code></pre>
+
+<p>Each file has a separate responsibility:</p>
+
+<table>
+<tr>
+    <th>File</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>my_device_ioctl.h</td>
+    <td>Shared IOCTL command and data definitions.</td>
+</tr>
+<tr>
+    <td>ioctl_driver.c</td>
+    <td>Kernel character driver implementation.</td>
+</tr>
+<tr>
+    <td>test_ioctl.c</td>
+    <td>User-space test application.</td>
+</tr>
+<tr>
+    <td>Makefile</td>
+    <td>Build instructions for the kernel module.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>4. Create the Shared IOCTL Header</h2>
+
+<p>Create <code>my_device_ioctl.h</code>.</p>
+
+<pre><code>#ifndef MY_DEVICE_IOCTL_H
+#define MY_DEVICE_IOCTL_H
+
+#ifdef __KERNEL__
+#include &lt;linux/ioctl.h&gt;
+#include &lt;linux/types.h&gt;
+typedef __s32 my_device_s32;
+#else
+#include &lt;sys/ioctl.h&gt;
+#include &lt;stdint.h&gt;
+typedef int32_t my_device_s32;
+#endif
+
+#define MY_DEVICE_MAGIC 'N'
+
+#define DEVICE_RESET \
+    _IO(MY_DEVICE_MAGIC, 1)
+
+#define SET_DEVICE_VALUE \
+    _IOW(MY_DEVICE_MAGIC, 2, my_device_s32)
+
+#define GET_DEVICE_VALUE \
+    _IOR(MY_DEVICE_MAGIC, 3, my_device_s32)
+
+#endif</code></pre>
+
+<h3>Explanation</h3>
+
+<ul>
+    <li><code>MY_DEVICE_MAGIC</code> identifies this device's IOCTL command group.</li>
+    <li><code>DEVICE_RESET</code> performs a command without a data argument.</li>
+    <li><code>SET_DEVICE_VALUE</code> transfers an integer from user space to the driver.</li>
+    <li><code>GET_DEVICE_VALUE</code> transfers an integer from the driver to user space.</li>
+    <li>The conditional includes provide kernel and user-space definitions of the same fixed-width data type.</li>
+</ul>
+
+<div class="note">
+    Keep this header in a location included by both builds. The kernel Makefile and user-space compiler must use the same header file so that command definitions cannot drift apart.
+</div>
+</section>
+
+<section class="section">
+<h2>5. Implement the Kernel Driver</h2>
+
+<p>Create <code>ioctl_driver.c</code>.</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/cdev.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/mutex.h&gt;
+#include &lt;linux/err.h&gt;
+
+#include "my_device_ioctl.h"
+
+#define DEVICE_NAME "mydevice"
+
+static dev_t device_number;
+static struct cdev my_cdev;
+
+static DEFINE_MUTEX(device_lock);
+static my_device_s32 device_value = 0;
+
+/* Open callback */
+
+static int my_open(
+    struct inode *inode,
+    struct file *file)
+{
+    pr_info("mydevice: opened\n");
+    return 0;
+}
+
+/* Release callback */
+
+static int my_release(
+    struct inode *inode,
+    struct file *file)
+{
+    pr_info("mydevice: closed\n");
+    return 0;
+}
+
+/* IOCTL callback */
+
+static long my_ioctl(
+    struct file *file,
+    unsigned int cmd,
+    unsigned long arg)
+{
+    my_device_s32 value;
+    long ret = 0;
+
+    switch (cmd) {
+
+    case DEVICE_RESET:
+
+        mutex_lock(&amp;device_lock);
+
+        device_value = 0;
+
+        mutex_unlock(&amp;device_lock);
+
+        pr_info("mydevice: value reset\n");
+        break;
+
+    case SET_DEVICE_VALUE:
+
+        if (copy_from_user(
+                &amp;value,
+                (my_device_s32 __user *)arg,
+                sizeof(value))) {
+            return -EFAULT;
+        }
+
+        if (value &lt; 0 || value &gt; 1000) {
+            return -EINVAL;
+        }
+
+        mutex_lock(&amp;device_lock);
+
+        device_value = value;
+
+        mutex_unlock(&amp;device_lock);
+
+        pr_info("mydevice: value updated\n");
+        break;
+
+    case GET_DEVICE_VALUE:
+
+        mutex_lock(&amp;device_lock);
+
+        value = device_value;
+
+        mutex_unlock(&amp;device_lock);
+
+        if (copy_to_user(
+                (my_device_s32 __user *)arg,
+                &amp;value,
+                sizeof(value))) {
+            return -EFAULT;
+        }
+
+        pr_info("mydevice: value read\n");
+        break;
+
+    default:
+        ret = -ENOTTY;
+        break;
+    }
+
+    return ret;
+}
+
+/* File operations */
+
+static const struct file_operations my_fops = {
+    .owner = THIS_MODULE,
+    .open = my_open,
+    .release = my_release,
+    .unlocked_ioctl = my_ioctl
+};
+
+/* Module initialization */
+
+static int __init my_driver_init(void)
+{
+    int ret;
+
+    /* Allocate device number */
+
+    ret = alloc_chrdev_region(
+        &amp;device_number,
+        0,
+        1,
+        DEVICE_NAME);
+
+    if (ret &lt; 0) {
+        pr_err("mydevice: device number allocation failed\n");
+        return ret;
+    }
+
+    /* Initialize character device */
+
+    cdev_init(&amp;my_cdev, &amp;my_fops);
+    my_cdev.owner = THIS_MODULE;
+
+    /* Add character device */
+
+    ret = cdev_add(
+        &amp;my_cdev,
+        device_number,
+        1);
+
+    if (ret &lt; 0) {
+        pr_err("mydevice: cdev_add failed\n");
+        unregister_chrdev_region(device_number, 1);
+        return ret;
+    }
+
+    pr_info("mydevice: driver registered\n");
+    pr_info("mydevice: major = %u, minor = %u\n",
+            MAJOR(device_number),
+            MINOR(device_number));
+
+    return 0;
+}
+
+/* Module cleanup */
+
+static void __exit my_driver_exit(void)
+{
+    cdev_del(&amp;my_cdev);
+
+    unregister_chrdev_region(device_number, 1);
+
+    pr_info("mydevice: driver unregistered\n");
+}
+
+module_init(my_driver_init);
+module_exit(my_driver_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Practical IOCTL Character Device Driver");</code></pre>
+
+<h3>Important Driver Concepts</h3>
+
+<ul>
+    <li><code>alloc_chrdev_region()</code> dynamically allocates a device number.</li>
+    <li><code>cdev_init()</code> associates the character device with file operations.</li>
+    <li><code>cdev_add()</code> makes the character-device registration available.</li>
+    <li><code>unlocked_ioctl()</code> handles IOCTL requests.</li>
+    <li><code>copy_from_user()</code> receives input data.</li>
+    <li><code>copy_to_user()</code> returns output data.</li>
+    <li><code>mutex</code> protects the shared device value from concurrent access.</li>
+</ul>
+
+<div class="important">
+    This is a teaching driver. It registers a character device but does not create a /dev node automatically. The device node will be created manually in this exercise using the actual major and minor numbers printed by the driver.
+</div>
+</section>
+
+<section class="section">
+<h2>6. Create the Kernel Module Makefile</h2>
+
+<p>Create a file named <code>Makefile</code>.</p>
+
+<pre><code>obj-m += ioctl_driver.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>The Makefile instructs Kbuild to compile <code>ioctl_driver.c</code> into a loadable kernel module.</p>
+
+<div class="note">
+    The recipe lines beginning with <code>$(MAKE)</code> must start with actual tab characters, not spaces.
+</div>
+</section>
+
+<section class="section">
+<h2>7. Implement the User-Space Test Program</h2>
+
+<p>Create <code>test_ioctl.c</code>.</p>
+
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/ioctl.h&gt;
+
+#include "my_device_ioctl.h"
+
+int main(void)
+{
+    int fd;
+    my_device_s32 value;
+
+    fd = open("/dev/mydevice", O_RDWR);
+
+    if (fd == -1) {
+        perror("open");
+        return EXIT_FAILURE;
+    }
+
+    printf("Device opened successfully\n");
+
+    /* Reset */
+
+    if (ioctl(fd, DEVICE_RESET) == -1) {
+        perror("DEVICE_RESET");
+        goto error;
+    }
+
+    printf("Device reset successful\n");
+
+    /* Set value */
+
+    value = 250;
+
+    if (ioctl(fd, SET_DEVICE_VALUE, &amp;value) == -1) {
+        perror("SET_DEVICE_VALUE");
+        goto error;
+    }
+
+    printf("Value sent to driver: %d\n", value);
+
+    /* Get value */
+
+    value = 0;
+
+    if (ioctl(fd, GET_DEVICE_VALUE, &amp;value) == -1) {
+        perror("GET_DEVICE_VALUE");
+        goto error;
+    }
+
+    printf("Value received from driver: %d\n", value);
+
+    close(fd);
+
+    return EXIT_SUCCESS;
+
+error:
+    close(fd);
+    return EXIT_FAILURE;
+}</code></pre>
+
+<h3>Application Workflow</h3>
+
+<ol>
+    <li>Open the device file.</li>
+    <li>Send the reset command.</li>
+    <li>Send the integer 250 to the driver.</li>
+    <li>Request the stored integer.</li>
+    <li>Display the returned value.</li>
+    <li>Close the device file.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>8. Install Required Build Tools</h2>
+
+<p>Open Ubuntu terminal and update the package information.</p>
+
+<pre><code>sudo apt update</code></pre>
+
+<p>Install the compiler and required build tools:</p>
+
+<pre><code>sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+<p>Verify the running kernel version:</p>
+
+<pre><code>uname -r</code></pre>
+
+<p>Verify that the kernel build directory exists:</p>
+
+<pre><code>ls -l /lib/modules/$(uname -r)/build</code></pre>
+
+<p>The headers must match the running kernel. If matching headers are unavailable, use a kernel version for which Ubuntu provides the corresponding headers.</p>
+</section>
+
+<section class="section">
+<h2>9. Compile the Kernel Driver</h2>
+
+<p>Move into the project directory:</p>
+
+<pre><code>cd practical_ioctl</code></pre>
+
+<p>Build the module:</p>
+
+<pre><code>make</code></pre>
+
+<p>If compilation succeeds, the module file should be generated:</p>
+
+<pre><code>ls -l ioctl_driver.ko</code></pre>
+
+<p>The <code>.ko</code> extension identifies a Linux kernel module.</p>
+</section>
+
+<section class="section">
+<h2>10. Load the Kernel Module</h2>
+
+<p>Insert the module:</p>
+
+<pre><code>sudo insmod ioctl_driver.ko</code></pre>
+
+<p>Check whether it is loaded:</p>
+
+<pre><code>lsmod | grep ioctl_driver</code></pre>
+
+<p>Inspect recent kernel messages:</p>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<p>Look for the driver's registration message and its dynamically allocated major/minor numbers.</p>
+
+<pre><code>mydevice: driver registered
+mydevice: major = &lt;actual-major&gt;, minor = 0</code></pre>
+
+<p>The numbers above are placeholders. Use the actual values printed by your driver.</p>
+</section>
+
+<section class="section">
+<h2>11. Create the Device Node</h2>
+
+<p>The driver in this project does not call <code>device_create()</code>. Therefore, create a device node manually.</p>
+
+<p>Use the major and minor numbers reported in the kernel log:</p>
+
+<pre><code>sudo mknod /dev/mydevice c &lt;actual-major&gt; 0</code></pre>
+
+<p>Replace <code>&lt;actual-major&gt;</code> with the actual major number. Do not type the placeholder literally.</p>
+
+<p>Set temporary permissions for this controlled exercise:</p>
+
+<pre><code>sudo chmod 666 /dev/mydevice</code></pre>
+
+<p>Verify the node:</p>
+
+<pre><code>ls -l /dev/mydevice
+stat /dev/mydevice</code></pre>
+
+<div class="note">
+    <code>mknod</code> creates a device-file entry; it does not load the module or register the character driver. The device number must match the registered driver. The broad permissions above are for a temporary lab exercise only; production devices should use appropriately restricted ownership and permissions.
+</div>
+</section>
+
+<section class="section">
+<h2>12. Compile the User-Space Application</h2>
+
+<p>Compile the application separately from the kernel module:</p>
+
+<pre><code>gcc -Wall -Wextra test_ioctl.c -o test_ioctl</code></pre>
+
+<p>Verify the executable:</p>
+
+<pre><code>ls -l test_ioctl</code></pre>
+
+<p>The user-space application uses GCC directly. It is not compiled through Kbuild.</p>
+</section>
+
+<section class="section">
+<h2>13. Execute the IOCTL Test Program</h2>
+
+<p>Run the application:</p>
+
+<pre><code>sudo ./test_ioctl</code></pre>
+
+<p>Illustrative expected output:</p>
+
+<pre><code>Device opened successfully
+Device reset successful
+Value sent to driver: 250
+Value received from driver: 250</code></pre>
+
+<p>The value returned by the driver should be 250 because that is the value sent by the application.</p>
+
+<h3>Verify Kernel Messages</h3>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<p>Depending on the driver's logging and system configuration, you may see messages for device opening, resetting, updating and reading.</p>
+</section>
+
+<section class="section">
+<h2>14. Test Invalid Input</h2>
+
+<p>The driver accepts integer values from 0 through 1000. Modify the test application temporarily:</p>
+
+<pre><code>value = 5000;
+
+if (ioctl(fd, SET_DEVICE_VALUE, &amp;value) == -1) {
+    perror("SET_DEVICE_VALUE");
+}</code></pre>
+
+<p>The driver should reject this value with <code>-EINVAL</code>. The application should report an error similar to:</p>
+
+<pre><code>SET_DEVICE_VALUE: Invalid argument</code></pre>
+
+<p>This verifies that validation is performed inside the kernel driver.</p>
+</section>
+
+<section class="section">
+<h2>15. Test an Unsupported IOCTL Command</h2>
+
+<p>For an additional test, temporarily add an unsupported request to the application:</p>
+
+<pre><code>#define INVALID_COMMAND _IO('N', 99)
+
+if (ioctl(fd, INVALID_COMMAND) == -1) {
+    perror("INVALID_COMMAND");
+}</code></pre>
+
+<p>The driver's default switch case should return <code>-ENOTTY</code>.</p>
+
+<p>Expected error text is typically:</p>
+
+<pre><code>INVALID_COMMAND: Inappropriate ioctl for device</code></pre>
+</section>
+
+<section class="section">
+<h2>16. Debugging with strace</h2>
+
+<p><code>strace</code> can trace system calls made by the user-space application.</p>
+
+<p>Install it if necessary:</p>
+
+<pre><code>sudo apt install strace</code></pre>
+
+<p>Trace the application's device operations:</p>
+
+<pre><code>strace -e openat,ioctl,close ./test_ioctl</code></pre>
+
+<p>To inspect an application that requires elevated permissions:</p>
+
+<pre><code>sudo strace -e openat,ioctl,close ./test_ioctl</code></pre>
+
+<p>The trace helps identify:</p>
+<ul>
+    <li>Whether the application opens the expected device path.</li>
+    <li>Which IOCTL requests are issued.</li>
+    <li>Whether a system call succeeds or fails.</li>
+    <li>Which error is returned to user space.</li>
+</ul>
+
+<p>Request codes may appear as numeric values or symbolic names depending on the tracing tool's decoding support.</p>
+</section>
+
+<section class="section">
+<h2>17. Unload the Driver and Clean Up</h2>
+
+<p>Close the test application before unloading the module.</p>
+
+<p>Remove the device node:</p>
+
+<pre><code>sudo rm /dev/mydevice</code></pre>
+
+<p>Unload the module:</p>
+
+<pre><code>sudo rmmod ioctl_driver</code></pre>
+
+<p>Verify that it has been removed:</p>
+
+<pre><code>lsmod | grep ioctl_driver</code></pre>
+
+<p>Clean generated build files:</p>
+
+<pre><code>make clean</code></pre>
+
+<div class="important">
+    Do not unload the module while applications are still using it. The file-operations owner reference normally prevents unloading while active file operations hold module references. Device and resource lifetime still need careful management in more complex drivers.
+</div>
+</section>
+
+<section class="section">
+<h2>18. Complete Project Workflow</h2>
+
+<div class="diagram">
+    <div class="diagram-box">Create Project Files</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Compile Kernel Module</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Load Module</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Create Device Node</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Compile User Application</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Run IOCTL Tests</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Debug and Validate</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Unload and Clean Up</div>
+</div>
+</section>
+
+<section class="section">
+<h2>19. Important Practical Notes</h2>
+
+<ul>
+    <li>This driver is memory-backed and does not control physical hardware.</li>
+    <li>The stored value is shared kernel state protected by a mutex.</li>
+    <li>The shared header ensures matching IOCTL command definitions.</li>
+    <li>The device node must use the actual registered major/minor numbers.</li>
+    <li>The driver returns negative kernel error codes; user space sees -1 and checks errno.</li>
+    <li>The project should be tested against the exact kernel version for which the module was built.</li>
+    <li>Secure Boot or module-signing policy may prevent loading an unsigned module on some Ubuntu installations.</li>
+</ul>
+
+<div class="note">
+    Run experimental kernel modules inside your Ubuntu virtual machine. A programming mistake in kernel space can crash or destabilize the guest operating system. Save your work before testing.
+</div>
+</section>
+
+<section class="section">
+<h2>20. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>What is the purpose of IOCTL in a character driver?</li>
+    <li>What is the role of the shared IOCTL header?</li>
+    <li>What does alloc_chrdev_region() do?</li>
+    <li>What is the purpose of cdev_init()?</li>
+    <li>Why is cdev_add() required?</li>
+    <li>What is the role of unlocked_ioctl()?</li>
+    <li>Why do we use copy_from_user()?</li>
+    <li>Why do we use copy_to_user()?</li>
+    <li>What is the purpose of mknod?</li>
+    <li>Why should the device node be removed before unloading the module?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain the architecture of a practical IOCTL-based character driver.</li>
+    <li>Describe the complete kernel module development and testing workflow.</li>
+    <li>Explain how IOCTL commands transfer data between user space and kernel space.</li>
+    <li>Discuss error handling in the practical IOCTL driver.</li>
+    <li>Explain how to debug IOCTL operations using dmesg and strace.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Implement the reset IOCTL command.</li>
+    <li>Implement an IOCTL command to set an integer value.</li>
+    <li>Implement an IOCTL command to retrieve the stored value.</li>
+    <li>Add a command to increment the stored value.</li>
+    <li>Add validation for a permitted integer range.</li>
+    <li>Return -ENOTTY for unsupported commands.</li>
+    <li>Protect shared device data using a mutex.</li>
+    <li>Test all commands through a user-space C application.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>21. Chapter 11 – Final Learning Outcomes</h2>
+
+<p>After completing all ten lessons in this chapter, you should be able to:</p>
+
+<ul>
+    <li>Explain the purpose and architecture of IOCTL.</li>
+    <li>Define IOCTL commands using _IO, _IOR, _IOW and _IOWR.</li>
+    <li>Implement unlocked_ioctl() in a character driver.</li>
+    <li>Transfer integers and structures through IOCTL.</li>
+    <li>Use copy_to_user() and copy_from_user() safely.</li>
+    <li>Create user-space test applications.</li>
+    <li>Validate commands and arguments.</li>
+    <li>Handle IOCTL errors correctly.</li>
+    <li>Build, load, test and unload an IOCTL-enabled character driver.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L09_IOCTL_Error_Handling.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 11 Index</a>
+    <a href="../../ldd.html">Course Home →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 11 – IOCTL and Device Control Completed</p>
+</footer>
+
+</body>
+</html>
