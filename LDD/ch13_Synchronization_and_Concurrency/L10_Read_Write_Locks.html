@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 10: Read-Write Locks | Linux Device Drivers</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 20px;
+}
+
+header h1 {
+    margin: 0 0 10px;
+    font-size: 30px;
+}
+
+header p {
+    margin: 0;
+}
+
+nav {
+    background: white;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+
+nav a {
+    display: inline-block;
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 5px 12px;
+}
+
+nav a:hover {
+    color: #007bff;
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e4efff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e2eaf5;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9c;
+    margin-top: 24px;
+}
+
+pre {
+    background: #17212e;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    line-height: 1.55;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+
+th, td {
+    border: 1px solid #d5dfeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #edf4ff;
+    border: 1px solid #bfd4f3;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+    font-weight: bold;
+}
+
+.diagram .arrow {
+    color: #174ea6;
+    font-size: 23px;
+    margin: 5px;
+}
+
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #fff0f0;
+    border-left: 5px solid #d9534f;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.navigation-buttons a:hover {
+    background: #2878d7;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 650px) {
+    header h1 {
+        font-size: 23px;
+    }
+
+    section {
+        padding: 17px;
+    }
+
+    table {
+        display: block;
+        overflow-x: auto;
+    }
+
+    .navigation-buttons {
+        flex-direction: column;
+    }
+
+    .navigation-buttons a {
+        text-align: center;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Lesson 10: Read-Write Locks</h1>
+    <p>Linux Device Drivers – Synchronization and Concurrency</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> 13 – Synchronization and Concurrency<br>
+    <strong>Lesson:</strong> 10 – Read-Write Locks<br>
+    <strong>Level:</strong> Intermediate to Advanced<br>
+    <strong>Prerequisites:</strong> Atomic Operations, Spinlocks, Mutexes and Semaphores.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Explain reader-writer synchronization.</li>
+    <li>Understand Linux kernel read-write spinlocks.</li>
+    <li>Use <code>rwlock_t</code>.</li>
+    <li>Understand read-lock and write-lock operations.</li>
+    <li>Use IRQ-safe read-write locking variants.</li>
+    <li>Compare read-write locks with mutexes and spinlocks.</li>
+    <li>Apply reader-writer synchronization to shared driver data.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Read-Write Locks</h2>
+
+<p>A <strong>read-write lock</strong> is a synchronization mechanism that allows multiple readers to access shared data simultaneously while ensuring that a writer has exclusive access.</p>
+
+<p>It is useful when shared data is read frequently but modified less frequently.</p>
+
+<h3>Why Are Read-Write Locks Required?</h3>
+
+<p>Consider a device driver maintaining a shared configuration table.</p>
+
+<ul>
+    <li>Several tasks may need to read the configuration.</li>
+    <li>Only one task should modify the configuration at a time.</li>
+    <li>Reading does not normally modify the shared data.</li>
+    <li>Writing must exclude both other writers and readers.</li>
+</ul>
+
+<p>A read-write lock allows concurrent readers but protects modifications from concurrent access.</p>
+
+<div class="diagram">
+    <div>Shared Driver Configuration</div>
+    <div class="arrow">↓</div>
+    <div>Reader A ── Reader B ── Reader C</div>
+    <div class="arrow">↓</div>
+    <div>Multiple readers can hold read locks together</div>
+    <hr>
+    <div>Writer requests write lock</div>
+    <div class="arrow">↓</div>
+    <div>Waits until conflicting readers/writers release locks</div>
+    <div class="arrow">↓</div>
+    <div>Writer obtains exclusive access</div>
+</div>
+</section>
+
+<section>
+<h2>3. Reader and Writer Concepts</h2>
+
+<h3>3.1 Reader</h3>
+
+<p>A reader accesses shared data without modifying it.</p>
+
+<p>Multiple readers can hold a read lock simultaneously.</p>
+
+<pre><code>read_lock(&amp;my_rwlock);
+
+/* Read shared data */
+
+read_unlock(&amp;my_rwlock);</code></pre>
+
+<h3>3.2 Writer</h3>
+
+<p>A writer modifies shared data. It must obtain exclusive access.</p>
+
+<pre><code>write_lock(&amp;my_rwlock);
+
+/* Modify shared data */
+
+write_unlock(&amp;my_rwlock);</code></pre>
+
+<p>While a writer holds the write lock, other readers and writers cannot acquire the conflicting lock.</p>
+
+<table>
+    <tr>
+        <th>Operation</th>
+        <th>Concurrent Access</th>
+    </tr>
+    <tr>
+        <td>Read lock</td>
+        <td>Multiple readers may hold the lock simultaneously.</td>
+    </tr>
+    <tr>
+        <td>Write lock</td>
+        <td>Only one writer holds the lock, with no concurrent readers.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>4. Linux Kernel Read-Write Spinlock</h2>
+
+<p>Linux provides the read-write spinlock type:</p>
+
+<pre><code>rwlock_t</code></pre>
+
+<p>Include the following header:</p>
+
+<pre><code>#include &lt;linux/spinlock.h&gt;</code></pre>
+
+<p>Read-write spinlocks are spin-based locks. A task that cannot obtain the requested lock waits by spinning rather than sleeping.</p>
+
+<h3>Static Initialization</h3>
+
+<pre><code>static DEFINE_RWLOCK(my_rwlock);</code></pre>
+
+<h3>Dynamic Initialization</h3>
+
+<pre><code>static rwlock_t my_rwlock;
+
+static int __init my_init(void)
+{
+    rwlock_init(&amp;my_rwlock);
+
+    return 0;
+}</code></pre>
+
+<p><code>rwlock_init()</code> initializes a read-write spinlock.</p>
+
+<div class="warning">
+    Read-write spinlocks are not sleepable locks. Do not perform sleeping operations while holding either a read lock or a write lock.
+</div>
+</section>
+
+<section>
+<h2>5. Read Lock Operations</h2>
+
+<h3>5.1 read_lock()</h3>
+
+<p>Acquires the read side of a read-write spinlock.</p>
+
+<pre><code>read_lock(&amp;my_rwlock);
+
+/* Read shared data */
+
+read_unlock(&amp;my_rwlock);</code></pre>
+
+<p>Multiple readers can hold the read lock at the same time.</p>
+
+<h3>5.2 read_unlock()</h3>
+
+<p>Releases the read lock.</p>
+
+<pre><code>read_unlock(&amp;my_rwlock);</code></pre>
+
+<h3>Read Operation Flow</h3>
+
+<div class="diagram">
+    <div>Reader requests read lock</div>
+    <div class="arrow">↓</div>
+    <div>Check lock availability</div>
+    <div class="arrow">↓</div>
+    <div>Acquire read lock</div>
+    <div class="arrow">↓</div>
+    <div>Read shared data</div>
+    <div class="arrow">↓</div>
+    <div>Release read lock</div>
+</div>
+</section>
+
+<section>
+<h2>6. Write Lock Operations</h2>
+
+<h3>6.1 write_lock()</h3>
+
+<p>Acquires the exclusive write side of a read-write spinlock.</p>
+
+<pre><code>write_lock(&amp;my_rwlock);
+
+/* Modify shared data */
+
+write_unlock(&amp;my_rwlock);</code></pre>
+
+<p>The writer must wait until conflicting readers and writers have released the lock.</p>
+
+<h3>6.2 write_unlock()</h3>
+
+<p>Releases the write lock.</p>
+
+<pre><code>write_unlock(&amp;my_rwlock);</code></pre>
+
+<h3>Write Operation Flow</h3>
+
+<div class="diagram">
+    <div>Writer requests write lock</div>
+    <div class="arrow">↓</div>
+    <div>Wait for conflicting readers and writers</div>
+    <div class="arrow">↓</div>
+    <div>Acquire exclusive write lock</div>
+    <div class="arrow">↓</div>
+    <div>Modify shared data</div>
+    <div class="arrow">↓</div>
+    <div>Release write lock</div>
+</div>
+</section>
+
+<section>
+<h2>7. Try-Lock Operations</h2>
+
+<p>Linux also provides non-blocking acquisition attempts for read-write spinlocks.</p>
+
+<h3>7.1 read_trylock()</h3>
+
+<pre><code>if (read_trylock(&amp;my_rwlock)) {
+
+    pr_info("Read lock acquired\n");
+
+    /* Read shared data */
+
+    read_unlock(&amp;my_rwlock);
+
+} else {
+
+    pr_info("Read lock unavailable\n");
+}</code></pre>
+
+<p>Returns non-zero if the read lock is acquired, and zero if acquisition fails.</p>
+
+<h3>7.2 write_trylock()</h3>
+
+<pre><code>if (write_trylock(&amp;my_rwlock)) {
+
+    pr_info("Write lock acquired\n");
+
+    /* Modify shared data */
+
+    write_unlock(&amp;my_rwlock);
+
+} else {
+
+    pr_info("Write lock unavailable\n");
+}</code></pre>
+
+<p>Returns non-zero if the write lock is acquired, and zero if acquisition fails.</p>
+</section>
+
+<section>
+<h2>8. IRQ-Safe Read-Write Locking</h2>
+
+<p>Some driver data may be accessed from both process context and hard interrupt context.</p>
+
+<p>If process context holds a read-write spinlock and a local interrupt handler tries to acquire the same lock, the process could deadlock unless local interrupts are appropriately controlled.</p>
+
+<h3>8.1 read_lock_irqsave()</h3>
+
+<pre><code>unsigned long flags;
+
+read_lock_irqsave(&amp;my_rwlock, flags);
+
+/* Read shared data */
+
+read_unlock_irqrestore(&amp;my_rwlock, flags);</code></pre>
+
+<h3>8.2 write_lock_irqsave()</h3>
+
+<pre><code>unsigned long flags;
+
+write_lock_irqsave(&amp;my_rwlock, flags);
+
+/* Modify shared data */
+
+write_unlock_irqrestore(&amp;my_rwlock, flags);</code></pre>
+
+<p>These operations save the previous local interrupt state, disable local interrupts while the lock is held, and restore the saved state when unlocking.</p>
+
+<h3>8.3 read_lock_irq()</h3>
+
+<pre><code>read_lock_irq(&amp;my_rwlock);
+
+/* Read shared data */
+
+read_unlock_irq(&amp;my_rwlock);</code></pre>
+
+<h3>8.4 write_lock_irq()</h3>
+
+<pre><code>write_lock_irq(&amp;my_rwlock);
+
+/* Modify shared data */
+
+write_unlock_irq(&amp;my_rwlock);</code></pre>
+
+<table>
+    <tr>
+        <th>Operation</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>read_lock()</code></td>
+        <td>Acquire read lock.</td>
+    </tr>
+    <tr>
+        <td><code>read_unlock()</code></td>
+        <td>Release read lock.</td>
+    </tr>
+    <tr>
+        <td><code>write_lock()</code></td>
+        <td>Acquire write lock.</td>
+    </tr>
+    <tr>
+        <td><code>write_unlock()</code></td>
+        <td>Release write lock.</td>
+    </tr>
+    <tr>
+        <td><code>read_lock_irqsave()</code></td>
+        <td>Acquire read lock while saving and disabling local interrupts.</td>
+    </tr>
+    <tr>
+        <td><code>write_lock_irqsave()</code></td>
+        <td>Acquire write lock while saving and disabling local interrupts.</td>
+    </tr>
+</table>
+
+<div class="note">
+    Use IRQ-safe variants only when the locking design requires them. If a hard IRQ handler accesses the same lock, the process-context side must prevent local interrupt re-entry while holding that lock. The IRQ handler itself can use the corresponding non-sleeping lock operation. On PREEMPT_RT kernels, ordinary spinlock semantics differ, so use the locking guidance for the target kernel and execution context.
+</div>
+</section>
+
+<section>
+<h2>9. Read-Write Lock Working Example</h2>
+
+<p>Suppose a driver maintains a shared integer configuration value.</p>
+
+<p>Several tasks can read the value, but updates must be exclusive.</p>
+
+<pre><code>static DEFINE_RWLOCK(config_lock);
+
+static int config_value = 100;
+
+/* Reader */
+static int get_config(void)
+{
+    int value;
+
+    read_lock(&amp;config_lock);
+
+    value = config_value;
+
+    read_unlock(&amp;config_lock);
+
+    return value;
+}
+
+/* Writer */
+static void set_config(int new_value)
+{
+    write_lock(&amp;config_lock);
+
+    config_value = new_value;
+
+    write_unlock(&amp;config_lock);
+}</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li>The read-write lock is declared using <code>DEFINE_RWLOCK()</code>.</li>
+    <li>The reader acquires a read lock.</li>
+    <li>The reader copies the shared value.</li>
+    <li>The reader releases the read lock.</li>
+    <li>The writer acquires the exclusive write lock.</li>
+    <li>The writer updates the shared value.</li>
+    <li>The writer releases the lock.</li>
+</ol>
+
+<p>Multiple readers can execute concurrently, but a writer requires exclusive access.</p>
+</section>
+
+<section>
+<h2>10. Practical Kernel Module: Read-Write Lock</h2>
+
+<p>The following module demonstrates read and write lock operations in a sequential example.</p>
+
+<h3>Source Code: rwlock_basic.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/spinlock.h&gt;
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Linux Device Drivers Course");
+MODULE_DESCRIPTION("Read Write Lock Demonstration");
+MODULE_VERSION("1.0");
+
+static DEFINE_RWLOCK(my_rwlock);
+
+static int shared_value = 100;
+
+static int __init rwlock_init_module(void)
+{
+    int value;
+
+    pr_info("Read-write lock module loaded\n");
+
+    /* Reader section */
+    read_lock(&amp;my_rwlock);
+
+    value = shared_value;
+
+    read_unlock(&amp;my_rwlock);
+
+    pr_info("Read value: %d\n", value);
+
+    /* Writer section */
+    write_lock(&amp;my_rwlock);
+
+    shared_value = 200;
+
+    write_unlock(&amp;my_rwlock);
+
+    pr_info("Updated value: %d\n", shared_value);
+
+    /* Read updated value */
+    read_lock(&amp;my_rwlock);
+
+    value = shared_value;
+
+    read_unlock(&amp;my_rwlock);
+
+    pr_info("Final value: %d\n", value);
+
+    return 0;
+}
+
+static void __exit rwlock_exit_module(void)
+{
+    pr_info("Read-write lock module unloaded\n");
+}
+
+module_init(rwlock_init_module);
+module_exit(rwlock_exit_module);</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li>The read-write spinlock is statically initialized.</li>
+    <li>The first read operation obtains the shared value.</li>
+    <li>The write operation updates the value from 100 to 200.</li>
+    <li>The final read operation obtains the updated value.</li>
+</ol>
+
+<div class="note">
+    This module demonstrates the APIs sequentially. It does not prove concurrent reader behavior. A real concurrency test requires multiple kernel threads accessing the same shared data.
+</div>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += rwlock_basic.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<h3>Compile and Test in Ubuntu</h3>
+
+<pre><code>make
+
+sudo insmod rwlock_basic.ko
+
+sudo dmesg | tail -20
+
+sudo rmmod rwlock_basic
+
+make clean</code></pre>
+
+<h3>Expected Output</h3>
+
+<pre><code>Read-write lock module loaded
+Read value: 100
+Updated value: 200
+Final value: 200
+Read-write lock module unloaded</code></pre>
+</section>
+
+<section>
+<h2>11. Practical Kernel Module: Concurrent Readers</h2>
+
+<p>This example creates two kernel threads that read the same shared value. Both use the read side of a read-write lock.</p>
+
+<h3>Source Code: rwlock_readers.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/spinlock.h&gt;
+#include &lt;linux/kthread.h&gt;
+#include &lt;linux/delay.h&gt;
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Linux Device Drivers Course");
+MODULE_DESCRIPTION("Concurrent Read Lock Demonstration");
+MODULE_VERSION("1.0");
+
+static DEFINE_RWLOCK(data_lock);
+
+static int shared_data = 500;
+
+static struct task_struct *reader1;
+static struct task_struct *reader2;
+
+static int reader_function(void *data)
+{
+    int id = *(int *)data;
+    int value;
+
+    while (!kthread_should_stop()) {
+
+        read_lock(&amp;data_lock);
+
+        value = shared_data;
+
+        pr_info("Reader %d: Value = %d\n", id, value);
+
+        read_unlock(&amp;data_lock);
+
+        msleep(1000);
+    }
+
+    return 0;
+}
+
+static int reader1_id = 1;
+static int reader2_id = 2;
+
+static int __init rwlock_readers_init(void)
+{
+    reader1 = kthread_run(
+        reader_function,
+        &amp;reader1_id,
+        "rw_reader_1"
+    );
+
+    if (IS_ERR(reader1)) {
+        int ret = PTR_ERR(reader1);
+        reader1 = NULL;
+        return ret;
+    }
+
+    reader2 = kthread_run(
+        reader_function,
+        &amp;reader2_id,
+        "rw_reader_2"
+    );
+
+    if (IS_ERR(reader2)) {
+        int ret = PTR_ERR(reader2);
+        reader2 = NULL;
+
+        kthread_stop(reader1);
+        reader1 = NULL;
+
+        return ret;
+    }
+
+    pr_info("Two reader threads started\n");
+
+    return 0;
+}
+
+static void __exit rwlock_readers_exit(void)
+{
+    if (reader1) {
+        kthread_stop(reader1);
+        reader1 = NULL;
+    }
+
+    if (reader2) {
+        kthread_stop(reader2);
+        reader2 = NULL;
+    }
+
+    pr_info("Reader threads stopped\n");
+}
+
+module_init(rwlock_readers_init);
+module_exit(rwlock_readers_exit);</code></pre>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += rwlock_readers.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<h3>Compile and Test</h3>
+
+<pre><code>make
+
+sudo insmod rwlock_readers.ko
+
+sudo dmesg | tail -30
+
+sudo rmmod rwlock_readers
+
+make clean</code></pre>
+
+<h3>Expected Output</h3>
+
+<pre><code>Two reader threads started
+Reader 1: Value = 500
+Reader 2: Value = 500
+Reader 1: Value = 500
+Reader 2: Value = 500
+Reader threads stopped</code></pre>
+
+<p>The exact log ordering and number of messages depend on scheduling.</p>
+
+<div class="note">
+    The example demonstrates multiple readers using the read side of the lock. The shared value is never modified, so no writer thread is needed.
+</div>
+</section>
+
+<section>
+<h2>12. Read-Write Lock vs Ordinary Spinlock</h2>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Read-Write Spinlock</th>
+        <th>Ordinary Spinlock</th>
+    </tr>
+    <tr>
+        <td>Concurrent readers</td>
+        <td>Supported</td>
+        <td>Not supported</td>
+    </tr>
+    <tr>
+        <td>Writer access</td>
+        <td>Exclusive</td>
+        <td>Exclusive</td>
+    </tr>
+    <tr>
+        <td>Waiting</td>
+        <td>Busy waiting</td>
+        <td>Busy waiting</td>
+    </tr>
+    <tr>
+        <td>Sleeping</td>
+        <td>Not allowed while held</td>
+        <td>Not allowed while held</td>
+    </tr>
+    <tr>
+        <td>Best suited for</td>
+        <td>Read-heavy shared data</td>
+        <td>Short critical sections with mixed reads and writes</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>13. Read-Write Spinlock vs Read-Write Semaphore</h2>
+
+<p>Linux also provides a sleepable reader-writer lock called <code>struct rw_semaphore</code>.</p>
+
+<p>It is different from the read-write spinlock.</p>
+
+<h3>Read-Write Semaphore</h3>
+
+<pre><code>#include &lt;linux/rwsem.h&gt;
+
+static DECLARE_RWSEM(my_rwsem);</code></pre>
+
+<p>Typical operations include:</p>
+
+<pre><code>down_read(&amp;my_rwsem);
+
+/* Read shared data */
+
+up_read(&amp;my_rwsem);</code></pre>
+
+<pre><code>down_write(&amp;my_rwsem);
+
+/* Modify shared data */
+
+up_write(&amp;my_rwsem);</code></pre>
+
+<p>Read-write semaphores allow multiple readers or one exclusive writer. Unlike <code>rwlock_t</code>, they are sleepable and therefore suitable only for contexts where sleeping is permitted.</p>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th><code>rwlock_t</code></th>
+        <th><code>rw_semaphore</code></th>
+    </tr>
+    <tr>
+        <td>Header</td>
+        <td><code>linux/spinlock.h</code></td>
+        <td><code>linux/rwsem.h</code></td>
+    </tr>
+    <tr>
+        <td>Waiting</td>
+        <td>Busy waiting</td>
+        <td>Can sleep</td>
+    </tr>
+    <tr>
+        <td>Read operations</td>
+        <td><code>read_lock()</code></td>
+        <td><code>down_read()</code></td>
+    </tr>
+    <tr>
+        <td>Write operations</td>
+        <td><code>write_lock()</code></td>
+        <td><code>down_write()</code></td>
+    </tr>
+    <tr>
+        <td>Read release</td>
+        <td><code>read_unlock()</code></td>
+        <td><code>up_read()</code></td>
+    </tr>
+    <tr>
+        <td>Write release</td>
+        <td><code>write_unlock()</code></td>
+        <td><code>up_write()</code></td>
+    </tr>
+    <tr>
+        <td>Typical use</td>
+        <td>Short, non-sleeping read-heavy sections</td>
+        <td>Longer read-heavy sections in sleepable contexts</td>
+    </tr>
+</table>
+
+<div class="note">
+    Choose between <code>rwlock_t</code> and <code>rw_semaphore</code> based on execution context and critical-section requirements. Neither should be selected solely because one appears faster in a simple example.
+</div>
+</section>
+
+<section>
+<h2>14. Limitations of Read-Write Locks</h2>
+
+<ul>
+    <li>Writers may experience delays when readers frequently acquire the lock.</li>
+    <li>Read-write locks have more complex behavior than ordinary spinlocks.</li>
+    <li>They are not appropriate for critical sections that need to sleep.</li>
+    <li>They may introduce overhead when the protected section is very short.</li>
+    <li>They do not automatically protect unrelated data.</li>
+    <li>They require consistent locking discipline across all access paths.</li>
+</ul>
+
+<h3>Writer Starvation</h3>
+
+<p>Writer starvation is a possible concern in reader-writer synchronization if readers repeatedly acquire the lock and prevent a writer from making progress. Fairness characteristics depend on the particular locking implementation and kernel configuration.</p>
+</section>
+
+<section>
+<h2>15. Best Practices</h2>
+
+<ol>
+    <li>Use read-write locks only when concurrent readers provide a real benefit.</li>
+    <li>Keep read and write critical sections short.</li>
+    <li>Never sleep while holding a read-write spinlock.</li>
+    <li>Use the matching unlock operation for every successful acquisition.</li>
+    <li>Use IRQ-safe variants when required by the interrupt-sharing design.</li>
+    <li>Do not mix different locking mechanisms without a defined locking order.</li>
+    <li>Consider a mutex or read-write semaphore for sleepable critical sections.</li>
+    <li>Consider an ordinary spinlock if read-write locking adds unnecessary complexity.</li>
+    <li>Measure performance rather than assuming a read-write lock is always faster.</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Common Programming Mistakes</h2>
+
+<table>
+    <tr>
+        <th>Mistake</th>
+        <th>Why It Is Wrong</th>
+    </tr>
+    <tr>
+        <td>Using <code>read_lock()</code> to modify shared data.</td>
+        <td>Multiple readers may access the protected data simultaneously.</td>
+    </tr>
+    <tr>
+        <td>Using <code>write_unlock()</code> after a read lock.</td>
+        <td>The unlock operation does not match the acquired lock.</td>
+    </tr>
+    <tr>
+        <td>Sleeping while holding <code>rwlock_t</code>.</td>
+        <td>Read-write spinlocks cannot be held across sleeping operations.</td>
+    </tr>
+    <tr>
+        <td>Forgetting to release a lock.</td>
+        <td>Other tasks may remain blocked indefinitely.</td>
+    </tr>
+    <tr>
+        <td>Using non-IRQ-safe locking with a shared hard IRQ lock.</td>
+        <td>Local interrupt re-entry can cause deadlock.</td>
+    </tr>
+    <tr>
+        <td>Using read-write locks for every shared variable.</td>
+        <td>The extra complexity and overhead may not provide a benefit.</td>
+    </tr>
+    <tr>
+        <td>Assuming every kernel configuration has identical spinlock behavior.</td>
+        <td>PREEMPT_RT changes the semantics of several locking primitives.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>17. Debugging Read-Write Lock Problems</h2>
+
+<p>Useful commands for inspecting kernel messages:</p>
+
+<pre><code>sudo dmesg | tail -50
+
+sudo journalctl -k -n 50
+
+lsmod | grep rwlock</code></pre>
+
+<p>When debugging a read-write lock problem, check:</p>
+
+<ul>
+    <li>Whether the lock is initialized.</li>
+    <li>Whether every read acquisition has a matching read release.</li>
+    <li>Whether every write acquisition has a matching write release.</li>
+    <li>Whether any sleeping operation occurs while the lock is held.</li>
+    <li>Whether interrupt-context access is handled safely.</li>
+    <li>Whether the lock protects every concurrent access to the shared data.</li>
+    <li>Whether writer delays or contention affect performance.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Lesson Summary</h2>
+
+<ul>
+    <li>Read-write locks provide reader-writer synchronization.</li>
+    <li>Multiple readers can hold a read lock simultaneously.</li>
+    <li>A writer requires exclusive access.</li>
+    <li>Linux provides <code>rwlock_t</code> for read-write spinlocks.</li>
+    <li><code>DEFINE_RWLOCK()</code> performs static initialization.</li>
+    <li><code>rwlock_init()</code> performs runtime initialization.</li>
+    <li><code>read_lock()</code> and <code>read_unlock()</code> manage read access.</li>
+    <li><code>write_lock()</code> and <code>write_unlock()</code> manage exclusive write access.</li>
+    <li>IRQ-safe variants are available for appropriate interrupt-sharing designs.</li>
+    <li><code>rw_semaphore</code> provides sleepable reader-writer synchronization.</li>
+    <li>Read-write spinlocks must not be held across sleeping operations.</li>
+    <li>Read-write locking is most useful when concurrent reads are frequent and writes are less frequent.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Short Answer Questions</h2>
+
+<ol>
+    <li>What is a read-write lock?</li>
+    <li>Why are read-write locks required?</li>
+    <li>What is <code>rwlock_t</code>?</li>
+    <li>Which header file provides read-write spinlocks?</li>
+    <li>What does <code>DEFINE_RWLOCK()</code> do?</li>
+    <li>What is the purpose of <code>rwlock_init()</code>?</li>
+    <li>What is the difference between a read lock and a write lock?</li>
+    <li>Can multiple readers hold a read lock simultaneously?</li>
+    <li>What is the purpose of <code>read_trylock()</code>?</li>
+    <li>What is the purpose of <code>write_trylock()</code>?</li>
+    <li>Why are IRQ-safe locking variants required?</li>
+    <li>What is the difference between <code>rwlock_t</code> and <code>rw_semaphore</code>?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Long Answer Questions</h2>
+
+<ol>
+    <li>Explain reader-writer synchronization with a diagram.</li>
+    <li>Describe the Linux kernel <code>rwlock_t</code> data type.</li>
+    <li>Explain read-lock and write-lock operations.</li>
+    <li>Discuss read-write try-lock operations.</li>
+    <li>Explain IRQ-safe read-write locking.</li>
+    <li>Compare read-write locks with ordinary spinlocks.</li>
+    <li>Compare read-write spinlocks with read-write semaphores.</li>
+    <li>Explain how read-write locks can protect shared driver configuration data.</li>
+    <li>Discuss writer starvation and other limitations of read-write locking.</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Practical Exercises</h2>
+
+<ol>
+    <li>Write a kernel module using <code>DEFINE_RWLOCK()</code>.</li>
+    <li>Read a shared variable using <code>read_lock()</code>.</li>
+    <li>Modify a shared variable using <code>write_lock()</code>.</li>
+    <li>Implement two concurrent reader kernel threads.</li>
+    <li>Implement a writer kernel thread that updates shared data.</li>
+    <li>Demonstrate <code>read_trylock()</code> and <code>write_trylock()</code>.</li>
+    <li>Use <code>read_lock_irqsave()</code> in an appropriate locking design.</li>
+    <li>Compare <code>rwlock_t</code> and <code>rw_semaphore</code>.</li>
+    <li>Identify situations where an ordinary mutex or spinlock is preferable.</li>
+</ol>
+
+<h3>Expected Learning Outcome</h3>
+
+<p>You should be able to implement reader-writer synchronization using Linux kernel read-write locks, protect shared driver data, understand interrupt-safe locking, and select appropriate synchronization primitives based on the execution context.</p>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L09_Completions.html">← Previous: Completions</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L11_Deadlocks_and_Their_Prevention.html">Next: Deadlocks and Their Prevention →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 13 – Synchronization and Concurrency</p>
+</footer>
+
+</body>
+</html>
