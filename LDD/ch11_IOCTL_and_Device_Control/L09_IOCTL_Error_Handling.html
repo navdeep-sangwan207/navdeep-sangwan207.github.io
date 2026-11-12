@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IOCTL Error Handling | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>IOCTL Error Handling</h1>
+    <p>Linux Device Drivers – Chapter 11, Lesson 9</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 11</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> IOCTL and Device Control</p>
+    <p><strong>Lesson:</strong> 9 – IOCTL Error Handling</p>
+    <p><strong>Prerequisites:</strong> IOCTL macros, unlocked_ioctl(), copy_to_user(), copy_from_user() and user-space testing.</p>
+    <p><strong>Objective:</strong> Understand common IOCTL errors, kernel error codes, argument validation, user-memory access failures and reliable error handling in character drivers.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction</h2>
+
+<p>Error handling is an essential part of Linux device-driver development. An IOCTL request may fail because of an unsupported command, invalid input, inaccessible user memory, unavailable hardware or an internal driver problem.</p>
+
+<p>A reliable driver must detect these conditions and return an appropriate error code instead of continuing with invalid data.</p>
+
+<p>Good IOCTL error handling helps to:</p>
+<ul>
+    <li>Prevent invalid operations.</li>
+    <li>Protect kernel memory.</li>
+    <li>Provide meaningful feedback to applications.</li>
+    <li>Improve driver reliability.</li>
+    <li>Make debugging easier.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. IOCTL Error-Handling Architecture</h2>
+
+<div class="diagram">
+    <div class="diagram-box">User Application</div>
+    <div class="arrow">ioctl() ↓</div>
+    <div class="diagram-box">Kernel IOCTL Handler</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Command Validation</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Argument Validation</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Data Transfer and Operation</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Success or Error Return</div>
+</div>
+
+<p>The driver should validate the request before performing an operation that could change device state.</p>
+</section>
+
+<section class="section">
+<h2>3. Kernel Error Codes</h2>
+
+<p>Linux kernel functions commonly return zero or a negative error code to indicate failure.</p>
+
+<table>
+<tr>
+    <th>Error Code</th>
+    <th>Meaning</th>
+    <th>Typical IOCTL Situation</th>
+</tr>
+<tr>
+    <td><code>-EINVAL</code></td>
+    <td>Invalid argument</td>
+    <td>Unsupported parameter value or invalid length.</td>
+</tr>
+<tr>
+    <td><code>-EFAULT</code></td>
+    <td>Bad address</td>
+    <td>User-memory copy fails.</td>
+</tr>
+<tr>
+    <td><code>-ENOTTY</code></td>
+    <td>Inappropriate IOCTL for the device</td>
+    <td>Unknown or unsupported command.</td>
+</tr>
+<tr>
+    <td><code>-ENOMEM</code></td>
+    <td>Out of memory</td>
+    <td>Required kernel allocation fails.</td>
+</tr>
+<tr>
+    <td><code>-EBUSY</code></td>
+    <td>Device or resource busy</td>
+    <td>Operation cannot proceed while a resource is in use.</td>
+</tr>
+<tr>
+    <td><code>-ENODEV</code></td>
+    <td>No such device</td>
+    <td>Device is unavailable or has been removed.</td>
+</tr>
+<tr>
+    <td><code>-EIO</code></td>
+    <td>Input/output error</td>
+    <td>Hardware or device operation fails.</td>
+</tr>
+<tr>
+    <td><code>-EPERM</code></td>
+    <td>Operation not permitted</td>
+    <td>Operation is prohibited by the driver's policy.</td>
+</tr>
+</table>
+
+<p>These are examples, not an exhaustive list. Choose the error code that accurately represents the failure.</p>
+</section>
+
+<section class="section">
+<h2>4. Handling Unsupported IOCTL Commands</h2>
+
+<p>The driver should explicitly identify the supported commands. A <code>switch</code> statement is commonly used.</p>
+
+<pre><code>static long my_ioctl(
+    struct file *file,
+    unsigned int cmd,
+    unsigned long arg)
+{
+    switch (cmd) {
+
+    case DEVICE_RESET:
+        /* Perform reset operation */
+        return 0;
+
+    case SET_DEVICE_VALUE:
+        /* Handle input value */
+        return 0;
+
+    case GET_DEVICE_VALUE:
+        /* Return device value */
+        return 0;
+
+    default:
+        return -ENOTTY;
+    }
+}</code></pre>
+
+<p>The default case rejects commands that the driver does not support.</p>
+
+<div class="note">
+    <code>-ENOTTY</code> is the conventional response for an unsupported IOCTL request. Do not silently report success for an unknown command.
+</div>
+</section>
+
+<section class="section">
+<h2>5. Handling Invalid Input Values</h2>
+
+<p>Applications can send unexpected or invalid values. The driver must validate input independently.</p>
+
+<h3>Example: Validate an Integer</h3>
+
+<pre><code>int value;
+
+if (copy_from_user(
+        &amp;value,
+        (int __user *)arg,
+        sizeof(value))) {
+    return -EFAULT;
+}
+
+if (value &lt; 0 || value &gt; 1000) {
+    return -EINVAL;
+}
+
+/* Continue with the valid value */
+
+return 0;</code></pre>
+
+<p>This example performs two checks:</p>
+<ol>
+    <li>Checks whether the input can be copied from user memory.</li>
+    <li>Checks whether the integer is within the accepted range.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>6. Handling copy_from_user() Failure</h2>
+
+<p><code>copy_from_user()</code> transfers data from user space into kernel memory.</p>
+
+<p>It returns the number of bytes that could not be copied. A nonzero return indicates an incomplete transfer.</p>
+
+<pre><code>struct device_config config;
+
+if (copy_from_user(
+        &amp;config,
+        (struct device_config __user *)arg,
+        sizeof(config))) {
+    return -EFAULT;
+}
+
+/* Process config only after successful copy */</code></pre>
+
+<p>Never process a partially copied structure as though it were complete.</p>
+
+<div class="important">
+    The destination structure should not be trusted after a failed copy. Return an error and do not use its contents as a valid request.
+</div>
+</section>
+
+<section class="section">
+<h2>7. Handling copy_to_user() Failure</h2>
+
+<p><code>copy_to_user()</code> transfers data from kernel memory into user space.</p>
+
+<pre><code>struct device_status status = { 0 };
+
+status.mode = 1;
+status.speed = 100;
+status.error_code = 0;
+
+if (copy_to_user(
+        (struct device_status __user *)arg,
+        &amp;status,
+        sizeof(status))) {
+    return -EFAULT;
+}
+
+return 0;</code></pre>
+
+<p>If the destination user-memory region cannot be accessed completely, the driver returns <code>-EFAULT</code>.</p>
+
+<p>Initialize output structures before copying them to user space to avoid exposing uninitialized kernel memory.</p>
+</section>
+
+<section class="section">
+<h2>8. Handling Invalid Buffer Lengths</h2>
+
+<p>When an IOCTL operation uses a variable-length buffer, validate the length before allocation or data transfer.</p>
+
+<pre><code>#define MAX_DATA_SIZE 256
+
+if (length == 0 || length &gt; MAX_DATA_SIZE) {
+    return -EINVAL;
+}
+
+/* Allocate or process only after validation */</code></pre>
+
+<p>Important validation checks include:</p>
+<ul>
+    <li>Reject zero length if an empty transfer is not permitted.</li>
+    <li>Reject lengths larger than the supported maximum.</li>
+    <li>Check arithmetic for integer overflow when calculating sizes.</li>
+    <li>Ensure allocation sizes match the validated length.</li>
+    <li>Do not trust an application-supplied pointer or length.</li>
+</ul>
+
+<div class="note">
+    The size encoded in an IOCTL request macro is not a substitute for validating the actual data supplied by the application.
+</div>
+</section>
+
+<section class="section">
+<h2>9. Handling Memory Allocation Errors</h2>
+
+<p>A driver may allocate kernel memory to process a large or variable-length IOCTL request.</p>
+
+<pre><code>char *buffer;
+
+buffer = kmalloc(length, GFP_KERNEL);
+
+if (!buffer) {
+    return -ENOMEM;
+}
+
+/* Use buffer after successful allocation */
+
+kfree(buffer);</code></pre>
+
+<p>Always release allocated memory on every exit path after allocation. If several operations can fail, use a clear cleanup strategy.</p>
+
+<p><code>GFP_KERNEL</code> allocation may sleep, so it must only be used in an appropriate sleepable execution context.</p>
+</section>
+
+<section class="section">
+<h2>10. Handling Hardware Operation Failures</h2>
+
+<p>Some IOCTL commands control actual hardware. The operation can fail because a device is disconnected, a bus transaction fails or hardware reports an error.</p>
+
+<p>Illustrative example:</p>
+
+<pre><code>static long set_device_mode(int mode)
+{
+    int ret;
+
+    ret = hardware_set_mode(mode);
+
+    if (ret &lt; 0) {
+        return ret;
+    }
+
+    return 0;
+}</code></pre>
+
+<p>The exact error returned should reflect the underlying operation and the driver's documented interface.</p>
+
+<p>Do not assume every hardware failure should be converted to <code>-EIO</code>. Preserve a meaningful error code when appropriate.</p>
+</section>
+
+<section class="section">
+<h2>11. Returning Errors to User Space</h2>
+
+<p>When a kernel IOCTL handler returns a negative error code, the user-space <code>ioctl()</code> system call normally returns <code>-1</code> and sets <code>errno</code> to the corresponding positive error number.</p>
+
+<h3>Kernel-Space Return</h3>
+
+<pre><code>return -EINVAL;</code></pre>
+
+<h3>User-Space Handling</h3>
+
+<pre><code>if (ioctl(fd, SET_DEVICE_VALUE, &amp;value) == -1) {
+    perror("SET_DEVICE_VALUE");
+}</code></pre>
+
+<p>For example, an invalid argument may produce a message similar to:</p>
+
+<pre><code>SET_DEVICE_VALUE: Invalid argument</code></pre>
+
+<p>The application can also inspect <code>errno</code> directly:</p>
+
+<pre><code>#include &lt;errno.h&gt;
+#include &lt;stdio.h&gt;
+
+if (ioctl(fd, SET_DEVICE_VALUE, &amp;value) == -1) {
+
+    if (errno == EINVAL) {
+        printf("Invalid input value\n");
+    }
+    else if (errno == EFAULT) {
+        printf("Memory transfer failed\n");
+    }
+    else {
+        perror("IOCTL failed");
+    }
+}</code></pre>
+</section>
+
+<section class="section">
+<h2>12. Safe IOCTL Handler Design</h2>
+
+<p>A well-designed handler follows a predictable sequence:</p>
+
+<div class="diagram">
+    <div class="diagram-box">Receive IOCTL Request</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Check Command</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Validate and Copy Input</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Validate Parameters</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Perform Device Operation</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Copy Output if Required</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Return Result</div>
+</div>
+
+<p>For state-changing operations, validate all relevant inputs before modifying device state. Consider what should happen if a later operation fails.</p>
+</section>
+
+<section class="section">
+<h2>13. Example: Complete IOCTL Error-Handling Pattern</h2>
+
+<p>The following is an illustrative handler fragment. It assumes the command definitions and device state are declared elsewhere in the driver.</p>
+
+<pre><code>static long my_ioctl(
+    struct file *file,
+    unsigned int cmd,
+    unsigned long arg)
+{
+    int value;
+
+    switch (cmd) {
+
+    case DEVICE_RESET:
+        /* Reset device state */
+        device_value = 0;
+        return 0;
+
+    case SET_DEVICE_VALUE:
+
+        if (copy_from_user(
+                &amp;value,
+                (int __user *)arg,
+                sizeof(value))) {
+            return -EFAULT;
+        }
+
+        if (value &lt; 0 || value &gt; 1000) {
+            return -EINVAL;
+        }
+
+        /* Update device state */
+        device_value = value;
+
+        return 0;
+
+    case GET_DEVICE_VALUE:
+
+        value = device_value;
+
+        if (copy_to_user(
+                (int __user *)arg,
+                &amp;value,
+                sizeof(value))) {
+            return -EFAULT;
+        }
+
+        return 0;
+
+    default:
+        return -ENOTTY;
+    }
+}</code></pre>
+
+<div class="note">
+    This fragment illustrates command dispatch and error returns. A real driver must also define and protect <code>device_value</code> appropriately, for example with a mutex when concurrent operations can access shared state. Hardware-specific operations need their own validation and failure handling.
+</div>
+</section>
+
+<section class="section">
+<h2>14. Common IOCTL Error-Handling Mistakes</h2>
+
+<table>
+<tr>
+    <th>Mistake</th>
+    <th>Correct Approach</th>
+</tr>
+<tr>
+    <td>Returning zero for every command.</td>
+    <td>Return an error for unsupported commands or failed operations.</td>
+</tr>
+<tr>
+    <td>Ignoring copy function results.</td>
+    <td>Check for a nonzero uncopied-byte count.</td>
+</tr>
+<tr>
+    <td>Using an invalid user pointer directly.</td>
+    <td>Use copy_to_user() and copy_from_user().</td>
+</tr>
+<tr>
+    <td>Accepting any input value.</td>
+    <td>Validate parameters and permitted ranges.</td>
+</tr>
+<tr>
+    <td>Trusting user-supplied lengths.</td>
+    <td>Enforce maximum sizes and check arithmetic.</td>
+</tr>
+<tr>
+    <td>Returning uninitialized data.</td>
+    <td>Initialize output structures and fields.</td>
+</tr>
+<tr>
+    <td>Leaking allocated memory on an error path.</td>
+    <td>Release resources before returning.</td>
+</tr>
+<tr>
+    <td>Ignoring concurrency.</td>
+    <td>Protect shared device state using suitable synchronization.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>15. Lesson Summary</h2>
+
+<ul>
+    <li>IOCTL handlers must validate commands and arguments.</li>
+    <li><code>-ENOTTY</code> is commonly used for unsupported IOCTL commands.</li>
+    <li><code>-EINVAL</code> indicates invalid arguments.</li>
+    <li><code>-EFAULT</code> indicates an unsuccessful user-memory transfer.</li>
+    <li><code>-ENOMEM</code> indicates an allocation failure.</li>
+    <li>Copy functions return an uncopied-byte count, not a negative errno.</li>
+    <li>Variable-length requests require strict bounds checking.</li>
+    <li>Allocated memory and other resources must be released on failure paths.</li>
+    <li>Applications should check ioctl() results and handle errno.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>16. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>Why is error handling necessary in IOCTL operations?</li>
+    <li>What does -EINVAL represent?</li>
+    <li>When is -EFAULT returned?</li>
+    <li>What is the purpose of -ENOTTY?</li>
+    <li>What does copy_from_user() return on a failed or incomplete copy?</li>
+    <li>Why must buffer lengths be validated?</li>
+    <li>How does user space receive a kernel error code?</li>
+    <li>Why must allocated memory be released on error paths?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain the error-handling mechanism in a Linux IOCTL handler.</li>
+    <li>Discuss common Linux error codes used in IOCTL operations.</li>
+    <li>Explain how to handle copy_to_user() and copy_from_user() failures.</li>
+    <li>Describe safe validation of variable-length IOCTL data.</li>
+    <li>Explain how user-space applications handle IOCTL errors.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Implement a default case that returns -ENOTTY.</li>
+    <li>Reject an integer outside a permitted range using -EINVAL.</li>
+    <li>Handle copy_from_user() failure using -EFAULT.</li>
+    <li>Handle a kernel allocation failure using -ENOMEM.</li>
+    <li>Write a user-space program that checks errno after ioctl().</li>
+    <li>Design an IOCTL handler with validation and cleanup paths.</li>
+    <li>Test valid and invalid requests against a character driver.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>17. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Identify common IOCTL failure conditions.</li>
+    <li>Select appropriate Linux error codes.</li>
+    <li>Validate commands, arguments and buffer lengths.</li>
+    <li>Handle user-memory transfer failures safely.</li>
+    <li>Design reliable kernel-side error paths.</li>
+    <li>Handle IOCTL errors in user-space applications.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L08_Testing_IOCTL_from_User_Space.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L10_Practical_IOCTL_Driver.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 11 – IOCTL and Device Control</p>
+</footer>
+
+</body>
+</html>
