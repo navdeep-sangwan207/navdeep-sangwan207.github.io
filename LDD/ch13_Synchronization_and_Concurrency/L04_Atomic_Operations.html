@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 4: Atomic Operations | Linux Device Drivers</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 20px;
+}
+
+header h1 {
+    margin: 0 0 10px;
+    font-size: 30px;
+}
+
+header p {
+    margin: 0;
+    font-size: 16px;
+}
+
+nav {
+    background: #ffffff;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+
+nav a {
+    display: inline-block;
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 5px 12px;
+}
+
+nav a:hover {
+    color: #007bff;
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e4efff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: #ffffff;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e2eaf5;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9c;
+    margin-top: 24px;
+}
+
+p {
+    margin: 12px 0;
+}
+
+ul, ol {
+    padding-left: 25px;
+}
+
+pre {
+    background: #17212e;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    line-height: 1.55;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+
+th, td {
+    border: 1px solid #d5dfeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #edf4ff;
+    border: 1px solid #bfd4f3;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+    font-weight: bold;
+}
+
+.diagram .arrow {
+    color: #174ea6;
+    font-size: 23px;
+    margin: 5px;
+}
+
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #fff0f0;
+    border-left: 5px solid #d9534f;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.navigation-buttons a:hover {
+    background: #2878d7;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 650px) {
+    header h1 {
+        font-size: 23px;
+    }
+
+    section {
+        padding: 17px;
+    }
+
+    table {
+        display: block;
+        overflow-x: auto;
+    }
+
+    .navigation-buttons {
+        flex-direction: column;
+    }
+
+    .navigation-buttons a {
+        text-align: center;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Lesson 4: Atomic Operations</h1>
+    <p>Linux Device Drivers – Synchronization and Concurrency</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> 13 – Synchronization and Concurrency<br>
+    <strong>Lesson:</strong> 4 – Atomic Operations<br>
+    <strong>Level:</strong> Intermediate<br>
+    <strong>Prerequisites:</strong> Race Conditions, Critical Sections, C programming and basic kernel module concepts.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Explain atomic and non-atomic operations.</li>
+    <li>Understand why ordinary increment operations can cause race conditions.</li>
+    <li>Use the Linux kernel <code>atomic_t</code> and <code>atomic64_t</code> types.</li>
+    <li>Apply common atomic arithmetic and compare-and-exchange operations.</li>
+    <li>Understand atomic bit operations.</li>
+    <li>Choose between atomic operations, mutexes and spinlocks.</li>
+    <li>Implement an atomic counter in a Linux kernel module.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Atomic Operations</h2>
+
+<p>In a Linux kernel, multiple execution contexts may access the same shared variable. These contexts can include:</p>
+
+<ul>
+    <li>Multiple processes or kernel threads.</li>
+    <li>Different CPUs executing concurrently.</li>
+    <li>Process context and interrupt context.</li>
+    <li>Different parts of a device driver.</li>
+</ul>
+
+<p>If two execution contexts modify a shared variable simultaneously, a race condition may occur.</p>
+
+<p><strong>Atomic operation:</strong> An operation that is performed as an indivisible operation with respect to the other accesses covered by its atomicity guarantee. Other CPUs cannot observe a partially completed atomic read-modify-write operation.</p>
+
+<h3>Example: Shared Event Counter</h3>
+
+<p>Suppose a device driver maintains an event counter. Every time an event occurs, the counter must increase by one.</p>
+
+<pre><code>counter++;</code></pre>
+
+<p>This statement looks like a single operation in C, but it generally involves multiple steps:</p>
+
+<ol>
+    <li>Read the current counter value.</li>
+    <li>Add one to the value.</li>
+    <li>Write the updated value back.</li>
+</ol>
+
+<p>Two CPUs may interleave these steps and overwrite each other's updates.</p>
+
+<div class="diagram">
+    <div>Initial counter = 5</div>
+    <div class="arrow">↓</div>
+    <div>CPU 0 reads 5 &nbsp;&nbsp; CPU 1 reads 5</div>
+    <div class="arrow">↓</div>
+    <div>CPU 0 calculates 6 &nbsp;&nbsp; CPU 1 calculates 6</div>
+    <div class="arrow">↓</div>
+    <div>CPU 0 writes 6 &nbsp;&nbsp; CPU 1 writes 6</div>
+    <div class="arrow">↓</div>
+    <div>Final counter = 6 (incorrect)</div>
+</div>
+
+<p>The expected result was 7, but the final result is 6. One increment has been lost. This is called a <strong>lost update</strong>.</p>
+</section>
+
+<section>
+<h2>3. Why Atomic Operations Are Required</h2>
+
+<p>Atomic operations are useful when a driver needs to update a simple shared integer or individual bits without protecting the operation with a general-purpose lock.</p>
+
+<p>Common applications include:</p>
+
+<ul>
+    <li>Counting hardware events.</li>
+    <li>Maintaining packet or interrupt counters.</li>
+    <li>Tracking error occurrences.</li>
+    <li>Maintaining simple shared state flags.</li>
+    <li>Performing compare-and-exchange algorithms.</li>
+    <li>Updating individual status bits.</li>
+</ul>
+
+<h3>Atomic Increment</h3>
+
+<pre><code>atomic_inc(&amp;event_count);</code></pre>
+
+<p>The kernel provides an atomic increment operation. Concurrent atomic increments on the same atomic object are serialized with respect to that object's update, so increments are not lost.</p>
+
+<div class="diagram">
+    <div>CPU 0 requests atomic increment</div>
+    <div class="arrow">↓</div>
+    <div>Kernel performs atomic update</div>
+    <div class="arrow">↓</div>
+    <div>CPU 1 requests atomic increment</div>
+    <div class="arrow">↓</div>
+    <div>Second atomic update is performed</div>
+    <div class="arrow">↓</div>
+    <div>Both increments are preserved</div>
+</div>
+
+</section>
+
+<section>
+<h2>4. Linux Kernel Atomic Data Types</h2>
+
+<p>The Linux kernel provides special data types for atomic integer operations.</p>
+
+<h3>4.1 atomic_t</h3>
+
+<p><code>atomic_t</code> is the standard atomic integer type used by the Linux kernel.</p>
+
+<pre><code>#include &lt;linux/atomic.h&gt;
+
+atomic_t event_count = ATOMIC_INIT(0);</code></pre>
+
+<p>Here:</p>
+
+<ul>
+    <li><code>atomic_t</code> declares an atomic integer object.</li>
+    <li><code>event_count</code> is the variable name.</li>
+    <li><code>ATOMIC_INIT(0)</code> initializes the value to zero.</li>
+</ul>
+
+<h3>4.2 atomic64_t</h3>
+
+<p><code>atomic64_t</code> provides atomic operations on a 64-bit integer where supported by the target kernel architecture.</p>
+
+<pre><code>atomic64_t total_events = ATOMIC64_INIT(0);</code></pre>
+
+<p>It is useful when a counter needs a larger numeric range than the standard atomic integer type provides.</p>
+
+<table>
+    <tr>
+        <th>Type</th>
+        <th>Purpose</th>
+        <th>Initialization</th>
+    </tr>
+    <tr>
+        <td><code>atomic_t</code></td>
+        <td>Atomic integer operations</td>
+        <td><code>ATOMIC_INIT(0)</code></td>
+    </tr>
+    <tr>
+        <td><code>atomic64_t</code></td>
+        <td>Atomic 64-bit integer operations</td>
+        <td><code>ATOMIC64_INIT(0)</code></td>
+    </tr>
+</table>
+
+<div class="note">
+    <strong>Important:</strong> Do not access the internal representation of an atomic object directly. Use the documented atomic APIs instead of accessing fields such as <code>counter</code>.
+</div>
+</section>
+
+<section>
+<h2>5. Basic Atomic Operations</h2>
+
+<p>The Linux kernel provides several functions for manipulating atomic variables.</p>
+
+<h3>5.1 atomic_read()</h3>
+
+<p>Reads the current value of an atomic variable.</p>
+
+<pre><code>int value;
+
+value = atomic_read(&amp;event_count);</code></pre>
+
+<h3>5.2 atomic_set()</h3>
+
+<p>Sets an atomic variable to a specified value.</p>
+
+<pre><code>atomic_set(&amp;event_count, 10);</code></pre>
+
+<h3>5.3 atomic_add()</h3>
+
+<p>Adds a specified value to an atomic variable.</p>
+
+<pre><code>atomic_add(5, &amp;event_count);</code></pre>
+
+<h3>5.4 atomic_sub()</h3>
+
+<p>Subtracts a specified value.</p>
+
+<pre><code>atomic_sub(2, &amp;event_count);</code></pre>
+
+<h3>5.5 atomic_inc()</h3>
+
+<p>Increments an atomic variable by one.</p>
+
+<pre><code>atomic_inc(&amp;event_count);</code></pre>
+
+<h3>5.6 atomic_dec()</h3>
+
+<p>Decrements an atomic variable by one.</p>
+
+<pre><code>atomic_dec(&amp;event_count);</code></pre>
+
+<table>
+    <tr>
+        <th>Function</th>
+        <th>Operation</th>
+    </tr>
+    <tr><td><code>atomic_read()</code></td><td>Reads the value.</td></tr>
+    <tr><td><code>atomic_set()</code></td><td>Sets the value.</td></tr>
+    <tr><td><code>atomic_add()</code></td><td>Adds a number.</td></tr>
+    <tr><td><code>atomic_sub()</code></td><td>Subtracts a number.</td></tr>
+    <tr><td><code>atomic_inc()</code></td><td>Increments by one.</td></tr>
+    <tr><td><code>atomic_dec()</code></td><td>Decrements by one.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>6. Atomic Operations That Return Values</h2>
+
+<p>Some atomic functions perform an update and also return a value. Understanding whether the returned value is the old or new value is important.</p>
+
+<h3>6.1 atomic_inc_return()</h3>
+
+<p>Increments the variable and returns the updated value.</p>
+
+<pre><code>int value;
+
+value = atomic_inc_return(&amp;event_count);</code></pre>
+
+<p>If the previous value was 5, the new value is 6 and the function returns 6.</p>
+
+<h3>6.2 atomic_dec_return()</h3>
+
+<p>Decrements the variable and returns the updated value.</p>
+
+<pre><code>int value;
+
+value = atomic_dec_return(&amp;event_count);</code></pre>
+
+<h3>6.3 atomic_add_return()</h3>
+
+<p>Adds a specified value and returns the new value.</p>
+
+<pre><code>int value;
+
+value = atomic_add_return(5, &amp;event_count);</code></pre>
+
+<h3>6.4 atomic_xchg()</h3>
+
+<p>Atomically replaces the current value with a new value and returns the old value.</p>
+
+<pre><code>int old_value;
+
+old_value = atomic_xchg(&amp;event_count, 100);</code></pre>
+
+<h3>6.5 atomic_cmpxchg()</h3>
+
+<p>Performs an atomic compare-and-exchange operation.</p>
+
+<pre><code>int old_value;
+
+old_value = atomic_cmpxchg(&amp;event_count, 10, 20);</code></pre>
+
+<p>The operation compares the current value with 10:</p>
+
+<ul>
+    <li>If the current value is 10, it changes the value to 20.</li>
+    <li>If the current value is not 10, it leaves the value unchanged.</li>
+    <li>It returns the old value observed by the operation.</li>
+</ul>
+
+<table>
+    <tr>
+        <th>Function</th>
+        <th>Return value</th>
+    </tr>
+    <tr>
+        <td><code>atomic_inc_return()</code></td>
+        <td>New value after increment</td>
+    </tr>
+    <tr>
+        <td><code>atomic_dec_return()</code></td>
+        <td>New value after decrement</td>
+    </tr>
+    <tr>
+        <td><code>atomic_add_return()</code></td>
+        <td>New value after addition</td>
+    </tr>
+    <tr>
+        <td><code>atomic_xchg()</code></td>
+        <td>Old value before replacement</td>
+    </tr>
+    <tr>
+        <td><code>atomic_cmpxchg()</code></td>
+        <td>Old value observed during comparison</td>
+    </tr>
+</table>
+
+</section>
+
+<section>
+<h2>7. Compare-and-Exchange: Practical Explanation</h2>
+
+<p>Compare-and-exchange is useful when a value should be changed only if it still contains an expected value.</p>
+
+<p>Consider a simple state variable:</p>
+
+<pre><code>atomic_t device_state = ATOMIC_INIT(0);</code></pre>
+
+<p>Suppose:</p>
+
+<ul>
+    <li>0 means device is idle.</li>
+    <li>1 means device is busy.</li>
+</ul>
+
+<p>A driver can attempt to change the state from idle to busy:</p>
+
+<pre><code>if (atomic_cmpxchg(&amp;device_state, 0, 1) == 0) {
+    pr_info("Device successfully marked busy\n");
+} else {
+    pr_info("Device was already busy\n");
+}</code></pre>
+
+<p>The comparison and conditional update happen atomically. Two CPUs attempting this operation cannot both successfully change the same state from 0 to 1.</p>
+
+<div class="diagram">
+    <div>Current state = 0 (IDLE)</div>
+    <div class="arrow">↓</div>
+    <div>Compare current state with expected value 0</div>
+    <div class="arrow">↓</div>
+    <div>Match found: replace 0 with 1</div>
+    <div class="arrow">↓</div>
+    <div>New state = 1 (BUSY)</div>
+</div>
+
+<div class="note">
+    This example demonstrates an atomic state transition. More complex device state management may require additional locking and careful ordering.
+</div>
+</section>
+
+<section>
+<h2>8. Conditional Atomic Operations</h2>
+
+<p>The kernel also provides useful conditional atomic operations. Their availability and exact interfaces should be checked against the target kernel version.</p>
+
+<h3>8.1 atomic_add_unless()</h3>
+
+<p>Adds a value unless the current value equals a specified condition.</p>
+
+<pre><code>int result;
+
+result = atomic_add_unless(&amp;event_count, 1, 100);</code></pre>
+
+<p>The operation adds 1 unless the current value is 100. The function returns a non-zero value when the addition occurs and zero when the specified condition prevents it.</p>
+
+<h3>8.2 atomic_inc_not_zero()</h3>
+
+<p>Increments an atomic variable only if its current value is not zero.</p>
+
+<pre><code>int result;
+
+result = atomic_inc_not_zero(&amp;event_count);</code></pre>
+
+<p>This can be useful in certain reference-counting or state-management patterns. For object lifetime management, use the dedicated <code>refcount_t</code> API rather than implementing reference counting with ordinary <code>atomic_t</code>.</p>
+</section>
+
+<section>
+<h2>9. Atomic Bit Operations</h2>
+
+<p>Device drivers frequently maintain status information using individual bits. Linux provides bit-operation APIs for this purpose.</p>
+
+<p>These operations generally work on memory locations containing unsigned long bitmaps.</p>
+
+<h3>Common Bit Operations</h3>
+
+<pre><code>set_bit(0, &amp;flags);
+clear_bit(0, &amp;flags);
+change_bit(0, &amp;flags);
+
+test_bit(0, &amp;flags);
+
+test_and_set_bit(1, &amp;flags);
+test_and_clear_bit(1, &amp;flags);</code></pre>
+
+<table>
+    <tr>
+        <th>Function</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>set_bit()</code></td>
+        <td>Sets the selected bit to 1.</td>
+    </tr>
+    <tr>
+        <td><code>clear_bit()</code></td>
+        <td>Clears the selected bit to 0.</td>
+    </tr>
+    <tr>
+        <td><code>change_bit()</code></td>
+        <td>Toggles the selected bit.</td>
+    </tr>
+    <tr>
+        <td><code>test_bit()</code></td>
+        <td>Reads and tests the selected bit without modifying it.</td>
+    </tr>
+    <tr>
+        <td><code>test_and_set_bit()</code></td>
+        <td>Sets the bit and returns its previous value.</td>
+    </tr>
+    <tr>
+        <td><code>test_and_clear_bit()</code></td>
+        <td>Clears the bit and returns its previous value.</td>
+    </tr>
+</table>
+
+<h3>Example: Device Status Flags</h3>
+
+<pre><code>#include &lt;linux/bitops.h&gt;
+
+unsigned long device_flags = 0;
+
+/* Set bit 0 */
+set_bit(0, &amp;device_flags);
+
+/* Check bit 0 */
+if (test_bit(0, &amp;device_flags)) {
+    pr_info("Device is ready\n");
+}
+
+/* Clear bit 0 */
+clear_bit(0, &amp;device_flags);</code></pre>
+
+<p>Bit numbering starts at bit zero. For example, bit 0 represents the least significant bit of the first machine word in the bitmap.</p>
+
+<div class="note">
+    <strong>Important:</strong> Bit-operation guarantees differ by function. For example, <code>test_bit()</code> is a read-only test; it does not modify the bit. Some bit operations have non-atomic variants, so consult the API documentation for the exact operation and required ordering.
+</div>
+</section>
+
+<section>
+<h2>10. Atomic Operations vs Mutexes vs Spinlocks</h2>
+
+<p>Atomic operations are not a replacement for every synchronization mechanism.</p>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Atomic Operations</th>
+        <th>Mutex</th>
+        <th>Spinlock</th>
+    </tr>
+    <tr>
+        <td>Primary purpose</td>
+        <td>Simple atomic updates</td>
+        <td>Protecting larger critical sections</td>
+        <td>Protecting short critical sections</td>
+    </tr>
+    <tr>
+        <td>Can sleep while held?</td>
+        <td>Atomic operations themselves do not sleep</td>
+        <td>May sleep while waiting</td>
+        <td>Must not sleep while held</td>
+    </tr>
+    <tr>
+        <td>Suitable for interrupt context?</td>
+        <td>Many atomic operations are suitable</td>
+        <td>No</td>
+        <td>With correct IRQ-safe locking design</td>
+    </tr>
+    <tr>
+        <td>Protect multiple related fields?</td>
+        <td>Not by themselves</td>
+        <td>Yes</td>
+        <td>Yes</td>
+    </tr>
+    <tr>
+        <td>Typical use</td>
+        <td>Event counter</td>
+        <td>Shared device buffer</td>
+        <td>Short shared-state update</td>
+    </tr>
+</table>
+
+<h3>When Should You Use Atomic Operations?</h3>
+
+<ul>
+    <li>When updating a simple shared counter.</li>
+    <li>When performing a simple atomic state transition.</li>
+    <li>When setting or clearing individual shared bits.</li>
+    <li>When a complete lock-protected critical section is unnecessary.</li>
+</ul>
+
+<h3>When Should You Use a Lock?</h3>
+
+<ul>
+    <li>When multiple related variables must remain consistent.</li>
+    <li>When a data structure requires several coordinated updates.</li>
+    <li>When a complete sequence of operations must be protected.</li>
+    <li>When an operation involves a shared buffer or complex state.</li>
+</ul>
+
+<div class="warning">
+    <strong>Example:</strong> Suppose a driver updates both <code>event_count</code> and <code>last_event_time</code>. Making the counter atomic does not automatically make the pair of updates consistent. A suitable lock or another carefully designed synchronization protocol may be necessary.
+</div>
+</section>
+
+<section>
+<h2>11. Atomicity and Memory Ordering</h2>
+
+<p>Atomicity and memory ordering are related but different concepts.</p>
+
+<ul>
+    <li><strong>Atomicity:</strong> Prevents an atomic read-modify-write operation from being observed as a partially completed update.</li>
+    <li><strong>Memory ordering:</strong> Defines the ordering and visibility of memory accesses between CPUs and execution contexts.</li>
+</ul>
+
+<p>An atomic operation does not automatically provide every memory-ordering guarantee that a driver may need.</p>
+
+<h3>Example: Publishing Shared Data</h3>
+
+<p>Consider a producer that prepares data and then sets a ready flag. Another CPU checks the flag before reading the data.</p>
+
+<pre><code>/* Conceptual example: ordering matters */
+
+/* Producer */
+shared_data = 123;
+atomic_set(&amp;ready, 1);
+
+/* Consumer */
+if (atomic_read(&amp;ready)) {
+    value = shared_data;
+}</code></pre>
+
+<p>This simplified example must not be treated as a complete publication protocol. The ordering and visibility of <code>shared_data</code> relative to the flag must be guaranteed by the appropriate kernel memory-ordering primitives.</p>
+
+<p>Depending on the design, use documented acquire/release operations, such as appropriate atomic acquire/release variants, or explicit memory barriers. The exact API must be checked in the target kernel headers.</p>
+
+<div class="note">
+    Do not assume that every atomic operation provides full memory barriers. Consult the Linux kernel memory model and the documentation for the exact operation being used.
+</div>
+
+<h3>Why volatile Is Not Enough</h3>
+
+<pre><code>volatile int counter;</code></pre>
+
+<p>The <code>volatile</code> qualifier does not make an increment atomic, does not prevent lost updates, and does not provide a complete synchronization protocol between CPUs.</p>
+
+<p>Use kernel atomic APIs or appropriate locking primitives instead.</p>
+</section>
+
+<section>
+<h2>12. Atomic Counter in a Linux Kernel Module</h2>
+
+<p>Let us implement a simple kernel module that maintains an atomic event counter.</p>
+
+<h3>Source Code: atomic_counter.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/atomic.h&gt;
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Linux Device Drivers Course");
+MODULE_DESCRIPTION("Atomic Counter Demonstration");
+MODULE_VERSION("1.0");
+
+static atomic_t event_count = ATOMIC_INIT(0);
+
+static int __init atomic_counter_init(void)
+{
+    int value;
+
+    pr_info("Atomic counter module loaded\n");
+
+    atomic_inc(&amp;event_count);
+    atomic_inc(&amp;event_count);
+    atomic_inc(&amp;event_count);
+
+    value = atomic_read(&amp;event_count);
+
+    pr_info("Event count = %d\n", value);
+
+    return 0;
+}
+
+static void __exit atomic_counter_exit(void)
+{
+    pr_info("Atomic counter module unloaded\n");
+    pr_info("Final event count = %d\n",
+            atomic_read(&amp;event_count));
+}
+
+module_init(atomic_counter_init);
+module_exit(atomic_counter_exit);</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li><code>linux/atomic.h</code> provides atomic operation interfaces.</li>
+    <li><code>ATOMIC_INIT(0)</code> initializes the counter.</li>
+    <li>Each call to <code>atomic_inc()</code> increases the counter by one.</li>
+    <li><code>atomic_read()</code> reads the current value.</li>
+    <li>The exit function prints the final value before the module is unloaded.</li>
+</ol>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += atomic_counter.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p><strong>Important:</strong> The Makefile recipe lines must begin with actual tab characters.</p>
+
+<h3>Compile and Test in Ubuntu</h3>
+
+<pre><code>make
+
+sudo insmod atomic_counter.ko
+
+lsmod | grep atomic_counter
+
+sudo dmesg | tail -20
+
+sudo rmmod atomic_counter
+
+sudo dmesg | tail -20
+
+make clean</code></pre>
+
+<h3>Expected Kernel Log Output</h3>
+
+<pre><code>Atomic counter module loaded
+Event count = 3
+Atomic counter module unloaded
+Final event count = 3</code></pre>
+
+<p>The example performs three increments during module initialization. Therefore, the displayed counter value is 3.</p>
+
+<div class="note">
+    This demonstration validates the atomic API usage, but its initialization function does not create concurrent execution. The counter is suitable for concurrent updates when the same atomic object is accessed through its documented atomic APIs.
+</div>
+</section>
+
+<section>
+<h2>13. Compare-and-Exchange Example</h2>
+
+<p>The following example demonstrates how <code>atomic_cmpxchg()</code> can be used to change a device state only when the expected old state is present.</p>
+
+<h3>Source Code: atomic_state.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/atomic.h&gt;
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Atomic Compare and Exchange Example");
+
+#define DEVICE_IDLE 0
+#define DEVICE_BUSY 1
+
+static atomic_t device_state = ATOMIC_INIT(DEVICE_IDLE);
+
+static int __init atomic_state_init(void)
+{
+    int old_state;
+
+    old_state = atomic_cmpxchg(
+        &amp;device_state,
+        DEVICE_IDLE,
+        DEVICE_BUSY
+    );
+
+    if (old_state == DEVICE_IDLE) {
+        pr_info("Device changed from IDLE to BUSY\n");
+    } else {
+        pr_info("Device was already BUSY\n");
+    }
+
+    return 0;
+}
+
+static void __exit atomic_state_exit(void)
+{
+    pr_info("Final device state = %d\n",
+            atomic_read(&amp;device_state));
+}
+
+module_init(atomic_state_init);
+module_exit(atomic_state_exit);</code></pre>
+
+<h3>Expected Output</h3>
+
+<pre><code>Device changed from IDLE to BUSY
+Final device state = 1</code></pre>
+
+<p>Since the initial value is 0, the compare-and-exchange operation changes it to 1 and returns the previous value, which is 0.</p>
+</section>
+
+<section>
+<h2>14. Atomic Counters and Reference Counting</h2>
+
+<p>Atomic counters are useful for tracking events, but object lifetime management requires additional care.</p>
+
+<h3>Event Counter</h3>
+
+<p>A driver may use an atomic counter to track:</p>
+
+<ul>
+    <li>Number of received packets.</li>
+    <li>Number of hardware events.</li>
+    <li>Number of detected errors.</li>
+    <li>Number of completed operations.</li>
+</ul>
+
+<h3>Reference Counting</h3>
+
+<p>Reference counting tracks how many active users hold references to an object. The object should be released only when its reference count reaches zero and no other lifetime constraints remain.</p>
+
+<p>Although atomic operations can implement basic counting, Linux provides <code>refcount_t</code> specifically for reference counting.</p>
+
+<p><code>refcount_t</code> includes additional protections against problems such as reference-count overflow and underflow.</p>
+
+<div class="warning">
+    Do not use a plain <code>atomic_t</code> as a casual replacement for <code>refcount_t</code> when managing object lifetimes. Use the dedicated reference-counting API and follow its documented ownership rules.
+</div>
+</section>
+
+<section>
+<h2>15. Common Mistakes in Atomic Operations</h2>
+
+<table>
+    <tr>
+        <th>Mistake</th>
+        <th>Correct Practice</th>
+    </tr>
+    <tr>
+        <td>Using <code>counter++</code> on an atomic variable.</td>
+        <td>Use <code>atomic_inc()</code>.</td>
+    </tr>
+    <tr>
+        <td>Directly accessing internal atomic fields.</td>
+        <td>Use documented atomic APIs.</td>
+    </tr>
+    <tr>
+        <td>Assuming atomic operations protect multiple variables.</td>
+        <td>Use a suitable lock or synchronization protocol.</td>
+    </tr>
+    <tr>
+        <td>Assuming every atomic operation provides full memory ordering.</td>
+        <td>Check the documented ordering guarantees.</td>
+    </tr>
+    <tr>
+        <td>Using <code>volatile</code> instead of synchronization.</td>
+        <td>Use atomic APIs, locks and memory barriers as appropriate.</td>
+    </tr>
+    <tr>
+        <td>Using <code>atomic_t</code> for all reference-counting tasks.</td>
+        <td>Prefer <code>refcount_t</code> for object lifetime management.</td>
+    </tr>
+    <tr>
+        <td>Assuming all atomic APIs are identical across kernel versions.</td>
+        <td>Check the target kernel headers and documentation.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>16. Practical Applications in Device Drivers</h2>
+
+<h3>Application 1: Interrupt Event Counter</h3>
+
+<p>A driver can maintain an event counter that is incremented whenever a hardware interrupt is handled, provided the selected atomic operation is appropriate for that context.</p>
+
+<pre><code>static atomic_t irq_count = ATOMIC_INIT(0);
+
+/* In an appropriate interrupt handler */
+atomic_inc(&amp;irq_count);</code></pre>
+
+<h3>Application 2: Packet Counter</h3>
+
+<p>A network-related driver may count packets processed by different execution contexts.</p>
+
+<pre><code>static atomic_t packet_count = ATOMIC_INIT(0);
+
+atomic_inc(&amp;packet_count);</code></pre>
+
+<h3>Application 3: Error Counter</h3>
+
+<p>A driver may maintain a shared error counter.</p>
+
+<pre><code>static atomic_t error_count = ATOMIC_INIT(0);
+
+atomic_inc(&amp;error_count);
+
+pr_err("Total errors: %d\n",
+       atomic_read(&amp;error_count));</code></pre>
+
+<p>For high-frequency statistics, consider whether per-CPU counters or other specialized mechanisms are more appropriate. A single shared atomic counter may become a contention point on a heavily loaded multi-CPU system.</p>
+</section>
+
+<section>
+<h2>17. Important Linux Kernel Headers</h2>
+
+<table>
+    <tr>
+        <th>Header</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>&lt;linux/atomic.h&gt;</code></td>
+        <td>Atomic integer operation interfaces.</td>
+    </tr>
+    <tr>
+        <td><code>&lt;linux/bitops.h&gt;</code></td>
+        <td>Bit manipulation operations.</td>
+    </tr>
+    <tr>
+        <td><code>&lt;linux/refcount.h&gt;</code></td>
+        <td>Reference-counting interfaces.</td>
+    </tr>
+    <tr>
+        <td><code>&lt;linux/memory.h&gt;</code></td>
+        <td>Some memory-management and barrier-related interfaces; use the specific documented header for the API being used.</td>
+    </tr>
+</table>
+
+<p>For accurate development, inspect the headers and documentation corresponding to the kernel version against which the module is compiled.</p>
+</section>
+
+<section>
+<h2>18. Lesson Summary</h2>
+
+<ul>
+    <li>Atomic operations perform supported updates indivisibly with respect to concurrent accesses to the same atomic object.</li>
+    <li>Ordinary read-modify-write expressions such as <code>counter++</code> can cause lost updates.</li>
+    <li><code>atomic_t</code> is used for atomic integer operations.</li>
+    <li><code>atomic64_t</code> supports atomic 64-bit integer operations where available.</li>
+    <li><code>atomic_inc()</code>, <code>atomic_dec()</code>, <code>atomic_add()</code> and <code>atomic_sub()</code> modify atomic variables.</li>
+    <li><code>atomic_inc_return()</code> returns the updated value.</li>
+    <li><code>atomic_cmpxchg()</code> compares and conditionally updates an atomic variable, returning the old value.</li>
+    <li>Bit-operation APIs help manage shared flags.</li>
+    <li>Atomicity does not automatically provide every required memory-ordering guarantee.</li>
+    <li>Mutexes and spinlocks remain necessary for complex critical sections.</li>
+    <li><code>refcount_t</code> is preferred for object reference counting.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Short Answer Questions</h2>
+
+<ol>
+    <li>What is an atomic operation?</li>
+    <li>Why is <code>counter++</code> not necessarily atomic?</li>
+    <li>What is a lost update?</li>
+    <li>What is the purpose of <code>atomic_t</code>?</li>
+    <li>What is the purpose of <code>atomic64_t</code>?</li>
+    <li>What does <code>atomic_inc()</code> do?</li>
+    <li>What is the difference between <code>atomic_read()</code> and <code>atomic_set()</code>?</li>
+    <li>What does <code>atomic_inc_return()</code> return?</li>
+    <li>What does <code>atomic_cmpxchg()</code> do?</li>
+    <li>What is the purpose of <code>test_and_set_bit()</code>?</li>
+    <li>Why is <code>volatile</code> not a synchronization mechanism?</li>
+    <li>What is the difference between <code>atomic_t</code> and <code>refcount_t</code>?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Long Answer Questions</h2>
+
+<ol>
+    <li>Explain why atomic operations are required in Linux device drivers with a race-condition example.</li>
+    <li>Explain <code>atomic_t</code> and <code>atomic64_t</code> with initialization examples.</li>
+    <li>Explain the basic atomic arithmetic functions provided by Linux.</li>
+    <li>Describe compare-and-exchange and explain its use in device state management.</li>
+    <li>Explain atomic bit operations with suitable examples.</li>
+    <li>Compare atomic operations, mutexes and spinlocks.</li>
+    <li>Differentiate atomicity and memory ordering.</li>
+    <li>Explain the use of atomic counters in interrupt-driven device drivers.</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Practical Exercises</h2>
+
+<ol>
+    <li>Write a kernel module that initializes an atomic counter to zero.</li>
+    <li>Increment the counter five times using <code>atomic_inc()</code>.</li>
+    <li>Use <code>atomic_read()</code> to display the final counter value.</li>
+    <li>Use <code>atomic_add()</code> and <code>atomic_sub()</code> to modify a counter.</li>
+    <li>Demonstrate the return value of <code>atomic_inc_return()</code>.</li>
+    <li>Implement a device state transition using <code>atomic_cmpxchg()</code>.</li>
+    <li>Use <code>set_bit()</code>, <code>test_bit()</code> and <code>clear_bit()</code> to manage a status flag.</li>
+    <li>Compare the design of an atomic counter with a mutex-protected counter.</li>
+</ol>
+
+<h3>Expected Learning Outcome</h3>
+
+<p>After completing these exercises, you should be able to use Linux atomic APIs to maintain simple shared counters and state variables safely, identify when atomic operations are insufficient, and select an appropriate synchronization mechanism for a device driver.</p>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L03_Critical_Sections.html">← Previous: Critical Sections</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L05_Spinlocks.html">Next: Spinlocks →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 13 – Synchronization and Concurrency</p>
+</footer>
+
+</body>
+</html>
