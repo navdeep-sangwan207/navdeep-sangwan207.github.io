@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 4 - Kernel Debugging Using ftrace</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:27px}
+nav{background:white;padding:13px;text-align:center;border-bottom:1px solid #dce3ed}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 12px}
+nav a:hover{text-decoration:underline}
+.container{max-width:1050px;margin:25px auto;padding:0 16px}
+.lesson-info{background:#e6f1ff;border-left:5px solid #2878d7;padding:15px 20px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:22px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 7px rgba(0,0,0,.06)}
+h2{color:#174ea6;margin-top:0;border-bottom:2px solid #e5edf8;padding-bottom:8px}
+h3{color:#245b9e}
+pre{background:#172334;color:#e8f0fa;padding:16px;border-radius:7px;overflow-x:auto;font-size:14px}
+code{font-family:Consolas,monospace}
+.note{background:#fff7df;border-left:5px solid #e5a000;padding:13px 16px;margin:15px 0;border-radius:5px}
+.example{background:#eaf7ee;border-left:5px solid #269653;padding:13px 16px;margin:15px 0;border-radius:5px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;vertical-align:top}
+th{background:#e8f0fc;color:#174ea6}
+.diagram{background:#f0f5fc;padding:17px;border-radius:7px;text-align:center;font-family:Consolas,monospace;overflow-x:auto;white-space:pre;line-height:1.8}
+footer{text-align:center;padding:22px;background:#123b80;color:white;margin-top:30px}
+@media(max-width:600px){header h1{font-size:22px}nav a{display:inline-block;margin:5px 8px}section{padding:16px}table{font-size:13px}}
+</style>
+</head>
+<body>
+
+<header>
+<h1>Chapter 19: Driver Debugging, Testing and Performance</h1>
+<p>Lesson 4: Kernel Debugging Using ftrace</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">LDD Course</a>
+<a href="index.html">Chapter Index</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+<strong>Lesson:</strong> 4<br>
+<strong>Topic:</strong> Kernel Debugging Using ftrace<br>
+<strong>Chapter:</strong> Driver Debugging, Testing and Performance<br>
+<strong>Level:</strong> Intermediate to Advanced
+</div>
+
+<section>
+<h2>1. Introduction to ftrace</h2>
+<p>ftrace is a Linux kernel tracing framework used to analyze kernel execution and investigate performance and debugging problems.</p>
+<p>It allows developers to observe function calls, trace selected kernel events, investigate scheduling activity and examine execution timing.</p>
+<p>Unlike printk(), which records messages explicitly added by a developer, ftrace can trace kernel activities using facilities built into the kernel.</p>
+<h3>Common Applications</h3>
+<ul>
+<li>Tracing kernel function calls.</li>
+<li>Understanding driver execution flow.</li>
+<li>Investigating interrupt activity.</li>
+<li>Analyzing scheduler behaviour.</li>
+<li>Measuring function execution time.</li>
+<li>Identifying unexpected kernel activity.</li>
+<li>Investigating performance bottlenecks.</li>
+</ul>
+<div class="example">
+<strong>Example:</strong> If a device driver's probe() function takes too long to complete, function tracing can help identify the functions called during initialization.
+</div>
+</section>
+
+<section>
+<h2>2. ftrace Architecture</h2>
+<div class="diagram">
+        Kernel Developer
+                |
+                v
+        Tracing Configuration
+                |
+                v
+             ftrace
+                |
+       +--------+---------+
+       |        |         |
+       v        v         v
+    Function  Event    Function
+    Tracing  Tracing   Graph
+       |        |         |
+       +--------+---------+
+                |
+                v
+          Trace Buffer
+                |
+                v
+        trace / trace_pipe
+                |
+                v
+       Developer Analysis
+</div>
+<p>ftrace collects tracing information in kernel-managed buffers. Developers configure tracing through tracefs and inspect the resulting data.</p>
+</section>
+
+<section>
+<h2>3. Tracefs Filesystem</h2>
+<p>ftrace is commonly controlled through the tracefs virtual filesystem.</p>
+<p>Its usual mount location is:</p>
+<pre><code>/sys/kernel/tracing</code></pre>
+<h3>Check Whether Tracefs Is Mounted</h3>
+<pre><code>mount | grep tracefs</code></pre>
+<h3>Mount Tracefs</h3>
+<pre><code>sudo mount -t tracefs tracefs /sys/kernel/tracing</code></pre>
+<h3>List Tracing Files</h3>
+<pre><code>ls /sys/kernel/tracing</code></pre>
+<h3>Important Files</h3>
+<table>
+<tr><th>File</th><th>Purpose</th></tr>
+<tr><td>available_tracers</td><td>Lists supported tracers.</td></tr>
+<tr><td>current_tracer</td><td>Selects the active tracer.</td></tr>
+<tr><td>tracing_on</td><td>Controls recording.</td></tr>
+<tr><td>trace</td><td>Displays collected trace data.</td></tr>
+<tr><td>trace_pipe</td><td>Provides a streaming trace interface.</td></tr>
+<tr><td>available_events</td><td>Lists available trace events.</td></tr>
+<tr><td>set_ftrace_filter</td><td>Filters functions for tracing.</td></tr>
+<tr><td>set_ftrace_notrace</td><td>Excludes selected functions.</td></tr>
+<tr><td>tracing_cpumask</td><td>Controls CPUs included in tracing.</td></tr>
+<tr><td>buffer_size_kb</td><td>Controls per-CPU trace buffer size.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. Available ftrace Tracers</h2>
+<p>Different tracers provide different information. The exact list depends on kernel configuration.</p>
+<h3>Check Available Tracers</h3>
+<pre><code>cat /sys/kernel/tracing/available_tracers</code></pre>
+<table>
+<tr><th>Tracer</th><th>Purpose</th></tr>
+<tr><td>nop</td><td>No active tracer; default inactive mode.</td></tr>
+<tr><td>function</td><td>Records kernel function calls.</td></tr>
+<tr><td>function_graph</td><td>Records function entry and return relationships.</td></tr>
+<tr><td>irqsoff</td><td>Investigates long periods with interrupts disabled.</td></tr>
+<tr><td>preemptoff</td><td>Investigates long periods with preemption disabled.</td></tr>
+<tr><td>preemptirqsoff</td><td>Investigates latency involving disabled preemption or interrupts.</td></tr>
+<tr><td>wakeup</td><td>Measures certain task wake-up latency behaviour.</td></tr>
+<tr><td>wakeup_rt</td><td>Analyzes wake-up latency for real-time tasks where supported.</td></tr>
+</table>
+<p>Not every kernel provides all these tracers.</p>
+</section>
+
+<section>
+<h2>5. Function Tracing</h2>
+<p>Function tracing records kernel functions as they are executed.</p>
+<h3>Step 1: Navigate to Tracefs</h3>
+<pre><code>cd /sys/kernel/tracing</code></pre>
+<h3>Step 2: Select Function Tracer</h3>
+<pre><code>echo function | sudo tee current_tracer</code></pre>
+<h3>Step 3: Enable Tracing</h3>
+<pre><code>echo 1 | sudo tee tracing_on</code></pre>
+<h3>Step 4: View Trace Output</h3>
+<pre><code>sudo cat trace</code></pre>
+<h3>Step 5: Stop Tracing</h3>
+<pre><code>echo 0 | sudo tee tracing_on</code></pre>
+<h3>Step 6: Disable the Tracer</h3>
+<pre><code>echo nop | sudo tee current_tracer</code></pre>
+<div class="note">
+The trace output depends on kernel activity and available tracing support. The trace file is a snapshot; trace_pipe is used for streaming records.
+</div>
+</section>
+
+<section>
+<h2>6. Function Filtering</h2>
+<p>Function filtering limits tracing to selected functions. This is useful because tracing every kernel function can produce a large amount of data.</p>
+<h3>List Available Traceable Functions</h3>
+<pre><code>cat /sys/kernel/tracing/available_filter_functions</code></pre>
+<h3>Trace a Specific Function</h3>
+<pre><code>cd /sys/kernel/tracing
+
+echo my_driver_probe | sudo tee set_ftrace_filter
+echo function | sudo tee current_tracer
+echo 1 | sudo tee tracing_on</code></pre>
+<h3>View the Result</h3>
+<pre><code>sudo cat trace</code></pre>
+<h3>Clear the Filter</h3>
+<pre><code>echo | sudo tee set_ftrace_filter</code></pre>
+<p>Replace my_driver_probe with an actual traceable function name. Some functions may not be available because of compiler optimization, tracing configuration or other kernel restrictions.</p>
+</section>
+
+<section>
+<h2>7. Function Graph Tracing</h2>
+<p>Function graph tracing records function entry and return relationships. It helps developers understand nested function calls.</p>
+<h3>Select Function Graph Tracer</h3>
+<pre><code>cd /sys/kernel/tracing
+
+echo function_graph | sudo tee current_tracer</code></pre>
+<h3>Enable Tracing</h3>
+<pre><code>echo 1 | sudo tee tracing_on</code></pre>
+<h3>View the Trace</h3>
+<pre><code>sudo cat trace</code></pre>
+<h3>Stop Tracing</h3>
+<pre><code>echo 0 | sudo tee tracing_on</code></pre>
+<h3>Reset</h3>
+<pre><code>echo nop | sudo tee current_tracer</code></pre>
+<p>Function graph output can show nested function execution and timing information when supported.</p>
+</section>
+
+<section>
+<h2>8. Event Tracing</h2>
+<p>Event tracing records selected events generated by kernel subsystems.</p>
+<p>Examples include:</p>
+<ul>
+<li>Scheduler events.</li>
+<li>Interrupt events.</li>
+<li>Block I/O events.</li>
+<li>System-call events.</li>
+<li>Network events.</li>
+<li>Power-management events.</li>
+</ul>
+<h3>List Available Events</h3>
+<pre><code>cat /sys/kernel/tracing/available_events</code></pre>
+<h3>List Scheduler Events</h3>
+<pre><code>ls /sys/kernel/tracing/events/sched</code></pre>
+<h3>Enable a Scheduler Event</h3>
+<pre><code>echo 1 | sudo tee \
+/sys/kernel/tracing/events/sched/sched_switch/enable</code></pre>
+<h3>Start Recording</h3>
+<pre><code>echo 1 | sudo tee /sys/kernel/tracing/tracing_on</code></pre>
+<h3>View the Trace</h3>
+<pre><code>sudo cat /sys/kernel/tracing/trace</code></pre>
+<h3>Disable the Event</h3>
+<pre><code>echo 0 | sudo tee \
+/sys/kernel/tracing/events/sched/sched_switch/enable</code></pre>
+</section>
+
+<section>
+<h2>9. Trace Buffer</h2>
+<p>ftrace uses kernel-managed buffers to store tracing records.</p>
+<p>Important concepts include:</p>
+<ul>
+<li>Per-CPU trace buffers.</li>
+<li>Buffer size.</li>
+<li>Trace record format.</li>
+<li>Buffer overwrite behaviour.</li>
+<li>Trace snapshots.</li>
+</ul>
+<h3>Check Buffer Size</h3>
+<pre><code>cat /sys/kernel/tracing/buffer_size_kb</code></pre>
+<h3>Change Buffer Size</h3>
+<pre><code>echo 2048 | sudo tee \
+/sys/kernel/tracing/buffer_size_kb</code></pre>
+<p>The value represents the buffer size in kilobytes per CPU.</p>
+<div class="note">
+Increasing the buffer size consumes additional kernel memory. Choose a suitable value for the system and tracing workload.
+</div>
+</section>
+
+<section>
+<h2>10. trace and trace_pipe</h2>
+<table>
+<tr><th>Interface</th><th>Purpose</th></tr>
+<tr><td>trace</td><td>Displays the current contents of the trace buffer.</td></tr>
+<tr><td>trace_pipe</td><td>Provides a streaming interface that consumes trace records as they are read.</td></tr>
+</table>
+<h3>Read a Trace Snapshot</h3>
+<pre><code>sudo cat /sys/kernel/tracing/trace</code></pre>
+<h3>Follow Trace Output</h3>
+<pre><code>sudo cat /sys/kernel/tracing/trace_pipe</code></pre>
+<p>trace_pipe waits for new records when no data is immediately available.</p>
+</section>
+
+<section>
+<h2>11. Tracing Driver Execution</h2>
+<p>ftrace can help investigate how a driver interacts with kernel subsystems.</p>
+<p>Consider a platform device driver with these important functions:</p>
+<ul>
+<li>module initialization.</li>
+<li>platform driver registration.</li>
+<li>probe().</li>
+<li>device resource initialization.</li>
+<li>remove().</li>
+<li>module cleanup.</li>
+</ul>
+<p>By tracing selected functions, developers can investigate the sequence of operations and identify where an unexpected delay or failure occurs.</p>
+<h3>Example Function Filter</h3>
+<pre><code>echo 'my_platform_probe' | sudo tee \
+/sys/kernel/tracing/set_ftrace_filter
+
+echo function | sudo tee \
+/sys/kernel/tracing/current_tracer
+
+echo 1 | sudo tee \
+/sys/kernel/tracing/tracing_on</code></pre>
+<p>Only functions present in the available traceable function list can be selected successfully.</p>
+</section>
+
+<section>
+<h2>12. Measuring Function Execution Time</h2>
+<p>Function graph tracing can display timing information for function execution.</p>
+<h3>Enable Function Graph Tracing</h3>
+<pre><code>cd /sys/kernel/tracing
+
+echo function_graph | sudo tee current_tracer
+echo 1 | sudo tee tracing_on</code></pre>
+<h3>View Results</h3>
+<pre><code>sudo cat trace</code></pre>
+<p>The trace may display function durations and nested calls, depending on the tracing configuration and available clock source.</p>
+<p>This information can help identify:</p>
+<ul>
+<li>Slow driver callbacks.</li>
+<li>Unexpectedly long function execution.</li>
+<li>Expensive initialization paths.</li>
+<li>Functions contributing to latency.</li>
+</ul>
+</section>
+
+<section>
+<h2>13. ftrace vs printk()</h2>
+<table>
+<tr><th>Feature</th><th>ftrace</th><th>printk()</th></tr>
+<tr><td>Method</td><td>Kernel tracing framework.</td><td>Explicit logging statements.</td></tr>
+<tr><td>Function tracing</td><td>Supported.</td><td>Requires messages added by developer.</td></tr>
+<tr><td>Timing analysis</td><td>Supported by suitable tracers.</td><td>Limited and can distort timing.</td></tr>
+<tr><td>Event tracing</td><td>Supported.</td><td>Requires explicit logging.</td></tr>
+<tr><td>Configuration</td><td>Tracefs controls.</td><td>Kernel code and log controls.</td></tr>
+<tr><td>Typical use</td><td>Execution flow and performance analysis.</td><td>Diagnostic messages and errors.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>14. Practical Exercise: Function Tracing in Ubuntu</h2>
+<h3>Objective</h3>
+<p>Use ftrace to observe kernel function execution in Ubuntu running inside VirtualBox.</p>
+<h3>Step 1: Check Tracefs</h3>
+<pre><code>mount | grep tracefs</code></pre>
+<h3>Step 2: Mount if Required</h3>
+<pre><code>sudo mount -t tracefs tracefs /sys/kernel/tracing</code></pre>
+<h3>Step 3: Check Available Tracers</h3>
+<pre><code>cat /sys/kernel/tracing/available_tracers</code></pre>
+<h3>Step 4: Select Function Tracing</h3>
+<pre><code>echo function | sudo tee \
+/sys/kernel/tracing/current_tracer</code></pre>
+<h3>Step 5: Start Tracing</h3>
+<pre><code>echo 1 | sudo tee \
+/sys/kernel/tracing/tracing_on</code></pre>
+<h3>Step 6: Generate System Activity</h3>
+<pre><code>ls
+uname -a
+cat /proc/cpuinfo</code></pre>
+<h3>Step 7: Read the Trace</h3>
+<pre><code>sudo cat /sys/kernel/tracing/trace | head -50</code></pre>
+<h3>Step 8: Stop Tracing</h3>
+<pre><code>echo 0 | sudo tee \
+/sys/kernel/tracing/tracing_on</code></pre>
+<h3>Step 9: Reset Tracing</h3>
+<pre><code>echo nop | sudo tee \
+/sys/kernel/tracing/current_tracer</code></pre>
+<h3>Expected Result</h3>
+<p>The trace output should contain kernel function records if the selected tracer is supported and enabled. The exact output depends on kernel configuration and system activity.</p>
+</section>
+
+<section>
+<h2>15. Troubleshooting ftrace</h2>
+<table>
+<tr><th>Problem</th><th>Possible Cause</th><th>Solution</th></tr>
+<tr><td>Tracing directory missing</td><td>tracefs is not mounted.</td><td>Mount tracefs.</td></tr>
+<tr><td>Function tracer unavailable</td><td>Kernel lacks required tracing support.</td><td>Check kernel configuration.</td></tr>
+<tr><td>Permission denied</td><td>Insufficient privileges.</td><td>Use sudo.</td></tr>
+<tr><td>Function not found</td><td>Function is not traceable or name is incorrect.</td><td>Check available_filter_functions.</td></tr>
+<tr><td>Empty trace output</td><td>Tracing is disabled or no matching activity occurred.</td><td>Check tracing_on and filters.</td></tr>
+<tr><td>Trace output too large</td><td>Too many functions or events selected.</td><td>Use filters and reduce tracing scope.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>16. Best Practices</h2>
+<ol>
+<li>Start with a clear debugging objective.</li>
+<li>Check available tracers before selecting one.</li>
+<li>Use function filters to reduce unnecessary records.</li>
+<li>Use event tracing for specific subsystem activity.</li>
+<li>Monitor trace buffer size.</li>
+<li>Stop tracing after collecting the required data.</li>
+<li>Reset the tracer when testing is complete.</li>
+<li>Use function graph tracing for nested function analysis.</li>
+<li>Record kernel version and configuration.</li>
+<li>Consider tracing overhead when measuring performance.</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Important Points to Remember</h2>
+<ul>
+<li>ftrace is a Linux kernel tracing framework.</li>
+<li>Tracefs provides the main control interface.</li>
+<li>Function tracer records kernel function calls.</li>
+<li>Function graph tracer shows nested execution.</li>
+<li>Event tracing records selected kernel events.</li>
+<li>set_ftrace_filter limits function tracing.</li>
+<li>trace displays collected records.</li>
+<li>trace_pipe provides streaming output.</li>
+<li>ftrace can help analyze driver execution and latency.</li>
+<li>Tracing overhead and buffer usage should be considered.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Review Questions</h2>
+<ol>
+<li>What is ftrace?</li>
+<li>Explain the architecture of ftrace.</li>
+<li>What is tracefs?</li>
+<li>Where is tracefs commonly mounted?</li>
+<li>What is the purpose of available_tracers?</li>
+<li>Explain function tracing.</li>
+<li>What is function graph tracing?</li>
+<li>What is event tracing?</li>
+<li>What is the purpose of set_ftrace_filter?</li>
+<li>Differentiate trace and trace_pipe.</li>
+<li>What is a per-CPU trace buffer?</li>
+<li>How can ftrace help investigate a slow driver callback?</li>
+<li>Differentiate ftrace and printk().</li>
+<li>Why should function filtering be used?</li>
+<li>What can cause an empty trace output?</li>
+<li>Why should tracing be disabled after debugging?</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Lesson Summary</h2>
+<p>ftrace is a powerful Linux kernel tracing framework used to understand kernel execution, investigate device-driver behaviour and analyze performance problems.</p>
+<p>Its function tracer, function graph tracer and event tracing facilities provide different views of kernel activity. Tracefs allows developers to configure tracing and inspect collected records.</p>
+<p>By selecting appropriate functions and events, developers can investigate driver initialization, function execution, scheduling behaviour and latency in a structured manner.</p>
+</section>
+
+<section>
+<h2>Navigation</h2>
+<p><strong>Previous Lesson:</strong>
+<a href="L03_Kernel_Debugging_Using_printk_and_dmesg.html">Lesson 3 - Kernel Debugging Using printk() and dmesg</a></p>
+<p><strong>Next Lesson:</strong>
+<a href="L05_Kernel_Debugging_Using_GDB_and_KGDB.html">Lesson 5 - Kernel Debugging Using GDB and KGDB</a></p>
+<p><a href="index.html">Back to Chapter 19 Index</a></p>
+<p><a href="../../ldd.html">Back to Linux Device Drivers Course</a></p>
+</section>
+
+</div>
+
+<footer>
+<p>Linux Device Drivers | NS Learning Hub</p>
+<p>Chapter 19 - Lesson 4</p>
+</footer>
+
+</body>
+</html>
