@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Creating Device Nodes Using mknod | Linux Device Drivers</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:35px 20px}
+header h1{font-size:30px;margin-bottom:8px}
+nav{background:#082b60;padding:13px;text-align:center}
+nav a{color:white;text-decoration:none;margin:0 12px;font-weight:bold;font-size:14px}
+nav a:hover{color:#8ec5ff}
+.container{width:92%;max-width:1100px;margin:25px auto}
+.lesson-info{background:#e5f1ff;border-left:5px solid #2878d7;padding:18px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:24px;margin-bottom:22px;border-radius:8px;box-shadow:0 2px 7px rgba(0,0,0,.07)}
+h2{color:#174ea6;margin-bottom:15px;border-bottom:2px solid #e5eefb;padding-bottom:8px}
+h3{color:#1764ad;margin:18px 0 8px}
+p{margin-bottom:12px}
+ul,ol{margin:10px 0 15px 25px}
+li{margin-bottom:7px}
+pre{background:#172435;color:#e8f1ff;padding:17px;border-radius:6px;overflow-x:auto;margin:12px 0;font-size:14px;line-height:1.6}
+code{font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:15px 0;font-size:14px}
+th,td{border:1px solid #d7e0ec;padding:11px;text-align:left;vertical-align:top}
+th{background:#e5f1ff;color:#123b80}
+.diagram{background:#eef5ff;border:1px solid #b9d5f5;border-radius:8px;padding:18px;text-align:center;margin:18px 0}
+.diagram-box{display:inline-block;background:white;border:2px solid #2878d7;border-radius:7px;padding:12px 18px;margin:7px;font-weight:bold;color:#174ea6}
+.arrow{color:#174ea6;font-size:22px;font-weight:bold}
+.note{background:#fff8e6;border-left:4px solid #e5a000;padding:14px;margin:15px 0}
+.warning{background:#fff0f0;border-left:4px solid #d9534f;padding:14px;margin:15px 0}
+.navigation{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:25px 0}
+.navigation a{display:inline-block;background:#174ea6;color:white;padding:11px 18px;border-radius:5px;text-decoration:none;font-weight:bold}
+.navigation a:hover{background:#2878d7}
+footer{background:#082b60;color:white;text-align:center;padding:20px;margin-top:35px}
+@media(max-width:650px){header h1{font-size:23px}nav a{display:inline-block;margin:5px 7px}section{padding:17px}table{font-size:12px}th,td{padding:7px}}
+</style>
+</head>
+<body>
+
+<header>
+<h1>Linux Device Drivers</h1>
+<p>Chapter 10: Device Files and Device Interfaces</p>
+<p>Lesson 4: Creating Device Nodes Using mknod</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">All Chapters</a>
+<a href="index.html">Chapter 10</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+<strong>Lesson Information</strong>
+<p><strong>Chapter:</strong> 10 – Device Files and Device Interfaces</p>
+<p><strong>Lesson:</strong> 4 – Creating Device Nodes Using mknod</p>
+<p><strong>Level:</strong> Beginner to Intermediate</p>
+<p><strong>Prerequisites:</strong> Device nodes, /dev directory, character and block devices, major and minor numbers.</p>
+<p><strong>Learning Goal:</strong> Learn to create, inspect and remove device nodes using the Linux mknod command.</p>
+</div>
+
+<section>
+<h2>1. Introduction to mknod</h2>
+<p>Linux provides the <code>mknod</code> command to create special filesystem nodes, including character and block device nodes.</p>
+<p>A device node represents a device interface using a device type and a major/minor device number.</p>
+<p>In character-device driver development, <code>mknod</code> is often used during testing when a driver has registered its device number and a corresponding device node has not been created automatically.</p>
+<div class="diagram">
+<div class="diagram-box">Registered Device Driver</div>
+<div class="arrow">↓ device number</div>
+<div class="diagram-box">mknod Command</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">Device Node in /dev</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">User-Space Application</div>
+</div>
+<div class="warning"><strong>Important:</strong> The <code>mknod</code> command creates a filesystem node. It does not load a kernel module, register a driver, allocate device numbers or implement device operations.</div>
+</section>
+
+<section>
+<h2>2. Syntax of the mknod Command</h2>
+<p>The general syntax is:</p>
+<pre><code>mknod [OPTIONS] NAME TYPE [MAJOR MINOR]</code></pre>
+<table>
+<tr><th>Argument</th><th>Description</th></tr>
+<tr><td>NAME</td><td>Path and name of the node to create.</td></tr>
+<tr><td>TYPE</td><td><code>c</code> for character device or <code>b</code> for block device.</td></tr>
+<tr><td>MAJOR</td><td>Major device number.</td></tr>
+<tr><td>MINOR</td><td>Minor device number.</td></tr>
+<tr><td>OPTIONS</td><td>Optional command-line settings supported by the installed implementation.</td></tr>
+</table>
+<p>Root privileges are normally required to create device nodes in protected locations such as <code>/dev</code>.</p>
+</section>
+
+<section>
+<h2>3. Creating a Character Device Node</h2>
+<p>Use the letter <code>c</code> to specify a character device node.</p>
+<h3>Example</h3>
+<pre><code>sudo mknod /dev/mychar c 240 0</code></pre>
+<p>This command requests creation of:</p>
+<ul>
+<li>Path: <code>/dev/mychar</code></li>
+<li>Type: Character device</li>
+<li>Major number: 240</li>
+<li>Minor number: 0</li>
+</ul>
+<p>Verify the node:</p>
+<pre><code>ls -l /dev/mychar
+stat /dev/mychar
+file /dev/mychar</code></pre>
+<p>The long listing should begin with <code>c</code>, indicating a character special file. The device number should show the selected major and minor values.</p>
+<div class="warning">The major number 240 is illustrative. Never select arbitrary device numbers for an actual driver. Use the range allocated and registered by the driver.</div>
+</section>
+
+<section>
+<h2>4. Creating a Block Device Node</h2>
+<p>Use the letter <code>b</code> to specify a block device node.</p>
+<h3>Example syntax</h3>
+<pre><code>sudo mknod /dev/myblock b 240 0</code></pre>
+<p>This requests a block device node with major number 240 and minor number 0.</p>
+<p>Verify the node:</p>
+<pre><code>ls -l /dev/myblock
+stat /dev/myblock</code></pre>
+<p>The first character of the long listing should be <code>b</code>.</p>
+<div class="note">This command only creates the node. A suitable block-device registration and implementation must exist for the node to provide a working device interface.</div>
+</section>
+
+<section>
+<h2>5. Understanding Major and Minor Numbers</h2>
+<p>The major and minor numbers are essential for identifying a device interface.</p>
+<h3>Major number</h3>
+<p>The major number identifies a registered device-number range associated with a driver or subsystem.</p>
+<h3>Minor number</h3>
+<p>The minor number identifies a particular device instance or interface within that range.</p>
+<p>For example:</p>
+<pre><code>sudo mknod /dev/mychar c 240 0
+sudo mknod /dev/mychar1 c 240 1</code></pre>
+<p>Both nodes use major number 240 but have different minor numbers.</p>
+<table>
+<tr><th>Node</th><th>Type</th><th>Major</th><th>Minor</th></tr>
+<tr><td>/dev/mychar</td><td>Character</td><td>240</td><td>0</td></tr>
+<tr><td>/dev/mychar1</td><td>Character</td><td>240</td><td>1</td></tr>
+</table>
+<p>Whether these nodes correspond to usable device instances depends on the registered driver and its implementation.</p>
+</section>
+
+<section>
+<h2>6. How to Obtain the Correct Device Number</h2>
+<p>When developing a character driver, the driver may dynamically allocate a device-number range using <code>alloc_chrdev_region()</code>.</p>
+<p>Example kernel code:</p>
+<pre><code>static dev_t dev;
+
+ret = alloc_chrdev_region(&amp;dev, 0, 1, "mydevice");
+
+if (ret &lt; 0)
+{
+    pr_err("Device number allocation failed\n");
+    return ret;
+}
+
+pr_info("Major = %d, Minor = %d\n",
+        MAJOR(dev), MINOR(dev));</code></pre>
+<p>The driver can display the allocated numbers in the kernel log.</p>
+<p>Inspect recent messages using:</p>
+<pre><code>sudo dmesg | tail -n 30</code></pre>
+<p>Use the actual major and minor values reported by the running driver when creating a manual device node.</p>
+<div class="note">A dynamically allocated major number may change between module loads. Do not assume a previously observed value remains valid.</div>
+</section>
+
+<section>
+<h2>7. Complete Character Driver and mknod Workflow</h2>
+<p>The following sequence shows how manual device-node creation fits into a character-driver development workflow.</p>
+<div class="diagram">
+<div class="diagram-box">1. Build Kernel Module</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">2. Load Module</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">3. Allocate Device Number</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">4. Register Character Device</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">5. Obtain Major and Minor</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">6. Create Node with mknod</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">7. Test from User Space</div>
+<div class="arrow">↓</div>
+<div class="diagram-box">8. Remove Node and Unload Module</div>
+</div>
+<p>A driver must initialize its state and register the relevant device operations before user-space applications attempt to use the interface.</p>
+</section>
+
+<section>
+<h2>8. Practical Example in Ubuntu</h2>
+<p>This section demonstrates creating a harmless illustrative device node. It does not create or register a working driver.</p>
+<h3>Step 1: Create a test directory</h3>
+<pre><code>mkdir -p ~/device_node_lab
+cd ~/device_node_lab</code></pre>
+<h3>Step 2: Create a character device node</h3>
+<pre><code>sudo mknod ./testchar c 240 0</code></pre>
+<h3>Step 3: Inspect the node</h3>
+<pre><code>ls -l ./testchar
+stat ./testchar
+file ./testchar</code></pre>
+<h3>Step 4: Check its device number</h3>
+<p>Look for the major and minor numbers in the <code>ls -l</code> output.</p>
+<h3>Step 5: Remove the test node</h3>
+<pre><code>sudo rm ./testchar</code></pre>
+<div class="warning"><strong>Do not open or write to this arbitrary test node.</strong> It may not have a corresponding registered device driver. The exercise is limited to learning how the node is created and inspecting its metadata.</div>
+</section>
+
+<section>
+<h2>9. Setting Permissions and Ownership</h2>
+<p>After creating a device node, its permissions and ownership may need to be configured for the intended application.</p>
+<h3>Change permissions</h3>
+<pre><code>sudo chmod 660 /dev/mychar</code></pre>
+<p>This grants read and write permissions to the owner and group, and no permissions to others.</p>
+<h3>Change ownership</h3>
+<pre><code>sudo chown root:dialout /dev/mychar</code></pre>
+<p>This example assigns ownership to root and the group <code>dialout</code>. The correct group depends on the device and distribution.</p>
+<p>Inspect the result:</p>
+<pre><code>ls -l /dev/mychar</code></pre>
+<div class="note">Manual permission changes may not survive device-node removal and recreation. udev rules are commonly used for persistent device permissions and ownership.</div>
+</section>
+
+<section>
+<h2>10. Removing a Device Node</h2>
+<p>A manually created device node can be removed using the <code>rm</code> command.</p>
+<pre><code>sudo rm /dev/mychar</code></pre>
+<p>Removing a device node does not unload the driver or unregister its device-number range.</p>
+<p>Driver cleanup is a separate operation performed by the kernel module's cleanup function or the relevant subsystem's removal procedure.</p>
+<table>
+<tr><th>Operation</th><th>Effect</th></tr>
+<tr><td><code>rm /dev/mychar</code></td><td>Removes the filesystem node.</td></tr>
+<tr><td><code>cdev_del()</code></td><td>Removes the character-device registration.</td></tr>
+<tr><td><code>unregister_chrdev_region()</code></td><td>Releases a previously registered device-number range.</td></tr>
+<tr><td><code>rmmod module_name</code></td><td>Requests removal of a loadable kernel module.</td></tr>
+</table>
+<p>These operations are not interchangeable. Driver resources and active users must be handled safely during cleanup.</p>
+</section>
+
+<section>
+<h2>11. Common mknod Errors</h2>
+<table>
+<tr><th>Error or Problem</th><th>Possible Cause</th><th>Action</th></tr>
+<tr><td>File exists</td><td>A node or file already exists at the specified path.</td><td>Inspect the existing entry before deciding whether to remove it.</td></tr>
+<tr><td>Permission denied</td><td>Insufficient permission to create the node.</td><td>Use appropriate administrative privileges.</td></tr>
+<tr><td>Invalid argument</td><td>Incorrect command syntax or invalid values.</td><td>Check the node type and device-number arguments.</td></tr>
+<tr><td>Operation not permitted</td><td>Security policy or environment restrictions.</td><td>Check privileges and container or VM restrictions.</td></tr>
+<tr><td>Node exists but cannot be opened</td><td>No matching driver registration, unsupported device or access restriction.</td><td>Verify device numbers, driver status and permissions.</td></tr>
+</table>
+<p>Useful diagnostic commands:</p>
+<pre><code>ls -l /dev/mychar
+stat /dev/mychar
+cat /proc/devices
+lsmod
+sudo dmesg | tail -n 30</code></pre>
+</section>
+
+<section>
+<h2>12. mknod vs Automatic Device-Node Creation</h2>
+<p>Linux can provide device nodes through manual creation or automatic device-management mechanisms.</p>
+<table>
+<tr><th>Feature</th><th>mknod</th><th>devtmpfs and udev</th></tr>
+<tr><td>Method</td><td>Manual command</td><td>Kernel and user-space device management</td></tr>
+<tr><td>Node creation</td><td>Administrator creates the node</td><td>Normally created as devices are registered and events are processed</td></tr>
+<tr><td>Permissions</td><td>Can be set or changed manually</td><td>Can be managed through udev rules</td></tr>
+<tr><td>Device naming</td><td>Chosen in the command</td><td>Can be managed by device events and rules</td></tr>
+<tr><td>Typical use</td><td>Testing and specialized manual setup</td><td>Normal modern Linux device management</td></tr>
+</table>
+<p>For many modern systems, automatic device-node management is preferred. Manual <code>mknod</code> remains useful for learning, controlled testing and specialized environments.</p>
+</section>
+
+<section>
+<h2>13. Safety Considerations</h2>
+<ul>
+<li>Do not create device nodes over existing system entries.</li>
+<li>Do not guess major and minor numbers for real hardware interfaces.</li>
+<li>Do not change permissions of sensitive device nodes without understanding the security impact.</li>
+<li>Do not assume a node is functional just because it exists.</li>
+<li>Do not remove system device nodes as part of routine practice.</li>
+<li>Use a dedicated test directory for introductory exercises.</li>
+</ul>
+</section>
+
+<section>
+<h2>14. Practical Exercise</h2>
+<h3>Objective</h3>
+<p>Create and inspect a test character device node using <code>mknod</code>, then remove it safely.</p>
+<h3>Commands</h3>
+<pre><code>mkdir -p ~/mknod_lab
+cd ~/mknod_lab
+
+sudo mknod testchar c 240 0
+
+ls -l testchar
+stat testchar
+file testchar
+
+sudo rm testchar</code></pre>
+<h3>Tasks</h3>
+<ol>
+<li>Identify the command argument that specifies the device type.</li>
+<li>Identify the major and minor numbers used in the example.</li>
+<li>Explain why these example numbers do not guarantee a working device.</li>
+<li>Inspect the metadata of the created node.</li>
+<li>Remove the node and verify that it no longer exists.</li>
+</ol>
+<h3>Expected Result</h3>
+<p>You should be able to create a test device node, identify its type and device numbers, inspect its metadata and remove it safely.</p>
+</section>
+
+<section>
+<h2>15. Summary</h2>
+<ul>
+<li><code>mknod</code> creates special filesystem nodes.</li>
+<li><code>c</code> specifies a character device node.</li>
+<li><code>b</code> specifies a block device node.</li>
+<li>Major and minor numbers identify the device-number range and instance.</li>
+<li>The correct device numbers must come from the actual driver or subsystem.</li>
+<li>Creating a node does not register or load a driver.</li>
+<li><code>chmod</code> and <code>chown</code> can change permissions and ownership.</li>
+<li><code>rm</code> removes the node but does not unregister the driver.</li>
+<li>devtmpfs and udev commonly automate device-node management.</li>
+</ul>
+</section>
+
+<section>
+<h2>16. Practice Questions</h2>
+<h3>Short Answer Questions</h3>
+<ol>
+<li>What is the purpose of the <code>mknod</code> command?</li>
+<li>What does the character <code>c</code> represent in mknod?</li>
+<li>What does the character <code>b</code> represent?</li>
+<li>What is the role of a major number?</li>
+<li>What is the role of a minor number?</li>
+<li>Does mknod register a kernel driver?</li>
+<li>Which command removes a manually created device node?</li>
+</ol>
+<h3>Long Answer Questions</h3>
+<ol>
+<li>Explain the syntax and operation of the mknod command.</li>
+<li>Describe how to create a character device node for a registered character driver.</li>
+<li>Explain the relationship between alloc_chrdev_region(), cdev_add() and mknod.</li>
+<li>Compare manual device-node creation with automatic device-node management.</li>
+</ol>
+<h3>Practical Questions</h3>
+<ol>
+<li>Write the command to create a character node named <code>/dev/example</code> using illustrative major 240 and minor 0.</li>
+<li>Write the command to create a block node using illustrative major 240 and minor 1.</li>
+<li>How can you inspect the device numbers of a node?</li>
+<li>How can you change the permissions of a device node?</li>
+<li>Why can an existing device node still fail when an application calls open()?</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Expected Learning Outcomes</h2>
+<p>After completing this lesson, you should be able to:</p>
+<ul>
+<li>Explain the purpose and syntax of <code>mknod</code>.</li>
+<li>Create character and block device nodes in a controlled test environment.</li>
+<li>Understand the role of major and minor numbers.</li>
+<li>Obtain device numbers from a registered driver.</li>
+<li>Inspect node metadata and permissions.</li>
+<li>Remove manually created device nodes safely.</li>
+<li>Differentiate device-node creation from driver registration.</li>
+</ul>
+</section>
+
+<div class="navigation">
+<a href="L03_Device_Nodes.html">← Previous Lesson</a>
+<a href="index.html">Chapter 10 Index</a>
+<a href="L05_Major_and_Minor_Number_Mapping.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | Linux Device Drivers</p>
+<p>Chapter 10 – Device Files and Device Interfaces</p>
+</footer>
+
+</body>
+</html>
