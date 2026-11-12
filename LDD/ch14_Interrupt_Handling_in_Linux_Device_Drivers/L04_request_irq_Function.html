@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 4: request_irq() Function | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 20px;
+}
+header h1 { margin: 0 0 10px; font-size: 29px; }
+header p { margin: 0; }
+nav {
+    background: white;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+nav a {
+    display: inline-block;
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 5px 12px;
+}
+nav a:hover { color: #007bff; text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e4efff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e2eaf5;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9c; margin-top: 24px; }
+pre {
+    background: #17212e;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    line-height: 1.55;
+    font-size: 14px;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+th, td {
+    border: 1px solid #d5dfeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #edf4ff;
+    border: 1px solid #bfd4f3;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+    font-weight: bold;
+}
+.diagram .arrow {
+    color: #174ea6;
+    font-size: 23px;
+    margin: 5px;
+}
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.warning {
+    background: #fff0f0;
+    border-left: 5px solid #d9534f;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+.navigation-buttons a:hover { background: #2878d7; }
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .navigation-buttons { flex-direction: column; }
+    .navigation-buttons a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Lesson 4: request_irq() Function</h1>
+    <p>Linux Device Drivers – Interrupt Handling</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 14</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> 14 – Interrupt Handling in Linux Device Drivers<br>
+    <strong>Lesson:</strong> 4 – request_irq() Function<br>
+    <strong>Level:</strong> Intermediate<br>
+    <strong>Prerequisites:</strong> Linux Kernel Modules, Interrupt Handling Architecture and Interrupt Service Routines.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+    <li>Understand the purpose of <code>request_irq()</code>.</li>
+    <li>Understand the function declaration and parameters.</li>
+    <li>Identify the Linux IRQ number required for registration.</li>
+    <li>Understand interrupt flags.</li>
+    <li>Register an interrupt handler from a device driver.</li>
+    <li>Understand the purpose of the device-specific pointer.</li>
+    <li>Handle registration errors correctly.</li>
+    <li>Understand when to use <code>request_threaded_irq()</code> instead.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to request_irq()</h2>
+
+<p><code>request_irq()</code> is a Linux kernel API used by device drivers to register an interrupt handler with the Linux IRQ subsystem.</p>
+
+<p>Once registration succeeds, the kernel can invoke the registered handler when the corresponding interrupt is delivered.</p>
+
+<h3>Why Is request_irq() Required?</h3>
+
+<p>A hardware device may generate an interrupt, but the Linux kernel needs to know which driver function should service that interrupt.</p>
+
+<p><code>request_irq()</code> establishes this association.</p>
+
+<div class="diagram">
+    <div>Device Generates Interrupt</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Controller and Linux IRQ Subsystem</div>
+    <div class="arrow">↓</div>
+    <div>Registered Handler</div>
+    <div class="arrow">↓</div>
+    <div>Device-Specific Interrupt Service</div>
+</div>
+</section>
+
+<section>
+<h2>3. Header File</h2>
+
+<p>The interrupt API declarations are available through:</p>
+
+<pre><code>#include &lt;linux/interrupt.h&gt;</code></pre>
+
+<p>A device driver commonly includes additional headers depending on its implementation.</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/interrupt.h&gt;
+#include &lt;linux/errno.h&gt;</code></pre>
+</section>
+
+<section>
+<h2>4. Function Declaration</h2>
+
+<p>The conventional declaration is:</p>
+
+<pre><code>int request_irq(
+    unsigned int irq,
+    irq_handler_t handler,
+    unsigned long flags,
+    const char *name,
+    void *dev
+);</code></pre>
+
+<p>The function returns an integer status:</p>
+<ul>
+    <li><code>0</code> indicates successful registration.</li>
+    <li>A negative error code indicates failure.</li>
+</ul>
+
+<h3>Parameter Overview</h3>
+
+<table>
+    <tr>
+        <th>Parameter</th>
+        <th>Data Type</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td>irq</td>
+        <td><code>unsigned int</code></td>
+        <td>Linux IRQ number.</td>
+    </tr>
+    <tr>
+        <td>handler</td>
+        <td><code>irq_handler_t</code></td>
+        <td>Function that services the interrupt.</td>
+    </tr>
+    <tr>
+        <td>flags</td>
+        <td><code>unsigned long</code></td>
+        <td>Interrupt configuration flags.</td>
+    </tr>
+    <tr>
+        <td>name</td>
+        <td><code>const char *</code></td>
+        <td>Name associated with the interrupt action.</td>
+    </tr>
+    <tr>
+        <td>dev</td>
+        <td><code>void *</code></td>
+        <td>Device-specific pointer passed to the handler.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>5. First Parameter: IRQ Number</h2>
+
+<p>The <code>irq</code> parameter specifies the Linux IRQ number for which the driver wants to register a handler.</p>
+
+<p>The IRQ number is an identifier managed by the Linux IRQ subsystem.</p>
+
+<h3>Important Points</h3>
+<ul>
+    <li>It is a Linux IRQ number, not necessarily the hardware interrupt-controller number.</li>
+    <li>It may be obtained through a platform-specific or subsystem-specific device resource.</li>
+    <li>Device Tree-based drivers commonly obtain interrupt resources through kernel resource APIs.</li>
+    <li>Drivers should not assume fixed IRQ numbers across different machines.</li>
+</ul>
+
+<h3>Illustrative Declaration</h3>
+
+<pre><code>unsigned int irq_number;
+
+/* Example only: obtain the IRQ through
+ * the appropriate device-specific API.
+ */</code></pre>
+
+<div class="warning">
+    Do not copy an arbitrary IRQ number from <code>/proc/interrupts</code> and assume it belongs to your device. A driver must obtain the correct interrupt resource for its hardware.
+</div>
+</section>
+
+<section>
+<h2>6. Second Parameter: Interrupt Handler</h2>
+
+<p>The <code>handler</code> parameter specifies the function that Linux invokes when the corresponding interrupt is dispatched.</p>
+
+<p>The handler must follow the Linux IRQ handler signature.</p>
+
+<pre><code>static irqreturn_t my_interrupt_handler(
+    int irq,
+    void *dev_id
+)
+{
+    return IRQ_HANDLED;
+}</code></pre>
+
+<h3>Function Parameters</h3>
+
+<table>
+    <tr>
+        <th>Parameter</th>
+        <th>Description</th>
+    </tr>
+    <tr>
+        <td><code>irq</code></td>
+        <td>Linux IRQ number associated with the interrupt.</td>
+    </tr>
+    <tr>
+        <td><code>dev_id</code></td>
+        <td>Device-specific pointer supplied during registration.</td>
+    </tr>
+</table>
+
+<h3>Return Values</h3>
+
+<ul>
+    <li><code>IRQ_HANDLED</code> – the interrupt was handled by this device.</li>
+    <li><code>IRQ_NONE</code> – the interrupt was not generated by this device or was not handled.</li>
+    <li><code>IRQ_WAKE_THREAD</code> – requests execution of a registered threaded handler.</li>
+</ul>
+
+<p>A handler should inspect the device's interrupt status and perform the required device-specific service before returning.</p>
+</section>
+
+<section>
+<h2>7. Third Parameter: Interrupt Flags</h2>
+
+<p>The <code>flags</code> parameter specifies how the interrupt should be configured and registered.</p>
+
+<p>Several commonly encountered flags are:</p>
+
+<table>
+    <tr>
+        <th>Flag</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>IRQF_SHARED</code></td>
+        <td>Allows the IRQ to be shared with other registered handlers, subject to sharing requirements.</td>
+    </tr>
+    <tr>
+        <td><code>IRQF_TRIGGER_RISING</code></td>
+        <td>Requests rising-edge triggering.</td>
+    </tr>
+    <tr>
+        <td><code>IRQF_TRIGGER_FALLING</code></td>
+        <td>Requests falling-edge triggering.</td>
+    </tr>
+    <tr>
+        <td><code>IRQF_TRIGGER_HIGH</code></td>
+        <td>Requests high-level triggering.</td>
+    </tr>
+    <tr>
+        <td><code>IRQF_TRIGGER_LOW</code></td>
+        <td>Requests low-level triggering.</td>
+    </tr>
+    <tr>
+        <td><code>IRQF_ONESHOT</code></td>
+        <td>Used with threaded IRQ handling to keep the IRQ masked while the thread runs, as supported by the IRQ flow.</td>
+    </tr>
+</table>
+
+<h3>Example</h3>
+
+<pre><code>IRQF_TRIGGER_RISING</code></pre>
+
+<p>This requests an interrupt on a rising signal edge, provided that the interrupt controller and device configuration support it.</p>
+
+<div class="note">
+    The trigger type must agree with the hardware and platform configuration. Drivers should not arbitrarily change a trigger type that is already described by firmware or established by the relevant subsystem.
+</div>
+</section>
+
+<section>
+<h2>8. Fourth Parameter: Interrupt Name</h2>
+
+<p>The <code>name</code> parameter provides a descriptive name for the interrupt action.</p>
+
+<h3>Example</h3>
+
+<pre><code>request_irq(
+    irq_number,
+    my_interrupt_handler,
+    0,
+    "my_device_irq",
+    dev
+);</code></pre>
+
+<p>The name is useful when examining interrupt information in:</p>
+
+<pre><code>cat /proc/interrupts</code></pre>
+
+<p>It helps identify the registered interrupt handler or associated device.</p>
+</section>
+
+<section>
+<h2>9. Fifth Parameter: Device-Specific Pointer</h2>
+
+<p>The <code>dev</code> parameter supplies a pointer that is passed to the interrupt handler as <code>dev_id</code>.</p>
+
+<p>It is commonly used to pass the driver's private data structure.</p>
+
+<h3>Example Structure</h3>
+
+<pre><code>struct my_device {
+    int event_count;
+    void __iomem *regs;
+};</code></pre>
+
+<h3>Passing the Pointer</h3>
+
+<pre><code>struct my_device *dev;
+
+/* dev must point to a valid initialized object */
+
+request_irq(
+    irq_number,
+    my_interrupt_handler,
+    0,
+    "my_device_irq",
+    dev
+);</code></pre>
+
+<h3>Receiving the Pointer in the Handler</h3>
+
+<pre><code>static irqreturn_t my_interrupt_handler(
+    int irq,
+    void *dev_id
+)
+{
+    struct my_device *dev = dev_id;
+
+    dev-&gt;event_count++;
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<div class="warning">
+    The device data must remain valid for the entire period in which the interrupt handler is registered. Do not free the object while the handler can still access it.
+</div>
+</section>
+
+<section>
+<h2>10. Basic request_irq() Example</h2>
+
+<p>The following example demonstrates the registration pattern. It uses a placeholder IRQ number and a minimal handler for learning the API.</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/interrupt.h&gt;
+#include &lt;linux/errno.h&gt;
+
+#define MY_IRQ  42
+
+static irqreturn_t my_isr(int irq, void *dev_id)
+{
+    pr_info("Interrupt received: IRQ %d\n", irq);
+
+    return IRQ_HANDLED;
+}
+
+static int __init my_driver_init(void)
+{
+    int ret;
+
+    ret = request_irq(
+        MY_IRQ,
+        my_isr,
+        0,
+        "my_test_device",
+        &amp;my_driver_init
+    );
+
+    if (ret) {
+        pr_err("request_irq failed: %d\n", ret);
+        return ret;
+    }
+
+    pr_info("Interrupt handler registered\n");
+
+    return 0;
+}
+
+static void __exit my_driver_exit(void)
+{
+    free_irq(MY_IRQ, &amp;my_driver_init);
+
+    pr_info("Interrupt handler unregistered\n");
+}
+
+module_init(my_driver_init);
+module_exit(my_driver_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Basic request_irq API demonstration");</code></pre>
+
+<div class="warning">
+    This is an API demonstration, not a working hardware driver. IRQ 42 is arbitrary, and the handler has no device-specific status check or acknowledgement. Do not load it expecting a real interrupt. A real driver must obtain its IRQ from the device resource and correctly service the hardware.
+</div>
+</section>
+
+<section>
+<h2>11. request_irq() Registration Flow</h2>
+
+<p>When a driver calls <code>request_irq()</code>, the kernel attempts to register the specified interrupt action.</p>
+
+<div class="diagram">
+    <div>Driver Initialization</div>
+    <div class="arrow">↓</div>
+    <div>Obtain and Prepare Device IRQ Resource</div>
+    <div class="arrow">↓</div>
+    <div>Prepare Device Data and Handler</div>
+    <div class="arrow">↓</div>
+    <div>Call request_irq()</div>
+    <div class="arrow">↓</div>
+    <div>Kernel Validates Registration</div>
+    <div class="arrow">↓</div>
+    <div>Success: Handler Registered</div>
+    <div>Failure: Negative Error Code</div>
+</div>
+
+<p>After successful registration, the IRQ subsystem can dispatch the handler when the interrupt occurs.</p>
+
+<p>Registration may fail if the IRQ cannot be used as requested, the registration conflicts with an existing action, or another error occurs.</p>
+</section>
+
+<section>
+<h2>12. Error Handling in request_irq()</h2>
+
+<p>The driver must check the return value of <code>request_irq()</code>.</p>
+
+<h3>Successful Registration</h3>
+
+<pre><code>ret = request_irq(
+    irq_number,
+    my_isr,
+    0,
+    "my_device",
+    dev
+);
+
+if (ret == 0) {
+    pr_info("IRQ registration successful\n");
+}</code></pre>
+
+<h3>Failed Registration</h3>
+
+<pre><code>if (ret) {
+    pr_err("Unable to register IRQ: %d\n", ret);
+    return ret;
+}</code></pre>
+
+<p>A negative return value represents an error code.</p>
+
+<p>Possible causes include:</p>
+<ul>
+    <li>Invalid or unavailable IRQ configuration.</li>
+    <li>Conflict with an existing non-shared handler.</li>
+    <li>Incompatible interrupt-sharing configuration.</li>
+    <li>Invalid trigger configuration.</li>
+    <li>Other resource or subsystem errors.</li>
+</ul>
+
+<p>The driver should propagate the error and release any resources it allocated before the registration attempt.</p>
+</section>
+
+<section>
+<h2>13. Shared Interrupt Registration</h2>
+
+<p>Some interrupt lines can be shared by multiple devices.</p>
+
+<p>To request a shared IRQ, the driver uses <code>IRQF_SHARED</code>.</p>
+
+<h3>Example</h3>
+
+<pre><code>ret = request_irq(
+    irq_number,
+    my_isr,
+    IRQF_SHARED,
+    "my_shared_device",
+    dev
+);</code></pre>
+
+<p>Shared interrupt registration has important requirements:</p>
+<ul>
+    <li>The interrupt line must support sharing.</li>
+    <li>All registered actions on the shared IRQ must have compatible sharing configuration.</li>
+    <li>Each registration must provide a unique, non-NULL device identifier.</li>
+    <li>The handler must identify whether its own device generated the interrupt.</li>
+    <li>The handler must return <code>IRQ_NONE</code> for an interrupt it did not handle.</li>
+</ul>
+
+<p>Shared interrupts are covered in detail in Lesson 6.</p>
+</section>
+
+<section>
+<h2>14. request_irq() vs request_threaded_irq()</h2>
+
+<p>Linux also provides <code>request_threaded_irq()</code>, which supports a primary handler and a threaded handler.</p>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>request_irq()</th>
+        <th>request_threaded_irq()</th>
+    </tr>
+    <tr>
+        <td>Primary handler</td>
+        <td>Required</td>
+        <td>Can be supplied or omitted in supported configurations.</td>
+    </tr>
+    <tr>
+        <td>Thread function</td>
+        <td>Not directly specified</td>
+        <td>Can be supplied.</td>
+    </tr>
+    <tr>
+        <td>Hard IRQ processing</td>
+        <td>Handler executes in hard IRQ context.</td>
+        <td>Primary handler executes in hard IRQ context when provided.</td>
+    </tr>
+    <tr>
+        <td>Sleepable processing</td>
+        <td>Must be deferred separately.</td>
+        <td>Thread function can sleep when permitted.</td>
+    </tr>
+    <tr>
+        <td>Typical use</td>
+        <td>Short interrupt service.</td>
+        <td>Devices requiring threaded interrupt processing.</td>
+    </tr>
+</table>
+
+<h3>Conceptual Declaration</h3>
+
+<pre><code>int request_threaded_irq(
+    unsigned int irq,
+    irq_handler_t handler,
+    irq_handler_t thread_fn,
+    unsigned long flags,
+    const char *name,
+    void *dev
+);</code></pre>
+
+<p>The primary handler can return <code>IRQ_WAKE_THREAD</code> to wake the registered thread function.</p>
+</section>
+
+<section>
+<h2>15. Important Rules Before Calling request_irq()</h2>
+
+<p>A real driver must prepare its hardware and software state carefully before registering the handler.</p>
+
+<ol>
+    <li>Obtain the correct IRQ resource from the device or subsystem.</li>
+    <li>Initialize the driver's private data.</li>
+    <li>Map the required hardware registers.</li>
+    <li>Initialize locks, buffers and other shared state.</li>
+    <li>Configure the device's interrupt source appropriately.</li>
+    <li>Register the handler.</li>
+    <li>Enable the device's interrupt generation at the appropriate stage.</li>
+</ol>
+
+<div class="warning">
+    A device may generate an interrupt immediately after its interrupt source is enabled. Initialize all state needed by the handler before enabling interrupt generation. The precise ordering of request registration, controller masking and device interrupt enabling depends on the hardware.
+</div>
+</section>
+
+<section>
+<h2>16. Practical Linux Commands</h2>
+
+<p>After working with a suitable interrupt-capable driver, use these commands to inspect interrupt activity.</p>
+
+<h3>View Interrupt Information</h3>
+<pre><code>cat /proc/interrupts</code></pre>
+
+<h3>Monitor Interrupt Counters</h3>
+<pre><code>watch -n 1 cat /proc/interrupts</code></pre>
+
+<h3>View Kernel Messages</h3>
+<pre><code>sudo dmesg | tail -30</code></pre>
+
+<h3>Check Kernel Version</h3>
+<pre><code>uname -r</code></pre>
+
+<p>Do not use the arbitrary IRQ number from the demonstration as a substitute for a real device resource.</p>
+</section>
+
+<section>
+<h2>17. Common Programming Mistakes</h2>
+
+<table>
+    <tr>
+        <th>Mistake</th>
+        <th>Correct Practice</th>
+    </tr>
+    <tr>
+        <td>Using an arbitrary IRQ number</td>
+        <td>Obtain the IRQ through the correct device-resource API.</td>
+    </tr>
+    <tr>
+        <td>Ignoring the return value</td>
+        <td>Check for registration failure and propagate the error.</td>
+    </tr>
+    <tr>
+        <td>Passing an invalid dev_id pointer</td>
+        <td>Pass valid device-specific data that remains alive while registered.</td>
+    </tr>
+    <tr>
+        <td>Using an incorrect trigger flag</td>
+        <td>Follow the hardware and firmware configuration.</td>
+    </tr>
+    <tr>
+        <td>Using IRQF_SHARED without correct handler logic</td>
+        <td>Check device status and return IRQ_NONE when appropriate.</td>
+    </tr>
+    <tr>
+        <td>Enabling the device interrupt too early</td>
+        <td>Initialize all handler-visible state first.</td>
+    </tr>
+    <tr>
+        <td>Forgetting to release the registration</td>
+        <td>Use the corresponding free_irq() operation during cleanup.</td>
+    </tr>
+    <tr>
+        <td>Performing lengthy work in the handler</td>
+        <td>Use an appropriate deferred-processing mechanism.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>18. Lesson Summary</h2>
+
+<ul>
+    <li><code>request_irq()</code> registers a device-driver interrupt handler.</li>
+    <li>The function is declared through <code>linux/interrupt.h</code>.</li>
+    <li>It accepts five parameters: IRQ, handler, flags, name and dev.</li>
+    <li>The IRQ parameter is a Linux IRQ number.</li>
+    <li>The handler follows the <code>irqreturn_t</code> function signature.</li>
+    <li>Interrupt flags specify trigger and sharing configuration.</li>
+    <li>The device pointer is passed to the handler as <code>dev_id</code>.</li>
+    <li>A return value of zero indicates successful registration.</li>
+    <li>Negative return values indicate registration errors.</li>
+    <li><code>IRQF_SHARED</code> supports shared IRQ registration when requirements are met.</li>
+    <li><code>request_threaded_irq()</code> supports threaded interrupt processing.</li>
+    <li>Registered interrupt handlers must eventually be released using the appropriate cleanup API.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Short Answer Questions</h2>
+<ol>
+    <li>What is the purpose of request_irq()?</li>
+    <li>Which header file declares request_irq()?</li>
+    <li>How many parameters does request_irq() accept?</li>
+    <li>What is the purpose of the IRQ parameter?</li>
+    <li>What is the purpose of the handler parameter?</li>
+    <li>What is the purpose of the flags parameter?</li>
+    <li>Why is the interrupt name provided?</li>
+    <li>What is the purpose of the dev parameter?</li>
+    <li>What does request_irq() return on success?</li>
+    <li>What does a negative return value indicate?</li>
+    <li>What is IRQF_SHARED?</li>
+    <li>What is IRQF_TRIGGER_RISING?</li>
+    <li>What is the difference between request_irq() and request_threaded_irq()?</li>
+    <li>Why must device data be initialized before interrupt handling begins?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Long Answer Questions</h2>
+<ol>
+    <li>Explain the request_irq() function with its declaration and parameters.</li>
+    <li>Explain the role of the interrupt-handler parameter.</li>
+    <li>Discuss the important interrupt flags used with request_irq().</li>
+    <li>Explain the role of the device-specific pointer.</li>
+    <li>Describe the complete IRQ registration sequence.</li>
+    <li>Explain error handling when request_irq() fails.</li>
+    <li>Discuss shared interrupt registration requirements.</li>
+    <li>Compare request_irq() and request_threaded_irq().</li>
+    <li>Explain the precautions required before enabling device interrupts.</li>
+    <li>Describe how Linux interrupt activity can be monitored.</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Practical Exercises</h2>
+<ol>
+    <li>Study the request_irq() declaration in the Linux kernel headers.</li>
+    <li>Write the declaration of a simple interrupt handler.</li>
+    <li>Write a conceptual driver initialization function that calls request_irq().</li>
+    <li>Write error-handling code for failed IRQ registration.</li>
+    <li>Explain how a private device structure is passed through dev_id.</li>
+    <li>List the conditions required for shared IRQ registration.</li>
+    <li>Compare request_irq() and request_threaded_irq().</li>
+    <li>Inspect <code>/proc/interrupts</code> in Ubuntu.</li>
+    <li>Explain why an arbitrary IRQ number is unsuitable for a real hardware driver.</li>
+</ol>
+
+<h3>Expected Practical Outcome</h3>
+<p>You should be able to explain how a Linux device driver requests an interrupt and how the kernel associates a handler with a Linux IRQ.</p>
+</section>
+
+<section>
+<h2>22. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should understand the declaration, parameters, flags and error handling of <code>request_irq()</code>.</p>
+
+<p>You should also be able to design the registration portion of a basic interrupt-driven device driver and understand the precautions required before enabling hardware interrupt generation.</p>
+
+<p>Next, you will learn how to release a registered interrupt handler using <code>free_irq()</code>.</p>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L03_Interrupt_Service_Routines_in_Linux.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L05_free_irq_Function.html">Next: free_irq() →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 14 – Interrupt Handling in Linux Device Drivers</p>
+</footer>
+
+</body>
+</html>
