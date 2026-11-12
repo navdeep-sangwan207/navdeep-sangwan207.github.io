@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Passing Structures Through IOCTL | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Passing Structures Through IOCTL</h1>
+    <p>Linux Device Drivers – Chapter 11, Lesson 6</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 11</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> IOCTL and Device Control</p>
+    <p><strong>Lesson:</strong> 6 – Passing Structures Through IOCTL</p>
+    <p><strong>Prerequisites:</strong> C structures, IOCTL macros, unlocked_ioctl(), copy_to_user() and copy_from_user().</p>
+    <p><strong>Objective:</strong> Learn how to transfer multiple related values between a user-space application and a kernel driver using structures.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction</h2>
+
+<p>An IOCTL command often needs to transfer more than one value. For example, a device configuration operation may require a mode, operating speed, channel number and status.</p>
+
+<p>Instead of creating a separate IOCTL command for every individual value, a driver can use a C structure to group related fields into one data object.</p>
+
+<p>Passing a structure through IOCTL is useful for:</p>
+<ul>
+    <li>Device configuration.</li>
+    <li>Reading multiple device status values.</li>
+    <li>Setting operating parameters.</li>
+    <li>Transferring sensor configuration.</li>
+    <li>Exchanging command and response information.</li>
+</ul>
+
+<div class="important">
+    A structure is normally passed through IOCTL using a pointer to user-space memory. The driver must copy the structure into kernel memory before accessing its fields.
+</div>
+</section>
+
+<section class="section">
+<h2>2. Why Use Structures in IOCTL?</h2>
+
+<p>Suppose a device requires three configuration values:</p>
+
+<pre><code>int mode;
+int speed;
+int channel;</code></pre>
+
+<p>These values can be grouped into one structure.</p>
+
+<pre><code>struct device_config {
+    int mode;
+    int speed;
+    int channel;
+};</code></pre>
+
+<p>The application can now pass one pointer to the structure rather than managing several independent arguments.</p>
+
+<table>
+<tr>
+    <th>Without Structure</th>
+    <th>With Structure</th>
+</tr>
+<tr>
+    <td>Multiple separate values and commands may be required.</td>
+    <td>Related fields can be transferred in one request.</td>
+</tr>
+<tr>
+    <td>Interface can become difficult to maintain.</td>
+    <td>Configuration is grouped into one defined data object.</td>
+</tr>
+<tr>
+    <td>Adding parameters may require additional interface changes.</td>
+    <td>A carefully versioned structure can support interface evolution.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>3. Structure Transfer Architecture</h2>
+
+<div class="diagram">
+    <div class="diagram-box">User Application</div>
+    <div class="arrow">Structure Pointer ↓</div>
+    <div class="diagram-box">ioctl() System Call</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Driver unlocked_ioctl()</div>
+    <div class="arrow">copy_from_user()</div>
+    <div class="diagram-box">Kernel-Space Structure</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Driver Processes Fields</div>
+</div>
+
+<p>For an input structure, the driver copies the structure from user space into a local kernel variable.</p>
+
+<p>For an output structure, the driver fills a kernel-space structure and copies it back to the application.</p>
+</section>
+
+<section class="section">
+<h2>4. Defining the Structure</h2>
+
+<p>Consider a device configuration structure.</p>
+
+<pre><code>struct device_config {
+    int mode;
+    int speed;
+    int channel;
+};</code></pre>
+
+<table>
+<tr>
+    <th>Field</th>
+    <th>Purpose</th>
+    <th>Example</th>
+</tr>
+<tr>
+    <td><code>mode</code></td>
+    <td>Selects device operating mode.</td>
+    <td>1</td>
+</tr>
+<tr>
+    <td><code>speed</code></td>
+    <td>Sets an operating speed parameter.</td>
+    <td>100</td>
+</tr>
+<tr>
+    <td><code>channel</code></td>
+    <td>Selects a device channel.</td>
+    <td>2</td>
+</tr>
+</table>
+
+<p>The same structure definition must be available to both the kernel driver and the user-space application.</p>
+</section>
+
+<section class="section">
+<h2>5. Defining IOCTL Commands for Structures</h2>
+
+<p>Use <code>_IOW</code> when the application supplies a structure to the driver, <code>_IOR</code> when the driver returns a structure, and <code>_IOWR</code> when both directions are required.</p>
+
+<pre><code>#define MY_DEVICE_MAGIC 'N'
+
+#define SET_DEVICE_CONFIG \
+    _IOW(MY_DEVICE_MAGIC, 1, struct device_config)
+
+#define GET_DEVICE_CONFIG \
+    _IOR(MY_DEVICE_MAGIC, 2, struct device_config)
+
+#define UPDATE_DEVICE_CONFIG \
+    _IOWR(MY_DEVICE_MAGIC, 3, struct device_config)</code></pre>
+
+<p>The data type passed to these macros is the structure type, not a pointer type.</p>
+
+<div class="note">
+    The macros encode request metadata, including the size of the associated type. They do not copy the structure or validate its pointer.
+</div>
+</section>
+
+<section class="section">
+<h2>6. Passing a Structure from User Space to Kernel Space</h2>
+
+<p>Consider the <code>SET_DEVICE_CONFIG</code> command. The application supplies configuration values, and the driver receives them.</p>
+
+<h3>User-Space Application</h3>
+
+<pre><code>struct device_config config;
+
+config.mode = 1;
+config.speed = 100;
+config.channel = 2;
+
+if (ioctl(fd, SET_DEVICE_CONFIG, &amp;config) == -1) {
+    perror("SET_DEVICE_CONFIG");
+}</code></pre>
+
+<h3>Driver-Side Handler</h3>
+
+<pre><code>static long set_device_config(
+    unsigned long arg
+)
+{
+    struct device_config config;
+
+    if (copy_from_user(
+            &amp;config,
+            (struct device_config __user *)arg,
+            sizeof(config))) {
+        return -EFAULT;
+    }
+
+    /* Validate the received configuration */
+
+    if (config.mode &lt; 0 || config.mode &gt; 3)
+        return -EINVAL;
+
+    if (config.speed &lt; 1 || config.speed &gt; 1000)
+        return -EINVAL;
+
+    if (config.channel &lt; 0 || config.channel &gt; 7)
+        return -EINVAL;
+
+    /* Apply configuration to driver state */
+
+    return 0;
+}</code></pre>
+
+<p>The driver first copies the complete structure into kernel memory. It then validates each field before using the values.</p>
+</section>
+
+<section class="section">
+<h2>7. Passing a Structure from Kernel Space to User Space</h2>
+
+<p>For <code>GET_DEVICE_CONFIG</code>, the driver fills a kernel-space structure and returns it to the application.</p>
+
+<h3>Driver-Side Handler</h3>
+
+<pre><code>static long get_device_config(
+    unsigned long arg
+)
+{
+    struct device_config config;
+
+    /* Read current driver configuration */
+
+    config.mode = 1;
+    config.speed = 100;
+    config.channel = 2;
+
+    if (copy_to_user(
+            (struct device_config __user *)arg,
+            &amp;config,
+            sizeof(config))) {
+        return -EFAULT;
+    }
+
+    return 0;
+}</code></pre>
+
+<h3>User-Space Application</h3>
+
+<pre><code>struct device_config config;
+
+if (ioctl(fd, GET_DEVICE_CONFIG, &amp;config) == -1) {
+    perror("GET_DEVICE_CONFIG");
+} else {
+    printf("Mode: %d\n", config.mode);
+    printf("Speed: %d\n", config.speed);
+    printf("Channel: %d\n", config.channel);
+}</code></pre>
+
+<p>The application receives the values after the driver successfully copies the structure into user space.</p>
+</section>
+
+<section class="section">
+<h2>8. Bidirectional Structure Transfer Using _IOWR</h2>
+
+<p>Sometimes the application sends initial values and the driver modifies the same structure before returning it.</p>
+
+<p>For example, an application may request a device configuration update. The driver validates the requested settings and returns the actual settings that were accepted.</p>
+
+<h3>Command Definition</h3>
+
+<pre><code>#define UPDATE_DEVICE_CONFIG \
+    _IOWR(MY_DEVICE_MAGIC, 3, struct device_config)</code></pre>
+
+<h3>Driver Handler</h3>
+
+<pre><code>static long update_device_config(
+    unsigned long arg
+)
+{
+    struct device_config config;
+
+    /* Receive application data */
+
+    if (copy_from_user(
+            &amp;config,
+            (struct device_config __user *)arg,
+            sizeof(config))) {
+        return -EFAULT;
+    }
+
+    /* Validate input */
+
+    if (config.mode &lt; 0 || config.mode &gt; 3)
+        return -EINVAL;
+
+    if (config.speed &lt; 1 || config.speed &gt; 1000)
+        return -EINVAL;
+
+    if (config.channel &lt; 0 || config.channel &gt; 7)
+        return -EINVAL;
+
+    /* Apply settings and prepare response */
+
+    config.speed = 100;
+
+    /* Return updated structure */
+
+    if (copy_to_user(
+            (struct device_config __user *)arg,
+            &amp;config,
+            sizeof(config))) {
+        return -EFAULT;
+    }
+
+    return 0;
+}</code></pre>
+
+<h3>User-Space Application</h3>
+
+<pre><code>struct device_config config;
+
+config.mode = 1;
+config.speed = 150;
+config.channel = 2;
+
+if (ioctl(fd, UPDATE_DEVICE_CONFIG, &amp;config) == -1) {
+    perror("UPDATE_DEVICE_CONFIG");
+} else {
+    printf("Accepted mode: %d\n", config.mode);
+    printf("Actual speed: %d\n", config.speed);
+    printf("Accepted channel: %d\n", config.channel);
+}</code></pre>
+
+<p>This example demonstrates the transfer pattern. The driver should only return values that accurately represent the configuration it has accepted or applied.</p>
+</section>
+
+<section class="section">
+<h2>9. Complete IOCTL Handler Using a Structure</h2>
+
+<p>The following example combines the three operations in one callback.</p>
+
+<pre><code>static long my_ioctl(
+    struct file *file,
+    unsigned int cmd,
+    unsigned long arg
+)
+{
+    struct device_config config;
+
+    switch (cmd) {
+
+        case SET_DEVICE_CONFIG:
+
+            if (copy_from_user(
+                    &amp;config,
+                    (struct device_config __user *)arg,
+                    sizeof(config))) {
+                return -EFAULT;
+            }
+
+            if (config.mode &lt; 0 || config.mode &gt; 3)
+                return -EINVAL;
+
+            if (config.speed &lt; 1 || config.speed &gt; 1000)
+                return -EINVAL;
+
+            if (config.channel &lt; 0 || config.channel &gt; 7)
+                return -EINVAL;
+
+            /* Apply settings */
+
+            return 0;
+
+        case GET_DEVICE_CONFIG:
+
+            config.mode = 1;
+            config.speed = 100;
+            config.channel = 2;
+
+            if (copy_to_user(
+                    (struct device_config __user *)arg,
+                    &amp;config,
+                    sizeof(config))) {
+                return -EFAULT;
+            }
+
+            return 0;
+
+        default:
+            return -ENOTTY;
+    }
+}</code></pre>
+
+<p>Register this callback in the character driver's file operations:</p>
+
+<pre><code>static const struct file_operations my_fops = {
+    .owner = THIS_MODULE,
+    .unlocked_ioctl = my_ioctl,
+};</code></pre>
+
+<p>This is a focused IOCTL implementation example. It assumes the structure, command definitions and required driver state have already been declared.</p>
+</section>
+
+<section class="section">
+<h2>10. Structure Compatibility Between User Space and Kernel Space</h2>
+
+<p>Passing structures across the user-kernel boundary requires careful attention to the binary layout of the structure.</p>
+
+<p>Both sides must agree on:</p>
+<ul>
+    <li>Field types.</li>
+    <li>Field order.</li>
+    <li>Field sizes.</li>
+    <li>Alignment and padding.</li>
+    <li>Structure size.</li>
+</ul>
+
+<h3>Prefer Fixed-Width Integer Types</h3>
+
+<p>For stable interfaces, use types such as:</p>
+
+<pre><code>#include &lt;linux/types.h&gt;
+
+/* Example kernel-side ABI structure */
+
+struct device_config {
+    __u32 mode;
+    __u32 speed;
+    __u32 channel;
+};</code></pre>
+
+<p>For user-space code, the corresponding structure can use compatible fixed-width types such as <code>uint32_t</code> from <code>&lt;stdint.h&gt;</code>, with matching field order and layout.</p>
+
+<h3>Why Avoid Uncontrolled Pointer Fields?</h3>
+
+<p>A structure containing pointers is more complicated because user-space and kernel-space pointer sizes or address representations may differ. Such interfaces require explicit pointer handling and may require a compatibility implementation.</p>
+
+<div class="important">
+    For long-lived driver interfaces, define a stable ABI. Consider including a version or size field when the structure may evolve, and avoid changing the meaning or layout of an already published structure.
+</div>
+</section>
+
+<section class="section">
+<h2>11. 32-Bit and 64-Bit Compatibility</h2>
+
+<p>A 64-bit Linux kernel may support 32-bit user-space applications. In that situation, pointer sizes and some structure layouts can differ.</p>
+
+<p>Potential problems include:</p>
+<ul>
+    <li>Different pointer widths.</li>
+    <li>Different alignment and padding.</li>
+    <li>Different structure sizes.</li>
+    <li>Different representations of pointer-containing fields.</li>
+</ul>
+
+<p>Drivers that need to support 32-bit applications on a 64-bit kernel may implement the <code>compat_ioctl</code> callback and use appropriate compatibility types and conversion logic.</p>
+
+<pre><code>static const struct file_operations my_fops = {
+    .owner = THIS_MODULE,
+    .unlocked_ioctl = my_ioctl,
+    /* .compat_ioctl = my_compat_ioctl, */
+};</code></pre>
+
+<p>The commented entry is only a placeholder. A real compatibility callback must be implemented correctly before it is registered.</p>
+</section>
+
+<section class="section">
+<h2>12. Common Mistakes</h2>
+
+<table>
+<tr>
+    <th>Mistake</th>
+    <th>Correct Approach</th>
+</tr>
+<tr>
+    <td>Directly accessing a user-space structure pointer.</td>
+    <td>Copy the structure into kernel memory using <code>copy_from_user()</code>.</td>
+</tr>
+<tr>
+    <td>Copying the wrong structure size.</td>
+    <td>Use the correct shared structure definition and <code>sizeof()</code>.</td>
+</tr>
+<tr>
+    <td>Using different field definitions in the application and driver.</td>
+    <td>Maintain compatible shared ABI definitions.</td>
+</tr>
+<tr>
+    <td>Not validating received fields.</td>
+    <td>Validate all fields before applying configuration.</td>
+</tr>
+<tr>
+    <td>Using pointer fields without compatibility planning.</td>
+    <td>Prefer fixed-width data fields or design explicit compatibility handling.</td>
+</tr>
+<tr>
+    <td>Assuming _IOWR automatically copies data both ways.</td>
+    <td>Explicitly implement copy-in and copy-out operations.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>13. Lesson Summary</h2>
+
+<ul>
+    <li>Structures group related parameters into one IOCTL argument.</li>
+    <li><code>_IOW</code> is commonly used for input structures.</li>
+    <li><code>_IOR</code> is commonly used for output structures.</li>
+    <li><code>_IOWR</code> supports bidirectional structure exchange.</li>
+    <li>The driver uses <code>copy_from_user()</code> and <code>copy_to_user()</code>.</li>
+    <li>All received fields must be validated.</li>
+    <li>User and kernel structure layouts must be compatible.</li>
+    <li>Pointer-containing structures require special attention to 32-bit and 64-bit compatibility.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>14. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>Why are structures used in IOCTL operations?</li>
+    <li>Which macro is suitable for sending a structure to the driver?</li>
+    <li>Which macro is suitable for receiving a structure from the driver?</li>
+    <li>What is the purpose of _IOWR?</li>
+    <li>Why must the driver copy a user-space structure into kernel memory?</li>
+    <li>What is structure padding?</li>
+    <li>Why are fixed-width integer types useful in a driver ABI?</li>
+    <li>What is the purpose of compat_ioctl?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain structure transfer from user space to kernel space.</li>
+    <li>Explain structure transfer from kernel space to user space.</li>
+    <li>Describe bidirectional structure transfer using _IOWR.</li>
+    <li>Discuss structure layout and compatibility issues.</li>
+    <li>Explain how to design a stable IOCTL structure interface.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Define a structure containing mode, speed and channel fields.</li>
+    <li>Create a _IOW command to send the structure to a driver.</li>
+    <li>Create an _IOR command to retrieve device configuration.</li>
+    <li>Implement copy_from_user() with field validation.</li>
+    <li>Implement copy_to_user() to return a configuration structure.</li>
+    <li>Create an _IOWR command that receives and returns an updated structure.</li>
+    <li>Design a fixed-width structure suitable for a stable user-kernel interface.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>15. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Define structures for IOCTL communication.</li>
+    <li>Select the appropriate IOCTL macro for structure transfer.</li>
+    <li>Transfer structures safely between user space and kernel space.</li>
+    <li>Validate structure fields in a driver.</li>
+    <li>Understand structure padding and ABI compatibility.</li>
+    <li>Recognize when 32-bit compatibility handling is required.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L05_Implementing_IOCTL_in_Character_Drivers.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L07_IOCTL_Data_Transfer.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 11 – IOCTL and Device Control</p>
+</footer>
+
+</body>
+</html>
