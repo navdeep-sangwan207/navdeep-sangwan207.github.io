@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 2 - /proc Filesystem | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    line-height: 1.7;
+    background: #f4f7fb;
+    color: #263238;
+}
+
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    padding: 35px 20px;
+    text-align: center;
+}
+
+.lesson-banner h1 { margin: 0; font-size: 30px; }
+
+.top-nav {
+    background: #102f60;
+    padding: 12px;
+    text-align: center;
+}
+
+.top-nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+
+.top-nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3f0ff;
+    border-left: 5px solid #2878d7;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8f8;
+    padding-bottom: 7px;
+}
+
+h3 { color: #245a9c; }
+
+pre {
+    background: #17212b;
+    color: #e8f0f8;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+code { font-family: Consolas, monospace; }
+
+.note {
+    background: #fff8df;
+    border-left: 5px solid #e0a800;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.success {
+    background: #e8f5e9;
+    border-left: 5px solid #388e3c;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fe;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #b8cbea;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px;
+    margin: 5px;
+    min-width: 190px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 12px 18px;
+    border-radius: 6px;
+}
+
+.lesson-nav a:hover { background: #0d3475; }
+
+footer {
+    text-align: center;
+    background: #102f60;
+    color: white;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    .lesson-banner h1 { font-size: 23px; }
+    .top-nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    .section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="lesson-banner">
+    <h1>Chapter 15: Procfs, Sysfs and Kernel Interfaces</h1>
+    <p>Lesson 2: /proc Filesystem</p>
+</header>
+
+<nav class="top-nav">
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 15</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p>
+        Topic: Internal Organization of the /proc Filesystem<br>
+        Chapter: Procfs, Sysfs and Kernel Interfaces<br>
+        Prerequisites: Introduction to Procfs, Linux Processes and Filesystems<br>
+        Difficulty: Beginner to Intermediate
+    </p>
+</div>
+
+<section class="section">
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Understand the directory structure of /proc.</li>
+    <li>Identify global and process-specific Procfs entries.</li>
+    <li>Understand PID-based process directories.</li>
+    <li>Inspect process status, memory maps and open file descriptors.</li>
+    <li>Understand important system information files.</li>
+    <li>Use Linux commands to examine Procfs.</li>
+    <li>Understand access restrictions and process visibility.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. Introduction to the /proc Directory</h2>
+
+<p>
+The <code>/proc</code> directory is the standard mount point
+for the Linux Procfs filesystem.
+</p>
+
+<p>
+It contains two broad categories of information:
+</p>
+
+<ol>
+    <li>System-wide and kernel-related information.</li>
+    <li>Information associated with individual processes.</li>
+</ol>
+
+<p>
+Unlike an ordinary directory on a disk, entries in /proc
+are provided by the kernel and can represent live runtime
+information.
+</p>
+
+<h3>Display the contents</h3>
+
+<pre><code>ls /proc</code></pre>
+
+<h3>Display directories and files</h3>
+
+<pre><code>ls -l /proc</code></pre>
+
+<p>
+You will see numeric directory names such as 1, 2, 1000
+and other entries such as cpuinfo, meminfo and version.
+</p>
+</section>
+
+<section class="section">
+<h2>3. Organization of the /proc Filesystem</h2>
+
+<p>
+The /proc filesystem can be understood using the following
+simplified structure.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">/proc</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">System Information</div>
+    <div class="diagram-box">Process Directories</div>
+    <div class="diagram-box">Kernel Interfaces</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">cpuinfo, meminfo, interrupts</div>
+    <div class="diagram-box">/proc/1, /proc/1000</div>
+    <div class="diagram-box">/proc/sys</div>
+</div>
+
+<h3>Main categories</h3>
+
+<table>
+<tr>
+    <th>Category</th>
+    <th>Examples</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>System information</td>
+    <td>cpuinfo, meminfo, uptime</td>
+    <td>Provides system statistics.</td>
+</tr>
+<tr>
+    <td>Process information</td>
+    <td>/proc/1, /proc/1000</td>
+    <td>Provides information about individual processes.</td>
+</tr>
+<tr>
+    <td>Kernel interfaces</td>
+    <td>/proc/sys</td>
+    <td>Exposes selected kernel parameters.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>4. System-Wide Information Files</h2>
+
+<p>
+System-wide Procfs entries provide information about
+the running Linux system.
+</p>
+
+<h3>4.1 /proc/cpuinfo</h3>
+
+<p>
+Provides processor information such as processor model,
+architecture-related details, features and CPU identifiers.
+</p>
+
+<pre><code>cat /proc/cpuinfo</code></pre>
+
+<h3>4.2 /proc/meminfo</h3>
+
+<p>
+Provides memory statistics such as total memory, available
+memory, free memory, buffers and cached memory.
+</p>
+
+<pre><code>cat /proc/meminfo</code></pre>
+
+<h3>4.3 /proc/uptime</h3>
+
+<p>
+Contains the system uptime and accumulated idle time,
+expressed in seconds.
+</p>
+
+<pre><code>cat /proc/uptime</code></pre>
+
+<h3>4.4 /proc/version</h3>
+
+<p>
+Provides information about the running kernel version
+and its build environment.
+</p>
+
+<pre><code>cat /proc/version</code></pre>
+
+<h3>4.5 /proc/loadavg</h3>
+
+<p>
+Provides load averages over 1, 5 and 15 minutes, along
+with additional process-related information.
+</p>
+
+<pre><code>cat /proc/loadavg</code></pre>
+
+<h3>4.6 /proc/stat</h3>
+
+<p>
+Contains CPU and other kernel statistics, including
+information used by system monitoring tools.
+</p>
+
+<pre><code>cat /proc/stat</code></pre>
+</section>
+
+<section class="section">
+<h2>5. Process-Specific Directories</h2>
+
+<p>
+Each running process has a directory under /proc identified
+by its process ID (PID).
+</p>
+
+<p>
+For example:
+</p>
+
+<pre><code>/proc/1/
+/proc/1000/
+/proc/2500/</code></pre>
+
+<p>
+The actual directories depend on the processes currently
+running on the system.
+</p>
+
+<h3>Find the current shell PID</h3>
+
+<pre><code>echo $$</code></pre>
+
+<h3>Inspect the current shell directory</h3>
+
+<pre><code>ls /proc/$$</code></pre>
+
+<p>
+The <code>$$</code> shell variable expands to the PID of
+the current shell.
+</p>
+
+<h3>Inspect process information</h3>
+
+<pre><code>cat /proc/$$/status</code></pre>
+</section>
+
+<section class="section">
+<h2>6. Important Entries Inside /proc/PID</h2>
+
+<table>
+<tr>
+    <th>Entry</th>
+    <th>Description</th>
+</tr>
+<tr>
+    <td><code>cmdline</code></td>
+    <td>Command-line arguments used to start the process.</td>
+</tr>
+<tr>
+    <td><code>comm</code></td>
+    <td>Process command name.</td>
+</tr>
+<tr>
+    <td><code>status</code></td>
+    <td>Human-readable process status and resource information.</td>
+</tr>
+<tr>
+    <td><code>stat</code></td>
+    <td>Detailed process statistics in a compact format.</td>
+</tr>
+<tr>
+    <td><code>maps</code></td>
+    <td>Memory regions mapped into the process address space.</td>
+</tr>
+<tr>
+    <td><code>fd</code></td>
+    <td>Symbolic links for open file descriptors.</td>
+</tr>
+<tr>
+    <td><code>cwd</code></td>
+    <td>Symbolic link to the current working directory.</td>
+</tr>
+<tr>
+    <td><code>exe</code></td>
+    <td>Symbolic link to the executable file.</td>
+</tr>
+<tr>
+    <td><code>task</code></td>
+    <td>Information about threads belonging to the process.</td>
+</tr>
+<tr>
+    <td><code>environ</code></td>
+    <td>Environment variables supplied to the process at startup.</td>
+</tr>
+</table>
+
+<div class="note">
+    Access to some process entries depends on user permissions,
+    system security settings and the relationship between
+    the requesting process and the target process.
+</div>
+</section>
+
+<section class="section">
+<h2>7. Understanding /proc/PID/status</h2>
+
+<p>
+The status entry provides a human-readable overview of
+a process.
+</p>
+
+<h3>Command</h3>
+
+<pre><code>cat /proc/$$/status</code></pre>
+
+<p>Common fields include:</p>
+
+<table>
+<tr>
+    <th>Field</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td>Name</td>
+    <td>Process name.</td>
+</tr>
+<tr>
+    <td>State</td>
+    <td>Current process state.</td>
+</tr>
+<tr>
+    <td>Pid</td>
+    <td>Process ID.</td>
+</tr>
+<tr>
+    <td>PPid</td>
+    <td>Parent process ID.</td>
+</tr>
+<tr>
+    <td>Uid</td>
+    <td>User IDs associated with the process.</td>
+</tr>
+<tr>
+    <td>Gid</td>
+    <td>Group IDs associated with the process.</td>
+</tr>
+<tr>
+    <td>VmSize</td>
+    <td>Virtual memory size.</td>
+</tr>
+<tr>
+    <td>VmRSS</td>
+    <td>Resident set size information.</td>
+</tr>
+<tr>
+    <td>Threads</td>
+    <td>Number of threads in the process.</td>
+</tr>
+</table>
+
+<p>
+This information is useful for process monitoring and
+system troubleshooting.
+</p>
+</section>
+
+<section class="section">
+<h2>8. Understanding /proc/PID/maps</h2>
+
+<p>
+The <code>maps</code> entry describes the virtual memory
+regions mapped into a process.
+</p>
+
+<h3>Command</h3>
+
+<pre><code>cat /proc/$$/maps</code></pre>
+
+<p>
+The output generally includes:
+</p>
+
+<ul>
+    <li>Start and end virtual addresses.</li>
+    <li>Memory permissions.</li>
+    <li>File offset.</li>
+    <li>Device and inode information.</li>
+    <li>Associated pathname, when applicable.</li>
+</ul>
+
+<h3>Memory permissions</h3>
+
+<table>
+<tr>
+    <th>Permission</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td>r</td>
+    <td>Readable memory.</td>
+</tr>
+<tr>
+    <td>w</td>
+    <td>Writable memory.</td>
+</tr>
+<tr>
+    <td>x</td>
+    <td>Executable memory.</td>
+</tr>
+<tr>
+    <td>p</td>
+    <td>Private mapping.</td>
+</tr>
+<tr>
+    <td>s</td>
+    <td>Shared mapping.</td>
+</tr>
+</table>
+
+<p>
+This entry is useful when studying process memory
+management and debugging memory-related problems.
+</p>
+</section>
+
+<section class="section">
+<h2>9. Understanding /proc/PID/fd</h2>
+
+<p>
+The <code>fd</code> directory contains symbolic links
+representing the open file descriptors of a process.
+</p>
+
+<h3>Command</h3>
+
+<pre><code>ls -l /proc/$$/fd</code></pre>
+
+<p>
+Common file descriptor numbers include:
+</p>
+
+<table>
+<tr>
+    <th>Descriptor</th>
+    <th>Conventional purpose</th>
+</tr>
+<tr>
+    <td>0</td>
+    <td>Standard input.</td>
+</tr>
+<tr>
+    <td>1</td>
+    <td>Standard output.</td>
+</tr>
+<tr>
+    <td>2</td>
+    <td>Standard error.</td>
+</tr>
+</table>
+
+<p>
+Additional descriptors may represent files, pipes, sockets
+or other kernel-managed objects.
+</p>
+
+<h3>Example</h3>
+
+<pre><code>ls -l /proc/self/fd</code></pre>
+
+<p>
+Here, <code>/proc/self</code> refers to the process accessing
+that Procfs path. When a command opens this path, it refers
+to that command's process.
+</p>
+</section>
+
+<section class="section">
+<h2>10. The /proc/sys Directory</h2>
+
+<p>
+The <code>/proc/sys</code> directory exposes selected
+kernel parameters that can be inspected and, where
+permitted, modified at runtime.
+</p>
+
+<p>
+These parameters are commonly known as sysctl parameters.
+</p>
+
+<h3>Explore the directory</h3>
+
+<pre><code>ls /proc/sys</code></pre>
+
+<h3>Inspect network parameters</h3>
+
+<pre><code>ls /proc/sys/net</code></pre>
+
+<h3>Read a kernel parameter</h3>
+
+<pre><code>cat /proc/sys/kernel/hostname</code></pre>
+
+<p>
+The exact contents depend on the running kernel and
+system configuration.
+</p>
+
+<h3>Related sysctl command</h3>
+
+<pre><code>sysctl -a</code></pre>
+
+<p>
+The sysctl utility provides a convenient interface for
+reading many kernel parameters.
+</p>
+
+<div class="warning">
+    Do not modify kernel parameters casually. Incorrect
+    values can affect networking, security or system
+    stability. Study the documented meaning of a parameter
+    before changing it.
+</div>
+</section>
+
+<section class="section">
+<h2>11. Process Visibility and Permissions</h2>
+
+<p>
+Not every user can necessarily inspect every process.
+Linux applies access-control checks to sensitive process
+information.
+</p>
+
+<p>
+The visibility of process directories may also be restricted
+using the <code>hidepid</code> mount option on Procfs.
+</p>
+
+<p>
+For example, a system administrator may configure Procfs
+to restrict visibility of other users' process directories.
+The precise behavior depends on the selected mount option
+and system configuration.
+</p>
+
+<h3>Check current mount options</h3>
+
+<pre><code>findmnt -no OPTIONS /proc</code></pre>
+
+<div class="note">
+    A permission-denied message when reading another
+    process's Procfs entry does not necessarily indicate
+    a filesystem problem. It may be an intentional security
+    restriction.
+</div>
+</section>
+
+<section class="section">
+<h2>12. How Applications Access Procfs</h2>
+
+<p>
+User-space programs access Procfs through ordinary
+filesystem operations.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">User Application</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">open("/proc/meminfo")</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">read()</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">VFS and Procfs</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Memory Information</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Data Returned to Application</div>
+</div>
+
+<p>
+The application does not need to directly access kernel
+memory. The kernel exposes the permitted information
+through Procfs operations.
+</p>
+
+<p>
+The same general file-access model is used by shell
+commands such as <code>cat</code>, <code>less</code> and
+programs that use the standard file APIs.
+</p>
+</section>
+
+<section class="section">
+<h2>13. Practical Exercise: Inspect Your Ubuntu System</h2>
+
+<p>
+Perform the following exercises in your Ubuntu virtual
+machine.
+</p>
+
+<h3>Exercise 1: List Procfs entries</h3>
+
+<pre><code>ls /proc</code></pre>
+
+<h3>Exercise 2: Identify your shell PID</h3>
+
+<pre><code>echo $$</code></pre>
+
+<h3>Exercise 3: Inspect your process directory</h3>
+
+<pre><code>ls /proc/$$</code></pre>
+
+<h3>Exercise 4: Read process status</h3>
+
+<pre><code>cat /proc/$$/status</code></pre>
+
+<h3>Exercise 5: Inspect memory mappings</h3>
+
+<pre><code>cat /proc/$$/maps</code></pre>
+
+<h3>Exercise 6: Inspect open file descriptors</h3>
+
+<pre><code>ls -l /proc/$$/fd</code></pre>
+
+<h3>Exercise 7: Inspect kernel information</h3>
+
+<pre><code>cat /proc/version
+cat /proc/uptime
+cat /proc/loadavg</code></pre>
+
+<h3>Exercise 8: Inspect kernel parameters</h3>
+
+<pre><code>ls /proc/sys
+cat /proc/sys/kernel/hostname</code></pre>
+
+<div class="success">
+    Expected result: You should be able to identify
+    system-wide entries, locate your shell's process
+    directory, and inspect selected process and kernel
+    information.
+</div>
+</section>
+
+<section class="section">
+<h2>14. Procfs and Linux Device Drivers</h2>
+
+<p>
+For device-driver developers, several Procfs entries are
+particularly useful during development and debugging.
+</p>
+
+<table>
+<tr>
+    <th>Procfs entry</th>
+    <th>Driver development relevance</th>
+</tr>
+<tr>
+    <td><code>/proc/interrupts</code></td>
+    <td>Inspect interrupt activity and interrupt counts.</td>
+</tr>
+<tr>
+    <td><code>/proc/modules</code></td>
+    <td>Inspect currently loaded loadable modules.</td>
+</tr>
+<tr>
+    <td><code>/proc/devices</code></td>
+    <td>Inspect registered character and block device major numbers.</td>
+</tr>
+<tr>
+    <td><code>/proc/iomem</code></td>
+    <td>Inspect the system's I/O memory resource map.</td>
+</tr>
+<tr>
+    <td><code>/proc/ioports</code></td>
+    <td>Inspect allocated I/O port regions where applicable.</td>
+</tr>
+<tr>
+    <td><code>/proc/misc</code></td>
+    <td>Inspect registered miscellaneous character devices.</td>
+</tr>
+</table>
+
+<p>
+These entries help developers understand aspects of the
+running kernel and registered devices. They do not replace
+driver-specific debugging tools or subsystem interfaces.
+</p>
+</section>
+
+<section class="section">
+<h2>15. Important Points to Remember</h2>
+
+<ul>
+    <li>/proc is the normal mount point for Procfs.</li>
+    <li>Numeric directories represent process IDs.</li>
+    <li>System-wide files expose kernel and system information.</li>
+    <li>/proc/PID/status provides process status details.</li>
+    <li>/proc/PID/maps describes process memory mappings.</li>
+    <li>/proc/PID/fd represents open file descriptors.</li>
+    <li>/proc/sys exposes selected kernel parameters.</li>
+    <li>Access to process information can be restricted.</li>
+    <li>Procfs is a kernel-provided interface, not ordinary disk storage.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>16. Lesson Summary</h2>
+
+<p>
+The /proc filesystem is an important interface between
+user-space applications and the Linux kernel.
+</p>
+
+<p>
+It provides two major categories of information:
+system-wide kernel information and process-specific
+information.
+</p>
+
+<p>
+By inspecting entries such as cpuinfo, meminfo, interrupts,
+modules, status, maps and fd, developers can understand
+the runtime behavior of Linux systems.
+</p>
+</section>
+
+<section class="section">
+<h2>17. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+    <li>What is the /proc directory?</li>
+    <li>What is the significance of numeric directories under /proc?</li>
+    <li>What is the purpose of /proc/PID/status?</li>
+    <li>What information is available in /proc/PID/maps?</li>
+    <li>What is the purpose of /proc/PID/fd?</li>
+    <li>What is the purpose of /proc/sys?</li>
+    <li>What does /proc/interrupts display?</li>
+    <li>What is the meaning of the hidepid mount option?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+    <li>Explain the organization of the /proc filesystem.</li>
+    <li>Differentiate system-wide and process-specific Procfs entries.</li>
+    <li>Explain the important files inside a process directory.</li>
+    <li>Describe how user-space applications access Procfs.</li>
+    <li>Explain the relevance of Procfs to Linux device-driver development.</li>
+</ol>
+
+<h3>C. Practical Questions</h3>
+<ol>
+    <li>Display your current shell PID.</li>
+    <li>Inspect the status of your current shell.</li>
+    <li>Display the memory maps of a running process.</li>
+    <li>List the open file descriptors of your shell.</li>
+    <li>Display loaded kernel modules using Procfs.</li>
+    <li>Inspect the system interrupt statistics.</li>
+    <li>Display the current kernel hostname parameter.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>18. Expected Learning Outcome</h2>
+
+<div class="success">
+    After completing this lesson, you should be able to
+    navigate the /proc filesystem, distinguish system-wide
+    and process-specific entries, inspect process information,
+    and identify Procfs entries useful in Linux kernel and
+    device-driver development.
+</div>
+</section>
+
+<div class="lesson-nav">
+    <a href="L01_Introduction_to_Procfs.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L03_Creating_Procfs_Entries.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 15 - Procfs, Sysfs and Kernel Interfaces</p>
+</footer>
+
+</body>
+</html>
