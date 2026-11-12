@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 6: Kernel Crash Analysis</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+body{font-family:Arial,sans-serif;line-height:1.7;margin:0;background:#f4f7fb;color:#222}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+nav{text-align:center;padding:14px;background:white;box-shadow:0 2px 5px rgba(0,0,0,.08)}
+nav a{display:inline-block;margin:5px 12px;color:#174ea6;text-decoration:none;font-weight:bold}
+.lesson-info{max-width:1000px;margin:22px auto;padding:16px 20px;background:#e8f1ff;border-left:5px solid #2878d7;border-radius:6px}
+.container{max-width:1000px;margin:auto;padding:0 15px 30px}
+section{background:white;padding:22px;margin:18px 0;border-radius:8px;box-shadow:0 2px 7px rgba(0,0,0,.06)}
+h2{color:#174ea6;border-bottom:2px solid #e3ebf7;padding-bottom:8px}
+h3{color:#245b9e}
+pre{background:#17202b;color:#e8edf2;padding:16px;border-radius:6px;overflow-x:auto;font-size:14px}
+code{font-family:Consolas,monospace}
+.note{background:#fff7df;border-left:4px solid #e0a000;padding:12px 15px;margin:15px 0}
+.success{background:#eaf7ed;border-left:4px solid #269447;padding:12px 15px;margin:15px 0}
+.warning{background:#fff0f0;border-left:4px solid #c83b3b;padding:12px 15px;margin:15px 0}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d8e0ea;padding:10px;text-align:left}
+th{background:#eaf1fb}
+.lesson-navigation{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-navigation a{background:#174ea6;color:white;padding:11px 18px;text-decoration:none;border-radius:5px}
+footer{text-align:center;padding:20px;background:#123b80;color:white}
+@media(max-width:600px){.lesson-banner h1{font-size:22px}section{padding:16px}.lesson-navigation{flex-direction:column}.lesson-navigation a{text-align:center}}
+</style>
+</head>
+<body>
+
+<header class="lesson-banner">
+<h1>Chapter 19: Driver Debugging, Testing and Performance</h1>
+<p>Lesson 6: Kernel Crash Analysis</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">Linux Device Drivers</a>
+<a href="index.html">Chapter 19</a>
+</nav>
+
+<div class="lesson-info">
+<strong>Lesson:</strong> 06 of 12<br>
+<strong>Topic:</strong> Kernel Crash Analysis<br>
+<strong>Level:</strong> Advanced<br>
+<strong>Prerequisites:</strong> Kernel Oops, Kernel Panic, Kernel Modules, Memory Management
+</div>
+
+<main class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Understand the kernel crash analysis process.</li>
+<li>Identify common sources of kernel crash information.</li>
+<li>Understand kernel crash dumps and vmcore files.</li>
+<li>Configure and understand the kdump mechanism.</li>
+<li>Use the crash utility for post-mortem analysis.</li>
+<li>Interpret kernel stack traces and task information.</li>
+<li>Understand debugging symbols and address resolution.</li>
+<li>Investigate memory corruption and driver-related crashes.</li>
+<li>Prepare a systematic kernel crash investigation report.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Kernel Crash Analysis</h2>
+<p><strong>Kernel crash analysis</strong> is the process of investigating a Linux kernel failure to determine its root cause.</p>
+
+<p>A kernel crash may result from a faulty device driver, memory corruption, invalid pointer access, synchronization problems, hardware faults or defects in kernel subsystems.</p>
+
+<p>Crash analysis involves collecting diagnostic information, examining the processor state, analyzing the stack trace and identifying the source-code location responsible for the failure.</p>
+
+<h3>Why Is Crash Analysis Important?</h3>
+<ul>
+<li>Identify the root cause of kernel failures.</li>
+<li>Debug faulty Linux device drivers.</li>
+<li>Investigate memory corruption.</li>
+<li>Understand unexpected system reboots.</li>
+<li>Improve driver reliability.</li>
+<li>Prevent repeated kernel crashes.</li>
+</ul>
+
+<div class="note">
+<strong>Important:</strong> Kernel crash analysis is different from ordinary application debugging. The investigation may require kernel symbols, a matching kernel image, a crash dump and architecture-specific knowledge.
+</div>
+</section>
+
+<section>
+<h2>3. Common Causes of Kernel Crashes</h2>
+
+<table>
+<tr><th>Cause</th><th>Description</th></tr>
+<tr><td>NULL pointer dereference</td><td>Accessing memory through a NULL pointer.</td></tr>
+<tr><td>Use-after-free</td><td>Accessing an object after its memory has been released.</td></tr>
+<tr><td>Buffer overflow</td><td>Writing beyond the allocated buffer size.</td></tr>
+<tr><td>Race condition</td><td>Incorrect behavior caused by unsynchronized concurrent access.</td></tr>
+<tr><td>Deadlock</td><td>Execution contexts wait indefinitely for resources held by each other.</td></tr>
+<tr><td>Stack overflow</td><td>Excessive stack consumption or recursion.</td></tr>
+<tr><td>Invalid DMA access</td><td>Incorrect DMA address handling or memory ownership.</td></tr>
+<tr><td>Hardware failure</td><td>Faults involving memory, processor or other hardware components.</td></tr>
+</table>
+
+<p>Device drivers can cause crashes because they execute in kernel space and interact directly with kernel data structures and hardware resources.</p>
+</section>
+
+<section>
+<h2>4. Kernel Crash Analysis Workflow</h2>
+
+<p>A systematic workflow helps developers avoid guessing and identify the actual cause of a crash.</p>
+
+<ol>
+<li><strong>Detect the failure:</strong> Identify the Oops, panic or unexpected reboot.</li>
+<li><strong>Collect logs:</strong> Retrieve kernel messages and system journal entries.</li>
+<li><strong>Preserve crash data:</strong> Obtain vmcore or other available crash records.</li>
+<li><strong>Identify the environment:</strong> Record kernel version, architecture and loaded modules.</li>
+<li><strong>Inspect the crash:</strong> Analyze registers, stack trace and task information.</li>
+<li><strong>Resolve symbols:</strong> Map addresses to functions and source-code locations.</li>
+<li><strong>Find the root cause:</strong> Inspect memory access, locking and object lifetime.</li>
+<li><strong>Apply a correction:</strong> Fix the driver or kernel defect.</li>
+<li><strong>Retest:</strong> Reproduce the original workload and verify the correction.</li>
+</ol>
+
+<pre><code>Kernel Crash
+     |
+     v
+Collect Diagnostic Information
+     |
+     v
+Preserve Crash Dump
+     |
+     v
+Identify Kernel and Module Versions
+     |
+     v
+Analyze vmcore
+     |
+     v
+Inspect Stack Trace and Registers
+     |
+     v
+Identify Root Cause
+     |
+     v
+Fix and Rebuild
+     |
+     v
+Retest and Validate</code></pre>
+</section>
+
+<section>
+<h2>5. Sources of Kernel Crash Information</h2>
+
+<p>Crash analysis can use information from several sources.</p>
+
+<table>
+<tr><th>Source</th><th>Information Available</th></tr>
+<tr><td>dmesg</td><td>Kernel ring-buffer messages.</td></tr>
+<tr><td>journalctl</td><td>Kernel and system logs retained by systemd-journald.</td></tr>
+<tr><td>vmcore</td><td>Captured kernel memory image from a crash.</td></tr>
+<tr><td>pstore</td><td>Crash-related records preserved by supported platform storage backends.</td></tr>
+<tr><td>Serial console</td><td>Kernel output captured through a serial connection.</td></tr>
+<tr><td>Kernel symbols</td><td>Function and address information for symbol resolution.</td></tr>
+<tr><td>Hardware logs</td><td>Platform-specific hardware error information.</td></tr>
+</table>
+
+<h3>Inspect Recent Kernel Messages</h3>
+<pre><code>dmesg | tail -n 100</code></pre>
+
+<h3>Inspect Kernel Journal</h3>
+<pre><code>sudo journalctl -k</code></pre>
+
+<h3>Inspect Previous Boot Logs</h3>
+<pre><code>sudo journalctl -k -b -1</code></pre>
+
+<h3>Inspect pstore</h3>
+<pre><code>ls -l /sys/fs/pstore</code></pre>
+
+<div class="note">
+Logs may be incomplete if the system crashes before they are written to persistent storage. A crash-dump mechanism provides more detailed information when correctly configured.
+</div>
+</section>
+
+<section>
+<h2>6. Understanding Kernel Crash Dumps</h2>
+
+<p>A <strong>kernel crash dump</strong> is a captured record of kernel memory and state at the time of a crash.</p>
+
+<p>It allows developers to investigate a failure after the system has rebooted.</p>
+
+<h3>What Can a Crash Dump Contain?</h3>
+<ul>
+<li>Kernel memory information.</li>
+<li>Processor register state.</li>
+<li>Task and process information.</li>
+<li>Kernel stack traces.</li>
+<li>Loaded module information.</li>
+<li>Kernel data structures.</li>
+<li>Memory contents relevant to the failure.</li>
+</ul>
+
+<h3>What Is vmcore?</h3>
+<p><code>vmcore</code> is a crash dump file containing captured kernel memory information. It is commonly analyzed using the Linux <code>crash</code> utility.</p>
+
+<pre><code>ls -lh /var/crash</code></pre>
+
+<p>Crash dump storage locations depend on the distribution and kdump configuration.</p>
+</section>
+
+<section>
+<h2>7. Introduction to kdump</h2>
+
+<p><strong>kdump</strong> is a Linux kernel crash-dumping mechanism.</p>
+
+<p>It uses a reserved area of memory to load a secondary kernel called the <strong>capture kernel</strong>. When the main kernel crashes, the system attempts to start the capture kernel and preserve crash information.</p>
+
+<h3>How kdump Works</h3>
+<ol>
+<li>The system boots with memory reserved for a crash kernel.</li>
+<li>The normal production kernel runs.</li>
+<li>A serious kernel failure occurs.</li>
+<li>The crash kernel is started through the kexec mechanism.</li>
+<li>The capture kernel accesses the crashed kernel's memory image.</li>
+<li>Crash information is saved, commonly as a vmcore file.</li>
+<li>The dump can be analyzed later.</li>
+</ol>
+
+<pre><code>Normal Kernel Running
+        |
+        v
+Kernel Crash
+        |
+        v
+Crash Kernel Starts
+        |
+        v
+Capture Memory Information
+        |
+        v
+Create vmcore
+        |
+        v
+Analyze Crash Dump</code></pre>
+
+<div class="note">
+kdump requires kernel support, reserved memory, a configured capture kernel and suitable storage. It is not automatically enabled on every Linux installation.
+</div>
+</section>
+
+<section>
+<h2>8. Checking kdump Configuration</h2>
+
+<p>On Ubuntu systems, kdump-related packages and services may be available depending on the release and installation.</p>
+
+<h3>Check Whether kdump Tools Are Installed</h3>
+<pre><code>dpkg -l | grep kdump</code></pre>
+
+<h3>Check the Service</h3>
+<pre><code>systemctl status kdump-tools</code></pre>
+
+<h3>Inspect the Configuration</h3>
+<pre><code>cat /etc/default/kdump-tools</code></pre>
+
+<h3>Check Kernel Command Line</h3>
+<pre><code>cat /proc/cmdline</code></pre>
+
+<p>Look for a <code>crashkernel=</code> parameter. Its value and required memory depend on the kernel, platform and distribution.</p>
+
+<h3>Inspect Reserved Memory</h3>
+<pre><code>dmesg | grep -i crash</code></pre>
+
+<div class="warning">
+Do not copy an arbitrary crashkernel memory reservation into a production boot configuration. Verify the correct value for the machine and ensure that the system can still boot normally.
+</div>
+</section>
+
+<section>
+<h2>9. Introduction to the crash Utility</h2>
+
+<p>The <strong>crash utility</strong> is a tool for analyzing kernel crash dumps and, in supported configurations, live kernel state.</p>
+
+<p>It allows developers to inspect kernel tasks, stacks, symbols, memory and other kernel data structures.</p>
+
+<h3>Install on Ubuntu</h3>
+<pre><code>sudo apt update
+sudo apt install crash</code></pre>
+
+<h3>Check Version</h3>
+<pre><code>crash --version</code></pre>
+
+<h3>Open a Crash Dump</h3>
+<pre><code>crash /path/to/vmlinux /path/to/vmcore</code></pre>
+
+<p>Here:</p>
+<ul>
+<li><code>vmlinux</code> is the matching uncompressed kernel image with debugging symbols.</li>
+<li><code>vmcore</code> is the captured crash dump.</li>
+</ul>
+
+<div class="note">
+The kernel image and dump must match the crashed kernel build and architecture. A compressed boot image such as vmlinuz is generally not a substitute for the matching debug-symbol-rich vmlinux file.
+</div>
+</section>
+
+<section>
+<h2>10. Important crash Utility Commands</h2>
+
+<table>
+<tr><th>Command</th><th>Purpose</th></tr>
+<tr><td>help</td><td>Display available commands.</td></tr>
+<tr><td>sys</td><td>Display system information.</td></tr>
+<tr><td>log</td><td>Display kernel log buffer information captured in the dump.</td></tr>
+<tr><td>bt</td><td>Display the backtrace for the current or selected task.</td></tr>
+<tr><td>bt -a</td><td>Display backtraces for tasks on available CPUs.</td></tr>
+<tr><td>ps</td><td>Display task information.</td></tr>
+<tr><td>mod</td><td>Display loaded module information.</td></tr>
+<tr><td>files</td><td>Display files associated with a selected task.</td></tr>
+<tr><td>kmem</td><td>Display kernel memory information.</td></tr>
+<tr><td>quit</td><td>Exit the crash utility.</td></tr>
+</table>
+
+<h3>Example Session</h3>
+<pre><code>crash&gt; sys
+crash&gt; log
+crash&gt; ps
+crash&gt; mod
+crash&gt; bt
+crash&gt; quit</code></pre>
+
+<p>The exact commands available and their output depend on the crash utility version, kernel symbols and dump contents.</p>
+</section>
+
+<section>
+<h2>11. Analyzing a Kernel Backtrace</h2>
+
+<p>A backtrace helps developers understand the sequence of functions active when the crash occurred.</p>
+
+<h3>Illustrative Backtrace</h3>
+<pre><code>crash&gt; bt
+
+PID: 1234
+COMMAND: test_driver
+
+ #0  driver_read
+ #1  vfs_read
+ #2  ksys_read
+ #3  __x64_sys_read
+ #4  do_syscall_64</code></pre>
+
+<p>This example shows an illustrative read path from a system call into a driver callback.</p>
+
+<h3>Analysis Procedure</h3>
+<ol>
+<li>Identify the crashing task.</li>
+<li>Locate the first relevant driver function.</li>
+<li>Check the function's source code and call path.</li>
+<li>Inspect its pointer arguments and shared objects.</li>
+<li>Review locking and allocation operations.</li>
+<li>Compare the stack trace with the driver source and matching symbols.</li>
+</ol>
+
+<div class="note">
+A backtrace is evidence, not proof of the root cause. Memory corruption can damage the stack or cause a failure far away from the original defect.
+</div>
+</section>
+
+<section>
+<h2>12. Analyzing Kernel Tasks and Processes</h2>
+
+<p>Kernel crash analysis often requires identifying which task was executing when the failure occurred.</p>
+
+<h3>Display Tasks</h3>
+<pre><code>crash&gt; ps</code></pre>
+
+<h3>Display a Task Backtrace</h3>
+<pre><code>crash&gt; bt</code></pre>
+
+<h3>Why Task Analysis Is Important</h3>
+<ul>
+<li>Identify the process associated with the failure.</li>
+<li>Determine whether the crash happened in process context.</li>
+<li>Investigate kernel worker threads.</li>
+<li>Inspect task states and blocked operations.</li>
+<li>Identify possible deadlocks and lock contention.</li>
+</ul>
+
+<p>Interrupt and other non-process contexts require additional interpretation because they may not correspond to an ordinary user process.</p>
+</section>
+
+<section>
+<h2>13. Analyzing Kernel Modules</h2>
+
+<p>A faulty external or in-tree module can be responsible for a crash.</p>
+
+<h3>Display Loaded Modules</h3>
+<pre><code>crash&gt; mod</code></pre>
+
+<h3>Inspect Module Information</h3>
+<pre><code>modinfo driver_module.ko</code></pre>
+
+<h3>Check Running Kernel Version</h3>
+<pre><code>uname -r</code></pre>
+
+<h3>Inspect Module Dependencies</h3>
+<pre><code>modinfo -F depends driver_module.ko</code></pre>
+
+<p>Always use the exact module build associated with the crashed kernel when resolving addresses and examining module symbols.</p>
+</section>
+
+<section>
+<h2>14. Kernel Symbols and Debug Information</h2>
+
+<p>Kernel symbols associate addresses with function and variable names. Debug information can additionally map code locations to source files and line numbers.</p>
+
+<h3>Important Files</h3>
+<ul>
+<li><code>vmlinux</code> – Uncompressed kernel image, often available with symbols.</li>
+<li><code>System.map</code> – Kernel symbol address map for a particular build.</li>
+<li><code>*.ko</code> – Kernel module object files.</li>
+<li><code>*.debug</code> – Separate debug information files when provided.</li>
+</ul>
+
+<h3>Find a Kernel Symbol</h3>
+<pre><code>grep " printk$" /boot/System.map-$(uname -r)</code></pre>
+
+<h3>Resolve an Address</h3>
+<pre><code>addr2line -e vmlinux -f -i 0xffffffff81000000</code></pre>
+
+<p>The address above is illustrative. Use the correct address and matching uncompressed image for the actual crash.</p>
+
+<div class="note">
+Kernel address randomization, module relocation and architecture-specific address handling can affect symbol resolution. Follow the crash tool's symbol information and use the correct build artifacts.
+</div>
+</section>
+
+<section>
+<h2>15. Investigating Memory Corruption</h2>
+
+<p>Memory corruption occurs when kernel code changes memory that it does not own or accesses memory incorrectly.</p>
+
+<h3>Common Sources</h3>
+<ul>
+<li>Writing beyond an array boundary.</li>
+<li>Use-after-free.</li>
+<li>Double free.</li>
+<li>Incorrect pointer arithmetic.</li>
+<li>DMA buffer ownership errors.</li>
+<li>Incorrect reference counting.</li>
+<li>Race conditions involving object lifetime.</li>
+</ul>
+
+<h3>Useful Debugging Tools</h3>
+<table>
+<tr><th>Tool</th><th>Purpose</th></tr>
+<tr><td>KASAN</td><td>Detects many out-of-bounds and use-after-free memory errors.</td></tr>
+<tr><td>kmemleak</td><td>Detects possible memory leaks.</td></tr>
+<tr><td>SLUB debugging</td><td>Helps detect slab allocator misuse and corruption.</td></tr>
+<tr><td>UBSAN</td><td>Detects certain undefined behavior conditions.</td></tr>
+<tr><td>lockdep</td><td>Detects certain locking errors and potential deadlocks.</td></tr>
+</table>
+
+<p>These facilities require appropriate kernel configuration and may have performance or memory overhead.</p>
+</section>
+
+<section>
+<h2>16. Analyzing Deadlocks and Locking Problems</h2>
+
+<p>A deadlock occurs when two or more execution contexts wait indefinitely for resources held by one another.</p>
+
+<h3>Example Scenario</h3>
+<pre><code>Thread A:
+    lock(mutex_A)
+    lock(mutex_B)
+
+Thread B:
+    lock(mutex_B)
+    lock(mutex_A)</code></pre>
+
+<p>If both threads acquire their first lock simultaneously, each can wait for the other lock indefinitely.</p>
+
+<h3>Investigation Techniques</h3>
+<ul>
+<li>Inspect task states and backtraces.</li>
+<li>Review lock acquisition order.</li>
+<li>Use lockdep where available.</li>
+<li>Check whether locks are held across blocking operations.</li>
+<li>Examine workqueues and kernel threads waiting for locks.</li>
+</ul>
+</section>
+
+<section>
+<h2>17. Crash Analysis for Device Drivers</h2>
+
+<p>Driver crash analysis focuses on interactions between hardware, kernel frameworks and driver-owned resources.</p>
+
+<h3>Important Areas to Inspect</h3>
+
+<table>
+<tr><th>Driver Area</th><th>Potential Defect</th></tr>
+<tr><td>Probe function</td><td>Incomplete initialization or missing error cleanup.</td></tr>
+<tr><td>Remove function</td><td>Resources released in an unsafe order.</td></tr>
+<tr><td>Interrupt handler</td><td>Invalid pointer or unsafe operation in interrupt context.</td></tr>
+<tr><td>DMA handling</td><td>Incorrect mapping, synchronization or ownership.</td></tr>
+<tr><td>Read/write callbacks</td><td>Invalid user-copy handling or buffer access.</td></tr>
+<tr><td>Workqueues</td><td>Work accessing resources after teardown.</td></tr>
+<tr><td>Power management</td><td>Incorrect suspend/resume resource handling.</td></tr>
+</table>
+
+<h3>Example Driver Investigation Checklist</h3>
+<pre><code>1. Check probe and initialization paths.
+2. Check every allocation and release operation.
+3. Validate pointer and buffer access.
+4. Inspect IRQ and workqueue interactions.
+5. Review locking and reference counting.
+6. Check remove and shutdown paths.
+7. Compare the crash with driver source symbols.</code></pre>
+</section>
+
+<section>
+<h2>18. Crash Analysis Using GDB</h2>
+
+<p>GDB can inspect symbols and source-level information when suitable debugging information is available.</p>
+
+<h3>Open a Kernel Image</h3>
+<pre><code>gdb /path/to/vmlinux</code></pre>
+
+<h3>Inspect a Function</h3>
+<pre><code>(gdb) info functions driver_read</code></pre>
+
+<h3>Inspect Source Code</h3>
+<pre><code>(gdb) list driver_read</code></pre>
+
+<h3>Inspect a Symbol</h3>
+<pre><code>(gdb) info address driver_read</code></pre>
+
+<p>For full post-mortem kernel dump analysis, the crash utility is commonly used. GDB is useful for examining symbols and source-level information and can be used in specialized kernel debugging workflows.</p>
+</section>
+
+<section>
+<h2>19. Practical Lab: Kernel Crash Information Collection</h2>
+
+<h3>Objective</h3>
+<p>Collect and inspect available kernel diagnostic information on an Ubuntu virtual machine without deliberately triggering a crash.</p>
+
+<h3>Step 1: Identify Kernel Version</h3>
+<pre><code>uname -a</code></pre>
+
+<h3>Step 2: Inspect Kernel Logs</h3>
+<pre><code>dmesg | tail -n 100</code></pre>
+
+<h3>Step 3: Inspect Previous Boot Logs</h3>
+<pre><code>sudo journalctl -k -b -1</code></pre>
+
+<h3>Step 4: Check Crash Dump Directory</h3>
+<pre><code>ls -lah /var/crash</code></pre>
+
+<h3>Step 5: Check pstore</h3>
+<pre><code>ls -lah /sys/fs/pstore</code></pre>
+
+<h3>Step 6: Check kdump Service</h3>
+<pre><code>systemctl status kdump-tools</code></pre>
+
+<h3>Step 7: Check Crash Utility</h3>
+<pre><code>crash --version</code></pre>
+
+<h3>Step 8: Save Diagnostic Information</h3>
+<pre><code>mkdir -p ~/kernel_crash_lab
+
+uname -a &gt; ~/kernel_crash_lab/system_info.txt
+
+dmesg &gt; ~/kernel_crash_lab/kernel_log.txt
+
+sudo journalctl -k -b -1 \
+    &gt; ~/kernel_crash_lab/previous_boot_log.txt</code></pre>
+
+<h3>Expected Result</h3>
+<p>A directory named <code>kernel_crash_lab</code> containing system information and available kernel diagnostic logs.</p>
+
+<div class="note">
+This lab collects information only. A real vmcore analysis requires an actual crash dump and the matching kernel image with debugging symbols. Do not intentionally crash your VirtualBox guest to complete this exercise.
+</div>
+</section>
+
+<section>
+<h2>20. Common Problems and Troubleshooting</h2>
+
+<table>
+<tr><th>Problem</th><th>Possible Cause</th><th>Solution</th></tr>
+<tr><td>No vmcore file</td><td>kdump not configured or capture failed</td><td>Verify crashkernel reservation, service and dump target.</td></tr>
+<tr><td>crash cannot open vmcore</td><td>Wrong file or incompatible dump</td><td>Verify the dump and matching kernel image.</td></tr>
+<tr><td>Unknown symbols</td><td>Missing or mismatched debug symbols</td><td>Obtain matching kernel and module symbols.</td></tr>
+<tr><td>Incomplete backtrace</td><td>Corrupted stack or missing unwind information</td><td>Inspect other tasks, registers and available debug data.</td></tr>
+<tr><td>Previous boot logs missing</td><td>Journal persistence disabled or logs unavailable</td><td>Configure persistent logging for future investigations.</td></tr>
+<tr><td>kdump service inactive</td><td>Unsupported configuration or missing setup</td><td>Review distribution-specific kdump setup.</td></tr>
+<tr><td>Large dump file</td><td>Crash dump contains substantial memory data</td><td>Plan adequate storage and dump filtering.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>21. Best Practices for Kernel Crash Analysis</h2>
+
+<ul>
+<li>Record the exact kernel version and architecture.</li>
+<li>Preserve the original vmcore before analysis.</li>
+<li>Use matching kernel and module debug symbols.</li>
+<li>Collect logs from before and after the failure when available.</li>
+<li>Identify the crashing task and CPU.</li>
+<li>Inspect the complete stack trace rather than only one function.</li>
+<li>Check memory allocation and release paths.</li>
+<li>Investigate locking, interrupts and workqueues.</li>
+<li>Reproduce the issue using a controlled development environment.</li>
+<li>Document the root cause and corrective action.</li>
+<li>Retest under the original workload.</li>
+<li>Protect crash dumps because they may contain sensitive memory contents.</li>
+</ul>
+</section>
+
+<section>
+<h2>22. Important Exercises</h2>
+
+<ol>
+<li>Define kernel crash analysis.</li>
+<li>List common causes of kernel crashes.</li>
+<li>Explain the purpose of a kernel crash dump.</li>
+<li>What is vmcore?</li>
+<li>Explain the working of kdump.</li>
+<li>Differentiate the normal kernel and capture kernel.</li>
+<li>What is the purpose of the crash utility?</li>
+<li>Explain the commands sys, log, ps, mod and bt.</li>
+<li>Describe how kernel symbols help in crash analysis.</li>
+<li>Explain the role of vmlinux and System.map.</li>
+<li>Describe memory corruption investigation.</li>
+<li>Explain how lockdep helps detect locking problems.</li>
+<li>Describe driver-specific crash investigation.</li>
+<li>Explain the role of GDB in kernel debugging.</li>
+<li>Prepare a checklist for investigating a driver crash.</li>
+</ol>
+</section>
+
+<section>
+<h2>23. Interview Questions and Answers</h2>
+
+<h3>Q1. What is kernel crash analysis?</h3>
+<p><strong>Answer:</strong> It is the process of investigating a kernel failure to identify its root cause using logs, stack traces, registers and crash dumps.</p>
+
+<h3>Q2. What is vmcore?</h3>
+<p><strong>Answer:</strong> vmcore is a crash dump file containing captured kernel memory information.</p>
+
+<h3>Q3. What is kdump?</h3>
+<p><strong>Answer:</strong> kdump is a Linux crash-dumping mechanism that uses a reserved capture kernel to save crash information.</p>
+
+<h3>Q4. What is a capture kernel?</h3>
+<p><strong>Answer:</strong> It is a secondary kernel started after a crash to collect and save information about the failed kernel.</p>
+
+<h3>Q5. What is the crash utility?</h3>
+<p><strong>Answer:</strong> It is a tool used to analyze kernel crash dumps and inspect kernel data structures.</p>
+
+<h3>Q6. Why is vmlinux required for crash analysis?</h3>
+<p><strong>Answer:</strong> The matching vmlinux image provides kernel symbols and, when available, debugging information required to interpret the dump.</p>
+
+<h3>Q7. What is a kernel backtrace?</h3>
+<p><strong>Answer:</strong> A backtrace displays the function call sequence associated with a task or failure context.</p>
+
+<h3>Q8. What does the crash command bt do?</h3>
+<p><strong>Answer:</strong> It displays the backtrace for the selected or current task.</p>
+
+<h3>Q9. What does the crash command ps do?</h3>
+<p><strong>Answer:</strong> It displays task information from the crash dump.</p>
+
+<h3>Q10. What does the crash command mod do?</h3>
+<p><strong>Answer:</strong> It displays information about kernel modules.</p>
+
+<h3>Q11. What is System.map?</h3>
+<p><strong>Answer:</strong> It is a symbol map containing kernel symbol addresses for a particular build.</p>
+
+<h3>Q12. Why must debug symbols match the crashed kernel?</h3>
+<p><strong>Answer:</strong> Kernel builds can differ in addresses, functions and structure layouts. Mismatched symbols can produce incorrect analysis.</p>
+
+<h3>Q13. What is KASAN?</h3>
+<p><strong>Answer:</strong> KASAN is a kernel memory error detector that can identify many out-of-bounds and use-after-free accesses.</p>
+
+<h3>Q14. What is kmemleak?</h3>
+<p><strong>Answer:</strong> It is a kernel facility that helps detect possible memory leaks.</p>
+
+<h3>Q15. What is lockdep?</h3>
+<p><strong>Answer:</strong> Lockdep is a kernel locking validator that detects certain locking errors and potential deadlocks.</p>
+
+<h3>Q16. What is a post-mortem analysis?</h3>
+<p><strong>Answer:</strong> It is an investigation performed after a failure using preserved logs, dumps and other diagnostic information.</p>
+
+<h3>Q17. Can a driver cause a kernel crash?</h3>
+<p><strong>Answer:</strong> Yes. Invalid memory access, incorrect DMA handling, race conditions and resource lifetime defects can cause kernel crashes.</p>
+
+<h3>Q18. What is the role of GDB?</h3>
+<p><strong>Answer:</strong> GDB can inspect kernel symbols and source-level information when suitable debugging information is available.</p>
+
+<h3>Q19. Why should crash dumps be protected?</h3>
+<p><strong>Answer:</strong> They may contain sensitive information from kernel memory, including data belonging to processes and devices.</p>
+
+<h3>Q20. What is the most important step in crash analysis?</h3>
+<p><strong>Answer:</strong> Identifying the actual root cause using reliable evidence rather than assuming that the first visible failing function introduced the defect.</p>
+</section>
+
+<section>
+<h2>24. Lesson Summary</h2>
+<ul>
+<li>Kernel crash analysis identifies the root cause of kernel failures.</li>
+<li>Crash information can come from logs, pstore, serial consoles and vmcore files.</li>
+<li>kdump uses a capture kernel to preserve crash information.</li>
+<li>The crash utility analyzes kernel dumps.</li>
+<li>Backtraces and task information help identify the execution path.</li>
+<li>Matching symbols are essential for reliable source-level analysis.</li>
+<li>Memory corruption and locking defects are common crash causes.</li>
+<li>Driver probe, remove, interrupt and DMA paths deserve careful inspection.</li>
+<li>Controlled testing helps verify the corrective action.</li>
+</ul>
+
+<div class="success">
+<strong>Lesson Completed:</strong> You have learned the Linux kernel crash analysis workflow, kdump concepts, vmcore inspection and driver crash investigation techniques.
+</div>
+</section>
+
+<div class="lesson-navigation">
+<a href="L05_Kernel_Oops_and_Kernel_Panic.html">← Previous: Lesson 5</a>
+<a href="index.html">Chapter 19 Index</a>
+<a href="L07_Memory_Leak_Detection.html">Next: Lesson 7 →</a>
+</div>
+
+</main>
+
+<footer>
+<p>NS Learning Hub | Linux Device Drivers</p>
+<p>Chapter 19 – Driver Debugging, Testing and Performance</p>
+</footer>
+
+</body>
+</html>
