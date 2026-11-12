@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kernel Debugging Using GDB and KGDB | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+}
+header h1 { margin: 0; font-size: 27px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: #082b5c;
+    padding: 12px;
+    text-align: center;
+}
+nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3f2fd;
+    border-left: 5px solid #1976d2;
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.07);
+}
+h2 { color: #174ea6; }
+h3 { color: #1769aa; }
+pre {
+    background: #17212b;
+    color: #e8f1f8;
+    padding: 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+}
+code { font-family: Consolas, monospace; }
+.note {
+    background: #fff8e1;
+    border-left: 5px solid #f9a825;
+    padding: 12px;
+    margin: 15px 0;
+}
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 12px;
+    margin: 15px 0;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 10px;
+    text-align: left;
+}
+th { background: #eaf1fb; }
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 5px;
+    text-decoration: none;
+}
+footer {
+    text-align: center;
+    padding: 20px;
+    background: #082b5c;
+    color: white;
+    margin-top: 30px;
+}
+@media(max-width:600px) {
+    header h1 { font-size: 22px; }
+    nav a { display: inline-block; margin: 5px; }
+    section { padding: 16px; }
+    table { font-size: 14px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Kernel Debugging Using GDB and KGDB</h1>
+    <p>Linux Device Drivers – Chapter 19, Lesson 5</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter 19</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> Driver Debugging, Testing and Performance<br>
+    <strong>Lesson:</strong> 5 – Kernel Debugging Using GDB and KGDB<br>
+    <strong>Level:</strong> Intermediate to Advanced
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+    <li>Understand the role of GDB in Linux kernel debugging.</li>
+    <li>Differentiate between GDB and KGDB.</li>
+    <li>Understand kernel debugging symbols.</li>
+    <li>Use GDB to inspect kernel symbols and source code.</li>
+    <li>Understand breakpoints, watchpoints and backtraces.</li>
+    <li>Understand remote debugging using KGDB.</li>
+    <li>Identify the limitations of kernel debugging in a virtual machine.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to GDB</h2>
+<p><strong>GDB (GNU Debugger)</strong> is a debugging tool used to examine program execution, inspect variables, set breakpoints and identify software errors.</p>
+
+<p>GDB is commonly used for user-space application debugging. It can also inspect kernel-related symbols and analyze kernel debugging information when suitable debug symbols and kernel images are available.</p>
+
+<h3>Important GDB capabilities</h3>
+<ul>
+    <li>Set breakpoints at functions or source-code lines.</li>
+    <li>Execute programs step by step.</li>
+    <li>Inspect variables and memory.</li>
+    <li>Display function call stacks.</li>
+    <li>Examine registers and processor state.</li>
+    <li>Inspect compiled code and debugging symbols.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. Why Is GDB Used in Kernel Development?</h2>
+<p>Kernel code executes in privileged mode. A defect in a kernel module can affect the entire operating system.</p>
+
+<p>GDB-based debugging helps developers investigate:</p>
+<ul>
+    <li>Incorrect pointer references.</li>
+    <li>Unexpected function execution.</li>
+    <li>Incorrect variable values.</li>
+    <li>Kernel call-stack problems.</li>
+    <li>Unexpected control flow.</li>
+    <li>Module and kernel symbol information.</li>
+</ul>
+
+<div class="note">
+    <strong>Important:</strong> GDB alone does not automatically attach to a running Linux kernel. Live kernel debugging requires an appropriate debugging interface, such as KGDB, or another supported kernel-debugging mechanism.
+</div>
+</section>
+
+<section>
+<h2>4. Kernel Debugging Symbols</h2>
+<p>Debugging symbols associate compiled machine instructions with information such as function names, source-code locations and variable details.</p>
+
+<p>Without debug information, debugging output may contain mostly memory addresses and limited symbol information.</p>
+
+<h3>Why symbols matter</h3>
+<ul>
+    <li>Identify kernel functions.</li>
+    <li>Map instructions to source-code lines.</li>
+    <li>Inspect local variables when available.</li>
+    <li>Understand stack traces.</li>
+</ul>
+
+<h3>Useful kernel configuration options</h3>
+<pre><code>CONFIG_DEBUG_INFO=y
+CONFIG_GDB_SCRIPTS=y
+CONFIG_FRAME_POINTER=y</code></pre>
+
+<p>These options depend on kernel version, architecture and debugging requirements. Some may not be available or necessary in every kernel configuration.</p>
+</section>
+
+<section>
+<h2>5. Inspecting Kernel Symbols with GDB</h2>
+<p>GDB can inspect an uncompressed kernel image containing suitable debugging information.</p>
+
+<p>For example, on many x86 systems, the kernel image is available as <code>vmlinux</code> in the kernel build directory.</p>
+
+<h3>Start GDB</h3>
+<pre><code>gdb vmlinux</code></pre>
+
+<h3>Useful GDB commands</h3>
+<table>
+<tr><th>Command</th><th>Purpose</th></tr>
+<tr><td>info functions</td><td>List known functions.</td></tr>
+<tr><td>info variables</td><td>Display known variables.</td></tr>
+<tr><td>list</td><td>Display source code.</td></tr>
+<tr><td>disassemble</td><td>Display machine instructions.</td></tr>
+<tr><td>break function_name</td><td>Set a breakpoint.</td></tr>
+<tr><td>bt</td><td>Display a backtrace.</td></tr>
+<tr><td>quit</td><td>Exit GDB.</td></tr>
+</table>
+
+<pre><code>(gdb) info functions
+(gdb) list
+(gdb) disassemble
+(gdb) quit</code></pre>
+
+<div class="note">
+    <strong>Note:</strong> A kernel image containing symbols is not the same as a live debugging connection. Inspecting symbols does not stop or control the running kernel.
+</div>
+</section>
+
+<section>
+<h2>6. Understanding Breakpoints</h2>
+<p>A breakpoint tells a debugger to pause execution when a specified location is reached.</p>
+
+<h3>Example GDB commands</h3>
+<pre><code>(gdb) break start_kernel
+(gdb) info breakpoints
+(gdb) delete 1</code></pre>
+
+<p>In live kernel debugging, a breakpoint can pause kernel execution. This can affect the entire system, including other CPUs and time-sensitive operations.</p>
+
+<h3>Types of breakpoints</h3>
+<ul>
+    <li><strong>Function breakpoint:</strong> Stops at a function.</li>
+    <li><strong>Source-line breakpoint:</strong> Stops at a source-code line.</li>
+    <li><strong>Conditional breakpoint:</strong> Stops when a condition is satisfied.</li>
+    <li><strong>Hardware breakpoint:</strong> Uses processor debugging support where available.</li>
+</ul>
+</section>
+
+<section>
+<h2>7. Understanding Watchpoints</h2>
+<p>A watchpoint monitors a variable or memory location and reports when its value changes or is accessed, depending on the watchpoint type.</p>
+
+<h3>Common GDB watchpoint commands</h3>
+<pre><code>(gdb) watch variable
+(gdb) rwatch variable
+(gdb) awatch variable
+(gdb) info watchpoints</code></pre>
+
+<table>
+<tr><th>Command</th><th>Meaning</th></tr>
+<tr><td>watch</td><td>Stop when an expression changes.</td></tr>
+<tr><td>rwatch</td><td>Stop when an expression is read.</td></tr>
+<tr><td>awatch</td><td>Stop when an expression is accessed.</td></tr>
+</table>
+
+<p>Watchpoint support and the number of hardware watchpoints depend on the target processor and debugging environment.</p>
+</section>
+
+<section>
+<h2>8. Understanding Backtraces</h2>
+<p>A backtrace displays the sequence of function calls that led to the current execution point.</p>
+
+<p>It is especially useful when investigating crashes, unexpected function calls and kernel faults.</p>
+
+<h3>GDB command</h3>
+<pre><code>(gdb) bt
+(gdb) backtrace</code></pre>
+
+<p>A typical backtrace contains:</p>
+<ul>
+    <li>Function names.</li>
+    <li>Source-code locations, when symbols are available.</li>
+    <li>Function arguments, when available.</li>
+    <li>Call-stack relationships.</li>
+</ul>
+
+<div class="note">
+    Kernel crash reports may also provide stack traces through kernel logs. These traces can be analyzed alongside symbol information.
+</div>
+</section>
+
+<section>
+<h2>9. Introduction to KGDB</h2>
+<p><strong>KGDB (Kernel GNU Debugger)</strong> is a kernel debugging facility that allows a debugger such as GDB to communicate with a running Linux kernel.</p>
+
+<p>KGDB typically uses a serial connection or another supported transport to connect a development machine to the target machine.</p>
+
+<h3>KGDB architecture</h3>
+<pre><code>Development Computer
+        |
+        | GDB
+        |
+   Debugging Link
+        |
+        | Serial / Supported Transport
+        |
+Target Linux System
+        |
+        | KGDB
+        |
+   Linux Kernel
+        |
+   Kernel Module</code></pre>
+
+<p>The development computer runs GDB, while the target system runs the kernel being debugged.</p>
+</section>
+
+<section>
+<h2>10. GDB vs KGDB</h2>
+<table>
+<tr><th>Feature</th><th>GDB</th><th>KGDB</th></tr>
+<tr><td>Full name</td><td>GNU Debugger</td><td>Kernel GNU Debugger</td></tr>
+<tr><td>Main purpose</td><td>General debugging</td><td>Live Linux kernel debugging</td></tr>
+<tr><td>Kernel awareness</td><td>Can inspect kernel symbols and images</td><td>Provides a kernel debugging interface</td></tr>
+<tr><td>Breakpoints</td><td>For supported debugging targets</td><td>Can set breakpoints in a live kernel</td></tr>
+<tr><td>Remote debugging</td><td>Supported</td><td>Uses GDB remote debugging protocol</td></tr>
+<tr><td>Typical use</td><td>Application and offline analysis</td><td>Kernel and driver debugging</td></tr>
+</table>
+
+<p>KGDB is not a replacement for GDB. It provides the kernel-side support that allows GDB to debug the running kernel.</p>
+</section>
+
+<section>
+<h2>11. KGDB Configuration</h2>
+<p>KGDB support must be enabled in the target kernel configuration. Exact configuration options and transport support depend on the kernel version and platform.</p>
+
+<h3>Common configuration options</h3>
+<pre><code>CONFIG_KGDB=y
+CONFIG_KGDB_SERIAL_CONSOLE=y
+CONFIG_DEBUG_INFO=y</code></pre>
+
+<p>Some systems also require architecture-specific debugging support and a suitable serial driver.</p>
+
+<h3>Kernel boot parameters</h3>
+<p>A typical serial KGDB setup may use parameters similar to:</p>
+<pre><code>kgdboc=ttyS0,115200
+kgdbwait</code></pre>
+
+<ul>
+    <li><code>kgdboc</code> configures the KGDB I/O transport.</li>
+    <li><code>ttyS0</code> identifies a serial port in this example.</li>
+    <li><code>115200</code> specifies the baud rate.</li>
+    <li><code>kgdbwait</code> requests that the kernel wait for a debugger during boot.</li>
+</ul>
+
+<div class="warning">
+    These are configuration examples, not universal commands. The serial device name, kernel configuration, bootloader setup and transport support must match the target system. Incorrect boot parameters can prevent normal booting.
+</div>
+</section>
+
+<section>
+<h2>12. Connecting GDB to a KGDB Target</h2>
+<p>Once KGDB is configured and the target kernel is ready, GDB can connect through the configured debugging transport.</p>
+
+<h3>Example workflow</h3>
+<pre><code># On the development computer
+gdb vmlinux
+
+# Inside GDB
+(gdb) target remote /dev/ttyUSB0</code></pre>
+
+<p>The example assumes a supported serial connection exposed as <code>/dev/ttyUSB0</code>. Actual device names and connection arrangements vary.</p>
+
+<h3>After connection</h3>
+<pre><code>(gdb) break some_kernel_function
+(gdb) continue
+(gdb) bt
+(gdb) info registers
+(gdb) continue</code></pre>
+
+<p>GDB commands allow the developer to inspect execution, examine registers and resume the target kernel.</p>
+</section>
+
+<section>
+<h2>13. Debugging a Linux Device Driver</h2>
+<p>KGDB can help investigate problems in a device driver by allowing the developer to inspect the kernel while driver code is executing.</p>
+
+<h3>Example driver function</h3>
+<pre><code>static int mydriver_open(struct inode *inode,
+                         struct file *file)
+{
+    pr_info("mydriver: device opened\n");
+
+    return 0;
+}</code></pre>
+
+<p>A developer can use kernel symbols and source information to investigate the function when it is reached during a suitable KGDB debugging session.</p>
+
+<h3>Possible debugging objectives</h3>
+<ul>
+    <li>Check whether the open callback executes.</li>
+    <li>Inspect the inode and file structures.</li>
+    <li>Trace unexpected control flow.</li>
+    <li>Investigate a kernel fault.</li>
+    <li>Inspect the call stack and processor registers.</li>
+</ul>
+</section>
+
+<section>
+<h2>14. GDB Debugging Commands Reference</h2>
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td>break main</td><td>Set a breakpoint at main.</td></tr>
+<tr><td>continue</td><td>Resume execution.</td></tr>
+<tr><td>next</td><td>Execute the next source line without stepping into functions.</td></tr>
+<tr><td>step</td><td>Step into a function.</td></tr>
+<tr><td>print variable</td><td>Display a variable or expression.</td></tr>
+<tr><td>display variable</td><td>Display an expression after each stop.</td></tr>
+<tr><td>bt</td><td>Show the call stack.</td></tr>
+<tr><td>info registers</td><td>Display processor registers.</td></tr>
+<tr><td>info breakpoints</td><td>List breakpoints.</td></tr>
+<tr><td>delete</td><td>Remove breakpoints.</td></tr>
+<tr><td>detach</td><td>Detach from a debugging target.</td></tr>
+<tr><td>quit</td><td>Exit GDB.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>15. Limitations and Safety Considerations</h2>
+<ul>
+    <li>Kernel debugging requires compatible kernel images and debugging symbols.</li>
+    <li>KGDB support must be built into or enabled in the target kernel.</li>
+    <li>Serial debugging requires a correctly configured transport.</li>
+    <li>Breakpoints can pause kernel execution and affect system responsiveness.</li>
+    <li>Timing-sensitive bugs may disappear or change when debugging.</li>
+    <li>Debugging a production system can cause service interruption.</li>
+    <li>Kernel and GDB versions, architecture and symbol files must be compatible.</li>
+</ul>
+
+<div class="warning">
+    Do not experiment with KGDB boot parameters on your primary operating system without a recovery method. Use a disposable virtual machine or dedicated test system.
+</div>
+</section>
+
+<section>
+<h2>16. Practical Exercise – Inspecting Kernel Symbols</h2>
+<p><strong>Objective:</strong> Learn how GDB opens a kernel image and displays debugging information.</p>
+
+<p><strong>Environment:</strong> Ubuntu Linux in VirtualBox.</p>
+
+<h3>Step 1: Install GDB</h3>
+<pre><code>sudo apt update
+sudo apt install gdb</code></pre>
+
+<h3>Step 2: Locate the kernel image</h3>
+<pre><code>ls -l /boot/vmlinuz-$(uname -r)</code></pre>
+
+<p>The compressed boot image is not normally the preferred input for source-level GDB inspection. A suitable uncompressed <code>vmlinux</code> image with debug symbols is required.</p>
+
+<h3>Step 3: Install matching debug information</h3>
+<p>On Ubuntu, availability and package names depend on the kernel build and repository configuration. One possible package family is:</p>
+<pre><code>linux-image-$(uname -r)-dbgsym</code></pre>
+
+<p>If matching debug symbols are unavailable, use a separately built test kernel with debug information enabled.</p>
+
+<h3>Step 4: Open the suitable kernel image</h3>
+<pre><code>gdb /path/to/vmlinux</code></pre>
+
+<h3>Step 5: Inspect symbols</h3>
+<pre><code>(gdb) info functions
+(gdb) info variables
+(gdb) quit</code></pre>
+
+<p><strong>Expected Result:</strong> GDB loads the kernel image and displays available symbol information. This exercise does not attach to or modify the running kernel.</p>
+</section>
+
+<section>
+<h2>17. VirtualBox and KGDB Practical Notes</h2>
+<p>Since this course uses Ubuntu in VirtualBox, distinguish between inspecting kernel symbols and performing live remote kernel debugging.</p>
+
+<ul>
+    <li>GDB can be used inside Ubuntu to inspect a suitable kernel image.</li>
+    <li>Live KGDB debugging requires a compatible target kernel and configured debugging transport.</li>
+    <li>A virtual serial port can be configured in VirtualBox for a controlled two-machine debugging arrangement.</li>
+    <li>Two virtual machines may be used: one as the development machine and one as the target.</li>
+    <li>Both machines need compatible kernel source, build configuration and symbols.</li>
+</ul>
+
+<div class="note">
+    <strong>Recommended learning approach:</strong> First practise GDB commands and symbol inspection. Then study KGDB architecture and remote debugging before attempting a live kernel-debugging setup.
+</div>
+</section>
+
+<section>
+<h2>18. Knowledge Check</h2>
+<ol>
+    <li>What is GDB?</li>
+    <li>What is KGDB?</li>
+    <li>Why are kernel debugging symbols important?</li>
+    <li>What is the purpose of a breakpoint?</li>
+    <li>What is a watchpoint?</li>
+    <li>Which GDB command displays a backtrace?</li>
+    <li>What is the purpose of the <code>kgdboc</code> parameter?</li>
+    <li>Why can kernel breakpoints affect system operation?</li>
+    <li>Does opening <code>vmlinux</code> in GDB automatically attach to the running kernel?</li>
+    <li>What is the difference between offline symbol inspection and live KGDB debugging?</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Lesson Summary</h2>
+<ul>
+    <li>GDB is a general-purpose debugger that can inspect kernel images and symbols.</li>
+    <li>Kernel debugging symbols provide function and source-code information.</li>
+    <li>Breakpoints pause execution at selected locations.</li>
+    <li>Watchpoints monitor memory expressions.</li>
+    <li>Backtraces help identify function-call sequences.</li>
+    <li>KGDB provides live kernel debugging support through GDB.</li>
+    <li>Remote debugging requires a compatible target and configured transport.</li>
+    <li>Kernel debugging should be performed carefully in a test environment.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L04_Kernel_Debugging_Using_ftrace.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L06_Kernel_Debugging_Using_Crash_and_Oops_Analysis.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+</footer>
+
+</body>
+</html>
