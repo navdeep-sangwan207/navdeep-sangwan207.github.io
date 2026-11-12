@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 6 - Shared Interrupts | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    line-height: 1.7;
+    background: #f4f7fb;
+    color: #263238;
+}
+
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    padding: 35px 20px;
+    text-align: center;
+}
+
+.lesson-banner h1 {
+    margin: 0;
+    font-size: 30px;
+}
+
+.lesson-banner p { margin: 10px 0 0; }
+
+.top-nav {
+    background: #102f60;
+    padding: 12px;
+    text-align: center;
+}
+
+.top-nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+
+.top-nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3f0ff;
+    border-left: 5px solid #2878d7;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8f8;
+    padding-bottom: 7px;
+}
+
+h3 { color: #245a9c; }
+
+pre {
+    background: #17212b;
+    color: #e8f0f8;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+code { font-family: Consolas, monospace; }
+
+.note {
+    background: #fff8df;
+    border-left: 5px solid #e0a800;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.success {
+    background: #e8f5e9;
+    border-left: 5px solid #388e3c;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fe;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #b8cbea;
+    padding: 17px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px;
+    margin: 5px;
+    min-width: 190px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+    margin: 4px;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 12px 18px;
+    border-radius: 6px;
+}
+
+.lesson-nav a:hover { background: #0d3475; }
+
+footer {
+    text-align: center;
+    background: #102f60;
+    color: white;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    .lesson-banner h1 { font-size: 23px; }
+    .top-nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    .section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="lesson-banner">
+    <h1>Chapter 14: Interrupt Handling in Linux Device Drivers</h1>
+    <p>Lesson 6: Shared Interrupts</p>
+</header>
+
+<nav class="top-nav">
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 14</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p>
+        Topic: Shared Interrupt Handling in Linux<br>
+        Chapter: Interrupt Handling in Linux Device Drivers<br>
+        Prerequisite: request_irq() and free_irq()<br>
+        Difficulty: Intermediate
+    </p>
+</div>
+
+<section class="section">
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Define a shared interrupt.</li>
+    <li>Explain why multiple devices may share one IRQ line.</li>
+    <li>Understand the IRQF_SHARED flag.</li>
+    <li>Explain the role of dev_id in shared interrupt registration.</li>
+    <li>Understand how multiple interrupt handlers are invoked.</li>
+    <li>Identify which device generated an interrupt.</li>
+    <li>Register and unregister shared interrupt handlers.</li>
+    <li>Understand the limitations and design considerations of shared IRQs.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. Introduction to Shared Interrupts</h2>
+
+<p>
+An interrupt request (IRQ) is a signal used by a hardware device
+to notify the processor that it needs attention.
+</p>
+
+<p>
+In some computer architectures, multiple hardware devices can
+be connected to the same interrupt line. This arrangement is
+called <strong>shared interrupt handling</strong>.
+</p>
+
+<p>
+When an interrupt occurs on a shared IRQ line, the operating
+system may need to invoke multiple registered interrupt handlers.
+Each handler checks whether its own device generated the interrupt.
+</p>
+
+<h3>Example</h3>
+
+<p>Consider two devices connected to the same IRQ line:</p>
+
+<ul>
+    <li>Device A: Network controller</li>
+    <li>Device B: Storage controller</li>
+</ul>
+
+<p>
+Both devices use IRQ 10 in this conceptual example. When IRQ 10
+is signalled, Linux invokes the registered handlers so that
+each device can check its own interrupt status.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">Network Controller</div>
+    <div class="diagram-box">Storage Controller</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Shared IRQ Line: IRQ 10</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Linux Generic IRQ Subsystem</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Handler A + Handler B</div>
+</div>
+
+<div class="note">
+    IRQ 10 is only an illustrative example. Actual IRQ assignments
+    depend on the hardware platform, firmware, interrupt controller
+    and kernel configuration.
+</div>
+</section>
+
+<section class="section">
+<h2>3. Why Are Interrupts Shared?</h2>
+
+<p>
+Hardware platforms have a finite number of interrupt lines.
+As the number of devices increases, sharing can help use the
+available interrupt resources efficiently.
+</p>
+
+<h3>Reasons for sharing</h3>
+
+<ul>
+    <li>Limited number of physical interrupt lines.</li>
+    <li>Multiple peripheral devices connected through a common interrupt route.</li>
+    <li>Hardware architecture that supports interrupt-line sharing.</li>
+    <li>Efficient use of interrupt-controller resources.</li>
+</ul>
+
+<h3>Example of a system with multiple devices</h3>
+
+<table>
+<tr>
+    <th>Device</th>
+    <th>Example IRQ</th>
+    <th>Interrupt purpose</th>
+</tr>
+<tr>
+    <td>Network controller</td>
+    <td>IRQ 10</td>
+    <td>Packet transmission or reception events</td>
+</tr>
+<tr>
+    <td>Storage controller</td>
+    <td>IRQ 10</td>
+    <td>Storage operation completion</td>
+</tr>
+<tr>
+    <td>USB controller</td>
+    <td>IRQ 11</td>
+    <td>USB-related events</td>
+</tr>
+</table>
+
+<p>
+The table is conceptual. Modern systems may use MSI or MSI-X
+interrupts, where devices can receive multiple message-signalled
+interrupt vectors rather than sharing a traditional physical IRQ
+line.
+</p>
+</section>
+
+<section class="section">
+<h2>4. How Shared Interrupt Handling Works</h2>
+
+<p>
+When multiple drivers register handlers for the same shared IRQ,
+Linux maintains multiple interrupt actions associated with that
+IRQ.
+</p>
+
+<p>
+When the interrupt is delivered, the kernel invokes the registered
+handlers according to the IRQ subsystem's handling mechanism.
+Each handler must determine whether its own device generated
+the interrupt.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">Shared IRQ Occurs</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Linux IRQ Subsystem</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Invoke Handler A</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Invoke Handler B</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Each Handler Checks Device Status</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Return IRQ_HANDLED or IRQ_NONE</div>
+</div>
+
+<h3>Important concept</h3>
+
+<p>
+A handler must not automatically assume that an interrupt on
+the shared line belongs to its device. It must inspect the
+device-specific status register or another reliable indication.
+</p>
+</section>
+
+<section class="section">
+<h2>5. IRQF_SHARED Flag</h2>
+
+<p>
+The <code>IRQF_SHARED</code> flag tells the Linux IRQ subsystem
+that the interrupt action is allowed to share the IRQ line with
+other compatible interrupt actions.
+</p>
+
+<h3>Syntax</h3>
+
+<pre><code>request_irq(irq,
+            handler,
+            IRQF_SHARED,
+            "device_name",
+            dev_id);</code></pre>
+
+<p>
+The flag is defined in the Linux interrupt header:
+</p>
+
+<pre><code>#include &lt;linux/interrupt.h&gt;</code></pre>
+
+<h3>Registration requirements</h3>
+
+<ul>
+    <li>All handlers sharing the IRQ must register with compatible sharing settings.</li>
+    <li>The device identifier must be non-NULL.</li>
+    <li>Each registered action on that IRQ must have a unique dev_id.</li>
+    <li>The driver must check whether its own device caused the interrupt.</li>
+</ul>
+
+<div class="warning">
+    A driver cannot simply add IRQF_SHARED to an arbitrary
+    request_irq() call and assume that sharing will work.
+    The IRQ must be shareable on the underlying platform and
+    existing registrations must be compatible.
+</div>
+</section>
+
+<section class="section">
+<h2>6. Understanding dev_id in Shared Interrupts</h2>
+
+<p>
+The <code>dev_id</code> parameter identifies a particular
+registered interrupt action. It is commonly the address of
+the driver's private device structure.
+</p>
+
+<h3>Example device structures</h3>
+
+<pre><code>struct my_device_data {
+    int device_number;
+    unsigned int interrupt_count;
+};
+
+static struct my_device_data device_a = {
+    .device_number = 1,
+    .interrupt_count = 0,
+};
+
+static struct my_device_data device_b = {
+    .device_number = 2,
+    .interrupt_count = 0,
+};</code></pre>
+
+<p>
+The two structures have different addresses, so they can
+serve as distinct identifiers for their respective interrupt
+registrations.
+</p>
+
+<h3>Registering both devices</h3>
+
+<pre><code>ret = request_irq(irq,
+                  device_a_handler,
+                  IRQF_SHARED,
+                  "device_a",
+                  &amp;device_a);
+
+ret = request_irq(irq,
+                  device_b_handler,
+                  IRQF_SHARED,
+                  "device_b",
+                  &amp;device_b);</code></pre>
+
+<p>
+The same IRQ is used for both registrations, but the
+<code>dev_id</code> values are different.
+</p>
+
+<h3>Removing one handler</h3>
+
+<pre><code>free_irq(irq, &amp;device_a);</code></pre>
+
+<p>
+This removes the interrupt action associated with Device A.
+The registration belonging to Device B remains.
+</p>
+
+<div class="note">
+    The device data passed through dev_id must remain valid for
+    as long as the registered handler may access it. Do not free
+    the structure before the handler has been safely unregistered
+    and other users have stopped accessing it.
+</div>
+</section>
+
+<section class="section">
+<h2>7. Identifying the Source of an Interrupt</h2>
+
+<p>
+Because multiple devices share the same IRQ, every handler
+must determine whether its own device generated the interrupt.
+</p>
+
+<p>
+A common approach is to read a device-specific interrupt
+status register.
+</p>
+
+<h3>Conceptual example</h3>
+
+<pre><code>static irqreturn_t device_a_handler(int irq, void *dev_id)
+{
+    struct my_device_data *data = dev_id;
+    unsigned int status;
+
+    status = read_device_a_status();
+
+    if (!(status &amp; DEVICE_A_INTERRUPT_BIT))
+        return IRQ_NONE;
+
+    /* Acknowledge or clear the device interrupt. */
+    clear_device_a_interrupt();
+
+    data-&gt;interrupt_count++;
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li>The kernel invokes the handler for the shared IRQ.</li>
+    <li>The handler obtains its device-specific data through dev_id.</li>
+    <li>It reads the device's interrupt status.</li>
+    <li>If the device did not generate the interrupt, it returns IRQ_NONE.</li>
+    <li>If the device generated the interrupt, it handles and acknowledges the event.</li>
+    <li>It returns IRQ_HANDLED.</li>
+</ol>
+
+<div class="note">
+    <code>read_device_a_status()</code>,
+    <code>clear_device_a_interrupt()</code> and
+    <code>DEVICE_A_INTERRUPT_BIT</code> are illustrative
+    placeholders. A real driver must use the actual device
+    register definitions and correct acknowledgement sequence.
+</div>
+</section>
+
+<section class="section">
+<h2>8. IRQ_HANDLED and IRQ_NONE in Shared IRQs</h2>
+
+<p>
+The return value of an interrupt handler communicates whether
+the handler recognized and handled the interrupt.
+</p>
+
+<table>
+<tr>
+    <th>Return value</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td><code>IRQ_HANDLED</code></td>
+    <td>The device associated with this handler generated an interrupt and the handler handled it.</td>
+</tr>
+<tr>
+    <td><code>IRQ_NONE</code></td>
+    <td>The handler did not recognize the interrupt as belonging to its device.</td>
+</tr>
+<tr>
+    <td><code>IRQ_WAKE_THREAD</code></td>
+    <td>The handler requests execution of its associated threaded interrupt handler.</td>
+</tr>
+</table>
+
+<p>
+For shared IRQs, returning IRQ_NONE when the device did not
+generate the interrupt is particularly important. It allows
+the IRQ subsystem to determine which handlers actually
+recognized the interrupt.
+</p>
+
+<div class="warning">
+    Do not return IRQ_HANDLED unconditionally from every
+    shared interrupt handler. A handler should verify its
+    device's interrupt status first.
+</div>
+</section>
+
+<section class="section">
+<h2>9. Complete Conceptual Example: Two Shared Handlers</h2>
+
+<p>
+The following example demonstrates the structure of two
+handlers registered on the same IRQ. It is a teaching example,
+not a loadable hardware driver.
+</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/interrupt.h&gt;
+
+#define MY_IRQ 42
+
+struct my_device_data {
+    int device_number;
+    unsigned int interrupt_count;
+};
+
+static struct my_device_data device_a = {
+    .device_number = 1,
+};
+
+static struct my_device_data device_b = {
+    .device_number = 2,
+};
+
+/* Placeholder status-checking functions. */
+static bool device_a_has_interrupt(void)
+{
+    return false;
+}
+
+static bool device_b_has_interrupt(void)
+{
+    return false;
+}
+
+static irqreturn_t device_a_handler(int irq, void *dev_id)
+{
+    struct my_device_data *data = dev_id;
+
+    if (!device_a_has_interrupt())
+        return IRQ_NONE;
+
+    data-&gt;interrupt_count++;
+
+    pr_info("Device A handled interrupt\n");
+
+    return IRQ_HANDLED;
+}
+
+static irqreturn_t device_b_handler(int irq, void *dev_id)
+{
+    struct my_device_data *data = dev_id;
+
+    if (!device_b_has_interrupt())
+        return IRQ_NONE;
+
+    data-&gt;interrupt_count++;
+
+    pr_info("Device B handled interrupt\n");
+
+    return IRQ_HANDLED;
+}
+
+static int __init shared_irq_init(void)
+{
+    int ret;
+
+    ret = request_irq(MY_IRQ,
+                      device_a_handler,
+                      IRQF_SHARED,
+                      "device_a",
+                      &amp;device_a);
+
+    if (ret) {
+        pr_err("Unable to register Device A IRQ\n");
+        return ret;
+    }
+
+    ret = request_irq(MY_IRQ,
+                      device_b_handler,
+                      IRQF_SHARED,
+                      "device_b",
+                      &amp;device_b);
+
+    if (ret) {
+        pr_err("Unable to register Device B IRQ\n");
+
+        free_irq(MY_IRQ, &amp;device_a);
+
+        return ret;
+    }
+
+    pr_info("Shared interrupt handlers registered\n");
+
+    return 0;
+}
+
+static void __exit shared_irq_exit(void)
+{
+    free_irq(MY_IRQ, &amp;device_b);
+    free_irq(MY_IRQ, &amp;device_a);
+
+    pr_info("Shared interrupt handlers removed\n");
+}
+
+module_init(shared_irq_init);
+module_exit(shared_irq_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Conceptual shared IRQ demonstration");</code></pre>
+
+<h3>Code Explanation</h3>
+
+<table>
+<tr>
+    <th>Component</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>IRQF_SHARED</code></td>
+    <td>Requests shared interrupt registration.</td>
+</tr>
+<tr>
+    <td><code>device_a</code></td>
+    <td>Private data for Device A.</td>
+</tr>
+<tr>
+    <td><code>device_b</code></td>
+    <td>Private data for Device B.</td>
+</tr>
+<tr>
+    <td><code>device_a_handler()</code></td>
+    <td>Checks whether Device A generated the interrupt.</td>
+</tr>
+<tr>
+    <td><code>device_b_handler()</code></td>
+    <td>Checks whether Device B generated the interrupt.</td>
+</tr>
+<tr>
+    <td><code>free_irq()</code></td>
+    <td>Removes each registered interrupt action.</td>
+</tr>
+</table>
+
+<div class="warning">
+    <strong>Important limitations:</strong>
+    MY_IRQ 42 is a placeholder. The status-checking functions
+    always return false, so this example does not handle real
+    device interrupts. A real driver must use actual device
+    resources, register access, interrupt acknowledgement and
+    device-specific cleanup. The IRQ must also support sharing.
+</div>
+</section>
+
+<section class="section">
+<h2>10. Error Handling During Shared IRQ Registration</h2>
+
+<p>
+A driver must handle failures carefully when registering
+multiple interrupt handlers or managing multiple devices.
+</p>
+
+<p>
+For example, if the first registration succeeds but the second
+fails, the driver must remove the first registration before
+returning the error.
+</p>
+
+<pre><code>ret = request_irq(irq,
+                  handler_a,
+                  IRQF_SHARED,
+                  "device_a",
+                  &amp;device_a);
+
+if (ret)
+    return ret;
+
+ret = request_irq(irq,
+                  handler_b,
+                  IRQF_SHARED,
+                  "device_b",
+                  &amp;device_b);
+
+if (ret) {
+    free_irq(irq, &amp;device_a);
+    return ret;
+}</code></pre>
+
+<p>
+This is an example of error-unwind logic. In a real driver,
+the cleanup path must also stop or mask the relevant device
+interrupt sources and release any resources already acquired.
+</p>
+</section>
+
+<section class="section">
+<h2>11. Advantages and Disadvantages</h2>
+
+<table>
+<tr>
+    <th>Advantages</th>
+    <th>Disadvantages</th>
+</tr>
+<tr>
+    <td>Efficient use of limited IRQ lines.</td>
+    <td>Multiple handlers may be invoked for one interrupt.</td>
+</tr>
+<tr>
+    <td>Supports hardware architectures designed for IRQ sharing.</td>
+    <td>Each handler must identify its own device's interrupt.</td>
+</tr>
+<tr>
+    <td>Allows several compatible devices to use one IRQ.</td>
+    <td>Incorrect status checking can cause interrupt-handling problems.</td>
+</tr>
+<tr>
+    <td>Linux manages the registered interrupt actions.</td>
+    <td>Handlers must be designed to execute efficiently.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>12. Shared Interrupts and Interrupt Controllers</h2>
+
+<p>
+The interrupt controller is responsible for delivering
+interrupt requests to the CPU. The way sharing works depends
+on the hardware architecture and interrupt-controller
+capabilities.
+</p>
+
+<p>
+In a traditional level-triggered shared IRQ arrangement,
+multiple devices may assert the same interrupt line. The
+handler list allows each driver to inspect its own device
+status and determine whether it needs to service the event.
+</p>
+
+<p>
+Modern systems also use message-signalled interrupts (MSI
+and MSI-X). These interrupts are delivered as messages rather
+than through traditional shared physical interrupt wires.
+They commonly provide separate interrupt vectors to devices
+or device queues.
+</p>
+
+<div class="note">
+    Shared IRQ handling is a property of the hardware and
+    interrupt configuration as well as the Linux driver API.
+    Not every IRQ can be shared.
+</div>
+</section>
+
+<section class="section">
+<h2>13. Monitoring Interrupts in Ubuntu</h2>
+
+<h3>Command 1: View interrupt information</h3>
+<pre><code>cat /proc/interrupts</code></pre>
+
+<p>
+Displays interrupt counts, CPU information and registered
+handler names where available.
+</p>
+
+<h3>Command 2: Monitor changes</h3>
+<pre><code>watch -n 1 cat /proc/interrupts</code></pre>
+
+<p>
+Refreshes the interrupt statistics every second.
+</p>
+
+<h3>Command 3: View kernel messages</h3>
+<pre><code>dmesg | tail -n 30</code></pre>
+
+<p>
+Displays recent kernel ring-buffer messages.
+</p>
+
+<h3>Command 4: View kernel journal messages</h3>
+<pre><code>sudo journalctl -k -n 50</code></pre>
+
+<p>
+Displays recent kernel messages retained in the systemd journal.
+</p>
+
+<div class="note">
+    VirtualBox generally does not expose arbitrary physical
+    hardware interrupt lines from the host to the guest.
+    These commands can be used to inspect the virtual machine's
+    available interrupts, but testing a physical shared IRQ
+    requires suitable hardware and platform support.
+</div>
+</section>
+
+<section class="section">
+<h2>14. Common Mistakes in Shared Interrupt Handling</h2>
+
+<ol>
+    <li>
+        <strong>Not using IRQF_SHARED:</strong>
+        compatible sharing registrations must explicitly request
+        shared IRQ handling.
+    </li>
+    <li>
+        <strong>Using NULL dev_id:</strong>
+        shared IRQ registrations require a non-NULL identifier.
+    </li>
+    <li>
+        <strong>Reusing dev_id:</strong>
+        identifiers must be unique among actions sharing the IRQ.
+    </li>
+    <li>
+        <strong>Not checking device status:</strong>
+        each handler must identify whether its device generated
+        the interrupt.
+    </li>
+    <li>
+        <strong>Incorrect interrupt acknowledgement:</strong>
+        the driver must follow the hardware-specific procedure
+        to clear or acknowledge its interrupt.
+    </li>
+    <li>
+        <strong>Incorrect cleanup:</strong>
+        free_irq() must receive the original IRQ and dev_id.
+    </li>
+    <li>
+        <strong>Freeing device data too early:</strong>
+        the handler and any other active users must no longer
+        access the data before it is freed.
+    </li>
+</ol>
+</section>
+
+<section class="section">
+<h2>15. Lesson Summary</h2>
+
+<ul>
+    <li>A shared interrupt allows multiple devices to use the same IRQ.</li>
+    <li>Linux can invoke multiple registered handlers for that IRQ.</li>
+    <li><code>IRQF_SHARED</code> enables a driver to request shared registration.</li>
+    <li>Each shared handler requires a unique, non-NULL dev_id.</li>
+    <li>Handlers must inspect device-specific status information.</li>
+    <li><code>IRQ_HANDLED</code> indicates that the handler recognized and handled its device's interrupt.</li>
+    <li><code>IRQ_NONE</code> indicates that the interrupt did not belong to that device.</li>
+    <li><code>free_irq()</code> removes only the matching registered action.</li>
+    <li>Device-specific interrupt sources must be managed during cleanup.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>16. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+    <li>What is a shared interrupt?</li>
+    <li>Why do systems use shared IRQ lines?</li>
+    <li>What is the purpose of IRQF_SHARED?</li>
+    <li>Why must dev_id be non-NULL for shared IRQ registration?</li>
+    <li>How does a handler identify its device's interrupt?</li>
+    <li>What is the difference between IRQ_HANDLED and IRQ_NONE?</li>
+    <li>How can one handler be removed from a shared IRQ?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+    <li>Explain the architecture and working of shared interrupt handling in Linux.</li>
+    <li>Explain the role of IRQF_SHARED and dev_id.</li>
+    <li>Describe how multiple handlers identify the source of an interrupt.</li>
+    <li>Explain error handling when registering multiple shared IRQ handlers.</li>
+    <li>Discuss the advantages and disadvantages of shared interrupts.</li>
+</ol>
+
+<h3>C. Practical Exercises</h3>
+<ol>
+    <li>Write two conceptual interrupt handlers using IRQF_SHARED.</li>
+    <li>Pass separate device structures through dev_id.</li>
+    <li>Implement a status-checking mechanism that returns IRQ_NONE when the device did not generate an interrupt.</li>
+    <li>Remove only one handler using free_irq().</li>
+    <li>Inspect interrupt statistics using /proc/interrupts.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>17. Expected Learning Outcome</h2>
+
+<div class="success">
+    After completing this lesson, you should understand
+    how multiple devices can share an IRQ, how Linux invokes
+    registered handlers, how drivers identify their own
+    interrupt events, and how to safely register and remove
+    shared interrupt handlers.
+</div>
+</section>
+
+<div class="lesson-nav">
+    <a href="L05_free_irq_Function.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L07_Interrupt_Context_and_Process_Context.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 14 - Interrupt Handling in Linux Device Drivers</p>
+</footer>
+
+</body>
+</html>
