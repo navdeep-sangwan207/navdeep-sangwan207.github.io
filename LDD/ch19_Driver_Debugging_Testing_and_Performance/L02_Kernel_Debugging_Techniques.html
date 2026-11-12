@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 2 - Kernel Debugging Techniques</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:28px}
+nav{background:white;padding:13px;text-align:center;border-bottom:1px solid #dce3ed}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 12px}
+nav a:hover{text-decoration:underline}
+.container{max-width:1050px;margin:25px auto;padding:0 16px}
+.lesson-info{background:#e6f1ff;border-left:5px solid #2878d7;padding:15px 20px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:22px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 7px rgba(0,0,0,.06)}
+h2{color:#174ea6;margin-top:0;border-bottom:2px solid #e5edf8;padding-bottom:8px}
+h3{color:#245b9e}
+pre{background:#172334;color:#e8f0fa;padding:16px;border-radius:7px;overflow-x:auto;font-size:14px}
+code{font-family:Consolas,monospace}
+.note{background:#fff7df;border-left:5px solid #e5a000;padding:13px 16px;margin:15px 0;border-radius:5px}
+.example{background:#eaf7ee;border-left:5px solid #269653;padding:13px 16px;margin:15px 0;border-radius:5px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;vertical-align:top}
+th{background:#e8f0fc;color:#174ea6}
+.diagram{background:#f0f5fc;padding:17px;border-radius:7px;text-align:center;font-family:Consolas,monospace;overflow-x:auto;white-space:pre;line-height:1.8}
+footer{text-align:center;padding:22px;background:#123b80;color:white;margin-top:30px}
+@media(max-width:600px){header h1{font-size:22px}nav a{display:inline-block;margin:5px 8px}section{padding:16px}table{font-size:13px}}
+</style>
+</head>
+<body>
+
+<header>
+<h1>Chapter 19: Driver Debugging, Testing and Performance</h1>
+<p>Lesson 2: Kernel Debugging Techniques</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">LDD Course</a>
+<a href="index.html">Chapter Index</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+<strong>Lesson:</strong> 2<br>
+<strong>Topic:</strong> Kernel Debugging Techniques<br>
+<strong>Chapter:</strong> Driver Debugging, Testing and Performance<br>
+<strong>Level:</strong> Intermediate to Advanced
+</div>
+
+<section>
+<h2>1. Introduction to Kernel Debugging Techniques</h2>
+<p>Kernel debugging techniques are methods used to investigate problems in Linux kernel code and device drivers.</p>
+<p>Different techniques are useful for different types of failures. For example, logging helps identify execution flow, tracing helps understand function calls, and source-level debugging allows developers to inspect variables and execution state.</p>
+<p>Common kernel debugging techniques include:</p>
+<ul>
+<li>Kernel logging using printk() and pr_*() macros.</li>
+<li>Dynamic debug.</li>
+<li>Debugging using GDB and KGDB.</li>
+<li>Kernel tracing using ftrace.</li>
+<li>Function tracing and event tracing.</li>
+<li>Debugging through debugfs.</li>
+<li>Memory and concurrency debugging.</li>
+<li>Crash dump analysis.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Logging-Based Debugging</h2>
+<p>Logging is one of the simplest techniques for understanding the execution flow of a driver.</p>
+<p>Developers insert messages at important locations, such as module initialization, device registration, probe(), read(), write(), interrupt handling and device removal.</p>
+<h3>Example</h3>
+<pre><code>static int my_driver_open(struct inode *inode,
+                          struct file *file)
+{
+    pr_info("my_driver: open called\n");
+
+    return 0;
+}</code></pre>
+<p>When a user-space application opens the device file, the message can be inspected using:</p>
+<pre><code>sudo dmesg | tail -20</code></pre>
+<h3>Advantages</h3>
+<ul>
+<li>Simple to implement.</li>
+<li>Useful for identifying execution order.</li>
+<li>Does not require a separate source-level debugger.</li>
+<li>Useful during module development.</li>
+</ul>
+<h3>Limitations</h3>
+<ul>
+<li>Excessive logging can affect performance.</li>
+<li>It does not automatically show every variable or execution state.</li>
+<li>Timing-sensitive bugs may change when logging is added.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. Dynamic Debugging</h2>
+<p>Dynamic debug allows developers to enable selected pr_debug() messages at runtime without recompiling the module, provided the kernel and code were built with the required dynamic-debug support.</p>
+<h3>Check the Dynamic Debug Interface</h3>
+<pre><code>sudo mount -t debugfs none /sys/kernel/debug
+
+cat /sys/kernel/debug/dynamic_debug/control</code></pre>
+<h3>Enable Messages for a Module</h3>
+<pre><code>echo 'module my_driver +p' | \
+sudo tee /sys/kernel/debug/dynamic_debug/control</code></pre>
+<h3>Disable Messages</h3>
+<pre><code>echo 'module my_driver -p' | \
+sudo tee /sys/kernel/debug/dynamic_debug/control</code></pre>
+<h3>Enable Messages for a Specific File</h3>
+<pre><code>echo 'file my_driver.c +p' | \
+sudo tee /sys/kernel/debug/dynamic_debug/control</code></pre>
+<p>The module name or source filename must match the actual compiled code.</p>
+</section>
+
+<section>
+<h2>4. Source-Level Debugging</h2>
+<p>Source-level debugging allows developers to inspect kernel source code while it is executing.</p>
+<p>A debugger can help inspect:</p>
+<ul>
+<li>Variable values.</li>
+<li>Function call sequences.</li>
+<li>Stack traces.</li>
+<li>Execution locations.</li>
+<li>Memory addresses.</li>
+<li>Conditional branches.</li>
+</ul>
+<h3>GDB</h3>
+<p>GDB is the GNU Debugger. It supports debugging programs and can also be used for kernel debugging when connected to a suitable kernel debugging target.</p>
+<h3>KGDB</h3>
+<p>KGDB provides kernel debugging support through a remote debugger connection. GDB running on a development machine can communicate with a target kernel configured for KGDB.</p>
+<div class="note">
+Ordinary GDB cannot simply attach to a running Linux kernel like it attaches to a normal user-space process. Kernel symbols, compatible debug information and a suitable debugging connection are required.
+</div>
+</section>
+
+<section>
+<h2>5. Kernel Debugging Using KGDB</h2>
+<p>KGDB is a kernel source-level debugging facility that allows a developer to control kernel execution using GDB.</p>
+<h3>Basic Architecture</h3>
+<div class="diagram">
++--------------------------+
+| Development Computer     |
+|                          |
+|          GDB             |
++------------+-------------+
+             |
+       Serial / Network
+       Debug Connection
+             |
++------------v-------------+
+| Target Linux System      |
+|                          |
+|          KGDB            |
+|                          |
+|       Linux Kernel       |
+|                          |
+|       Device Driver      |
++--------------------------+
+</div>
+<h3>Typical Requirements</h3>
+<ul>
+<li>Kernel configured with KGDB support.</li>
+<li>Suitable kernel debug information.</li>
+<li>GDB with compatible architecture support.</li>
+<li>Supported serial or network debugging connection.</li>
+<li>Access to the matching kernel source and symbols.</li>
+</ul>
+<p>KGDB is particularly useful when investigating difficult driver problems that cannot be understood through logging alone.</p>
+</section>
+
+<section>
+<h2>6. Kernel Tracing</h2>
+<p>Kernel tracing records selected kernel activities so developers can understand what happens during execution.</p>
+<p>Tracing is useful for investigating:</p>
+<ul>
+<li>Function execution order.</li>
+<li>Interrupt activity.</li>
+<li>Scheduling behaviour.</li>
+<li>System-call activity.</li>
+<li>Function execution time.</li>
+<li>Kernel event sequences.</li>
+</ul>
+<h3>ftrace</h3>
+<p>ftrace is the Linux kernel tracing framework. It provides function tracing, event tracing and other tracing facilities depending on kernel configuration.</p>
+<h3>Check Tracefs</h3>
+<pre><code>mount | grep tracefs
+
+ls /sys/kernel/tracing</code></pre>
+<p>If tracefs is not mounted, it may be mounted with:</p>
+<pre><code>sudo mount -t tracefs tracefs /sys/kernel/tracing</code></pre>
+</section>
+
+<section>
+<h2>7. Function Tracing Using ftrace</h2>
+<p>Function tracing records function calls made by the kernel.</p>
+<h3>Check Available Tracers</h3>
+<pre><code>cd /sys/kernel/tracing
+
+cat available_tracers</code></pre>
+<h3>Enable Function Tracing</h3>
+<pre><code>echo function | sudo tee current_tracer</code></pre>
+<h3>Enable Tracing</h3>
+<pre><code>echo 1 | sudo tee tracing_on</code></pre>
+<h3>Read the Trace</h3>
+<pre><code>sudo cat trace</code></pre>
+<h3>Stop Tracing</h3>
+<pre><code>echo 0 | sudo tee tracing_on</code></pre>
+<h3>Reset the Trace</h3>
+<pre><code>echo nop | sudo tee current_tracer
+echo | sudo tee trace</code></pre>
+<div class="note">
+Tracing output may contain a large amount of data. Keep tracing focused on the required functions or events. Availability and permissions depend on the running kernel configuration.
+</div>
+</section>
+
+<section>
+<h2>8. Function Graph Tracing</h2>
+<p>Function graph tracing records function entry and return relationships. It helps visualize nested function execution and approximate function durations.</p>
+<h3>Select the Function Graph Tracer</h3>
+<pre><code>cd /sys/kernel/tracing
+
+echo function_graph | sudo tee current_tracer
+echo 1 | sudo tee tracing_on</code></pre>
+<h3>View Results</h3>
+<pre><code>sudo cat trace</code></pre>
+<h3>Stop Tracing</h3>
+<pre><code>echo 0 | sudo tee tracing_on</code></pre>
+<p>Function graph tracing can help identify which functions are called during a driver operation and where execution spends time.</p>
+</section>
+
+<section>
+<h2>9. Event Tracing</h2>
+<p>Event tracing records specific kernel events, such as scheduling, interrupts, system calls and block I/O events.</p>
+<h3>List Available Events</h3>
+<pre><code>cd /sys/kernel/tracing
+
+cat available_events</code></pre>
+<h3>Enable a Scheduler Event</h3>
+<pre><code>echo 1 | sudo tee events/sched/sched_switch/enable</code></pre>
+<h3>Inspect the Trace</h3>
+<pre><code>sudo cat trace</code></pre>
+<h3>Disable the Event</h3>
+<pre><code>echo 0 | sudo tee events/sched/sched_switch/enable</code></pre>
+<p>Event names depend on the kernel version and configuration. Check available_events before enabling a particular event.</p>
+</section>
+
+<section>
+<h2>10. Debugging Through debugfs</h2>
+<p>debugfs is a virtual filesystem designed primarily for kernel developers to expose debugging information.</p>
+<p>It is commonly mounted at:</p>
+<pre><code>/sys/kernel/debug</code></pre>
+<h3>Mount debugfs</h3>
+<pre><code>sudo mount -t debugfs none /sys/kernel/debug</code></pre>
+<h3>List Debugging Entries</h3>
+<pre><code>ls /sys/kernel/debug</code></pre>
+<p>Kernel subsystems and drivers may create debugging files and directories under debugfs.</p>
+<div class="note">
+debugfs is not intended to provide a stable user-space ABI. Its entries can change between kernel versions and should not be treated as permanent application interfaces.
+</div>
+</section>
+
+<section>
+<h2>11. Memory Debugging Techniques</h2>
+<p>Kernel memory debugging techniques help identify invalid memory operations and allocation problems.</p>
+<table>
+<tr><th>Technique</th><th>Purpose</th></tr>
+<tr><td>KASAN</td><td>Detects memory safety problems such as out-of-bounds access and use-after-free.</td></tr>
+<tr><td>kmemleak</td><td>Reports possible unreachable kernel memory allocations.</td></tr>
+<tr><td>SLUB debugging</td><td>Helps detect certain slab allocator problems.</td></tr>
+<tr><td>Page poisoning</td><td>Helps expose some memory corruption and use-after-free problems.</td></tr>
+<tr><td>DEBUG_PAGEALLOC</td><td>Provides additional checks for page allocation and freeing.</td></tr>
+</table>
+<h3>Check Memory Debugging Configuration</h3>
+<pre><code>grep -E 'CONFIG_(KASAN|DEBUG_KMEMLEAK|SLUB_DEBUG)' \
+/boot/config-$(uname -r)</code></pre>
+<p>These facilities may require a specially configured kernel and may add execution or memory overhead.</p>
+</section>
+
+<section>
+<h2>12. Concurrency Debugging</h2>
+<p>Concurrency debugging helps identify errors caused by multiple execution contexts accessing shared resources.</p>
+<h3>Common Problems</h3>
+<ul>
+<li>Race conditions.</li>
+<li>Deadlocks.</li>
+<li>Incorrect lock ordering.</li>
+<li>Missing synchronization.</li>
+<li>Unsafe access to shared variables.</li>
+</ul>
+<h3>Important Kernel Facilities</h3>
+<table>
+<tr><th>Facility</th><th>Purpose</th></tr>
+<tr><td>Lockdep</td><td>Detects locking dependency problems and potential deadlocks.</td></tr>
+<tr><td>KCSAN</td><td>Detects certain data races.</td></tr>
+<tr><td>Atomic operations</td><td>Provide atomic updates to supported data types.</td></tr>
+<tr><td>Spinlock debugging</td><td>Helps investigate incorrect spinlock usage.</td></tr>
+</table>
+<p>These facilities are especially useful for drivers that use interrupts, workqueues, timers and multiple threads.</p>
+</section>
+
+<section>
+<h2>13. Crash Dump Analysis</h2>
+<p>A crash dump contains information about system memory and execution state at the time of a kernel crash.</p>
+<p>Crash dump analysis can help investigate failures that cannot easily be reproduced.</p>
+<h3>Important Components</h3>
+<ul>
+<li>Kernel crash dump.</li>
+<li>Matching kernel image and debug symbols.</li>
+<li>Kernel configuration information.</li>
+<li>Crash analysis utilities such as crash.</li>
+</ul>
+<h3>Check Whether kdump Is Available</h3>
+<pre><code>systemctl status kdump</code></pre>
+<p>On Ubuntu, the service and package configuration may differ. A crash dump facility must be installed and configured before a crash occurs.</p>
+<h3>Crash Utility</h3>
+<pre><code>crash /path/to/vmlinux /path/to/vmcore</code></pre>
+<p>The vmlinux file should correspond to the crashed kernel and contain suitable debugging information.</p>
+</section>
+
+<section>
+<h2>14. Choosing the Correct Debugging Technique</h2>
+<table>
+<tr><th>Problem</th><th>Recommended Technique</th></tr>
+<tr><td>Driver initialization failure</td><td>printk(), pr_err(), dmesg</td></tr>
+<tr><td>Unexpected function execution</td><td>ftrace function tracing</td></tr>
+<tr><td>Function execution time</td><td>ftrace, perf</td></tr>
+<tr><td>Memory corruption</td><td>KASAN and memory debugging</td></tr>
+<tr><td>Possible memory leak</td><td>kmemleak</td></tr>
+<tr><td>Deadlock</td><td>Lockdep and stack traces</td></tr>
+<tr><td>Data race</td><td>KCSAN and synchronization review</td></tr>
+<tr><td>Hard-to-reproduce kernel crash</td><td>Crash dumps and crash analysis</td></tr>
+<tr><td>Detailed source-level inspection</td><td>KGDB with GDB</td></tr>
+<tr><td>Specific debug messages</td><td>Dynamic debug</td></tr>
+</table>
+</section>
+
+<section>
+<h2>15. Practical Exercise: Trace Kernel Functions</h2>
+<h3>Objective</h3>
+<p>Use ftrace in Ubuntu to observe kernel function execution.</p>
+<h3>Step 1: Check Tracefs</h3>
+<pre><code>mount | grep tracefs</code></pre>
+<h3>Step 2: Open the Tracing Directory</h3>
+<pre><code>cd /sys/kernel/tracing</code></pre>
+<h3>Step 3: Check Available Tracers</h3>
+<pre><code>cat available_tracers</code></pre>
+<h3>Step 4: Select Function Tracing</h3>
+<pre><code>echo function | sudo tee current_tracer</code></pre>
+<h3>Step 5: Start Tracing</h3>
+<pre><code>echo 1 | sudo tee tracing_on</code></pre>
+<h3>Step 6: Read Trace Data</h3>
+<pre><code>sudo cat trace | head -50</code></pre>
+<h3>Step 7: Stop Tracing</h3>
+<pre><code>echo 0 | sudo tee tracing_on</code></pre>
+<h3>Step 8: Reset the Tracer</h3>
+<pre><code>echo nop | sudo tee current_tracer</code></pre>
+<h3>Expected Result</h3>
+<p>The trace file should contain function execution records if function tracing is supported and enabled. The exact functions and output depend on kernel activity.</p>
+<div class="note">
+Run tracing commands with appropriate privileges. Do not leave broad tracing enabled unnecessarily because it can generate large logs and affect performance.
+</div>
+</section>
+
+<section>
+<h2>16. Debugging Workflow for Device Drivers</h2>
+<div class="diagram">
+       Reproduce Driver Failure
+                  |
+                  v
+        Collect Kernel Logs
+                  |
+                  v
+        Select Debugging Method
+                  |
+        +---------+---------+
+        |         |         |
+        v         v         v
+      Logs     Tracing    KGDB
+        |         |         |
+        +---------+---------+
+                  |
+                  v
+         Analyze Root Cause
+                  |
+                  v
+             Fix Driver
+                  |
+                  v
+          Recompile and Test
+                  |
+                  v
+         Verify Correct Behaviour
+</div>
+</section>
+
+<section>
+<h2>17. Best Practices</h2>
+<ol>
+<li>Choose a debugging method appropriate to the problem.</li>
+<li>Start with kernel logs before using more complex tools.</li>
+<li>Use targeted tracing rather than tracing everything.</li>
+<li>Keep kernel source, configuration and debug symbols consistent.</li>
+<li>Disable tracing when testing is complete.</li>
+<li>Use memory and concurrency debugging facilities when needed.</li>
+<li>Test driver error paths as well as normal operation.</li>
+<li>Use a recoverable development environment for risky experiments.</li>
+<li>Record the kernel version and debugging configuration.</li>
+<li>Verify that the fix does not introduce new failures.</li>
+</ol>
+</section>
+
+<section>
+<h2>18. Important Points to Remember</h2>
+<ul>
+<li>Logging is the simplest kernel debugging technique.</li>
+<li>Dynamic debug enables selected debug messages at runtime.</li>
+<li>KGDB supports source-level kernel debugging.</li>
+<li>ftrace provides function and event tracing.</li>
+<li>Function graph tracing shows nested function execution.</li>
+<li>debugfs exposes kernel debugging information.</li>
+<li>KASAN and kmemleak help investigate memory problems.</li>
+<li>Lockdep and KCSAN help identify concurrency issues.</li>
+<li>Crash dumps help investigate kernel failures.</li>
+<li>Different problems require different debugging tools.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Review Questions</h2>
+<ol>
+<li>What are kernel debugging techniques?</li>
+<li>Explain logging-based debugging.</li>
+<li>What is dynamic debug?</li>
+<li>Differentiate GDB and KGDB.</li>
+<li>What is kernel tracing?</li>
+<li>Explain the purpose of ftrace.</li>
+<li>What is function graph tracing?</li>
+<li>What is event tracing?</li>
+<li>What is debugfs?</li>
+<li>Explain KASAN and kmemleak.</li>
+<li>What is the purpose of lockdep?</li>
+<li>What is KCSAN?</li>
+<li>What is a kernel crash dump?</li>
+<li>Which debugging technique can help identify function execution time?</li>
+<li>Which technique can help investigate a difficult-to-reproduce kernel crash?</li>
+<li>Why should tracing be disabled after testing?</li>
+<li>How do you select a debugging technique for a driver failure?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Lesson Summary</h2>
+<p>Linux provides several debugging techniques for investigating device-driver failures. Logging and dynamic debug help inspect messages, KGDB supports source-level debugging, and ftrace records kernel execution and events.</p>
+<p>Memory debugging, concurrency analysis and crash dump examination provide additional methods for diagnosing complex kernel problems.</p>
+<p>Choosing the correct technique and following a systematic debugging workflow are essential for developing stable and reliable Linux device drivers.</p>
+</section>
+
+<section>
+<h2>Navigation</h2>
+<p><strong>Previous Lesson:</strong>
+<a href="L01_Introduction_to_Kernel_Debugging.html">Lesson 1 - Introduction to Kernel Debugging</a></p>
+<p><strong>Next Lesson:</strong>
+<a href="L03_Kernel_Debugging_Using_printk_and_dmesg.html">Lesson 3 - Kernel Debugging Using printk() and dmesg</a></p>
+<p><a href="index.html">Back to Chapter 19 Index</a></p>
+<p><a href="../../ldd.html">Back to Linux Device Drivers Course</a></p>
+</section>
+
+</div>
+
+<footer>
+<p>Linux Device Drivers | NS Learning Hub</p>
+<p>Chapter 19 - Lesson 2</p>
+</footer>
+
+</body>
+</html>
