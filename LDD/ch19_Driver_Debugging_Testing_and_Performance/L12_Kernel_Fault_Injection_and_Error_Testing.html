@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kernel Fault Injection and Error Testing | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+}
+header h1 { margin: 0; font-size: 27px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: #082b5c;
+    padding: 12px;
+    text-align: center;
+}
+nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3f2fd;
+    border-left: 5px solid #1976d2;
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.07);
+}
+h2 { color: #174ea6; }
+h3 { color: #1769aa; }
+pre {
+    background: #17212b;
+    color: #e8f1f8;
+    padding: 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+}
+code { font-family: Consolas, monospace; }
+.note {
+    background: #fff8e1;
+    border-left: 5px solid #f9a825;
+    padding: 12px;
+    margin: 15px 0;
+}
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 12px;
+    margin: 15px 0;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 10px;
+    text-align: left;
+}
+th { background: #eaf1fb; }
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 5px;
+    text-decoration: none;
+}
+footer {
+    text-align: center;
+    padding: 20px;
+    background: #082b5c;
+    color: white;
+    margin-top: 30px;
+}
+@media(max-width:600px) {
+    header h1 { font-size: 22px; }
+    nav a { display: inline-block; margin: 5px; }
+    section { padding: 16px; }
+    table { font-size: 14px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Kernel Fault Injection and Error Testing</h1>
+    <p>Linux Device Drivers – Chapter 19, Lesson 12</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter 19</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> Driver Debugging, Testing and Performance<br>
+    <strong>Lesson:</strong> 12 – Kernel Fault Injection and Error Testing<br>
+    <strong>Level:</strong> Advanced
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+    <li>Understand fault injection in Linux kernel development.</li>
+    <li>Explain why error-path testing is necessary.</li>
+    <li>Understand kernel fault injection infrastructure.</li>
+    <li>Identify common fault injection mechanisms.</li>
+    <li>Test memory allocation failures.</li>
+    <li>Understand I/O and device-operation failures.</li>
+    <li>Validate driver recovery and resource cleanup.</li>
+    <li>Design fault-injection test cases.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Fault Injection</h2>
+<p>Fault injection is a testing technique in which faults are deliberately introduced into a system to observe how software responds.</p>
+
+<p>In Linux device-driver development, fault injection helps verify that drivers handle unexpected failures safely.</p>
+
+<h3>Why fault injection is required</h3>
+<ul>
+    <li>Test error-handling code.</li>
+    <li>Detect resource leaks.</li>
+    <li>Verify memory allocation failure handling.</li>
+    <li>Test device initialization failures.</li>
+    <li>Check recovery from hardware communication errors.</li>
+    <li>Prevent kernel crashes and system instability.</li>
+</ul>
+
+<h3>Example</h3>
+<p>Suppose a driver allocates memory during initialization. If the allocation fails, the driver must return an error and release any resources that were already acquired.</p>
+</section>
+
+<section>
+<h2>3. Normal Testing vs Fault Injection Testing</h2>
+<table>
+<tr><th>Normal Testing</th><th>Fault Injection Testing</th></tr>
+<tr><td>Tests expected operation.</td><td>Tests deliberately introduced failures.</td></tr>
+<tr><td>Uses valid inputs and conditions.</td><td>Simulates invalid or failure conditions.</td></tr>
+<tr><td>Checks normal functionality.</td><td>Checks error handling and recovery.</td></tr>
+<tr><td>May not execute rare error paths.</td><td>Targets uncommon failure paths.</td></tr>
+<tr><td>Verifies successful resource use.</td><td>Verifies cleanup after failed operations.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. Common Faults in Device Drivers</h2>
+<table>
+<tr><th>Fault</th><th>Possible Cause</th><th>Expected Driver Response</th></tr>
+<tr><td>Memory allocation failure</td><td>Insufficient available memory</td><td>Return an error and clean up resources.</td></tr>
+<tr><td>Device registration failure</td><td>Registration conflict or invalid state</td><td>Undo earlier initialization steps.</td></tr>
+<tr><td>I/O failure</td><td>Device communication problem</td><td>Report an error and recover where possible.</td></tr>
+<tr><td>Timeout</td><td>Device does not respond in time</td><td>Stop waiting and handle timeout.</td></tr>
+<tr><td>Invalid input</td><td>Incorrect user-space request</td><td>Reject the request safely.</td></tr>
+<tr><td>Resource acquisition failure</td><td>Unavailable IRQ, clock or resource</td><td>Release previously acquired resources.</td></tr>
+<tr><td>Synchronization failure</td><td>Incorrect locking or state handling</td><td>Prevent inconsistent shared state.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5. Linux Kernel Fault Injection Framework</h2>
+<p>The Linux kernel provides fault injection infrastructure to help test how kernel code behaves when selected operations fail.</p>
+
+<p>Depending on the kernel configuration, supported mechanisms may include:</p>
+<ul>
+    <li>Failslab – injects slab allocation failures.</li>
+    <li>Fail page allocation – injects page allocation failures.</li>
+    <li>Fail user-copy – tests selected user-copy failure paths.</li>
+    <li>Fail function – injects failures into eligible functions.</li>
+    <li>Failing I/O – tests selected block I/O error paths.</li>
+    <li>Failsunmap – tests selected unmapping-related failure paths.</li>
+</ul>
+
+<div class="note">
+    The available fault injection mechanisms depend on the kernel version, configuration and the subsystem being tested. Not every driver operation can be fault-injected automatically.
+</div>
+</section>
+
+<section>
+<h2>6. Kernel Configuration for Fault Injection</h2>
+<p>Fault injection support must be enabled in the kernel configuration.</p>
+
+<h3>Important configuration options</h3>
+<table>
+<tr><th>Configuration</th><th>Purpose</th></tr>
+<tr><td>CONFIG_FAULT_INJECTION</td><td>Enables kernel fault injection infrastructure.</td></tr>
+<tr><td>CONFIG_FAULT_INJECTION_DEBUG_FS</td><td>Provides fault injection controls through debugfs.</td></tr>
+<tr><td>CONFIG_FAILSLAB</td><td>Enables slab allocation fault injection.</td></tr>
+<tr><td>CONFIG_FAIL_PAGE_ALLOC</td><td>Enables page allocation fault injection.</td></tr>
+<tr><td>CONFIG_FAIL_FUNCTION</td><td>Enables eligible function failure injection.</td></tr>
+<tr><td>CONFIG_FAIL_MAKE_REQUEST</td><td>Supports selected block I/O failure injection.</td></tr>
+</table>
+
+<h3>Inspect the current kernel configuration</h3>
+<pre><code>grep -E 'CONFIG_FAULT_INJECTION|CONFIG_FAIL' \
+/boot/config-$(uname -r)</code></pre>
+
+<p>Options not enabled may appear as <code># CONFIG_OPTION is not set</code> or may be absent from the configuration file.</p>
+</section>
+
+<section>
+<h2>7. Understanding debugfs</h2>
+<p>debugfs is a virtual filesystem used to expose debugging information and controls from kernel components.</p>
+
+<p>Some fault injection interfaces are exposed through debugfs.</p>
+
+<h3>Check whether debugfs is mounted</h3>
+<pre><code>mount | grep debugfs</code></pre>
+
+<h3>Mount debugfs if required</h3>
+<pre><code>sudo mount -t debugfs none /sys/kernel/debug</code></pre>
+
+<h3>Inspect fault injection controls</h3>
+<pre><code>ls /sys/kernel/debug/fail*</code></pre>
+
+<p>If the kernel supports the relevant options, fault injection control directories may appear under:</p>
+<pre><code>/sys/kernel/debug/fail_page_alloc
+/sys/kernel/debug/failslab</code></pre>
+
+<div class="warning">
+    Do not assume these paths exist. Their availability depends on kernel configuration and implementation. Do not enable fault injection on a production machine.
+</div>
+</section>
+
+<section>
+<h2>8. Memory Allocation Failure Testing</h2>
+<p>Memory allocation failure is one of the important error conditions in kernel programming.</p>
+
+<h3>Example allocation</h3>
+<pre><code>struct my_device *dev;
+
+dev = kzalloc(sizeof(*dev), GFP_KERNEL);
+
+if (!dev)
+    return -ENOMEM;</code></pre>
+
+<p>If memory allocation fails, <code>kzalloc()</code> returns NULL.</p>
+
+<h3>Correct error handling</h3>
+<ul>
+    <li>Check the returned pointer.</li>
+    <li>Return an appropriate error code.</li>
+    <li>Release resources acquired earlier.</li>
+    <li>Do not access the NULL pointer.</li>
+    <li>Do not continue initialization with incomplete state.</li>
+</ul>
+
+<h3>Testing scenarios</h3>
+<ul>
+    <li>First allocation fails.</li>
+    <li>Second allocation fails after the first succeeds.</li>
+    <li>Allocation fails during device probe.</li>
+    <li>Allocation fails during a repeated operation.</li>
+</ul>
+</section>
+
+<section>
+<h2>9. Error Handling During Driver Initialization</h2>
+<p>A driver may acquire multiple resources during initialization. If a later step fails, earlier resources must be released.</p>
+
+<h3>Example initialization sequence</h3>
+<pre><code>static int my_driver_init(void)
+{
+    int ret;
+
+    ret = allocate_device_memory();
+    if (ret)
+        return ret;
+
+    ret = register_device_number();
+    if (ret)
+        goto err_memory;
+
+    ret = create_device_interface();
+    if (ret)
+        goto err_device_number;
+
+    return 0;
+
+err_device_number:
+    unregister_device_number();
+
+err_memory:
+    free_device_memory();
+
+    return ret;
+}</code></pre>
+
+<p>This demonstrates reverse-order cleanup using error labels.</p>
+
+<div class="note">
+    In a real driver, use the actual resource-acquisition and release APIs. Managed resource APIs such as devm_* may simplify cleanup in suitable probe paths.
+</div>
+</section>
+
+<section>
+<h2>10. I/O Failure Testing</h2>
+<p>Device drivers communicate with hardware through interfaces such as I2C, SPI, USB, PCI and memory-mapped registers.</p>
+
+<p>Communication can fail because of:</p>
+<ul>
+    <li>Disconnected hardware.</li>
+    <li>Device not responding.</li>
+    <li>Bus communication errors.</li>
+    <li>Invalid device state.</li>
+    <li>Timeout conditions.</li>
+    <li>Controller errors.</li>
+</ul>
+
+<h3>Example I2C error handling</h3>
+<pre><code>ret = i2c_master_send(client, buffer, length);
+
+if (ret < 0) {
+    dev_err(&client->dev, "I2C transfer failed: %d\n", ret);
+    return ret;
+}
+
+if (ret != length)
+    return -EIO;</code></pre>
+
+<p>The driver checks both negative errors and short transfers. A short transfer is not necessarily reported as a negative error, so the returned byte count must also be checked.</p>
+</section>
+
+<section>
+<h2>11. Timeout and Recovery Testing</h2>
+<p>Hardware may fail to respond within the expected time. A driver should avoid waiting indefinitely.</p>
+
+<h3>Example polling with timeout</h3>
+<pre><code>unsigned long timeout;
+
+timeout = jiffies + msecs_to_jiffies(1000);
+
+while (!device_ready()) {
+    if (time_after(jiffies, timeout))
+        return -ETIMEDOUT;
+
+    usleep_range(1000, 2000);
+}</code></pre>
+
+<p>This is an illustrative polling pattern for a context where sleeping is permitted.</p>
+
+<h3>What should be tested?</h3>
+<ul>
+    <li>Device responds before timeout.</li>
+    <li>Device never responds.</li>
+    <li>Device responds just before timeout.</li>
+    <li>Device becomes unavailable during an operation.</li>
+    <li>Driver performs safe cleanup after timeout.</li>
+</ul>
+</section>
+
+<section>
+<h2>12. Fail Function Mechanism</h2>
+<p>The fail-function mechanism can inject errors into selected eligible kernel functions.</p>
+
+<p>It is useful for testing how kernel code handles failures returned by functions that support error injection.</p>
+
+<h3>Example inspection</h3>
+<pre><code>cat /sys/kernel/debug/fail_function/injectable</code></pre>
+
+<p>The exact interface and available injectable functions depend on the kernel configuration and version.</p>
+
+<h3>Typical testing process</h3>
+<ol>
+    <li>Identify an eligible function.</li>
+    <li>Configure a controlled injection test.</li>
+    <li>Execute the relevant driver operation.</li>
+    <li>Observe the returned error.</li>
+    <li>Check whether cleanup was successful.</li>
+    <li>Disable injection and repeat the normal test.</li>
+</ol>
+</section>
+
+<section>
+<h2>13. Fail Page Allocation</h2>
+<p>Fail page allocation is used to simulate failures in page allocation paths.</p>
+
+<p>Kernel components use page allocation for memory that is managed in page-sized units.</p>
+
+<h3>Typical applications</h3>
+<ul>
+    <li>Testing page allocation error handling.</li>
+    <li>Testing memory-intensive operations.</li>
+    <li>Validating recovery from memory pressure.</li>
+    <li>Checking resource cleanup.</li>
+</ul>
+
+<h3>Possible control directory</h3>
+<pre><code>/sys/kernel/debug/fail_page_alloc/</code></pre>
+
+<p>Inspect the files available in this directory before using the interface.</p>
+</section>
+
+<section>
+<h2>14. Failslab – Slab Allocation Failure Injection</h2>
+<p>Failslab injects failures into selected slab allocator operations.</p>
+
+<p>Kernel objects are frequently allocated through interfaces such as:</p>
+<ul>
+    <li>kmalloc()</li>
+    <li>kzalloc()</li>
+    <li>kmem_cache_alloc()</li>
+</ul>
+
+<p>Failslab helps test whether code handles these allocation failures correctly.</p>
+
+<h3>Possible control directory</h3>
+<pre><code>/sys/kernel/debug/failslab/</code></pre>
+
+<h3>Testing objectives</h3>
+<ul>
+    <li>Detect missing NULL checks.</li>
+    <li>Verify cleanup labels.</li>
+    <li>Check partially initialized objects.</li>
+    <li>Prevent use-after-free and memory leaks.</li>
+</ul>
+</section>
+
+<section>
+<h2>15. Fault Injection in Character Drivers</h2>
+<p>Character drivers provide file operations such as open, read, write and ioctl. Each operation should handle failures safely.</p>
+
+<table>
+<tr><th>Operation</th><th>Failure Scenario</th><th>Expected Handling</th></tr>
+<tr><td>Open</td><td>Device unavailable</td><td>Return an error.</td></tr>
+<tr><td>Read</td><td>Invalid user buffer</td><td>Return an appropriate error.</td></tr>
+<tr><td>Write</td><td>Invalid input or allocation failure</td><td>Reject input or return an error.</td></tr>
+<tr><td>IOCTL</td><td>Unsupported command</td><td>Return -ENOTTY.</td></tr>
+<tr><td>Release</td><td>Repeated cleanup</td><td>Avoid double-free and invalid resource access.</td></tr>
+</table>
+
+<h3>Example user-copy error handling</h3>
+<pre><code>if (copy_from_user(kernel_buffer, user_buffer, count))
+    return -EFAULT;</code></pre>
+
+<p><code>copy_from_user()</code> returns the number of bytes that could not be copied. A nonzero return value indicates that the complete copy did not succeed.</p>
+</section>
+
+<section>
+<h2>16. Testing Driver Recovery</h2>
+<p>Recovery testing verifies whether a driver returns to a safe state after a failure.</p>
+
+<h3>Example recovery sequence</h3>
+<pre><code>Normal Operation
+      |
+      v
+Fault Occurs
+      |
+      v
+Detect Error
+      |
+      v
+Stop Invalid Operation
+      |
+      v
+Release Temporary Resources
+      |
+      v
+Reset or Recover Device
+      |
+      v
+Resume or Report Failure</code></pre>
+
+<h3>Important checks</h3>
+<ul>
+    <li>No resource remains unintentionally allocated.</li>
+    <li>No invalid pointer is accessed.</li>
+    <li>Locks are released correctly.</li>
+    <li>Device state remains consistent.</li>
+    <li>Subsequent operations behave correctly.</li>
+</ul>
+</section>
+
+<section>
+<h2>17. Fault Injection and Kernel Debugging Tools</h2>
+<table>
+<tr><th>Tool</th><th>Role</th></tr>
+<tr><td>Fault Injection Framework</td><td>Introduces selected failures.</td></tr>
+<tr><td>KASAN</td><td>Detects many memory access errors.</td></tr>
+<tr><td>kmemleak</td><td>Helps detect possible memory leaks.</td></tr>
+<tr><td>lockdep</td><td>Detects locking dependency problems.</td></tr>
+<tr><td>KCSAN</td><td>Detects data races.</td></tr>
+<tr><td>printk / dmesg</td><td>Provides kernel diagnostic messages.</td></tr>
+<tr><td>ftrace</td><td>Traces kernel execution paths.</td></tr>
+<tr><td>Crash</td><td>Analyzes kernel crash dumps.</td></tr>
+</table>
+
+<p>Fault injection creates failure conditions; debugging tools help observe and diagnose the resulting behavior.</p>
+</section>
+
+<section>
+<h2>18. Practical Exercise – Test an Allocation Failure Path</h2>
+<p><strong>Objective:</strong> Write a kernel helper that handles memory allocation failure safely.</p>
+
+<h3>Example source file</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/slab.h&gt;
+#include &lt;linux/init.h&gt;
+
+static int __init fault_test_init(void)
+{
+    char *buffer;
+
+    buffer = kzalloc(128, GFP_KERNEL);
+
+    if (!buffer) {
+        pr_err("Memory allocation failed\n");
+        return -ENOMEM;
+    }
+
+    snprintf(buffer, 128, "Kernel allocation test");
+
+    pr_info("%s\n", buffer);
+
+    kfree(buffer);
+
+    return 0;
+}
+
+static void __exit fault_test_exit(void)
+{
+    pr_info("Fault test module unloaded\n");
+}
+
+module_init(fault_test_init);
+module_exit(fault_test_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Kernel allocation error handling example");</code></pre>
+
+<h3>Test procedure</h3>
+<ol>
+    <li>Build the module using the kernel build system.</li>
+    <li>Load the module.</li>
+    <li>Inspect the kernel log.</li>
+    <li>Unload the module.</li>
+    <li>Review the allocation failure path in the source code.</li>
+</ol>
+
+<p><strong>Expected Result:</strong> When allocation succeeds, the module prints the test message and releases the allocated memory. If allocation fails, it reports the error and returns <code>-ENOMEM</code>.</p>
+
+<div class="note">
+    This exercise demonstrates explicit error handling. It does not force the allocation to fail. To test an injected failure, use a suitably configured kernel fault injection facility in an isolated test environment.
+</div>
+</section>
+
+<section>
+<h2>19. Practical Exercise – Design a Fault Injection Test Plan</h2>
+<p><strong>Objective:</strong> Prepare a fault injection plan for a character device driver.</p>
+
+<table>
+<tr><th>Test ID</th><th>Injected Failure</th><th>Expected Result</th></tr>
+<tr><td>FI01</td><td>Memory allocation failure</td><td>Return -ENOMEM and clean up.</td></tr>
+<tr><td>FI02</td><td>Device registration failure</td><td>Release previously acquired resources.</td></tr>
+<tr><td>FI03</td><td>Invalid user buffer</td><td>Return -EFAULT where appropriate.</td></tr>
+<tr><td>FI04</td><td>Unsupported IOCTL</td><td>Return -ENOTTY.</td></tr>
+<tr><td>FI05</td><td>Hardware timeout</td><td>Return -ETIMEDOUT and recover safely.</td></tr>
+<tr><td>FI06</td><td>I2C transfer failure</td><td>Report error and handle device state.</td></tr>
+<tr><td>FI07</td><td>Repeated initialization failure</td><td>No resource leak or inconsistent state.</td></tr>
+</table>
+
+<p><strong>Expected Result:</strong> Each test should have a documented failure condition, expected error response, cleanup requirement and verification method.</p>
+</section>
+
+<section>
+<h2>20. Safety Precautions</h2>
+<ul>
+    <li>Use a virtual machine or dedicated test system.</li>
+    <li>Take a VM snapshot before fault injection.</li>
+    <li>Never experiment on a production kernel.</li>
+    <li>Do not inject failures into critical storage or networking paths on an important system.</li>
+    <li>Understand the active fault injection controls before enabling them.</li>
+    <li>Record the kernel version and configuration.</li>
+    <li>Check logs and system behavior after each test.</li>
+    <li>Disable fault injection after the experiment.</li>
+    <li>Reboot the test environment if the system becomes unstable.</li>
+</ul>
+</section>
+
+<section>
+<h2>21. Knowledge Check</h2>
+<ol>
+    <li>What is fault injection?</li>
+    <li>Why is fault injection important in driver development?</li>
+    <li>What is the purpose of CONFIG_FAULT_INJECTION?</li>
+    <li>What is debugfs?</li>
+    <li>What is Failslab?</li>
+    <li>What is fail page allocation?</li>
+    <li>How should a driver handle kzalloc() failure?</li>
+    <li>Why should initialization cleanup be tested?</li>
+    <li>How should an I2C transfer failure be handled?</li>
+    <li>What is the purpose of timeout testing?</li>
+    <li>How does fault injection differ from ordinary debugging?</li>
+    <li>Why should fault injection be performed in an isolated environment?</li>
+</ol>
+</section>
+
+<section>
+<h2>22. Lesson Summary</h2>
+<ul>
+    <li>Fault injection deliberately introduces failures for testing.</li>
+    <li>It verifies whether drivers handle rare error conditions safely.</li>
+    <li>The kernel provides fault injection mechanisms for selected operations.</li>
+    <li>Failslab and fail page allocation test memory failure paths.</li>
+    <li>debugfs exposes certain debugging and fault injection controls.</li>
+    <li>Drivers must handle allocation, I/O, timeout and registration failures.</li>
+    <li>Correct cleanup is essential after partial initialization.</li>
+    <li>Recovery testing verifies that the driver returns to a safe state.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L11_Kernel_Testing_Frameworks_KUnit_and_kselftest.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L13_Static_Analysis_and_Kernel_Code_Quality.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+</footer>
+
+</body>
+</html>
