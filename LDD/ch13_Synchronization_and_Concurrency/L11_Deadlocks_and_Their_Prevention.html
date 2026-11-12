@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 11: Deadlocks and Their Prevention | Linux Device Drivers</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 20px;
+}
+
+header h1 {
+    margin: 0 0 10px;
+    font-size: 30px;
+}
+
+header p {
+    margin: 0;
+}
+
+nav {
+    background: white;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+
+nav a {
+    display: inline-block;
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 5px 12px;
+}
+
+nav a:hover {
+    color: #007bff;
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e4efff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e2eaf5;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9c;
+    margin-top: 24px;
+}
+
+pre {
+    background: #17212e;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    line-height: 1.55;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+
+th, td {
+    border: 1px solid #d5dfeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #edf4ff;
+    border: 1px solid #bfd4f3;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+    font-weight: bold;
+}
+
+.diagram .arrow {
+    color: #174ea6;
+    font-size: 23px;
+    margin: 5px;
+}
+
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #fff0f0;
+    border-left: 5px solid #d9534f;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.navigation-buttons a:hover {
+    background: #2878d7;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 650px) {
+    header h1 {
+        font-size: 23px;
+    }
+
+    section {
+        padding: 17px;
+    }
+
+    table {
+        display: block;
+        overflow-x: auto;
+    }
+
+    .navigation-buttons {
+        flex-direction: column;
+    }
+
+    .navigation-buttons a {
+        text-align: center;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Lesson 11: Deadlocks and Their Prevention</h1>
+    <p>Linux Device Drivers – Synchronization and Concurrency</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> 13 – Synchronization and Concurrency<br>
+    <strong>Lesson:</strong> 11 – Deadlocks and Their Prevention<br>
+    <strong>Level:</strong> Intermediate to Advanced<br>
+    <strong>Prerequisites:</strong> Spinlocks, Mutexes, Semaphores, Wait Queues and Read-Write Locks.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Define deadlock in operating systems.</li>
+    <li>Understand how deadlocks occur in kernel code.</li>
+    <li>Explain the four necessary conditions for deadlock.</li>
+    <li>Identify circular wait conditions.</li>
+    <li>Understand lock ordering and nested locking.</li>
+    <li>Apply deadlock prevention techniques in device drivers.</li>
+    <li>Understand Linux kernel lockdep debugging.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Deadlocks</h2>
+
+<p>A <strong>deadlock</strong> is a situation in which two or more tasks are permanently blocked because each task is waiting for a resource or lock held by another task in the same dependency cycle.</p>
+
+<p>In Linux kernel programming, deadlocks can occur when synchronization mechanisms such as mutexes, spinlocks and semaphores are used incorrectly.</p>
+
+<h3>Simple Example</h3>
+
+<p>Consider two kernel threads:</p>
+
+<ul>
+    <li>Thread A holds Lock 1 and waits for Lock 2.</li>
+    <li>Thread B holds Lock 2 and waits for Lock 1.</li>
+</ul>
+
+<p>Neither thread can continue because each is waiting for the other to release its lock.</p>
+
+<div class="diagram">
+    <div>Thread A</div>
+    <div class="arrow">↓</div>
+    <div>Holds Lock 1</div>
+    <div class="arrow">↓</div>
+    <div>Waits for Lock 2</div>
+    <hr>
+    <div>Thread B</div>
+    <div class="arrow">↓</div>
+    <div>Holds Lock 2</div>
+    <div class="arrow">↓</div>
+    <div>Waits for Lock 1</div>
+    <div class="arrow">↓</div>
+    <div>Deadlock: Neither thread can proceed</div>
+</div>
+</section>
+
+<section>
+<h2>3. How Deadlocks Occur in Linux Device Drivers</h2>
+
+<p>Device drivers often protect shared resources using locks.</p>
+
+<p>For example, a driver may have:</p>
+
+<ul>
+    <li>A mutex protecting device configuration.</li>
+    <li>A spinlock protecting interrupt-shared status.</li>
+    <li>A mutex protecting a data buffer.</li>
+    <li>A semaphore controlling access to a limited resource.</li>
+</ul>
+
+<p>If different execution paths acquire these locks in inconsistent orders, a deadlock may occur.</p>
+
+<h3>Example Scenario</h3>
+
+<table>
+    <tr>
+        <th>Thread A</th>
+        <th>Thread B</th>
+    </tr>
+    <tr>
+        <td>Acquires Lock A</td>
+        <td>Acquires Lock B</td>
+    </tr>
+    <tr>
+        <td>Requests Lock B</td>
+        <td>Requests Lock A</td>
+    </tr>
+    <tr>
+        <td>Waits for Thread B</td>
+        <td>Waits for Thread A</td>
+    </tr>
+</table>
+
+<p>Both threads remain blocked because neither releases the lock it already holds.</p>
+</section>
+
+<section>
+<h2>4. Four Necessary Conditions for Deadlock</h2>
+
+<p>In the classical operating-system model, a deadlock can occur only when all four of the following conditions exist simultaneously.</p>
+
+<h3>4.1 Mutual Exclusion</h3>
+
+<p>A resource can be held by only one task at a time.</p>
+
+<p>Example: A mutex provides exclusive ownership.</p>
+
+<pre><code>mutex_lock(&amp;device_mutex);
+
+/* Exclusive access to protected data */
+
+mutex_unlock(&amp;device_mutex);</code></pre>
+
+<h3>4.2 Hold and Wait</h3>
+
+<p>A task holds one resource while waiting to acquire another resource.</p>
+
+<p>Example:</p>
+
+<pre><code>mutex_lock(&amp;lock_a);
+
+mutex_lock(&amp;lock_b);
+
+/* Use protected resources */
+
+mutex_unlock(&amp;lock_b);
+mutex_unlock(&amp;lock_a);</code></pre>
+
+<p>If another task holds Lock B and waits for Lock A, a deadlock may occur.</p>
+
+<h3>4.3 No Preemption</h3>
+
+<p>A resource cannot simply be taken away from a task holding it. The task must release the resource according to the locking mechanism's rules.</p>
+
+<p>For example, a mutex is not normally forcibly taken from its owner to satisfy another task's request.</p>
+
+<h3>4.4 Circular Wait</h3>
+
+<p>A circular dependency exists when each task waits for a resource held by another task in the cycle.</p>
+
+<div class="diagram">
+    <div>Thread A → waits for Lock B</div>
+    <div class="arrow">↓</div>
+    <div>Thread B → waits for Lock C</div>
+    <div class="arrow">↓</div>
+    <div>Thread C → waits for Lock A</div>
+    <div class="arrow">↓</div>
+    <div>Thread A is waiting again</div>
+    <div class="arrow">↓</div>
+    <div>Deadlock Cycle</div>
+</div>
+
+<h3>Summary of Four Conditions</h3>
+
+<table>
+    <tr>
+        <th>Condition</th>
+        <th>Meaning</th>
+    </tr>
+    <tr>
+        <td>Mutual Exclusion</td>
+        <td>Only one task can use a resource at a time.</td>
+    </tr>
+    <tr>
+        <td>Hold and Wait</td>
+        <td>A task holds one resource while requesting another.</td>
+    </tr>
+    <tr>
+        <td>No Preemption</td>
+        <td>A held resource cannot be forcibly taken away.</td>
+    </tr>
+    <tr>
+        <td>Circular Wait</td>
+        <td>Tasks form a circular dependency while waiting for resources.</td>
+    </tr>
+</table>
+
+<div class="note">
+    These are the four classical necessary conditions. Preventing at least one of them prevents deadlock under this model.
+</div>
+</section>
+
+<section>
+<h2>5. Deadlock Example Using Mutexes</h2>
+
+<p>Consider two mutexes protecting two shared resources.</p>
+
+<h3>Problematic Locking Pattern</h3>
+
+<pre><code>static DEFINE_MUTEX(lock_a);
+static DEFINE_MUTEX(lock_b);
+
+/* Thread A */
+static void thread_a_function(void)
+{
+    mutex_lock(&amp;lock_a);
+
+    mutex_lock(&amp;lock_b);
+
+    /* Access shared resources */
+
+    mutex_unlock(&amp;lock_b);
+    mutex_unlock(&amp;lock_a);
+}
+
+/* Thread B */
+static void thread_b_function(void)
+{
+    mutex_lock(&amp;lock_b);
+
+    mutex_lock(&amp;lock_a);
+
+    /* Access shared resources */
+
+    mutex_unlock(&amp;lock_a);
+    mutex_unlock(&amp;lock_b);
+}</code></pre>
+
+<h3>Why Is This Dangerous?</h3>
+
+<ol>
+    <li>Thread A acquires Lock A.</li>
+    <li>Thread B acquires Lock B.</li>
+    <li>Thread A requests Lock B and waits.</li>
+    <li>Thread B requests Lock A and waits.</li>
+    <li>Neither thread can proceed.</li>
+</ol>
+
+<div class="warning">
+    This code illustrates an unsafe lock-ordering pattern. It is not a test to run in a production kernel or on a normal development system.
+</div>
+</section>
+
+<section>
+<h2>6. Deadlock Prevention Technique 1: Consistent Lock Ordering</h2>
+
+<p>One of the most effective ways to prevent lock-order deadlocks is to acquire multiple locks in a consistent global order.</p>
+
+<p>For example, always acquire Lock A before Lock B.</p>
+
+<h3>Corrected Pattern</h3>
+
+<pre><code>static DEFINE_MUTEX(lock_a);
+static DEFINE_MUTEX(lock_b);
+
+/* Thread A */
+static void thread_a_function(void)
+{
+    mutex_lock(&amp;lock_a);
+
+    mutex_lock(&amp;lock_b);
+
+    /* Access shared resources */
+
+    mutex_unlock(&amp;lock_b);
+    mutex_unlock(&amp;lock_a);
+}
+
+/* Thread B */
+static void thread_b_function(void)
+{
+    mutex_lock(&amp;lock_a);
+
+    mutex_lock(&amp;lock_b);
+
+    /* Access shared resources */
+
+    mutex_unlock(&amp;lock_b);
+    mutex_unlock(&amp;lock_a);
+}</code></pre>
+
+<p>Both threads acquire Lock A first and Lock B second.</p>
+
+<div class="diagram">
+    <div>Acquire Lock A</div>
+    <div class="arrow">↓</div>
+    <div>Acquire Lock B</div>
+    <div class="arrow">↓</div>
+    <div>Perform Protected Operations</div>
+    <div class="arrow">↓</div>
+    <div>Release Lock B</div>
+    <div class="arrow">↓</div>
+    <div>Release Lock A</div>
+</div>
+
+<p>This removes the circular lock-order dependency between these two locks.</p>
+</section>
+
+<section>
+<h2>7. Deadlock Prevention Technique 2: Avoid Unnecessary Nested Locks</h2>
+
+<p>Nested locking means acquiring one lock while already holding another lock.</p>
+
+<p>Nested locking is sometimes necessary, but unnecessary nesting increases the risk of deadlocks.</p>
+
+<h3>Recommended Approach</h3>
+
+<ul>
+    <li>Determine whether both locks are actually required.</li>
+    <li>Keep the number of simultaneously held locks small.</li>
+    <li>Define a consistent acquisition order.</li>
+    <li>Document the locking order for complex drivers.</li>
+    <li>Release locks as soon as the protected operation is complete.</li>
+</ul>
+
+<div class="note">
+    Releasing one lock before acquiring another may reduce deadlock risk, but it can also introduce race conditions if the shared state changes between the two operations. Recheck conditions after reacquiring locks where necessary.
+</div>
+</section>
+
+<section>
+<h2>8. Deadlock Prevention Technique 3: Keep Critical Sections Short</h2>
+
+<p>A critical section is the part of code that accesses shared data while holding a lock.</p>
+
+<p>Long critical sections increase contention and make locking problems harder to diagnose.</p>
+
+<h3>Bad Practice</h3>
+
+<pre><code>spin_lock(&amp;my_lock);
+
+msleep(1000);       /* Invalid: sleeping while holding spinlock */
+
+spin_unlock(&amp;my_lock);</code></pre>
+
+<p>The example is invalid because <code>msleep()</code> may sleep while a spinlock is held.</p>
+
+<h3>Better Practice</h3>
+
+<pre><code>spin_lock(&amp;my_lock);
+
+/* Perform short, non-sleeping operation */
+
+spin_unlock(&amp;my_lock);
+
+/* Sleep only after releasing the spinlock */
+msleep(1000);</code></pre>
+
+<p>For longer operations that must sleep, consider an appropriate sleepable synchronization primitive, such as a mutex, when the execution context permits it.</p>
+</section>
+
+<section>
+<h2>9. Deadlock Prevention Technique 4: Use Try-Lock Carefully</h2>
+
+<p>Some synchronization primitives provide try-lock operations. They attempt to acquire a lock without waiting indefinitely.</p>
+
+<h3>Mutex Try-Lock</h3>
+
+<pre><code>if (mutex_trylock(&amp;device_mutex)) {
+
+    /* Lock acquired */
+
+    /* Perform protected operation */
+
+    mutex_unlock(&amp;device_mutex);
+
+} else {
+
+    pr_info("Device is busy\n");
+}</code></pre>
+
+<p><code>mutex_trylock()</code> returns non-zero when the lock is acquired and zero when it is unavailable.</p>
+
+<h3>Spinlock Try-Lock</h3>
+
+<pre><code>if (spin_trylock(&amp;my_lock)) {
+
+    /* Lock acquired */
+
+    /* Short critical section */
+
+    spin_unlock(&amp;my_lock);
+
+} else {
+
+    pr_info("Lock unavailable\n");
+}</code></pre>
+
+<p>Try-lock operations can help avoid blocking in selected designs, but they do not automatically solve deadlocks. The driver must handle failure and maintain data consistency correctly.</p>
+</section>
+
+<section>
+<h2>10. Deadlocks Involving Interrupt Context</h2>
+
+<p>Deadlocks can also occur when process context and interrupt context use the same spinlock incorrectly.</p>
+
+<h3>Example Scenario</h3>
+
+<ol>
+    <li>A process acquires a spinlock.</li>
+    <li>A local hardware interrupt occurs.</li>
+    <li>The interrupt handler tries to acquire the same spinlock.</li>
+    <li>The interrupt handler spins waiting for the process.</li>
+    <li>The process cannot resume because the interrupt handler has not returned.</li>
+</ol>
+
+<div class="diagram">
+    <div>Process Context</div>
+    <div class="arrow">↓</div>
+    <div>Acquires spinlock</div>
+    <div class="arrow">↓</div>
+    <div>Local interrupt occurs</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Handler requests same lock</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Handler spins</div>
+    <div class="arrow">↓</div>
+    <div>Process cannot resume: Deadlock</div>
+</div>
+
+<h3>Correct Process-Context Locking</h3>
+
+<pre><code>unsigned long flags;
+
+spin_lock_irqsave(&amp;my_lock, flags);
+
+/* Access data shared with hard IRQ */
+
+spin_unlock_irqrestore(&amp;my_lock, flags);</code></pre>
+
+<p>The interrupt handler uses the corresponding non-sleeping lock operation:</p>
+
+<pre><code>spin_lock(&amp;my_lock);
+
+/* Access shared data */
+
+spin_unlock(&amp;my_lock);</code></pre>
+
+<div class="note">
+    This pattern applies to traditional non-RT spinlock semantics. PREEMPT_RT changes the behavior of many spinlock APIs; follow the target kernel's interrupt and locking rules.
+</div>
+</section>
+
+<section>
+<h2>11. Lock Ordering in Device Drivers</h2>
+
+<p>Complex device drivers may use multiple locks to protect different resources.</p>
+
+<p>Example:</p>
+
+<table>
+    <tr>
+        <th>Lock</th>
+        <th>Protected Resource</th>
+    </tr>
+    <tr>
+        <td><code>config_lock</code></td>
+        <td>Device configuration</td>
+    </tr>
+    <tr>
+        <td><code>buffer_lock</code></td>
+        <td>Shared data buffer</td>
+    </tr>
+    <tr>
+        <td><code>status_lock</code></td>
+        <td>Device status information</td>
+    </tr>
+</table>
+
+<p>A driver should define a consistent acquisition order, for example:</p>
+
+<div class="diagram">
+    <div>config_lock</div>
+    <div class="arrow">↓</div>
+    <div>buffer_lock</div>
+    <div class="arrow">↓</div>
+    <div>status_lock</div>
+</div>
+
+<p>Any code path that needs multiple locks must follow the same order. A code path must not acquire <code>status_lock</code> and then request <code>config_lock</code> if another path uses the opposite order.</p>
+</section>
+
+<section>
+<h2>12. Linux Kernel Lockdep</h2>
+
+<p><strong>Lockdep</strong> is the Linux kernel lock dependency validator.</p>
+
+<p>It helps detect potential locking problems, including:</p>
+
+<ul>
+    <li>Inconsistent lock ordering.</li>
+    <li>Potential circular lock dependencies.</li>
+    <li>Some recursive locking errors.</li>
+    <li>Incorrect locking usage detected by lock validation.</li>
+</ul>
+
+<h3>How Lockdep Works</h3>
+
+<p>Lockdep observes lock acquisition and release patterns while the kernel is running. It builds a dependency model and checks whether newly observed dependencies could form a cycle.</p>
+
+<div class="diagram">
+    <div>Kernel Lock Acquisition</div>
+    <div class="arrow">↓</div>
+    <div>Lockdep Records Dependencies</div>
+    <div class="arrow">↓</div>
+    <div>Checks Lock Ordering</div>
+    <div class="arrow">↓</div>
+    <div>Reports Potential Locking Problems</div>
+</div>
+
+<h3>Checking Kernel Configuration</h3>
+
+<p>Lockdep-related debugging options commonly include:</p>
+
+<pre><code>CONFIG_LOCKDEP
+CONFIG_PROVE_LOCKING
+CONFIG_DEBUG_LOCK_ALLOC
+CONFIG_DEBUG_MUTEXES</code></pre>
+
+<p>Availability depends on the kernel version and configuration. Check the running kernel configuration where available:</p>
+
+<pre><code>grep -E 'CONFIG_(LOCKDEP|PROVE_LOCKING|DEBUG_LOCK_ALLOC|DEBUG_MUTEXES)' \
+/boot/config-$(uname -r)</code></pre>
+
+<p>Alternatively, inspect:</p>
+
+<pre><code>zcat /proc/config.gz | grep LOCKDEP</code></pre>
+
+<p>The second command works only if the kernel exposes its configuration through <code>/proc/config.gz</code>.</p>
+
+<h3>Viewing Lockdep Warnings</h3>
+
+<pre><code>sudo dmesg | grep -i -E 'lockdep|possible circular|deadlock'
+
+sudo journalctl -k | grep -i lockdep</code></pre>
+
+<div class="note">
+    Lockdep detects many potential locking errors, but it cannot prove that every possible execution path is deadlock-free. A lack of warnings does not guarantee correct synchronization.
+</div>
+</section>
+
+<section>
+<h2>13. Lockdep Locking Assertions</h2>
+
+<p>Kernel code can use lockdep-related assertions to verify that a required lock is held when a function is called.</p>
+
+<h3>Example: lockdep_assert_held()</h3>
+
+<pre><code>#include &lt;linux/mutex.h&gt;
+#include &lt;linux/lockdep.h&gt;
+
+static DEFINE_MUTEX(data_mutex);
+
+static int shared_value = 100;
+
+static void update_shared_value(int new_value)
+{
+    lockdep_assert_held(&amp;data_mutex);
+
+    shared_value = new_value;
+}
+
+static void update_device_data(int new_value)
+{
+    mutex_lock(&amp;data_mutex);
+
+    update_shared_value(new_value);
+
+    mutex_unlock(&amp;data_mutex);
+}</code></pre>
+
+<p><code>lockdep_assert_held()</code> documents and checks the expectation that the mutex is held when the protected function executes, when the relevant lock validation support is enabled.</p>
+
+<p>It is a debugging assertion, not a replacement for acquiring the lock.</p>
+</section>
+
+<section>
+<h2>14. Deadlock Detection vs Deadlock Prevention</h2>
+
+<table>
+    <tr>
+        <th>Deadlock Prevention</th>
+        <th>Deadlock Detection</th>
+    </tr>
+    <tr>
+        <td>Designs the program to avoid deadlock conditions.</td>
+        <td>Identifies potential or existing locking problems.</td>
+    </tr>
+    <tr>
+        <td>Uses consistent lock ordering.</td>
+        <td>Uses debugging and validation mechanisms.</td>
+    </tr>
+    <tr>
+        <td>Keeps critical sections controlled.</td>
+        <td>Examines lock dependencies.</td>
+    </tr>
+    <tr>
+        <td>Reduces circular wait.</td>
+        <td>Lockdep reports dependency cycles and other problems.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>15. Other Locking Problems</h2>
+
+<h3>15.1 Self-Deadlock</h3>
+
+<p>A task attempts to acquire a non-recursive mutex that it already holds.</p>
+
+<pre><code>mutex_lock(&amp;my_mutex);
+
+mutex_lock(&amp;my_mutex);  /* Incorrect recursive acquisition */
+
+mutex_unlock(&amp;my_mutex);</code></pre>
+
+<p>Linux mutexes are not recursive. Acquiring the same mutex again from its owner can result in a deadlock.</p>
+
+<h3>15.2 Lock Inversion</h3>
+
+<p>Lock inversion occurs when different execution paths acquire locks in conflicting orders.</p>
+
+<h3>15.3 Sleeping While Holding a Spinlock</h3>
+
+<p>A spinlock must not be held across a sleeping operation. This can cause serious scheduling and locking failures.</p>
+
+<h3>15.4 Interrupt-Related Deadlock</h3>
+
+<p>Incorrect locking between process context and interrupt context can cause an interrupt handler to spin on a lock held by the interrupted process.</p>
+</section>
+
+<section>
+<h2>16. Best Practices for Deadlock Prevention</h2>
+
+<ol>
+    <li>Define a global lock acquisition order.</li>
+    <li>Avoid unnecessary nested locking.</li>
+    <li>Keep critical sections short.</li>
+    <li>Never sleep while holding a spinlock.</li>
+    <li>Use IRQ-safe locking when required by the interrupt-sharing design.</li>
+    <li>Use mutexes only in sleepable contexts.</li>
+    <li>Release locks on every applicable error path.</li>
+    <li>Document complex locking rules.</li>
+    <li>Use lockdep-enabled kernels during development and testing.</li>
+    <li>Review all execution paths that access shared driver data.</li>
+</ol>
+</section>
+
+<section>
+<h2>17. Practical Exercise: Safe Lock Ordering</h2>
+
+<p>Consider two shared resources protected by two mutexes.</p>
+
+<h3>Task</h3>
+
+<p>Write a kernel module with two mutexes:</p>
+
+<pre><code>static DEFINE_MUTEX(lock_a);
+static DEFINE_MUTEX(lock_b);</code></pre>
+
+<p>Implement two functions that:</p>
+
+<ol>
+    <li>Acquire <code>lock_a</code> first.</li>
+    <li>Acquire <code>lock_b</code> second.</li>
+    <li>Access protected data.</li>
+    <li>Release <code>lock_b</code> first.</li>
+    <li>Release <code>lock_a</code> last.</li>
+</ol>
+
+<p>Verify that both functions follow the same lock acquisition order.</p>
+
+<h3>Expected Learning Outcome</h3>
+
+<p>You should understand how a consistent lock hierarchy removes circular dependencies between the two mutexes.</p>
+</section>
+
+<section>
+<h2>18. Lesson Summary</h2>
+
+<ul>
+    <li>A deadlock occurs when tasks wait indefinitely for resources held by one another.</li>
+    <li>Four necessary conditions are mutual exclusion, hold and wait, no preemption and circular wait.</li>
+    <li>Inconsistent lock ordering is a common cause of deadlock.</li>
+    <li>Consistent lock ordering is a major prevention technique.</li>
+    <li>Nested locking should be controlled and documented.</li>
+    <li>Critical sections should be kept short.</li>
+    <li>Try-lock operations can help in selected designs but do not automatically prevent deadlocks.</li>
+    <li>Interrupt-related locking requires careful design.</li>
+    <li>Lockdep validates lock dependencies and reports potential problems.</li>
+    <li>Deadlock prevention must be part of the driver design, not merely a debugging activity.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Short Answer Questions</h2>
+
+<ol>
+    <li>What is a deadlock?</li>
+    <li>Why can deadlocks occur in Linux device drivers?</li>
+    <li>What is mutual exclusion?</li>
+    <li>Explain hold and wait.</li>
+    <li>What is circular wait?</li>
+    <li>What is lock ordering?</li>
+    <li>What is nested locking?</li>
+    <li>What is self-deadlock?</li>
+    <li>What is lock inversion?</li>
+    <li>What is lockdep?</li>
+    <li>What is the purpose of <code>lockdep_assert_held()</code>?</li>
+    <li>Why should spinlock critical sections be short?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Long Answer Questions</h2>
+
+<ol>
+    <li>Explain deadlocks with a suitable diagram.</li>
+    <li>Discuss the four necessary conditions for deadlock.</li>
+    <li>Explain how inconsistent lock ordering creates deadlock.</li>
+    <li>Describe methods used to prevent deadlocks in Linux device drivers.</li>
+    <li>Explain interrupt-related deadlocks with an example.</li>
+    <li>Discuss the Linux kernel lockdep mechanism.</li>
+    <li>Differentiate deadlock prevention and deadlock detection.</li>
+    <li>Explain the importance of lock hierarchies in complex drivers.</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Practical Exercises</h2>
+
+<ol>
+    <li>Create two mutexes and implement a consistent lock ordering.</li>
+    <li>Identify an unsafe nested locking pattern.</li>
+    <li>Rewrite a locking example to avoid circular wait.</li>
+    <li>Use <code>mutex_trylock()</code> and handle failure correctly.</li>
+    <li>Use <code>spin_lock_irqsave()</code> in an appropriate shared interrupt-lock design.</li>
+    <li>Inspect kernel configuration for lockdep support.</li>
+    <li>Use kernel logs to identify lockdep warnings.</li>
+    <li>Add <code>lockdep_assert_held()</code> to a function that requires a mutex.</li>
+    <li>Review a character driver for lock-order consistency.</li>
+</ol>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L10_Read_Write_Locks.html">← Previous: Read-Write Locks</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L12_Synchronization_in_Character_Drivers.html">Next: Synchronization in Character Drivers →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 13 – Synchronization and Concurrency</p>
+</footer>
+
+</body>
+</html>
