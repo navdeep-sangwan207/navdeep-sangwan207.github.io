@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 6 - sysfs Filesystem | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    line-height: 1.7;
+    background: #f4f7fb;
+    color: #263238;
+}
+
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    padding: 35px 20px;
+    text-align: center;
+}
+
+.lesson-banner h1 { margin: 0; font-size: 30px; }
+
+.top-nav {
+    background: #102f60;
+    padding: 12px;
+    text-align: center;
+}
+
+.top-nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+
+.top-nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3f0ff;
+    border-left: 5px solid #2878d7;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8f8;
+    padding-bottom: 7px;
+}
+
+h3 { color: #245a9c; }
+
+pre {
+    background: #17212b;
+    color: #e8f0f8;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+code { font-family: Consolas, monospace; }
+
+.note {
+    background: #fff8df;
+    border-left: 5px solid #e0a800;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.success {
+    background: #e8f5e9;
+    border-left: 5px solid #388e3c;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fe;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #b8cbea;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px;
+    margin: 5px;
+    min-width: 190px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 12px 18px;
+    border-radius: 6px;
+}
+
+.lesson-nav a:hover { background: #0d3475; }
+
+footer {
+    text-align: center;
+    background: #102f60;
+    color: white;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    .lesson-banner h1 { font-size: 23px; }
+    .top-nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    .section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="lesson-banner">
+    <h1>Chapter 15: Procfs, Sysfs and Kernel Interfaces</h1>
+    <p>Lesson 6: sysfs Filesystem</p>
+</header>
+
+<nav class="top-nav">
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 15</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p>
+        Topic: sysfs Filesystem<br>
+        Chapter: Procfs, Sysfs and Kernel Interfaces<br>
+        Prerequisites: Introduction to Sysfs, Linux Device Model and Kernel Modules<br>
+        Difficulty: Intermediate
+    </p>
+</div>
+
+<section class="section">
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Understand the structure of the sysfs filesystem.</li>
+    <li>Explain how sysfs is mounted.</li>
+    <li>Identify important sysfs directories.</li>
+    <li>Understand device, bus and class hierarchies.</li>
+    <li>Understand symbolic links in sysfs.</li>
+    <li>Inspect sysfs attributes using Linux commands.</li>
+    <li>Understand how filesystem operations reach kernel callbacks.</li>
+    <li>Explain the relationship between sysfs and the Linux device model.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. What Is the sysfs Filesystem?</h2>
+
+<p>
+Sysfs is a virtual filesystem that exposes the Linux
+kernel object model through directories, symbolic links
+and attribute files.
+</p>
+
+<p>
+It is normally mounted at:
+</p>
+
+<pre><code>/sys</code></pre>
+
+<p>
+Unlike a conventional filesystem, sysfs does not store
+ordinary files and directories on a physical storage
+device. Its entries represent kernel objects and their
+relationships.
+</p>
+
+<h3>Example</h3>
+
+<pre><code>/sys/class/net/lo/mtu</code></pre>
+
+<p>
+This path represents the MTU attribute of the loopback
+network interface.
+</p>
+
+<p>
+Reading the file retrieves a value exposed by the
+kernel's network device infrastructure.
+</p>
+</section>
+
+<section class="section">
+<h2>3. Mounting the sysfs Filesystem</h2>
+
+<p>
+Linux normally mounts sysfs automatically during system
+startup.
+</p>
+
+<p>
+The usual mount point is <code>/sys</code>.
+</p>
+
+<h3>Check whether sysfs is mounted</h3>
+
+<pre><code>findmnt /sys</code></pre>
+
+<p>Another command is:</p>
+
+<pre><code>mount | grep sysfs</code></pre>
+
+<p>A typical mount entry resembles:</p>
+
+<pre><code>sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime)</code></pre>
+
+<p>
+The exact mount options and output may differ between
+Linux distributions and system configurations.
+</p>
+
+<h3>Mount sysfs manually</h3>
+
+<p>
+On a system where sysfs is not already mounted, an
+administrator can mount it using:
+</p>
+
+<pre><code>sudo mount -t sysfs sysfs /sys</code></pre>
+
+<div class="warning">
+    Do not attempt to mount another sysfs instance over
+    an already populated /sys directory during normal
+    system operation. Linux systems generally manage
+    this mount automatically.
+</div>
+</section>
+
+<section class="section">
+<h2>4. Overall Directory Structure</h2>
+
+<p>
+The sysfs filesystem contains several top-level
+directories. Each directory represents a category
+of kernel objects or interfaces.
+</p>
+
+<pre><code>/sys
+├── block
+├── bus
+├── class
+├── dev
+│   ├── block
+│   └── char
+├── devices
+├── firmware
+├── fs
+├── kernel
+└── module</code></pre>
+
+<table>
+<tr>
+    <th>Directory</th>
+    <th>Function</th>
+</tr>
+<tr>
+    <td><code>block</code></td>
+    <td>Block device representation.</td>
+</tr>
+<tr>
+    <td><code>bus</code></td>
+    <td>Bus types, devices and drivers.</td>
+</tr>
+<tr>
+    <td><code>class</code></td>
+    <td>Devices grouped by functional class.</td>
+</tr>
+<tr>
+    <td><code>dev</code></td>
+    <td>Links organized by device numbers.</td>
+</tr>
+<tr>
+    <td><code>devices</code></td>
+    <td>Underlying device hierarchy.</td>
+</tr>
+<tr>
+    <td><code>firmware</code></td>
+    <td>Firmware-related interfaces.</td>
+</tr>
+<tr>
+    <td><code>fs</code></td>
+    <td>Filesystem-related kernel interfaces.</td>
+</tr>
+<tr>
+    <td><code>kernel</code></td>
+    <td>Kernel-related objects and interfaces.</td>
+</tr>
+<tr>
+    <td><code>module</code></td>
+    <td>Information about kernel modules.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>5. The /sys/devices Directory</h2>
+
+<p>
+The <code>/sys/devices</code> directory is central to
+the device hierarchy represented by sysfs.
+</p>
+
+<p>
+It organizes devices according to their relationships
+in the hardware and device model.
+</p>
+
+<p>Examples of device categories include:</p>
+
+<ul>
+    <li>System devices.</li>
+    <li>PCI devices.</li>
+    <li>USB devices.</li>
+    <li>Platform devices.</li>
+    <li>Storage-related devices.</li>
+    <li>Other registered devices.</li>
+</ul>
+
+<h3>Explore the directory</h3>
+
+<pre><code>ls /sys/devices</code></pre>
+
+<p>Display a sample of its hierarchy:</p>
+
+<pre><code>find /sys/devices -maxdepth 2 -type d | head -n 30</code></pre>
+
+<p>
+A device's location in this hierarchy can help explain
+its relationship to a bus, controller or parent device.
+</p>
+</section>
+
+<section class="section">
+<h2>6. The /sys/bus Directory</h2>
+
+<p>
+The <code>/sys/bus</code> directory represents bus
+types supported by the running kernel.
+</p>
+
+<p>
+Examples include:
+</p>
+
+<ul>
+    <li>PCI bus.</li>
+    <li>USB bus.</li>
+    <li>I2C bus.</li>
+    <li>SPI bus.</li>
+    <li>Platform bus.</li>
+</ul>
+
+<h3>Explore available buses</h3>
+
+<pre><code>ls /sys/bus</code></pre>
+
+<p>
+A typical bus directory may contain:
+</p>
+
+<pre><code>/sys/bus/pci/
+├── devices
+├── drivers
+└── drivers_autoprobe</code></pre>
+
+<p>
+The exact entries vary by bus type and kernel version.
+</p>
+
+<h3>Devices and drivers</h3>
+
+<p>
+The <code>devices</code> directory provides links to
+devices associated with the bus.
+</p>
+
+<p>
+The <code>drivers</code> directory provides information
+about drivers registered with that bus.
+</p>
+
+<pre><code>ls /sys/bus/pci/devices
+ls /sys/bus/pci/drivers</code></pre>
+
+<div class="note">
+    The bus directory helps connect the device model's
+    view of devices and drivers. The bus subsystem
+    manages matching and binding according to its rules.
+</div>
+</section>
+
+<section class="section">
+<h2>7. The /sys/class Directory</h2>
+
+<p>
+The <code>/sys/class</code> directory groups devices
+according to their functional purpose.
+</p>
+
+<p>
+For example, network interfaces are grouped under:
+</p>
+
+<pre><code>/sys/class/net</code></pre>
+
+<p>Other possible classes include:</p>
+
+<pre><code>/sys/class/input
+/sys/class/leds
+/sys/class/thermal
+/sys/class/graphics
+/sys/class/power_supply</code></pre>
+
+<p>
+These directories may not all exist on every system.
+Their presence depends on available hardware and
+kernel subsystems.
+</p>
+
+<h3>Explore network class</h3>
+
+<pre><code>ls /sys/class/net</code></pre>
+
+<p>
+The loopback interface is commonly represented by
+the entry <code>lo</code>.
+</p>
+
+<pre><code>ls /sys/class/net/lo</code></pre>
+</section>
+
+<section class="section">
+<h2>8. The /sys/block Directory</h2>
+
+<p>
+The <code>/sys/block</code> directory provides a
+class-oriented view of block devices.
+</p>
+
+<p>
+Examples may include:
+</p>
+
+<ul>
+    <li>Hard disk devices.</li>
+    <li>SSD devices.</li>
+    <li>Virtual block devices.</li>
+    <li>Other registered block devices.</li>
+</ul>
+
+<h3>List block devices</h3>
+
+<pre><code>ls /sys/block</code></pre>
+
+<h3>Inspect a device</h3>
+
+<p>
+If a device named <code>sda</code> exists, inspect it:
+</p>
+
+<pre><code>ls /sys/block/sda</code></pre>
+
+<p>
+Some attributes expose information such as device size,
+queue configuration and removable status.
+</p>
+
+<div class="note">
+    Do not assume that the virtual machine uses a device
+    named sda. The actual name depends on the storage
+    controller and Linux device discovery.
+</div>
+</section>
+
+<section class="section">
+<h2>9. The /sys/module Directory</h2>
+
+<p>
+The <code>/sys/module</code> directory provides
+information about kernel modules and module-related
+objects.
+</p>
+
+<h3>List module entries</h3>
+
+<pre><code>ls /sys/module | head</code></pre>
+
+<p>
+An individual module directory may expose parameters,
+sections and other module information, depending on
+the module and kernel configuration.
+</p>
+
+<h3>Inspect a module</h3>
+
+<pre><code>ls /sys/module
+ls /sys/module/loop</code></pre>
+
+<p>
+The second command works only if the loop module's
+directory exists on the running system.
+</p>
+</section>
+
+<section class="section">
+<h2>10. Symbolic Links in sysfs</h2>
+
+<p>
+Symbolic links are important in sysfs because the same
+kernel object may be viewed from different organizational
+perspectives.
+</p>
+
+<p>
+For example, a network interface may be grouped under
+<code>/sys/class/net</code>, while its underlying device
+belongs to a location in <code>/sys/devices</code>.
+</p>
+
+<h3>Inspect network class links</h3>
+
+<pre><code>ls -l /sys/class/net</code></pre>
+
+<p>
+The output commonly shows that an interface entry is
+a symbolic link to an underlying device path.
+</p>
+
+<h3>Resolve the link</h3>
+
+<pre><code>readlink -f /sys/class/net/lo</code></pre>
+
+<p>
+This displays the resolved path, when the link exists.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">/sys/class/net/lo</div>
+    <div class="arrow">↓ Symbolic link</div>
+    <div class="diagram-box">Underlying device path</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">/sys/devices hierarchy</div>
+</div>
+
+<p>
+The class path offers a convenient functional view,
+while the device path represents the object's place
+in the device hierarchy.
+</p>
+</section>
+
+<section class="section">
+<h2>11. Sysfs Attribute Files</h2>
+
+<p>
+An attribute file exposes a value associated with a
+kernel object.
+</p>
+
+<p>
+Sysfs attributes are generally designed as small text
+interfaces, often representing one logical value per
+file.
+</p>
+
+<h3>Example: Network interface attributes</h3>
+
+<pre><code>ls /sys/class/net/lo</code></pre>
+
+<p>Read the interface state:</p>
+
+<pre><code>cat /sys/class/net/lo/operstate</code></pre>
+
+<p>Read the interface hardware address:</p>
+
+<pre><code>cat /sys/class/net/lo/address</code></pre>
+
+<p>Read the MTU:</p>
+
+<pre><code>cat /sys/class/net/lo/mtu</code></pre>
+
+<p>
+These values are supplied by the kernel's networking
+and device infrastructure.
+</p>
+
+<h3>Read-only and writable attributes</h3>
+
+<table>
+<tr>
+    <th>Attribute type</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td>Read-only</td>
+    <td>User space can retrieve the value but cannot change it through that attribute.</td>
+</tr>
+<tr>
+    <td>Writable</td>
+    <td>User space can submit a value if permissions and callback validation allow it.</td>
+</tr>
+<tr>
+    <td>Read-write</td>
+    <td>The interface supports both reading and writing.</td>
+</tr>
+</table>
+
+<div class="warning">
+    File permissions alone do not describe every safety
+    requirement. A writable attribute must also validate
+    input and enforce the rules of the relevant subsystem.
+</div>
+</section>
+
+<section class="section">
+<h2>12. How Attribute Access Works</h2>
+
+<p>
+A Sysfs attribute is connected to kernel callback
+functions. User space accesses the attribute using
+normal file operations, but the value is handled by
+kernel code.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">User Process</div>
+    <div class="arrow">↓ open() / read() / write()</div>
+    <div class="diagram-box">Virtual Filesystem Layer</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Sysfs</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">show() / store() Callback</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Object or Device State</div>
+</div>
+
+<h3>Read operation</h3>
+
+<ol>
+    <li>User space opens an attribute file.</li>
+    <li>The application requests a read.</li>
+    <li>Sysfs invokes the associated show callback.</li>
+    <li>The callback formats the value.</li>
+    <li>The value is returned to user space.</li>
+</ol>
+
+<h3>Write operation</h3>
+
+<ol>
+    <li>User space opens a writable attribute.</li>
+    <li>The application writes a value.</li>
+    <li>Sysfs invokes the associated store callback.</li>
+    <li>The callback validates the supplied data.</li>
+    <li>The driver or subsystem applies the permitted change.</li>
+</ol>
+
+<div class="note">
+    The exact callback interface depends on whether the
+    attribute belongs to a kobject, device or another
+    subsystem object. Device attributes are covered in
+    later lessons.
+</div>
+</section>
+
+<section class="section">
+<h2>13. Sysfs and the /dev Directory</h2>
+
+<p>
+Sysfs and the /dev directory have different purposes.
+They should not be confused.
+</p>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>Sysfs</th>
+    <th>/dev</th>
+</tr>
+<tr>
+    <td>Purpose</td>
+    <td>Expose kernel object information and attributes.</td>
+    <td>Provide device nodes used to access device interfaces.</td>
+</tr>
+<tr>
+    <td>Representation</td>
+    <td>Directories, symbolic links and attributes.</td>
+    <td>Special files such as character and block device nodes.</td>
+</tr>
+<tr>
+    <td>Typical example</td>
+    <td>/sys/class/net/lo/mtu</td>
+    <td>/dev/null</td>
+</tr>
+<tr>
+    <td>Main role</td>
+    <td>Device information and selected control.</td>
+    <td>Device I/O through registered interfaces.</td>
+</tr>
+</table>
+
+<p>
+For example, <code>/dev/null</code> is a character
+device node, while <code>/sys/class/net</code> exposes
+information about network interfaces.
+</p>
+
+<p>
+A device-model object may be associated with a device
+number and a corresponding device node, but sysfs
+attributes and device nodes are not interchangeable.
+</p>
+</section>
+
+<section class="section">
+<h2>14. Sysfs Mount Options and Access</h2>
+
+<p>
+Sysfs is usually mounted automatically with system
+selected mount options.
+</p>
+
+<p>
+Inspect the current mount options using:
+</p>
+
+<pre><code>findmnt -no SOURCE,FSTYPE,OPTIONS /sys</code></pre>
+
+<p>
+Some common mount options have the following meanings:
+</p>
+
+<table>
+<tr>
+    <th>Option</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td><code>rw</code></td>
+    <td>Filesystem is mounted read-write.</td>
+</tr>
+<tr>
+    <td><code>ro</code></td>
+    <td>Filesystem is mounted read-only.</td>
+</tr>
+<tr>
+    <td><code>nosuid</code></td>
+    <td>Do not honor set-user-ID or set-group-ID bits.</td>
+</tr>
+<tr>
+    <td><code>nodev</code></td>
+    <td>Do not interpret device special files on the filesystem.</td>
+</tr>
+<tr>
+    <td><code>noexec</code></td>
+    <td>Do not permit execution of programs from the filesystem.</td>
+</tr>
+</table>
+
+<p>
+Actual access to individual attributes is also controlled
+by the permissions and behavior of those attributes.
+</p>
+</section>
+
+<section class="section">
+<h2>15. Sysfs ABI and Interface Stability</h2>
+
+<p>
+Sysfs attributes can become interfaces used by
+user-space programs, scripts and system management tools.
+</p>
+
+<p>
+For this reason, kernel developers must take care when
+creating or changing attributes.
+</p>
+
+<h3>Important design principles</h3>
+
+<ul>
+    <li>Use established subsystem interfaces whenever possible.</li>
+    <li>Expose simple and clearly defined values.</li>
+    <li>Document interfaces intended for user-space use.</li>
+    <li>Validate all input received through writable attributes.</li>
+    <li>Avoid changing the meaning of an existing attribute.</li>
+    <li>Follow the kernel's documented ABI conventions.</li>
+</ul>
+
+<p>
+The kernel source tree contains documentation for
+userspace interfaces, including the Sysfs ABI
+documentation.
+</p>
+
+<pre><code>Documentation/ABI/</code></pre>
+
+<div class="note">
+    Debugging-only interfaces should generally use
+    Debugfs rather than being introduced as permanent
+    Sysfs ABI interfaces.
+</div>
+</section>
+
+<section class="section">
+<h2>16. Sysfs and Device Driver Development</h2>
+
+<p>
+A device driver may expose attributes through the
+device model. These attributes allow user-space
+applications to inspect or configure selected
+driver or device properties.
+</p>
+
+<p>
+Common kernel interfaces include:
+</p>
+
+<table>
+<tr>
+    <th>Interface</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>struct kobject</code></td>
+    <td>Represents a kernel object.</td>
+</tr>
+<tr>
+    <td><code>struct attribute</code></td>
+    <td>Describes a basic Sysfs attribute.</td>
+</tr>
+<tr>
+    <td><code>struct device_attribute</code></td>
+    <td>Describes an attribute associated with a device.</td>
+</tr>
+<tr>
+    <td><code>DEVICE_ATTR_RO</code></td>
+    <td>Declares a read-only device attribute.</td>
+</tr>
+<tr>
+    <td><code>DEVICE_ATTR_RW</code></td>
+    <td>Declares a read-write device attribute.</td>
+</tr>
+<tr>
+    <td><code>DEVICE_ATTR_WO</code></td>
+    <td>Declares a write-only device attribute.</td>
+</tr>
+<tr>
+    <td><code>sysfs_create_file()</code></td>
+    <td>Creates an attribute file for a kobject.</td>
+</tr>
+<tr>
+    <td><code>sysfs_remove_file()</code></td>
+    <td>Removes an attribute file from a kobject.</td>
+</tr>
+</table>
+
+<p>
+These interfaces are introduced here. Their practical
+use, callback definitions and lifecycle management are
+covered in subsequent lessons.
+</p>
+</section>
+
+<section class="section">
+<h2>17. Practical Exercise: Explore sysfs</h2>
+
+<p>
+Perform the following exercises in Ubuntu.
+</p>
+
+<h3>Exercise 1: Verify the mount</h3>
+
+<pre><code>findmnt /sys</code></pre>
+
+<p><strong>Expected observation:</strong> The output identifies
+/sys as a sysfs mount.</p>
+
+<h3>Exercise 2: List the top-level directories</h3>
+
+<pre><code>ls -l /sys</code></pre>
+
+<p><strong>Expected observation:</strong> Directories such as
+block, bus, class, devices, kernel and module may appear.</p>
+
+<h3>Exercise 3: Inspect the device hierarchy</h3>
+
+<pre><code>ls /sys/devices</code></pre>
+
+<h3>Exercise 4: Inspect available buses</h3>
+
+<pre><code>ls /sys/bus</code></pre>
+
+<h3>Exercise 5: Inspect network interfaces</h3>
+
+<pre><code>ls -l /sys/class/net</code></pre>
+
+<h3>Exercise 6: Read network attributes</h3>
+
+<pre><code>cat /sys/class/net/lo/operstate
+cat /sys/class/net/lo/address
+cat /sys/class/net/lo/mtu</code></pre>
+
+<h3>Exercise 7: Resolve a symbolic link</h3>
+
+<pre><code>readlink -f /sys/class/net/lo</code></pre>
+
+<h3>Exercise 8: Inspect block devices</h3>
+
+<pre><code>ls /sys/block</code></pre>
+
+<h3>Exercise 9: Inspect module information</h3>
+
+<pre><code>ls /sys/module | head</code></pre>
+
+<h3>Exercise 10: Inspect kernel interfaces</h3>
+
+<pre><code>ls /sys/kernel</code></pre>
+
+<div class="success">
+    Successful completion of these exercises demonstrates
+    how the sysfs hierarchy represents kernel objects
+    and exposes their attributes to user space.
+</div>
+</section>
+
+<section class="section">
+<h2>18. Important Points to Remember</h2>
+
+<ul>
+    <li>Sysfs is normally mounted at /sys.</li>
+    <li>Sysfs represents kernel objects, not ordinary disk files.</li>
+    <li>/sys/devices represents the device hierarchy.</li>
+    <li>/sys/bus represents bus-related objects.</li>
+    <li>/sys/class groups devices by functional purpose.</li>
+    <li>Symbolic links provide different views of the same kernel objects.</li>
+    <li>Sysfs attributes are commonly small text interfaces.</li>
+    <li>Reading and writing attributes invokes kernel-side handling.</li>
+    <li>Sysfs and /dev provide different types of interfaces.</li>
+    <li>Sysfs interfaces intended for user space must be designed carefully.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>19. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+    <li>What is the sysfs filesystem?</li>
+    <li>Where is sysfs normally mounted?</li>
+    <li>What is the purpose of /sys/devices?</li>
+    <li>What information is available under /sys/bus?</li>
+    <li>What is the purpose of /sys/class?</li>
+    <li>Why are symbolic links used in sysfs?</li>
+    <li>What is a sysfs attribute?</li>
+    <li>How can you check whether sysfs is mounted?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+    <li>Explain the directory structure of the sysfs filesystem.</li>
+    <li>Describe the role of /sys/devices, /sys/bus and /sys/class.</li>
+    <li>Explain how symbolic links are used in sysfs.</li>
+    <li>Describe how a read operation reaches a Sysfs attribute callback.</li>
+    <li>Differentiate sysfs attributes from device nodes under /dev.</li>
+    <li>Explain the importance of Sysfs ABI stability.</li>
+</ol>
+
+<h3>C. Practical Questions</h3>
+<ol>
+    <li>Verify the sysfs mount using findmnt.</li>
+    <li>List all available bus directories.</li>
+    <li>Explore network interfaces under /sys/class/net.</li>
+    <li>Display the loopback interface MTU.</li>
+    <li>Resolve the loopback interface symbolic link.</li>
+    <li>List available block devices.</li>
+    <li>Inspect the /sys/module directory.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>20. Expected Learning Outcome</h2>
+
+<div class="success">
+    After completing this lesson, you should be able to
+    navigate the sysfs filesystem, identify its major
+    directory structures, inspect kernel objects and
+    attributes, understand symbolic links, and explain
+    how sysfs connects user-space operations to the
+    Linux device model.
+</div>
+</section>
+
+<div class="lesson-nav">
+    <a href="L05_Introduction_to_Sysfs.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L07_Kernel_Objects_and_Kobjects.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 15 - Procfs, Sysfs and Kernel Interfaces</p>
+</footer>
+
+</body>
+</html>
