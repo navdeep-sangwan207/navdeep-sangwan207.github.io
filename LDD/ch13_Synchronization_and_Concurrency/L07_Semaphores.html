@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 7: Semaphores | Linux Device Drivers</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 20px;
+}
+
+header h1 {
+    margin: 0 0 10px;
+    font-size: 30px;
+}
+
+header p {
+    margin: 0;
+}
+
+nav {
+    background: white;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+
+nav a {
+    display: inline-block;
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 5px 12px;
+}
+
+nav a:hover {
+    color: #007bff;
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e4efff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e2eaf5;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9c;
+    margin-top: 24px;
+}
+
+p {
+    margin: 12px 0;
+}
+
+ul, ol {
+    padding-left: 25px;
+}
+
+pre {
+    background: #17212e;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    line-height: 1.55;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+
+th, td {
+    border: 1px solid #d5dfeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #edf4ff;
+    border: 1px solid #bfd4f3;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+    font-weight: bold;
+}
+
+.diagram .arrow {
+    color: #174ea6;
+    font-size: 23px;
+    margin: 5px;
+}
+
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #fff0f0;
+    border-left: 5px solid #d9534f;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.navigation-buttons a:hover {
+    background: #2878d7;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 650px) {
+    header h1 {
+        font-size: 23px;
+    }
+
+    section {
+        padding: 17px;
+    }
+
+    table {
+        display: block;
+        overflow-x: auto;
+    }
+
+    .navigation-buttons {
+        flex-direction: column;
+    }
+
+    .navigation-buttons a {
+        text-align: center;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Lesson 7: Semaphores</h1>
+    <p>Linux Device Drivers – Synchronization and Concurrency</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> 13 – Synchronization and Concurrency<br>
+    <strong>Lesson:</strong> 7 – Semaphores<br>
+    <strong>Level:</strong> Intermediate<br>
+    <strong>Prerequisites:</strong> Race Conditions, Critical Sections, Atomic Operations, Spinlocks and Mutexes.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Define a semaphore and explain its purpose.</li>
+    <li>Understand binary and counting semaphores.</li>
+    <li>Understand semaphore initialization.</li>
+    <li>Use <code>down()</code> and <code>up()</code>.</li>
+    <li>Understand <code>down_interruptible()</code> and <code>down_trylock()</code>.</li>
+    <li>Distinguish semaphores from mutexes and spinlocks.</li>
+    <li>Understand semaphore counting and resource management.</li>
+    <li>Apply semaphore concepts to Linux device drivers.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Semaphores</h2>
+
+<p>A <strong>semaphore</strong> is a synchronization mechanism that uses a counter to control access to a shared resource or to coordinate execution between tasks.</p>
+
+<p>The semaphore counter represents the number of available permits.</p>
+
+<p>A task obtains a permit before proceeding. If no permit is available, the task waits until another task releases one.</p>
+
+<h3>Why Are Semaphores Required?</h3>
+
+<p>Consider a system with three identical hardware resources that can be used by different tasks.</p>
+
+<ul>
+    <li>Task A requests a resource.</li>
+    <li>Task B requests another resource.</li>
+    <li>Task C requests the third resource.</li>
+    <li>Task D must wait because all three resources are occupied.</li>
+</ul>
+
+<p>A counting semaphore initialized to 3 can represent the availability of these resources.</p>
+
+<div class="diagram">
+    <div>Counting Semaphore = 3</div>
+    <div class="arrow">↓</div>
+    <div>Task A obtains permit → 2</div>
+    <div class="arrow">↓</div>
+    <div>Task B obtains permit → 1</div>
+    <div class="arrow">↓</div>
+    <div>Task C obtains permit → 0</div>
+    <div class="arrow">↓</div>
+    <div>Task D waits for a permit</div>
+    <div class="arrow">↓</div>
+    <div>A task releases a permit → Task D may proceed</div>
+</div>
+</section>
+
+<section>
+<h2>3. Semaphore Fundamentals</h2>
+
+<p>A semaphore maintains an integer-like count representing available permits.</p>
+
+<p>Two fundamental operations are:</p>
+
+<ul>
+    <li><strong>Wait operation:</strong> Obtains a permit. If none is available, the calling task waits.</li>
+    <li><strong>Signal operation:</strong> Releases a permit, potentially waking a waiting task.</li>
+</ul>
+
+<p>In the Linux kernel semaphore API, these operations are commonly represented by <code>down()</code> and <code>up()</code>.</p>
+
+<h3>Basic Concept</h3>
+
+<pre><code>down(&amp;my_sem);
+
+/* Use the protected resource */
+
+up(&amp;my_sem);</code></pre>
+
+<p>The <code>down()</code> operation decrements the semaphore count when a permit is available. If no permit is available, the calling task waits.</p>
+
+<p>The <code>up()</code> operation releases a permit and can wake a waiting task.</p>
+</section>
+
+<section>
+<h2>4. Types of Semaphores</h2>
+
+<h3>4.1 Binary Semaphore</h3>
+
+<p>A binary semaphore is a semaphore conceptually used with a count of either 0 or 1.</p>
+
+<ul>
+    <li>Count 1: One permit is available.</li>
+    <li>Count 0: No permit is available.</li>
+</ul>
+
+<p>It can be used to coordinate access to a single resource or synchronize task execution.</p>
+
+<div class="diagram">
+    <div>Binary Semaphore = 1</div>
+    <div class="arrow">↓</div>
+    <div>Task A obtains permit</div>
+    <div class="arrow">↓</div>
+    <div>Semaphore = 0</div>
+    <div class="arrow">↓</div>
+    <div>Task B waits</div>
+    <div class="arrow">↓</div>
+    <div>Task A releases permit</div>
+    <div class="arrow">↓</div>
+    <div>Task B may proceed</div>
+</div>
+
+<h3>4.2 Counting Semaphore</h3>
+
+<p>A counting semaphore can represent multiple available instances of a resource.</p>
+
+<p>For example, a semaphore initialized to 4 allows up to four successful acquisitions before additional tasks must wait.</p>
+
+<div class="diagram">
+    <div>Semaphore count = 4</div>
+    <div class="arrow">↓</div>
+    <div>Task A obtains permit → 3</div>
+    <div class="arrow">↓</div>
+    <div>Task B obtains permit → 2</div>
+    <div class="arrow">↓</div>
+    <div>Task C obtains permit → 1</div>
+    <div class="arrow">↓</div>
+    <div>Task D obtains permit → 0</div>
+    <div class="arrow">↓</div>
+    <div>Task E must wait</div>
+</div>
+
+<h3>Comparison</h3>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Binary Semaphore</th>
+        <th>Counting Semaphore</th>
+    </tr>
+    <tr>
+        <td>Conceptual count</td>
+        <td>0 or 1</td>
+        <td>Non-negative permit count</td>
+    </tr>
+    <tr>
+        <td>Purpose</td>
+        <td>Single-resource coordination</td>
+        <td>Multiple-resource management</td>
+    </tr>
+    <tr>
+        <td>Initial count</td>
+        <td>Usually 0 or 1</td>
+        <td>Number of available resources</td>
+    </tr>
+    <tr>
+        <td>Concurrent permit holders</td>
+        <td>At most one</td>
+        <td>Up to the available permit count</td>
+    </tr>
+</table>
+
+<div class="note">
+    Binary and counting semaphores are conceptual categories. Linux's <code>struct semaphore</code> is a counting semaphore; initialize it with a count of 1 if a single permit is required. For ordinary exclusive ownership in modern driver code, prefer a mutex when its ownership semantics are appropriate.
+</div>
+</section>
+
+<section>
+<h2>5. Linux Kernel Semaphore Data Type</h2>
+
+<p>Linux provides <code>struct semaphore</code> to represent a semaphore.</p>
+
+<p>Include the following header:</p>
+
+<pre><code>#include &lt;linux/semaphore.h&gt;</code></pre>
+
+<h3>Static Declaration and Initialization</h3>
+
+<pre><code>static DEFINE_SEMAPHORE(my_sem);</code></pre>
+
+<p>In current Linux kernels, <code>DEFINE_SEMAPHORE()</code> initializes a semaphore with an initial count of 1.</p>
+
+<h3>Dynamic Initialization</h3>
+
+<pre><code>static struct semaphore my_sem;
+
+static int __init my_init(void)
+{
+    sema_init(&amp;my_sem, 3);
+
+    return 0;
+}</code></pre>
+
+<p><code>sema_init()</code> initializes the semaphore with the specified initial count.</p>
+
+<p>In this example, three permits are available initially.</p>
+
+<div class="note">
+    Semaphore initialization interfaces can vary across kernel versions. Check the semaphore header and documentation for the target kernel. The example uses the current two-argument <code>DEFINE_SEMAPHORE()</code> form.
+</div>
+</section>
+
+<section>
+<h2>6. Semaphore Operations</h2>
+
+<h3>6.1 down()</h3>
+
+<p>Obtains a semaphore permit. If the count is zero, the task waits until a permit becomes available.</p>
+
+<pre><code>down(&amp;my_sem);
+
+/* Critical section or resource use */
+
+up(&amp;my_sem);</code></pre>
+
+<h3>6.2 up()</h3>
+
+<p>Releases a permit. If tasks are waiting, the kernel may wake one of them.</p>
+
+<pre><code>up(&amp;my_sem);</code></pre>
+
+<h3>6.3 down_interruptible()</h3>
+
+<p>Attempts to obtain a permit, but allows the waiting operation to be interrupted by a signal.</p>
+
+<pre><code>int ret;
+
+ret = down_interruptible(&amp;my_sem);
+
+if (ret) {
+    return ret;
+}
+
+/* Use the resource */
+
+up(&amp;my_sem);</code></pre>
+
+<p>On success, it returns 0. If interrupted, it returns a negative error value, commonly <code>-EINTR</code>.</p>
+
+<h3>6.4 down_trylock()</h3>
+
+<p>Attempts to obtain a permit without waiting.</p>
+
+<pre><code>if (down_trylock(&amp;my_sem)) {
+
+    pr_info("No permit available\n");
+
+} else {
+
+    pr_info("Permit acquired\n");
+
+    up(&amp;my_sem);
+}</code></pre>
+
+<p>Unlike many kernel trylock APIs, <code>down_trylock()</code> returns 0 on success and non-zero when acquisition fails.</p>
+
+<h3>6.5 down_killable()</h3>
+
+<p>Allows a waiting task to be interrupted by fatal signals.</p>
+
+<pre><code>int ret;
+
+ret = down_killable(&amp;my_sem);
+
+if (ret)
+    return ret;
+
+/* Use resource */
+
+up(&amp;my_sem);</code></pre>
+
+<h3>Operation Summary</h3>
+
+<table>
+    <tr>
+        <th>Function</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>down()</code></td>
+        <td>Obtains a permit and waits if necessary.</td>
+    </tr>
+    <tr>
+        <td><code>up()</code></td>
+        <td>Releases a permit.</td>
+    </tr>
+    <tr>
+        <td><code>down_interruptible()</code></td>
+        <td>Waits with signal-interruptible behavior.</td>
+    </tr>
+    <tr>
+        <td><code>down_trylock()</code></td>
+        <td>Attempts immediate acquisition.</td>
+    </tr>
+    <tr>
+        <td><code>down_killable()</code></td>
+        <td>Waits with fatal-signal interruption behavior.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>7. How Semaphore Waiting Works</h2>
+
+<p>Suppose a counting semaphore is initialized with a count of 2.</p>
+
+<div class="diagram">
+    <div>Initial semaphore count = 2</div>
+    <div class="arrow">↓</div>
+    <div>Task A calls down() → count = 1</div>
+    <div class="arrow">↓</div>
+    <div>Task B calls down() → count = 0</div>
+    <div class="arrow">↓</div>
+    <div>Task C calls down() → waits</div>
+    <div class="arrow">↓</div>
+    <div>Task A calls up()</div>
+    <div class="arrow">↓</div>
+    <div>Waiting Task C may be awakened</div>
+</div>
+
+<p>The semaphore manages the availability of permits. Tasks that cannot obtain a permit wait rather than repeatedly consuming CPU time.</p>
+
+<p>The kernel manages the semaphore's internal state and waiting queue.</p>
+</section>
+
+<section>
+<h2>8. Semaphore vs Mutex</h2>
+
+<p>Although both can provide mutual exclusion in some designs, semaphores and mutexes have different semantics.</p>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Semaphore</th>
+        <th>Mutex</th>
+    </tr>
+    <tr>
+        <td>Purpose</td>
+        <td>Permit counting and task coordination</td>
+        <td>Exclusive ownership of a resource</td>
+    </tr>
+    <tr>
+        <td>Count</td>
+        <td>Can represent multiple permits</td>
+        <td>Locked or unlocked</td>
+    </tr>
+    <tr>
+        <td>Ownership</td>
+        <td>No mutex-style owner requirement</td>
+        <td>Owned by the acquiring task</td>
+    </tr>
+    <tr>
+        <td>Release</td>
+        <td>A permit can be released by a different context where the design allows it</td>
+        <td>Must be released by its owner</td>
+    </tr>
+    <tr>
+        <td>Waiting</td>
+        <td>Task may sleep</td>
+        <td>Task may sleep</td>
+    </tr>
+    <tr>
+        <td>Interrupt context</td>
+        <td><code>down()</code> cannot be used in interrupt context; <code>up()</code> is non-sleeping and can be used in suitable contexts</td>
+        <td>Not suitable for interrupt context</td>
+    </tr>
+    <tr>
+        <td>Typical use</td>
+        <td>Resource pools and task synchronization</td>
+        <td>Protecting shared driver data</td>
+    </tr>
+</table>
+
+<h3>Which One Should Be Used?</h3>
+
+<ul>
+    <li>Use a mutex for ordinary exclusive protection of shared data in process context.</li>
+    <li>Use a counting semaphore when multiple resource permits must be managed.</li>
+    <li>Use a semaphore for certain task-coordination patterns when its semantics are appropriate.</li>
+    <li>Use spinlocks for short critical sections that cannot sleep.</li>
+</ul>
+</section>
+
+<section>
+<h2>9. Semaphore vs Spinlock</h2>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Semaphore</th>
+        <th>Spinlock</th>
+    </tr>
+    <tr>
+        <td>Waiting mechanism</td>
+        <td>Task may sleep</td>
+        <td>Busy waiting</td>
+    </tr>
+    <tr>
+        <td>Can block?</td>
+        <td>Yes</td>
+        <td>No</td>
+    </tr>
+    <tr>
+        <td>Can be used in hard interrupt context?</td>
+        <td><code>down()</code> cannot; <code>up()</code> can be used in suitable contexts</td>
+        <td>Yes, with appropriate locking design</td>
+    </tr>
+    <tr>
+        <td>Typical purpose</td>
+        <td>Resource availability and coordination</td>
+        <td>Short critical-section protection</td>
+    </tr>
+    <tr>
+        <td>Resource counting</td>
+        <td>Yes</td>
+        <td>No</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>10. Practical Kernel Module: Binary Semaphore</h2>
+
+<p>Let us create a simple module using a semaphore initialized with one permit.</p>
+
+<h3>Source Code: semaphore_basic.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/semaphore.h&gt;
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Linux Device Drivers Course");
+MODULE_DESCRIPTION("Basic Semaphore Demonstration");
+MODULE_VERSION("1.0");
+
+static struct semaphore my_sem;
+
+static int __init semaphore_basic_init(void)
+{
+    int ret;
+
+    sema_init(&amp;my_sem, 1);
+
+    pr_info("Semaphore module loaded\n");
+
+    ret = down_interruptible(&amp;my_sem);
+
+    if (ret) {
+        pr_err("Semaphore acquisition interrupted\n");
+        return ret;
+    }
+
+    pr_info("Semaphore acquired successfully\n");
+
+    up(&amp;my_sem);
+
+    pr_info("Semaphore released successfully\n");
+
+    return 0;
+}
+
+static void __exit semaphore_basic_exit(void)
+{
+    pr_info("Semaphore module unloaded\n");
+}
+
+module_init(semaphore_basic_init);
+module_exit(semaphore_basic_exit);</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li><code>linux/semaphore.h</code> provides semaphore interfaces.</li>
+    <li><code>sema_init()</code> initializes the semaphore with one permit.</li>
+    <li><code>down_interruptible()</code> attempts to acquire the permit.</li>
+    <li>If acquisition succeeds, the module prints a success message.</li>
+    <li><code>up()</code> releases the permit.</li>
+</ol>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += semaphore_basic.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>Ensure that the recipe commands begin with actual tab characters.</p>
+
+<h3>Compile and Test in Ubuntu</h3>
+
+<pre><code>make
+
+sudo insmod semaphore_basic.ko
+
+lsmod | grep semaphore_basic
+
+sudo dmesg | tail -20
+
+sudo rmmod semaphore_basic
+
+sudo dmesg | tail -20
+
+make clean</code></pre>
+
+<h3>Expected Output</h3>
+
+<pre><code>Semaphore module loaded
+Semaphore acquired successfully
+Semaphore released successfully
+Semaphore module unloaded</code></pre>
+
+<div class="note">
+    This example demonstrates initialization and permit acquisition/release. It does not demonstrate contention between multiple tasks because the operations execute sequentially during module initialization.
+</div>
+</section>
+
+<section>
+<h2>11. Practical Kernel Module: Counting Semaphore</h2>
+
+<p>Now consider a resource pool with three available permits.</p>
+
+<h3>Source Code: counting_semaphore.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/semaphore.h&gt;
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Linux Device Drivers Course");
+MODULE_DESCRIPTION("Counting Semaphore Demonstration");
+MODULE_VERSION("1.0");
+
+static struct semaphore resource_sem;
+
+static int __init counting_sem_init(void)
+{
+    int i;
+    int ret;
+
+    sema_init(&amp;resource_sem, 3);
+
+    pr_info("Counting semaphore module loaded\n");
+
+    for (i = 0; i &lt; 3; i++) {
+
+        ret = down_interruptible(&amp;resource_sem);
+
+        if (ret) {
+            pr_err("Semaphore acquisition failed\n");
+
+            while (i &gt; 0) {
+                up(&amp;resource_sem);
+                i--;
+            }
+
+            return ret;
+        }
+
+        pr_info("Resource permit %d acquired\n", i + 1);
+    }
+
+    pr_info("Three permits acquired\n");
+
+    for (i = 0; i &lt; 3; i++) {
+        up(&amp;resource_sem);
+    }
+
+    pr_info("All permits released\n");
+
+    return 0;
+}
+
+static void __exit counting_sem_exit(void)
+{
+    pr_info("Counting semaphore module unloaded\n");
+}
+
+module_init(counting_sem_init);
+module_exit(counting_sem_exit);</code></pre>
+
+<h3>Expected Output</h3>
+
+<pre><code>Counting semaphore module loaded
+Resource permit 1 acquired
+Resource permit 2 acquired
+Resource permit 3 acquired
+Three permits acquired
+All permits released
+Counting semaphore module unloaded</code></pre>
+
+<p>The semaphore starts with three permits. The module obtains all three and then releases them.</p>
+
+<div class="note">
+    The example demonstrates permit counting sequentially. In a real resource-pool implementation, each successful acquisition must correspond to actual resource ownership, and the permit must be returned when that resource is released.
+</div>
+</section>
+
+<section>
+<h2>12. Semaphores in Device Drivers</h2>
+
+<p>Semaphores can be useful in device drivers for resource management and task coordination.</p>
+
+<h3>Example Applications</h3>
+
+<ul>
+    <li>Limiting concurrent access to a fixed number of software resources.</li>
+    <li>Managing a pool of reusable buffers.</li>
+    <li>Controlling access to a limited number of device channels.</li>
+    <li>Coordinating producer and consumer tasks.</li>
+    <li>Signaling completion or availability between execution contexts.</li>
+</ul>
+
+<h3>Conceptual Resource-Pool Example</h3>
+
+<pre><code>#include &lt;linux/semaphore.h&gt;
+
+#define AVAILABLE_CHANNELS 4
+
+static struct semaphore channel_sem;
+
+static int initialize_channels(void)
+{
+    sema_init(&amp;channel_sem, AVAILABLE_CHANNELS);
+
+    return 0;
+}
+
+static int acquire_channel(void)
+{
+    return down_interruptible(&amp;channel_sem);
+}
+
+static void release_channel(void)
+{
+    up(&amp;channel_sem);
+}</code></pre>
+
+<p>Here, up to four permits can be acquired. A fifth task must wait until a permit is returned.</p>
+
+<div class="warning">
+    The semaphore controls the number of permits, but it does not identify which physical channel or buffer belongs to a task. A real driver must separately allocate, track and release the corresponding resource correctly.
+</div>
+</section>
+
+<section>
+<h2>13. Semaphore in Producer-Consumer Synchronization</h2>
+
+<p>The producer-consumer problem is a classical synchronization problem.</p>
+
+<ul>
+    <li>The producer creates data.</li>
+    <li>The consumer processes data.</li>
+    <li>The producer and consumer share a buffer.</li>
+    <li>The system must coordinate available and occupied buffer slots.</li>
+</ul>
+
+<p>For a buffer with N slots, two counting semaphores can represent:</p>
+
+<ul>
+    <li><code>empty</code>: Number of available buffer slots.</li>
+    <li><code>full</code>: Number of occupied buffer slots.</li>
+</ul>
+
+<div class="diagram">
+    <div>Producer creates data</div>
+    <div class="arrow">↓</div>
+    <div>Wait for empty slot</div>
+    <div class="arrow">↓</div>
+    <div>Insert data into buffer</div>
+    <div class="arrow">↓</div>
+    <div>Signal full slot</div>
+    <hr>
+    <div>Consumer waits for full slot</div>
+    <div class="arrow">↓</div>
+    <div>Remove data from buffer</div>
+    <div class="arrow">↓</div>
+    <div>Signal empty slot</div>
+</div>
+
+<h3>Conceptual Pseudocode</h3>
+
+<pre><code>empty = N;
+full  = 0;
+
+/* Producer */
+down(&amp;empty);
+
+/* Insert item into buffer */
+
+up(&amp;full);
+
+/* Consumer */
+down(&amp;full);
+
+/* Remove item from buffer */
+
+up(&amp;empty);</code></pre>
+
+<p>This pseudocode explains the permit relationship. A real producer-consumer implementation also needs appropriate protection for the shared buffer indexes and data structure, such as a spinlock or mutex selected according to the execution context.</p>
+</section>
+
+<section>
+<h2>14. Important Rules for Semaphore Usage</h2>
+
+<ol>
+    <li>Initialize a semaphore before using it.</li>
+    <li>Use <code>down()</code> or a suitable variant to acquire a permit.</li>
+    <li>Use <code>up()</code> to release a permit.</li>
+    <li>Do not call blocking <code>down()</code> operations in interrupt context.</li>
+    <li>Do not sleep while holding a spinlock, even if a semaphore is also used in the function.</li>
+    <li>Ensure permits are released on all appropriate error and exit paths.</li>
+    <li>Do not release more permits than the resource-management design permits.</li>
+    <li>Do not assume a semaphore has mutex-style ownership.</li>
+    <li>Use a mutex instead when exclusive task ownership is the actual requirement.</li>
+</ol>
+
+<div class="warning">
+    An incorrect number of <code>up()</code> operations can allow more tasks to proceed than the available resource capacity. Carefully match permit acquisition and release to resource allocation and cleanup.
+</div>
+</section>
+
+<section>
+<h2>15. Common Semaphore Mistakes</h2>
+
+<table>
+    <tr>
+        <th>Mistake</th>
+        <th>Why It Is Wrong</th>
+    </tr>
+    <tr>
+        <td>Using <code>down()</code> in interrupt context.</td>
+        <td>It can block, but interrupt handlers must not sleep.</td>
+    </tr>
+    <tr>
+        <td>Forgetting to call <code>up()</code>.</td>
+        <td>A permit remains unavailable and other tasks may wait indefinitely.</td>
+    </tr>
+    <tr>
+        <td>Calling <code>up()</code> too many times.</td>
+        <td>The semaphore count may no longer represent actual resource availability.</td>
+    </tr>
+    <tr>
+        <td>Using a semaphore as if it had mutex ownership.</td>
+        <td>Semaphores do not enforce mutex-style owner-only unlocking.</td>
+    </tr>
+    <tr>
+        <td>Using a binary semaphore for ordinary exclusive task ownership without considering mutex semantics.</td>
+        <td>A mutex provides more appropriate ownership and debugging semantics.</td>
+    </tr>
+    <tr>
+        <td>Protecting a shared buffer only with a resource-count semaphore.</td>
+        <td>Permit counting does not automatically protect buffer indexes or related data.</td>
+    </tr>
+    <tr>
+        <td>Ignoring interrupted acquisition.</td>
+        <td>The code may proceed without successfully acquiring a permit.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>16. Debugging Semaphore Problems</h2>
+
+<p>Kernel logs can help investigate semaphore-related problems.</p>
+
+<pre><code>sudo dmesg | tail -50
+
+sudo journalctl -k -n 50</code></pre>
+
+<p>Lock debugging facilities such as lockdep may help identify certain synchronization and locking problems, depending on kernel configuration.</p>
+
+<p>When investigating a semaphore issue, check:</p>
+
+<ul>
+    <li>Whether the semaphore was initialized correctly.</li>
+    <li>Whether each successful acquisition has a corresponding release.</li>
+    <li>Whether an interrupted wait is handled correctly.</li>
+    <li>Whether a blocking operation is being called from an invalid context.</li>
+    <li>Whether the semaphore count accurately represents available resources.</li>
+</ul>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+
+<ul>
+    <li>A semaphore is a synchronization mechanism based on permits.</li>
+    <li>A binary semaphore conceptually uses a count of 0 or 1.</li>
+    <li>A counting semaphore manages multiple available permits.</li>
+    <li>Linux uses <code>struct semaphore</code>.</li>
+    <li><code>sema_init()</code> initializes a semaphore with a specified count.</li>
+    <li><code>DEFINE_SEMAPHORE()</code> provides static initialization with an initial count of 1 in current kernels.</li>
+    <li><code>down()</code> obtains a permit.</li>
+    <li><code>up()</code> releases a permit.</li>
+    <li><code>down_interruptible()</code> supports signal-interruptible waiting.</li>
+    <li><code>down_trylock()</code> attempts immediate acquisition.</li>
+    <li>Blocking semaphore operations cannot be used in interrupt context.</li>
+    <li>Semaphores are useful for resource counting and task coordination.</li>
+    <li>Mutexes are generally preferred for ordinary exclusive ownership of shared driver data.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Short Answer Questions</h2>
+
+<ol>
+    <li>What is a semaphore?</li>
+    <li>What is a binary semaphore?</li>
+    <li>What is a counting semaphore?</li>
+    <li>What is a semaphore permit?</li>
+    <li>What is the purpose of <code>struct semaphore</code>?</li>
+    <li>What does <code>sema_init()</code> do?</li>
+    <li>What is the purpose of <code>down()</code>?</li>
+    <li>What is the purpose of <code>up()</code>?</li>
+    <li>What does <code>down_interruptible()</code> do?</li>
+    <li>What is the return convention of <code>down_trylock()</code>?</li>
+    <li>Can a blocking semaphore operation be used in interrupt context?</li>
+    <li>What is the difference between a mutex and a semaphore?</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Long Answer Questions</h2>
+
+<ol>
+    <li>Explain semaphore-based synchronization in Linux device drivers.</li>
+    <li>Describe binary and counting semaphores with diagrams.</li>
+    <li>Explain semaphore initialization and the Linux semaphore data type.</li>
+    <li>Explain <code>down()</code> and <code>up()</code> operations.</li>
+    <li>Discuss <code>down_interruptible()</code>, <code>down_trylock()</code> and <code>down_killable()</code>.</li>
+    <li>Compare semaphores, mutexes and spinlocks.</li>
+    <li>Explain how counting semaphores manage a limited resource pool.</li>
+    <li>Describe producer-consumer synchronization using semaphores.</li>
+    <li>Discuss common semaphore programming mistakes and their prevention.</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Practical Exercises</h2>
+
+<ol>
+    <li>Write a kernel module that initializes a semaphore with one permit.</li>
+    <li>Acquire and release the semaphore using <code>down()</code> and <code>up()</code>.</li>
+    <li>Modify the program to use <code>down_interruptible()</code>.</li>
+    <li>Demonstrate immediate acquisition using <code>down_trylock()</code>.</li>
+    <li>Initialize a counting semaphore with three permits.</li>
+    <li>Acquire all three permits and then release them.</li>
+    <li>Design a resource pool with four available resources.</li>
+    <li>Draw the producer-consumer synchronization diagram.</li>
+    <li>Explain why a semaphore does not automatically protect related buffer indexes.</li>
+</ol>
+
+<h3>Expected Learning Outcome</h3>
+
+<p>You should be able to initialize and use Linux kernel semaphores, manage resource permits, understand blocking and interruptible waiting, and select between semaphores, mutexes and spinlocks according to the synchronization requirement.</p>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L06_Mutexes.html">← Previous: Mutexes</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L08_Wait_Queues.html">Next: Wait Queues →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 13 – Synchronization and Concurrency</p>
+</footer>
+
+</body>
+</html>
