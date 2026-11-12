@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Race Conditions in Device Drivers | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Race Conditions in Device Drivers</h1>
+    <p>Linux Device Drivers – Chapter 13, Lesson 2</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> Synchronization and Concurrency</p>
+    <p><strong>Lesson:</strong> 2 – Race Conditions in Device Drivers</p>
+    <p><strong>Prerequisites:</strong> Kernel synchronization, concurrency, shared resources and critical sections.</p>
+    <p><strong>Objective:</strong> Understand how race conditions occur, identify common driver scenarios and learn techniques to prevent unsafe concurrent access.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction</h2>
+
+<p>A Linux device driver may be accessed by several execution paths at the same time.</p>
+
+<p>For example:</p>
+
+<ul>
+    <li>Two user processes may access the same character device.</li>
+    <li>A process may update device data while an interrupt handler reads it.</li>
+    <li>A workqueue callback may access data also used by a file operation.</li>
+    <li>Two CPUs may execute driver code simultaneously.</li>
+</ul>
+
+<p>If these execution paths access shared data without proper synchronization, a race condition may occur.</p>
+
+<p>A race condition is a concurrency bug in which the result depends on the timing or ordering of operations.</p>
+
+<div class="diagram">
+    <div class="diagram-box">Process A</div>
+    <div class="diagram-box">Process B</div>
+    <div class="diagram-box">Interrupt Handler</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Shared Driver Data</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Race Condition Risk</div>
+</div>
+</section>
+
+<section class="section">
+<h2>2. What Is a Race Condition?</h2>
+
+<p>A race condition occurs when multiple execution paths access shared data and at least one access modifies that data without adequate synchronization.</p>
+
+<h3>Simple Example</h3>
+
+<pre><code>static int counter = 0;
+
+static void increment_counter(void)
+{
+    counter++;
+}</code></pre>
+
+<p>The statement <code>counter++</code> is a read-modify-write operation. It is not guaranteed to be atomic merely because it appears as one C statement.</p>
+
+<p>Conceptually, the operation involves:</p>
+
+<ol>
+    <li>Read the current counter value.</li>
+    <li>Calculate the new value.</li>
+    <li>Write the new value back.</li>
+</ol>
+
+<p>Another execution path can interfere between these steps.</p>
+</section>
+
+<section class="section">
+<h2>3. How Does a Race Condition Occur?</h2>
+
+<p>Assume the shared counter initially contains 5. Two processes attempt to increment it.</p>
+
+<table>
+<tr>
+    <th>Step</th>
+    <th>Process A</th>
+    <th>Process B</th>
+    <th>Counter</th>
+</tr>
+<tr>
+    <td>1</td>
+    <td>Reads counter = 5</td>
+    <td>–</td>
+    <td>5</td>
+</tr>
+<tr>
+    <td>2</td>
+    <td>–</td>
+    <td>Reads counter = 5</td>
+    <td>5</td>
+</tr>
+<tr>
+    <td>3</td>
+    <td>Calculates 6</td>
+    <td>–</td>
+    <td>5</td>
+</tr>
+<tr>
+    <td>4</td>
+    <td>–</td>
+    <td>Calculates 6</td>
+    <td>5</td>
+</tr>
+<tr>
+    <td>5</td>
+    <td>Writes 6</td>
+    <td>–</td>
+    <td>6</td>
+</tr>
+<tr>
+    <td>6</td>
+    <td>–</td>
+    <td>Writes 6</td>
+    <td>6</td>
+</tr>
+</table>
+
+<p>The expected final value is 7, but the actual value is 6.</p>
+
+<p>This is known as a <strong>lost update</strong>.</p>
+
+<div class="note">
+    The example illustrates one possible interleaving. Actual instruction ordering depends on compiler output, processor behavior and scheduling.
+</div>
+</section>
+
+<section class="section">
+<h2>4. Types of Race Conditions</h2>
+
+<h3>4.1 Read-Write Race</h3>
+<p>One execution path reads a variable while another modifies it. The reader may observe an outdated or inconsistent value.</p>
+
+<h3>4.2 Write-Write Race</h3>
+<p>Two execution paths modify the same variable without coordination. One update may overwrite another.</p>
+
+<h3>4.3 Check-Then-Act Race</h3>
+<p>A driver checks a condition and then performs an operation, but another execution path changes the condition between the check and the action.</p>
+
+<h3>4.4 Use-After-Free Race</h3>
+<p>One execution path releases memory while another still accesses the object.</p>
+
+<h3>4.5 Initialization Race</h3>
+<p>A device or data structure becomes visible to other execution paths before initialization is complete.</p>
+</section>
+
+<section class="section">
+<h2>5. Race Conditions in Character Drivers</h2>
+
+<p>Character drivers often maintain shared buffers and device state.</p>
+
+<p>Consider this structure:</p>
+
+<pre><code>struct my_device {
+    char buffer[1024];
+    size_t data_length;
+    int device_status;
+};</code></pre>
+
+<p>Possible concurrent operations include:</p>
+
+<ul>
+    <li>Process A writes data into the buffer.</li>
+    <li>Process B reads the buffer.</li>
+    <li>An interrupt handler updates device status.</li>
+    <li>A workqueue callback processes received data.</li>
+</ul>
+
+<p>If these operations are not coordinated, the driver may expose incomplete data, corrupt its buffer or read an inconsistent status value.</p>
+
+<div class="diagram">
+    <div class="diagram-box">User Write</div>
+    <div class="diagram-box">User Read</div>
+    <div class="diagram-box">Interrupt</div>
+    <div class="diagram-box">Workqueue</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Shared Device Structure</div>
+</div>
+</section>
+
+<section class="section">
+<h2>6. Race Conditions Between Process and Interrupt Context</h2>
+
+<p>A driver may share data between a normal process-context function and an interrupt handler.</p>
+
+<h3>Example Scenario</h3>
+
+<ul>
+    <li>A process-context function updates a device status variable.</li>
+    <li>An interrupt handler reads or changes the same variable.</li>
+    <li>An interrupt occurs while the process is modifying the data.</li>
+</ul>
+
+<p>The driver must select a synchronization mechanism that is valid in both contexts.</p>
+
+<div class="important">
+    A mutex cannot be acquired in a hard interrupt handler because mutex acquisition may sleep. For short shared-data protection between process and hard-IRQ contexts, a suitable spinlock and IRQ-safe locking pattern may be required.
+</div>
+</section>
+
+<section class="section">
+<h2>7. Race Conditions on Multicore Systems</h2>
+
+<p>On a multicore processor, different execution paths can run simultaneously on different CPU cores.</p>
+
+<div class="diagram">
+    <div class="diagram-box">CPU 0</div>
+    <div class="diagram-box">CPU 1</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Shared Memory</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Concurrent Access</div>
+</div>
+
+<p>For example, CPU 0 may increment a driver counter while CPU 1 reads or modifies it.</p>
+
+<p>Disabling interrupts on CPU 0 does not stop CPU 1 from accessing the same memory.</p>
+
+<p>Therefore, the driver needs an appropriate cross-CPU synchronization mechanism.</p>
+</section>
+
+<section class="section">
+<h2>8. Race Condition Example: Check-Then-Act</h2>
+
+<p>Suppose a driver maintains a flag indicating whether a device is available.</p>
+
+<h3>Unsafe Concept</h3>
+
+<pre><code>if (device_available) {
+    device_available = 0;
+
+    /* Start using the device */
+}</code></pre>
+
+<p>Two processes may both observe <code>device_available</code> as 1 before either changes it to 0. Both may then attempt to use the device.</p>
+
+<p>The check and update must be protected as one coordinated operation.</p>
+
+<h3>Protected Concept Using a Mutex</h3>
+
+<pre><code>static DEFINE_MUTEX(device_lock);
+static int device_available = 1;
+
+static int acquire_device(void)
+{
+    int result = 0;
+
+    mutex_lock(&amp;device_lock);
+
+    if (device_available)
+        device_available = 0;
+    else
+        result = -EBUSY;
+
+    mutex_unlock(&amp;device_lock);
+
+    return result;
+}</code></pre>
+
+<p>This example is suitable only for process-context callers that may sleep. It demonstrates how the check and update are protected together.</p>
+</section>
+
+<section class="section">
+<h2>9. Preventing Race Conditions</h2>
+
+<p>Linux provides several synchronization mechanisms to prevent unsafe concurrent access.</p>
+
+<table>
+<tr>
+    <th>Mechanism</th>
+    <th>Typical Application</th>
+</tr>
+<tr>
+    <td>Atomic operations</td>
+    <td>Simple atomic counter and bit operations.</td>
+</tr>
+<tr>
+    <td>Spinlocks</td>
+    <td>Short critical sections in atomic contexts.</td>
+</tr>
+<tr>
+    <td>Mutexes</td>
+    <td>Longer process-context critical sections where sleeping is allowed.</td>
+</tr>
+<tr>
+    <td>Semaphores</td>
+    <td>Coordination of access to a limited resource.</td>
+</tr>
+<tr>
+    <td>Read-write locks</td>
+    <td>Data with multiple readers and exclusive writers.</td>
+</tr>
+<tr>
+    <td>RCU</td>
+    <td>Read-mostly data structures with specialized update and reclamation rules.</td>
+</tr>
+</table>
+
+<p>The mechanism must match the execution contexts and the data access pattern.</p>
+</section>
+
+<section class="section">
+<h2>10. Atomic Operations for Shared Counters</h2>
+
+<p>For a simple counter, Linux provides atomic types and operations.</p>
+
+<h3>Example</h3>
+
+<pre><code>#include &lt;linux/atomic.h&gt;
+
+static atomic_t device_counter = ATOMIC_INIT(0);
+
+static void increment_counter(void)
+{
+    atomic_inc(&amp;device_counter);
+}
+
+static int get_counter(void)
+{
+    return atomic_read(&amp;device_counter);
+}</code></pre>
+
+<p><code>atomic_inc()</code> performs an atomic increment, and <code>atomic_read()</code> reads the value.</p>
+
+<div class="note">
+    Atomic operations protect the specific operation they provide. They do not automatically protect a larger sequence of related operations or provide every required ordering guarantee.
+</div>
+</section>
+
+<section class="section">
+<h2>11. Mutex-Based Protection</h2>
+
+<p>A mutex provides mutual exclusion for code that executes in a context where sleeping is allowed.</p>
+
+<h3>Example</h3>
+
+<pre><code>#include &lt;linux/mutex.h&gt;
+
+static DEFINE_MUTEX(data_lock);
+static int shared_value;
+
+static void update_shared_value(void)
+{
+    mutex_lock(&amp;data_lock);
+
+    shared_value++;
+
+    mutex_unlock(&amp;data_lock);
+}</code></pre>
+
+<p>Only one task at a time can hold this mutex. Other tasks that attempt to acquire it may sleep until it becomes available.</p>
+
+<p>Do not use a mutex in hard interrupt or other atomic context.</p>
+</section>
+
+<section class="section">
+<h2>12. Spinlock-Based Protection</h2>
+
+<p>A spinlock protects a critical section without sleeping while waiting for the lock.</p>
+
+<h3>Example</h3>
+
+<pre><code>#include &lt;linux/spinlock.h&gt;
+
+static DEFINE_SPINLOCK(data_lock);
+static int shared_value;
+
+static void update_shared_value(void)
+{
+    unsigned long flags;
+
+    spin_lock_irqsave(&amp;data_lock, flags);
+
+    shared_value++;
+
+    spin_unlock_irqrestore(&amp;data_lock, flags);
+}</code></pre>
+
+<p>This pattern is commonly used when shared data may also be accessed by a local hard interrupt handler.</p>
+
+<p>The interrupt-safe locking pattern prevents the local interrupt handler from interrupting the protected process-context critical section and attempting to acquire the same lock.</p>
+
+<div class="important">
+    Keep spinlock-protected sections very short. Do not sleep, perform blocking operations or call functions that may sleep while holding a spinlock.
+</div>
+</section>
+
+<section class="section">
+<h2>13. Race Conditions During Memory Release</h2>
+
+<p>One of the most dangerous driver bugs occurs when memory is freed while another execution path still uses it.</p>
+
+<h3>Unsafe Scenario</h3>
+
+<ol>
+    <li>A driver allocates a device-private structure.</li>
+    <li>A workqueue callback receives a pointer to that structure.</li>
+    <li>The device is removed and the structure is freed.</li>
+    <li>The workqueue callback later accesses the freed structure.</li>
+</ol>
+
+<p>This can cause a use-after-free error.</p>
+
+<h3>Safer Teardown Sequence</h3>
+
+<div class="diagram">
+    <div class="diagram-box">Stop New Operations</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Stop Hardware / Disable Interrupts</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Synchronize and Cancel Deferred Work</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Release References</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Free Memory</div>
+</div>
+
+<p>The exact teardown order depends on the driver architecture. The essential requirement is that no execution path can access an object after it has been freed.</p>
+</section>
+
+<section class="section">
+<h2>14. Double-Free and Race Conditions</h2>
+
+<p>A double-free occurs when the same memory allocation is released more than once.</p>
+
+<p>Concurrent cleanup paths can accidentally cause this problem if ownership is not clearly defined.</p>
+
+<h3>Example of Incorrect Ownership</h3>
+
+<pre><code>/* Path A */
+kfree(buffer);
+
+/* Path B */
+kfree(buffer);</code></pre>
+
+<p>If both paths release the same allocation, the driver may corrupt allocator state or trigger a kernel fault.</p>
+
+<h3>Prevention</h3>
+
+<ul>
+    <li>Define one clear owner for each allocation.</li>
+    <li>Coordinate cleanup paths.</li>
+    <li>Ensure asynchronous operations are stopped before freeing shared objects.</li>
+    <li>Use reference counting when multiple independent users share an object's lifetime.</li>
+    <li>Do not assume setting a pointer to NULL alone makes concurrent cleanup safe.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>15. How to Identify Race Conditions</h2>
+
+<p>Race conditions can be difficult to reproduce because they depend on timing and scheduling.</p>
+
+<h3>Common Symptoms</h3>
+
+<ul>
+    <li>Unexpected counter values.</li>
+    <li>Corrupted device buffers.</li>
+    <li>Intermittent driver failures.</li>
+    <li>Unexpected kernel warnings or crashes.</li>
+    <li>Incorrect device state.</li>
+    <li>Use-after-free reports.</li>
+    <li>Problems that occur only under heavy load.</li>
+</ul>
+
+<h3>Useful Kernel Tools</h3>
+
+<table>
+<tr>
+    <th>Tool</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>Lockdep</td>
+    <td>Detects certain locking errors and potential deadlocks.</td>
+</tr>
+<tr>
+    <td>KCSAN</td>
+    <td>Kernel concurrency sanitizer that detects many data races.</td>
+</tr>
+<tr>
+    <td>KASAN</td>
+    <td>Detects many memory-safety errors, including use-after-free.</td>
+</tr>
+<tr>
+    <td>ftrace</td>
+    <td>Traces kernel events and execution behavior.</td>
+</tr>
+<tr>
+    <td>printk() / pr_info()</td>
+    <td>Provides diagnostic messages, although logging alone cannot prove race freedom.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>16. Practical Example: Kernel Module with Atomic Counter</h2>
+
+<p>This module demonstrates an atomic counter. It does not create a real hardware device. It is suitable for basic testing in Ubuntu VirtualBox.</p>
+
+<h3>Source File: race_demo.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/atomic.h&gt;
+
+static atomic_t device_counter = ATOMIC_INIT(0);
+
+static int __init race_demo_init(void)
+{
+    atomic_inc(&amp;device_counter);
+    atomic_inc(&amp;device_counter);
+
+    pr_info("Atomic counter = %d\n",
+            atomic_read(&amp;device_counter));
+
+    return 0;
+}
+
+static void __exit race_demo_exit(void)
+{
+    pr_info("Race demonstration module removed\n");
+}
+
+module_init(race_demo_init);
+module_exit(race_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Atomic counter demonstration");
+MODULE_AUTHOR("NS Learning Hub");</code></pre>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += race_demo.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<h3>Compile and Test</h3>
+
+<pre><code>make
+
+sudo insmod race_demo.ko
+
+sudo dmesg | tail -n 20
+
+sudo rmmod race_demo
+
+make clean</code></pre>
+
+<h3>Illustrative Output</h3>
+
+<pre><code>Atomic counter = 2
+Race demonstration module removed</code></pre>
+
+<p>This simple module demonstrates atomic operations, not an actual race between competing threads. A later practical exercise can introduce concurrent kernel threads to test shared-state protection.</p>
+</section>
+
+<section class="section">
+<h2>17. Best Practices to Avoid Race Conditions</h2>
+
+<ol>
+    <li>Identify every shared variable and shared data structure.</li>
+    <li>Document which execution paths can access each resource.</li>
+    <li>Use atomic operations for suitable simple atomic updates.</li>
+    <li>Use mutexes for process-context operations that may sleep.</li>
+    <li>Use spinlocks for short critical sections in atomic contexts.</li>
+    <li>Protect check-and-update sequences as one operation.</li>
+    <li>Keep interrupt handlers short.</li>
+    <li>Synchronize workqueues, timers and interrupts during cleanup.</li>
+    <li>Define clear ownership and lifetime rules for allocated memory.</li>
+    <li>Use lockdep and KCSAN where available during development.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>18. Lesson Summary</h2>
+
+<ul>
+    <li>A race condition occurs when concurrent execution paths access shared data without adequate synchronization.</li>
+    <li>A lost update is a common result of an unsafe read-modify-write operation.</li>
+    <li>Character drivers, interrupt handlers and workqueues can share data.</li>
+    <li>Multicore processors increase the possibility of simultaneous access.</li>
+    <li>Atomic operations protect specific atomic updates.</li>
+    <li>Mutexes protect process-context critical sections where sleeping is allowed.</li>
+    <li>Spinlocks protect short critical sections in atomic contexts.</li>
+    <li>Memory lifetime and cleanup must also be synchronized.</li>
+    <li>KCSAN and lockdep help detect concurrency problems.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>19. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>Define a race condition.</li>
+    <li>What is a lost-update problem?</li>
+    <li>Why is counter++ not necessarily atomic?</li>
+    <li>What is a read-write race?</li>
+    <li>What is a check-then-act race?</li>
+    <li>How can a race condition occur in a character driver?</li>
+    <li>Why can process and interrupt context access cause a race?</li>
+    <li>Why is disabling local interrupts insufficient for cross-CPU protection?</li>
+    <li>What is a use-after-free race?</li>
+    <li>What is the purpose of KCSAN?</li>
+    <li>What is the purpose of lockdep?</li>
+    <li>How can double-free errors occur during concurrent cleanup?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain race conditions with a shared-counter example.</li>
+    <li>Discuss different types of race conditions in device drivers.</li>
+    <li>Explain race conditions between process and interrupt context.</li>
+    <li>Describe how race conditions occur on multicore systems.</li>
+    <li>Explain the use of atomic operations, mutexes and spinlocks in preventing races.</li>
+    <li>Discuss use-after-free and double-free problems during driver cleanup.</li>
+    <li>Explain techniques and tools used to detect race conditions.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Write a module that maintains an atomic counter.</li>
+    <li>Explain why an ordinary shared counter can lose updates.</li>
+    <li>Protect a process-context shared counter using a mutex.</li>
+    <li>Write a spinlock-protected counter example.</li>
+    <li>Design a shared-buffer protection strategy for a character driver.</li>
+    <li>Describe the safe teardown sequence for a driver using interrupts and workqueues.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>20. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Identify race conditions in Linux device drivers.</li>
+    <li>Explain lost updates and unsafe read-modify-write operations.</li>
+    <li>Recognize concurrency problems in character drivers.</li>
+    <li>Understand process-context and interrupt-context races.</li>
+    <li>Select basic synchronization approaches for shared data.</li>
+    <li>Recognize use-after-free and double-free risks.</li>
+    <li>Understand the role of KCSAN and lockdep in debugging.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L01_Introduction_to_Kernel_Synchronization.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 13 Index</a>
+    <a href="L03_Critical_Sections.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 13 – Synchronization and Concurrency</p>
+</footer>
+
+</body>
+</html>
