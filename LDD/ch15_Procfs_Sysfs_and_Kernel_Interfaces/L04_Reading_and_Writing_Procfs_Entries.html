@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 4 - Reading and Writing Procfs Entries | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    line-height: 1.7;
+    background: #f4f7fb;
+    color: #263238;
+}
+
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    padding: 35px 20px;
+    text-align: center;
+}
+
+.lesson-banner h1 { margin: 0; font-size: 30px; }
+
+.top-nav {
+    background: #102f60;
+    padding: 12px;
+    text-align: center;
+}
+
+.top-nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+
+.top-nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3f0ff;
+    border-left: 5px solid #2878d7;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8f8;
+    padding-bottom: 7px;
+}
+
+h3 { color: #245a9c; }
+
+pre {
+    background: #17212b;
+    color: #e8f0f8;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+code { font-family: Consolas, monospace; }
+
+.note {
+    background: #fff8df;
+    border-left: 5px solid #e0a800;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.success {
+    background: #e8f5e9;
+    border-left: 5px solid #388e3c;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fe;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #b8cbea;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px;
+    margin: 5px;
+    min-width: 190px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 12px 18px;
+    border-radius: 6px;
+}
+
+.lesson-nav a:hover { background: #0d3475; }
+
+footer {
+    text-align: center;
+    background: #102f60;
+    color: white;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    .lesson-banner h1 { font-size: 23px; }
+    .top-nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    .section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="lesson-banner">
+    <h1>Chapter 15: Procfs, Sysfs and Kernel Interfaces</h1>
+    <p>Lesson 4: Reading and Writing Procfs Entries</p>
+</header>
+
+<nav class="top-nav">
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 15</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p>
+        Topic: Procfs Read and Write Operations<br>
+        Chapter: Procfs, Sysfs and Kernel Interfaces<br>
+        Prerequisites: proc_create(), proc_remove(), struct proc_ops and Kernel Modules<br>
+        Difficulty: Intermediate
+    </p>
+</div>
+
+<section class="section">
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Understand how user space reads information from Procfs.</li>
+    <li>Understand how user space writes information to Procfs.</li>
+    <li>Implement Procfs read and write callbacks.</li>
+    <li>Use the seq_file interface for sequential output.</li>
+    <li>Understand copy_to_user() and copy_from_user().</li>
+    <li>Handle file positions and end-of-file conditions.</li>
+    <li>Validate user input and handle errors.</li>
+    <li>Protect shared driver data using synchronization.</li>
+    <li>Develop and test a read/write Procfs kernel module.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. Introduction to Procfs Read and Write Operations</h2>
+
+<p>
+A Procfs entry can provide information to user-space
+applications. Depending on its purpose and permissions,
+it may also accept information from user space.
+</p>
+
+<p>
+For example, a driver may expose:
+</p>
+
+<pre><code>/proc/my_driver/status</code></pre>
+
+<p>
+A user application could read the current driver status.
+A separate writable interface could allow an authorized
+application to change a supported configuration value.
+</p>
+
+<h3>Two basic operations</h3>
+
+<table>
+<tr>
+    <th>Operation</th>
+    <th>Direction</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>Read</td>
+    <td>Kernel to User Space</td>
+    <td>Retrieve information from the kernel.</td>
+</tr>
+<tr>
+    <td>Write</td>
+    <td>User Space to Kernel</td>
+    <td>Send information to the kernel.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>3. Architecture of Procfs Read Operation</h2>
+
+<div class="diagram">
+    <div class="diagram-box">User Application</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">read()</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">VFS</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Procfs Read Callback</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Data</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">User-Space Buffer</div>
+</div>
+
+<p>
+When an application reads a Procfs entry, the kernel
+invokes the associated read handling path. The callback
+provides the requested information to the user-space
+buffer.
+</p>
+</section>
+
+<section class="section">
+<h2>4. Procfs Read Callback</h2>
+
+<p>
+A read callback is responsible for returning data when
+a user-space process reads a Procfs entry.
+</p>
+
+<h3>Modern callback prototype</h3>
+
+<pre><code>ssize_t proc_read(
+    struct file *file,
+    char __user *buffer,
+    size_t count,
+    loff_t *position
+);</code></pre>
+
+<table>
+<tr>
+    <th>Parameter</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td>file</td>
+    <td>Open file description associated with the entry.</td>
+</tr>
+<tr>
+    <td>buffer</td>
+    <td>User-space destination buffer.</td>
+</tr>
+<tr>
+    <td>count</td>
+    <td>Maximum number of bytes requested.</td>
+</tr>
+<tr>
+    <td>position</td>
+    <td>Current file position.</td>
+</tr>
+</table>
+
+<p>
+The callback returns the number of bytes successfully
+provided. It returns zero when no more data is available
+at the current position (end of file).
+</p>
+
+<div class="note">
+    A read operation may return fewer bytes than requested.
+    User-space applications should be prepared to handle
+    partial reads.
+</div>
+</section>
+
+<section class="section">
+<h2>5. Understanding File Position</h2>
+
+<p>
+The file position tracks how much data has already been
+read from a file-like interface.
+</p>
+
+<p>
+For Procfs entries, the callback must provide sensible
+position and end-of-file behavior.
+</p>
+
+<h3>Example</h3>
+
+<p>
+Suppose a Procfs entry exposes the following text:
+</p>
+
+<pre><code>Driver Status: Active</code></pre>
+
+<p>
+If the application requests only a few bytes, the first
+read may return part of the text. A later read can retrieve
+the remaining data.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">First read: bytes 0-7</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">File position advances</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Second read: remaining bytes</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">End of File: return 0</div>
+</div>
+
+<p>
+The VFS and the file-position pointer work together to
+support successive reads. The driver or helper used must
+implement the expected position semantics.
+</p>
+</section>
+
+<section class="section">
+<h2>6. Using seq_file for Reading Procfs Entries</h2>
+
+<p>
+The seq_file interface simplifies the implementation
+of Procfs entries that produce sequential text output.
+</p>
+
+<p>
+Instead of manually managing a read buffer and file
+position, a driver can use helpers such as:
+</p>
+
+<table>
+<tr>
+    <th>Function</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>single_open()</code></td>
+    <td>Connects the open operation to one show callback.</td>
+</tr>
+<tr>
+    <td><code>seq_read()</code></td>
+    <td>Handles reading sequential output.</td>
+</tr>
+<tr>
+    <td><code>seq_lseek()</code></td>
+    <td>Handles file-position changes.</td>
+</tr>
+<tr>
+    <td><code>single_release()</code></td>
+    <td>Releases resources allocated by single_open().</td>
+</tr>
+<tr>
+    <td><code>seq_printf()</code></td>
+    <td>Formats data into the sequential output buffer.</td>
+</tr>
+<tr>
+    <td><code>seq_puts()</code></td>
+    <td>Adds a string to the sequential output buffer.</td>
+</tr>
+</table>
+
+<h3>Example show callback</h3>
+
+<pre><code>static int proc_show(struct seq_file *m, void *v)
+{
+    seq_puts(m, "Driver Status: Active\n");
+    seq_printf(m, "Interrupt Count: %d\n", 25);
+
+    return 0;
+}</code></pre>
+
+<p>
+The seq_file interface manages buffering and successive
+reads for this generated output.
+</p>
+
+<div class="success">
+    For ordinary text reporting, seq_file is generally
+    preferable to writing a custom read callback from scratch.
+</div>
+</section>
+
+<section class="section">
+<h2>7. Architecture of Procfs Write Operation</h2>
+
+<div class="diagram">
+    <div class="diagram-box">User Application</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">write()</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">VFS</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Procfs Write Callback</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Validate User Data</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Update Kernel Data</div>
+</div>
+
+<p>
+A write callback receives data from a user-space application.
+The driver must validate the data before using it.
+</p>
+</section>
+
+<section class="section">
+<h2>8. Procfs Write Callback</h2>
+
+<p>
+A write callback handles data sent by a user-space
+application to a Procfs entry.
+</p>
+
+<h3>Modern callback prototype</h3>
+
+<pre><code>ssize_t proc_write(
+    struct file *file,
+    const char __user *buffer,
+    size_t count,
+    loff_t *position
+);</code></pre>
+
+<table>
+<tr>
+    <th>Parameter</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td>file</td>
+    <td>Open file description.</td>
+</tr>
+<tr>
+    <td>buffer</td>
+    <td>User-space source buffer.</td>
+</tr>
+<tr>
+    <td>count</td>
+    <td>Number of bytes supplied by the caller.</td>
+</tr>
+<tr>
+    <td>position</td>
+    <td>Current file position.</td>
+</tr>
+</table>
+
+<p>
+The callback normally returns the number of bytes accepted
+or a negative error code if the operation fails.
+</p>
+</section>
+
+<section class="section">
+<h2>9. copy_to_user() and copy_from_user()</h2>
+
+<p>
+Kernel code must not directly dereference arbitrary
+user-space pointers.
+</p>
+
+<p>
+Linux provides special functions for transferring data
+between kernel space and user space.
+</p>
+
+<h3>copy_to_user()</h3>
+
+<p>
+Transfers data from a kernel buffer to a user-space buffer.
+</p>
+
+<pre><code>copy_to_user(user_buffer, kernel_buffer, size);</code></pre>
+
+<h3>copy_from_user()</h3>
+
+<p>
+Transfers data from a user-space buffer to a kernel buffer.
+</p>
+
+<pre><code>copy_from_user(kernel_buffer, user_buffer, size);</code></pre>
+
+<table>
+<tr>
+    <th>Function</th>
+    <th>Direction</th>
+</tr>
+<tr>
+    <td>copy_to_user()</td>
+    <td>Kernel → User</td>
+</tr>
+<tr>
+    <td>copy_from_user()</td>
+    <td>User → Kernel</td>
+</tr>
+</table>
+
+<div class="warning">
+    Both functions return the number of bytes that were
+    not copied, not a negative error code. A return value
+    of zero indicates that the complete requested transfer
+    succeeded.
+</div>
+
+<h3>Important context restriction</h3>
+
+<p>
+These functions may sleep while accessing user memory.
+They must not be called from interrupt context or another
+context where sleeping is prohibited.
+</p>
+</section>
+
+<section class="section">
+<h2>10. Input Validation</h2>
+
+<p>
+Data received from user space must always be treated
+as untrusted input.
+</p>
+
+<p>
+A write callback should validate:
+</p>
+
+<ul>
+    <li>Input length.</li>
+    <li>Allowed characters.</li>
+    <li>Numeric ranges, where applicable.</li>
+    <li>Expected command format.</li>
+    <li>Permissions and authorization.</li>
+    <li>Buffer boundaries.</li>
+</ul>
+
+<h3>Example validation concept</h3>
+
+<pre><code>if (count == 0)
+    return 0;
+
+if (count >= sizeof(kernel_buffer))
+    return -EINVAL;</code></pre>
+
+<p>
+This checks that the input is non-empty and fits within
+the destination buffer, leaving room for a terminating
+null character if required.
+</p>
+
+<div class="note">
+    A length check alone does not validate the meaning
+    of the input. The driver must also validate the actual
+    command or value before applying it.
+</div>
+</section>
+
+<section class="section">
+<h2>11. Complete Practical Example: Read/Write Procfs Module</h2>
+
+<p>
+The following example creates a Procfs entry named
+<code>my_driver_data</code>.
+</p>
+
+<p>
+It supports:
+</p>
+
+<ul>
+    <li>Reading the stored message.</li>
+    <li>Writing a new message.</li>
+    <li>Basic input length validation.</li>
+    <li>Synchronization using a mutex.</li>
+    <li>Cleanup during module removal.</li>
+</ul>
+
+<h3>Source file: proc_rw_demo.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/proc_fs.h&gt;
+#include &lt;linux/seq_file.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/mutex.h&gt;
+#include &lt;linux/string.h&gt;
+#include &lt;linux/errno.h&gt;
+
+#define PROC_NAME "my_driver_data"
+#define DATA_SIZE 128
+
+static struct proc_dir_entry *proc_entry;
+
+static char driver_data[DATA_SIZE] = "Initial driver data";
+static DEFINE_MUTEX(data_mutex);
+
+/* Display stored information */
+static int proc_show(struct seq_file *m, void *v)
+{
+    mutex_lock(&data_mutex);
+
+    seq_printf(m, "%s\n", driver_data);
+
+    mutex_unlock(&data_mutex);
+
+    return 0;
+}
+
+/* Open callback */
+static int proc_open(struct inode *inode,
+                     struct file *file)
+{
+    return single_open(file, proc_show, NULL);
+}
+
+/* Write callback */
+static ssize_t proc_write(
+    struct file *file,
+    const char __user *buffer,
+    size_t count,
+    loff_t *position)
+{
+    char temp[DATA_SIZE];
+    size_t length;
+
+    if (count == 0)
+        return 0;
+
+    if (count >= sizeof(temp))
+        return -EINVAL;
+
+    if (copy_from_user(temp, buffer, count))
+        return -EFAULT;
+
+    length = count;
+
+    if (length > 0 && temp[length - 1] == '\n')
+        length--;
+
+    temp[length] = '\0';
+
+    mutex_lock(&data_mutex);
+
+    memcpy(driver_data, temp, length + 1);
+
+    mutex_unlock(&data_mutex);
+
+    return count;
+}
+
+/* Procfs operations */
+static const struct proc_ops my_proc_ops = {
+    .proc_open    = proc_open,
+    .proc_read    = seq_read,
+    .proc_write   = proc_write,
+    .proc_lseek   = seq_lseek,
+    .proc_release = single_release,
+};
+
+/* Module initialization */
+static int __init proc_rw_init(void)
+{
+    proc_entry = proc_create(
+        PROC_NAME,
+        0644,
+        NULL,
+        &amp;my_proc_ops
+    );
+
+    if (!proc_entry) {
+        pr_err("Unable to create Procfs entry\n");
+        return -ENOMEM;
+    }
+
+    pr_info("Read/write Procfs module loaded\n");
+
+    return 0;
+}
+
+/* Module cleanup */
+static void __exit proc_rw_exit(void)
+{
+    proc_remove(proc_entry);
+
+    pr_info("Read/write Procfs module unloaded\n");
+}
+
+module_init(proc_rw_init);
+module_exit(proc_rw_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Read and Write Procfs Example");
+</code></pre>
+
+<h3>Program explanation</h3>
+
+<ol>
+    <li><code>driver_data</code> stores the current message.</li>
+    <li><code>DEFINE_MUTEX()</code> creates a mutex protecting shared data.</li>
+    <li><code>proc_show()</code> displays the stored message.</li>
+    <li><code>proc_open()</code> initializes the seq_file interface.</li>
+    <li><code>proc_write()</code> receives and validates user input.</li>
+    <li><code>copy_from_user()</code> copies data into kernel memory.</li>
+    <li><code>mutex_lock()</code> and <code>mutex_unlock()</code> protect access to the shared message.</li>
+    <li><code>proc_remove()</code> removes the interface during cleanup.</li>
+</ol>
+
+<div class="warning">
+    This is an educational example. It is designed for
+    simple message updates, not as a production control
+    interface. It does not implement general multi-chunk
+    writes or per-open read snapshots. The read output is
+    generated when the seq_file show callback runs.
+</div>
+</section>
+
+<section class="section">
+<h2>12. Makefile</h2>
+
+<p>
+Create a Makefile in the same directory as
+<code>proc_rw_demo.c</code>.
+</p>
+
+<pre><code>obj-m += proc_rw_demo.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD  := $(shell pwd)
+
+all:
+	make -C $(KDIR) M=$(PWD) modules
+
+clean:
+	make -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<div class="note">
+    The recipe lines beginning with make must start with
+    a TAB character.
+</div>
+</section>
+
+<section class="section">
+<h2>13. Compiling and Testing</h2>
+
+<h3>Step 1: Install dependencies</h3>
+
+<pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+<h3>Step 2: Compile</h3>
+
+<pre><code>make</code></pre>
+
+<h3>Step 3: Load the module</h3>
+
+<pre><code>sudo insmod proc_rw_demo.ko</code></pre>
+
+<h3>Step 4: Read initial data</h3>
+
+<pre><code>cat /proc/my_driver_data</code></pre>
+
+<p>Expected output:</p>
+
+<pre><code>Initial driver data</code></pre>
+
+<h3>Step 5: Write new data</h3>
+
+<pre><code>echo "Linux Device Driver Learning" | sudo tee /proc/my_driver_data</code></pre>
+
+<h3>Step 6: Read updated data</h3>
+
+<pre><code>cat /proc/my_driver_data</code></pre>
+
+<p>Expected output:</p>
+
+<pre><code>Linux Device Driver Learning</code></pre>
+
+<h3>Step 7: Inspect permissions</h3>
+
+<pre><code>ls -l /proc/my_driver_data</code></pre>
+
+<p>
+The example requests mode <code>0644</code>: read and write
+for the owner, and read-only for group and others. Actual
+access is also subject to Procfs and system security checks.
+</p>
+
+<h3>Step 8: Unload the module</h3>
+
+<pre><code>sudo rmmod proc_rw_demo</code></pre>
+
+<h3>Step 9: Verify removal</h3>
+
+<pre><code>ls /proc/my_driver_data</code></pre>
+
+<p>
+The entry should no longer exist after successful removal.
+</p>
+</section>
+
+<section class="section">
+<h2>14. Common Errors and Their Solutions</h2>
+
+<table>
+<tr>
+    <th>Error</th>
+    <th>Possible reason</th>
+    <th>Solution</th>
+</tr>
+<tr>
+    <td>Permission denied</td>
+    <td>Insufficient write permissions.</td>
+    <td>Use an authorized account and correct permissions.</td>
+</tr>
+<tr>
+    <td>Invalid argument</td>
+    <td>Input length or format is invalid.</td>
+    <td>Validate input before writing.</td>
+</tr>
+<tr>
+    <td>Bad address</td>
+    <td>User-memory transfer failed.</td>
+    <td>Check copy_from_user() or copy_to_user().</td>
+</tr>
+<tr>
+    <td>Procfs entry missing</td>
+    <td>Module not loaded or entry creation failed.</td>
+    <td>Inspect module status and kernel logs.</td>
+</tr>
+<tr>
+    <td>Compilation error</td>
+    <td>Kernel API mismatch or missing headers.</td>
+    <td>Check target kernel headers and callback definitions.</td>
+</tr>
+</table>
+
+<h3>Useful diagnostic commands</h3>
+
+<pre><code>lsmod
+sudo dmesg | tail -n 30
+uname -r
+ls -l /proc/my_driver_data</code></pre>
+</section>
+
+<section class="section">
+<h2>15. Important Programming Rules</h2>
+
+<ul>
+    <li>Never directly dereference arbitrary user-space pointers.</li>
+    <li>Use copy_from_user() and copy_to_user() for user-memory transfers.</li>
+    <li>Remember that user-copy functions return the number of bytes not copied.</li>
+    <li>Validate input length before copying into fixed-size buffers.</li>
+    <li>Use appropriate synchronization for shared kernel data.</li>
+    <li>Do not hold a spinlock while performing operations that may sleep.</li>
+    <li>Do not call user-copy functions from interrupt context.</li>
+    <li>Handle partial reads and writes correctly.</li>
+    <li>Use seq_file for suitable sequential text output.</li>
+    <li>Do not assume one write system call always corresponds to one complete logical command.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>16. When Should Procfs Be Used?</h2>
+
+<p>
+Procfs is useful for selected process and kernel information
+and for maintaining established interfaces.
+</p>
+
+<p>
+For new driver development, select the interface according
+to the purpose of the data.
+</p>
+
+<table>
+<tr>
+    <th>Requirement</th>
+    <th>Preferred interface</th>
+</tr>
+<tr>
+    <td>Simple device attributes</td>
+    <td>Sysfs</td>
+</tr>
+<tr>
+    <td>Debugging-only information</td>
+    <td>Debugfs</td>
+</tr>
+<tr>
+    <td>Process information</td>
+    <td>Procfs</td>
+</tr>
+<tr>
+    <td>Established subsystem functionality</td>
+    <td>Subsystem-specific interface</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>17. Lesson Summary</h2>
+
+<ul>
+    <li>Procfs entries can support read and write operations.</li>
+    <li>Read callbacks provide information to user space.</li>
+    <li>Write callbacks receive information from user space.</li>
+    <li>seq_file simplifies sequential output generation.</li>
+    <li>copy_to_user() transfers data from kernel to user space.</li>
+    <li>copy_from_user() transfers data from user space to kernel.</li>
+    <li>User-copy functions return the number of bytes not copied.</li>
+    <li>File-position handling is important for correct read behavior.</li>
+    <li>User input must be validated.</li>
+    <li>Shared kernel data requires appropriate synchronization.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>18. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+    <li>What is a Procfs read callback?</li>
+    <li>What is a Procfs write callback?</li>
+    <li>What is the purpose of seq_file?</li>
+    <li>What is the purpose of copy_to_user()?</li>
+    <li>What is the purpose of copy_from_user()?</li>
+    <li>What does a zero return from a read callback indicate?</li>
+    <li>What is the role of the file-position pointer?</li>
+    <li>Why is input validation necessary?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+    <li>Explain the architecture of Procfs read and write operations.</li>
+    <li>Explain the seq_file interface and its important functions.</li>
+    <li>Explain user-kernel data transfer in Procfs.</li>
+    <li>Discuss file-position handling and end-of-file conditions.</li>
+    <li>Explain synchronization requirements in a read/write Procfs driver.</li>
+    <li>Discuss the security considerations of writable Procfs entries.</li>
+</ol>
+
+<h3>C. Practical Questions</h3>
+<ol>
+    <li>Create a Procfs entry that displays a driver status message.</li>
+    <li>Implement a write callback to accept a text message.</li>
+    <li>Use copy_from_user() to transfer the message.</li>
+    <li>Validate input length and reject oversized input.</li>
+    <li>Use a mutex to protect shared driver data.</li>
+    <li>Compile, load and test a read/write Procfs module.</li>
+    <li>Remove the module and verify that the Procfs entry disappears.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>19. Expected Learning Outcome</h2>
+
+<div class="success">
+    After completing this lesson, you should be able to
+    implement Procfs read and write operations, transfer
+    data safely between user space and kernel space,
+    validate input, manage file positions, synchronize
+    shared data, and test a read/write Procfs kernel module.
+</div>
+</section>
+
+<div class="lesson-nav">
+    <a href="L03_Creating_Procfs_Entries.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L05_Introduction_to_Sysfs.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 15 - Procfs, Sysfs and Kernel Interfaces</p>
+</footer>
+
+</body>
+</html>
