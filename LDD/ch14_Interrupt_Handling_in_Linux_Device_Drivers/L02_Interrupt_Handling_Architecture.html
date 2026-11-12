@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 2: Interrupt Handling Architecture | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 20px;
+}
+header h1 { margin: 0 0 10px; font-size: 29px; }
+header p { margin: 0; }
+nav {
+    background: white;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+nav a {
+    display: inline-block;
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 5px 12px;
+}
+nav a:hover { color: #007bff; text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e4efff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e2eaf5;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9c; margin-top: 24px; }
+pre {
+    background: #17212e;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    line-height: 1.55;
+    font-size: 14px;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+th, td {
+    border: 1px solid #d5dfeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #edf4ff;
+    border: 1px solid #bfd4f3;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+    font-weight: bold;
+}
+.diagram .arrow {
+    color: #174ea6;
+    font-size: 23px;
+    margin: 5px;
+}
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.warning {
+    background: #fff0f0;
+    border-left: 5px solid #d9534f;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+.navigation-buttons a:hover { background: #2878d7; }
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .navigation-buttons { flex-direction: column; }
+    .navigation-buttons a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Lesson 2: Interrupt Handling Architecture</h1>
+    <p>Linux Device Drivers – Interrupt Handling</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 14</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> 14 – Interrupt Handling in Linux Device Drivers<br>
+    <strong>Lesson:</strong> 2 – Interrupt Handling Architecture<br>
+    <strong>Level:</strong> Intermediate<br>
+    <strong>Prerequisites:</strong> Hardware Interrupts, Linux Kernel Architecture, CPU Execution Context and Basic Computer Architecture.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+    <li>Understand the complete interrupt-handling architecture in Linux.</li>
+    <li>Explain the role of an interrupt controller.</li>
+    <li>Understand CPU interrupt entry and interrupt vectors.</li>
+    <li>Understand the Linux Generic IRQ subsystem.</li>
+    <li>Identify IRQ descriptors and IRQ data structures.</li>
+    <li>Understand interrupt domains and hardware IRQ mapping.</li>
+    <li>Explain how an interrupt reaches a device-driver handler.</li>
+    <li>Understand interrupt affinity and interrupt routing.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Interrupt Handling Architecture</h2>
+
+<p>Interrupt handling architecture describes how a hardware interrupt is generated, routed, identified and processed by the operating system.</p>
+
+<p>In Linux, interrupt handling involves several layers:</p>
+<ul>
+    <li>Peripheral hardware.</li>
+    <li>Interrupt controller.</li>
+    <li>CPU interrupt entry mechanism.</li>
+    <li>Architecture-specific interrupt code.</li>
+    <li>Linux Generic IRQ subsystem.</li>
+    <li>Registered interrupt handler.</li>
+</ul>
+
+<p>These layers separate hardware-specific interrupt management from device-driver logic.</p>
+
+<div class="diagram">
+    <div>Peripheral Device</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Controller</div>
+    <div class="arrow">↓</div>
+    <div>CPU Interrupt Entry</div>
+    <div class="arrow">↓</div>
+    <div>Architecture-Specific IRQ Handling</div>
+    <div class="arrow">↓</div>
+    <div>Linux Generic IRQ Subsystem</div>
+    <div class="arrow">↓</div>
+    <div>Registered Device Driver Handler</div>
+</div>
+</section>
+
+<section>
+<h2>3. Peripheral Hardware</h2>
+
+<p>A peripheral is a hardware component that performs a specific operation and may generate an interrupt when an event occurs.</p>
+
+<p>Examples include:</p>
+<ul>
+    <li>UART controller.</li>
+    <li>GPIO controller.</li>
+    <li>Timer peripheral.</li>
+    <li>Network interface controller.</li>
+    <li>USB controller.</li>
+    <li>Storage controller.</li>
+</ul>
+
+<h3>Example: UART Receive Event</h3>
+
+<p>When a UART receives a character, its hardware may set a status bit and assert an interrupt signal.</p>
+
+<p>The interrupt controller receives the signal and routes the interrupt according to its configuration.</p>
+
+<pre><code>UART receives data
+       |
+       v
+UART status register updated
+       |
+       v
+UART interrupt output asserted
+       |
+       v
+Interrupt controller receives request</code></pre>
+
+<p>The exact register operations depend on the UART hardware and its driver.</p>
+</section>
+
+<section>
+<h2>4. Interrupt Controller</h2>
+
+<p>An interrupt controller is hardware that manages interrupt requests from multiple devices and communicates them to one or more CPUs.</p>
+
+<h3>Main Responsibilities</h3>
+<ul>
+    <li>Receive interrupt requests.</li>
+    <li>Manage interrupt enable and mask state.</li>
+    <li>Apply priority and routing rules.</li>
+    <li>Deliver interrupts to an appropriate CPU.</li>
+    <li>Support interrupt acknowledgement and completion according to its architecture.</li>
+</ul>
+
+<h3>Examples of Interrupt Controllers</h3>
+
+<table>
+    <tr>
+        <th>Controller</th>
+        <th>Common Platform</th>
+        <th>Description</th>
+    </tr>
+    <tr>
+        <td>8259 PIC</td>
+        <td>Legacy x86 systems</td>
+        <td>Older programmable interrupt controller.</td>
+    </tr>
+    <tr>
+        <td>Local APIC</td>
+        <td>x86 systems</td>
+        <td>Manages local CPU interrupt delivery and related interrupt functions.</td>
+    </tr>
+    <tr>
+        <td>I/O APIC</td>
+        <td>Many x86 systems</td>
+        <td>Routes external hardware interrupts toward processors.</td>
+    </tr>
+    <tr>
+        <td>ARM GIC</td>
+        <td>Many ARM systems</td>
+        <td>Generic interrupt-controller architecture for managing interrupts.</td>
+    </tr>
+    <tr>
+        <td>VIC</td>
+        <td>Some ARM microcontrollers</td>
+        <td>Vectored Interrupt Controller used in certain embedded processors.</td>
+    </tr>
+</table>
+
+<div class="note">
+    A Linux system may contain multiple interrupt controllers arranged in a hierarchy. The controller architecture depends on the processor and platform.
+</div>
+</section>
+
+<section>
+<h2>5. CPU Interrupt Entry Mechanism</h2>
+
+<p>When the CPU accepts an interrupt, it transfers control to an architecture-defined interrupt entry point.</p>
+
+<p>The CPU and architecture-specific kernel code preserve the execution state required to handle the interrupt and return appropriately.</p>
+
+<h3>General Sequence</h3>
+<ol>
+    <li>The CPU accepts an eligible interrupt.</li>
+    <li>The processor transfers control to an interrupt entry point.</li>
+    <li>Required processor state is preserved according to the architecture.</li>
+    <li>Architecture-specific Linux code identifies the interrupt.</li>
+    <li>Linux invokes the appropriate IRQ handling path.</li>
+    <li>The interrupt handler executes.</li>
+    <li>The interrupt return path restores the appropriate execution state.</li>
+</ol>
+
+<p>The exact register-saving process and entry mechanism differ between CPU architectures.</p>
+
+<h3>Interrupt Vector</h3>
+
+<p>An interrupt vector is an architecture-specific mechanism used to identify an interrupt or exception entry point.</p>
+
+<p>For example, x86 processors use an Interrupt Descriptor Table (IDT) containing descriptors for interrupt and exception handling.</p>
+
+<p>ARM systems use architecture-specific exception vectors and exception-entry mechanisms.</p>
+
+<div class="note">
+    An interrupt vector and a Linux IRQ number are not necessarily the same thing. They belong to different layers of interrupt management.
+</div>
+</section>
+
+<section>
+<h2>6. Linux Generic IRQ Subsystem</h2>
+
+<p>Linux provides a common interrupt-management framework called the <strong>Generic IRQ subsystem</strong>.</p>
+
+<p>It provides a common interface for interrupt management while allowing architecture-specific and interrupt-controller-specific implementations.</p>
+
+<h3>Main Responsibilities</h3>
+<ul>
+    <li>Manage IRQ descriptors.</li>
+    <li>Register and remove interrupt handlers.</li>
+    <li>Manage interrupt actions.</li>
+    <li>Support shared interrupts.</li>
+    <li>Manage interrupt enable and disable operations.</li>
+    <li>Coordinate interrupt-controller operations.</li>
+    <li>Support threaded interrupt handling.</li>
+    <li>Manage interrupt affinity where supported.</li>
+</ul>
+
+<h3>Why Is a Generic Framework Needed?</h3>
+
+<p>Linux runs on many hardware platforms. Each platform may use a different interrupt controller.</p>
+
+<p>Without a common framework, device drivers would need to implement platform-specific interrupt management repeatedly.</p>
+
+<p>The Generic IRQ subsystem provides a consistent programming interface for drivers.</p>
+
+<div class="diagram">
+    <div>Device Driver A</div>
+    <div>Device Driver B</div>
+    <div>Device Driver C</div>
+    <div class="arrow">↓</div>
+    <div>Linux Generic IRQ Subsystem</div>
+    <div class="arrow">↓</div>
+    <div>Platform-Specific Interrupt Controller Drivers</div>
+    <div class="arrow">↓</div>
+    <div>Hardware Interrupt Controller</div>
+</div>
+</section>
+
+<section>
+<h2>7. IRQ Descriptor</h2>
+
+<p>The Linux kernel maintains an IRQ descriptor for each managed Linux IRQ.</p>
+
+<p>The descriptor is represented internally by:</p>
+
+<pre><code>struct irq_desc</code></pre>
+
+<p>It stores information required to manage an interrupt.</p>
+
+<h3>Conceptual Responsibilities</h3>
+<ul>
+    <li>Maintain IRQ state.</li>
+    <li>Associate interrupt actions with an IRQ.</li>
+    <li>Manage interrupt flow handling.</li>
+    <li>Maintain interrupt statistics.</li>
+    <li>Coordinate interrupt-controller operations.</li>
+</ul>
+
+<h3>Related Internal Structures</h3>
+
+<table>
+    <tr>
+        <th>Structure</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>struct irq_desc</code></td>
+        <td>Represents and manages an IRQ descriptor.</td>
+    </tr>
+    <tr>
+        <td><code>struct irq_data</code></td>
+        <td>Contains IRQ data used by the IRQ subsystem and interrupt-controller operations.</td>
+    </tr>
+    <tr>
+        <td><code>struct irqaction</code></td>
+        <td>Represents a registered interrupt action, including its handler and related information.</td>
+    </tr>
+    <tr>
+        <td><code>struct irq_chip</code></td>
+        <td>Provides interrupt-controller operations for managing IRQs.</td>
+    </tr>
+</table>
+
+<div class="note">
+    These are internal kernel structures. Ordinary device drivers normally use public IRQ APIs instead of directly manipulating IRQ descriptors or controller internals.
+</div>
+</section>
+
+<section>
+<h2>8. Interrupt Handler Registration</h2>
+
+<p>A device driver registers an interrupt handler with the Linux kernel using an appropriate IRQ API.</p>
+
+<p>The most commonly introduced API is:</p>
+
+<pre><code>request_irq()</code></pre>
+
+<p>Its declaration is available through:</p>
+
+<pre><code>#include &lt;linux/interrupt.h&gt;</code></pre>
+
+<h3>Conceptual Syntax</h3>
+
+<pre><code>int request_irq(
+    unsigned int irq,
+    irq_handler_t handler,
+    unsigned long flags,
+    const char *name,
+    void *dev
+);</code></pre>
+
+<table>
+    <tr>
+        <th>Parameter</th>
+        <th>Description</th>
+    </tr>
+    <tr>
+        <td><code>irq</code></td>
+        <td>Linux IRQ number.</td>
+    </tr>
+    <tr>
+        <td><code>handler</code></td>
+        <td>Interrupt handler function.</td>
+    </tr>
+    <tr>
+        <td><code>flags</code></td>
+        <td>Interrupt configuration flags.</td>
+    </tr>
+    <tr>
+        <td><code>name</code></td>
+        <td>Name associated with the interrupt action.</td>
+    </tr>
+    <tr>
+        <td><code>dev</code></td>
+        <td>Device-specific data pointer.</td>
+    </tr>
+</table>
+
+<p>Lesson 4 explains <code>request_irq()</code> in detail.</p>
+</section>
+
+<section>
+<h2>9. IRQ Number and Hardware IRQ Number</h2>
+
+<p>It is important to distinguish between a Linux IRQ number and a hardware interrupt identifier.</p>
+
+<h3>Hardware IRQ</h3>
+
+<p>The hardware interrupt controller identifies interrupt sources according to its own numbering and topology.</p>
+
+<h3>Linux IRQ</h3>
+
+<p>The Linux IRQ subsystem uses a Linux IRQ number to identify an interrupt managed by the kernel.</p>
+
+<p>Linux can map hardware interrupt identifiers into Linux IRQ numbers through interrupt-domain mechanisms.</p>
+
+<div class="diagram">
+    <div>Hardware Interrupt Source</div>
+    <div class="arrow">↓</div>
+    <div>Hardware IRQ / Controller Identifier</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Domain Mapping</div>
+    <div class="arrow">↓</div>
+    <div>Linux IRQ Number</div>
+    <div class="arrow">↓</div>
+    <div>Linux IRQ Descriptor and Handler</div>
+</div>
+
+<div class="warning">
+    Never assume that a hardware interrupt-controller number is always identical to the Linux IRQ number. The mapping depends on the platform and interrupt-controller configuration.
+</div>
+</section>
+
+<section>
+<h2>10. Interrupt Domains</h2>
+
+<p>An interrupt domain is a Linux kernel abstraction that maps hardware interrupt identifiers to Linux IRQ numbers.</p>
+
+<p>Interrupt domains are particularly important on systems with complex interrupt-controller hierarchies.</p>
+
+<h3>Why Are Interrupt Domains Needed?</h3>
+
+<ul>
+    <li>Different interrupt controllers have independent hardware numbering.</li>
+    <li>A platform may contain multiple interrupt controllers.</li>
+    <li>Hardware interrupt identifiers must be mapped into Linux IRQ numbers.</li>
+    <li>Hierarchical interrupt controllers may require multiple translation stages.</li>
+</ul>
+
+<h3>Conceptual Example</h3>
+
+<p>Suppose a peripheral generates hardware interrupt identifier 25 through a controller. Linux maps that interrupt into a Linux IRQ number used by the device driver.</p>
+
+<p>The resulting Linux IRQ number is determined by the kernel's mapping process. It should not be assumed to equal 25.</p>
+</section>
+
+<section>
+<h2>11. Interrupt Flow Handling</h2>
+
+<p>Linux uses interrupt flow handlers to manage the handling sequence associated with different interrupt-controller and trigger configurations.</p>
+
+<p>Common internal flow-handler concepts include:</p>
+
+<table>
+    <tr>
+        <th>Flow Handler</th>
+        <th>General Purpose</th>
+    </tr>
+    <tr>
+        <td>Level flow</td>
+        <td>Handles level-triggered interrupt flow.</td>
+    </tr>
+    <tr>
+        <td>Edge flow</td>
+        <td>Handles edge-triggered interrupt flow.</td>
+    </tr>
+    <tr>
+        <td>Fast EOI flow</td>
+        <td>Uses an end-of-interrupt operation as defined by the interrupt controller.</td>
+    </tr>
+    <tr>
+        <td>Per-CPU flow</td>
+        <td>Handles interrupts associated with per-CPU interrupt arrangements.</td>
+    </tr>
+    <tr>
+        <td>Simple flow</td>
+        <td>Provides a simpler interrupt flow for suitable interrupt-controller configurations.</td>
+    </tr>
+</table>
+
+<p>The Generic IRQ subsystem coordinates the selected flow handler with the interrupt-controller operations.</p>
+
+<div class="note">
+    Device drivers generally do not select or call these internal flow handlers directly. They are managed by the kernel's IRQ infrastructure.
+</div>
+</section>
+
+<section>
+<h2>12. Interrupt Acknowledgement and End of Interrupt</h2>
+
+<p>Interrupt controllers often require acknowledgement or completion operations as part of interrupt handling.</p>
+
+<h3>Interrupt Acknowledgement</h3>
+
+<p>Acknowledgement is an operation used to indicate that an interrupt has been recognized or accepted according to the controller's protocol.</p>
+
+<h3>End of Interrupt (EOI)</h3>
+
+<p>An EOI operation informs the interrupt controller that the handling stage has completed sufficiently for the controller to update its state or permit further interrupt delivery.</p>
+
+<p>The exact acknowledgement and EOI sequence depends on the interrupt-controller architecture and Linux IRQ flow handling.</p>
+
+<div class="note">
+    A driver may also need to clear a device-specific interrupt status condition. This is different from the interrupt controller's acknowledgement or EOI operation. The device-specific requirement must be followed to prevent repeated interrupts.
+</div>
+</section>
+
+<section>
+<h2>13. Interrupt Affinity</h2>
+
+<p>Interrupt affinity controls which CPU or CPUs may receive a particular interrupt.</p>
+
+<p>On a multi-core system, interrupt affinity can help distribute interrupt processing across CPUs.</p>
+
+<h3>Example</h3>
+
+<p>Suppose a system contains four CPUs:</p>
+
+<pre><code>CPU 0
+CPU 1
+CPU 2
+CPU 3</code></pre>
+
+<p>An interrupt may be configured to target a selected CPU or CPU mask, depending on platform capabilities.</p>
+
+<h3>Why Is Affinity Useful?</h3>
+
+<ul>
+    <li>Distribute interrupt-processing load.</li>
+    <li>Improve CPU cache locality in suitable workloads.</li>
+    <li>Support performance tuning.</li>
+    <li>Control interrupt placement in multi-core systems.</li>
+</ul>
+
+<h3>Linux Interface</h3>
+
+<p>Linux exposes interrupt information and affinity controls through procfs on systems that support them.</p>
+
+<pre><code># View interrupt counts and CPU distribution
+cat /proc/interrupts
+
+# View an IRQ's affinity mask
+cat /proc/irq/IRQ_NUMBER/smp_affinity_list</code></pre>
+
+<p>Replace <code>IRQ_NUMBER</code> with an actual Linux IRQ number shown by the system.</p>
+
+<p>Affinity interfaces and permitted values depend on architecture, interrupt-controller support and kernel configuration.</p>
+</section>
+
+<section>
+<h2>14. Shared Interrupt Architecture</h2>
+
+<p>Some hardware platforms allow multiple devices to share an interrupt line.</p>
+
+<p>When a shared interrupt is delivered, Linux may invoke the handlers registered for that IRQ. Each handler must determine whether its own device generated the interrupt.</p>
+
+<div class="diagram">
+    <div>Device A</div>
+    <div>Device B</div>
+    <div>Device C</div>
+    <div class="arrow">↓</div>
+    <div>Shared Interrupt Line</div>
+    <div class="arrow">↓</div>
+    <div>Linux IRQ Subsystem</div>
+    <div class="arrow">↓</div>
+    <div>Handler A → Checks Device A</div>
+    <div>Handler B → Checks Device B</div>
+    <div>Handler C → Checks Device C</div>
+</div>
+
+<p>A handler that does not recognize its device's interrupt should indicate that it did not handle the interrupt.</p>
+
+<p>Shared interrupt registration has specific requirements, including appropriate flags and a unique, non-NULL device identifier for each registration.</p>
+
+<p>Shared IRQs are studied in Lesson 6.</p>
+</section>
+
+<section>
+<h2>15. Viewing Interrupt Information in Linux</h2>
+
+<p>Linux provides useful interfaces for inspecting interrupt activity.</p>
+
+<h3>15.1 /proc/interrupts</h3>
+
+<pre><code>cat /proc/interrupts</code></pre>
+
+<p>This displays interrupt statistics, including counts for individual CPUs and interrupt names or controller information.</p>
+
+<h3>15.2 /proc/softirqs</h3>
+
+<pre><code>cat /proc/softirqs</code></pre>
+
+<p>This displays per-CPU statistics for Linux softirq categories.</p>
+
+<h3>15.3 /proc/irq</h3>
+
+<pre><code>ls /proc/irq</code></pre>
+
+<p>This directory contains per-IRQ information and controls where supported.</p>
+
+<h3>15.4 Kernel Messages</h3>
+
+<pre><code>sudo dmesg | tail -30</code></pre>
+
+<p>This displays recent messages from the kernel ring buffer.</p>
+
+<div class="note">
+    The availability of individual procfs entries depends on kernel configuration and platform support. A virtual machine may expose virtualized interrupt controllers and devices rather than the physical host's complete interrupt topology.
+</div>
+</section>
+
+<section>
+<h2>16. Simplified End-to-End Example</h2>
+
+<p>Consider a Linux system receiving a network packet.</p>
+
+<ol>
+    <li>The network interface receives a packet.</li>
+    <li>The device updates its status and generates an interrupt request.</li>
+    <li>The interrupt controller routes the interrupt to a CPU.</li>
+    <li>The CPU enters the architecture-specific interrupt path.</li>
+    <li>Linux identifies the associated IRQ descriptor.</li>
+    <li>The Generic IRQ subsystem dispatches the registered network-device handler.</li>
+    <li>The driver acknowledges or services the device interrupt according to hardware requirements.</li>
+    <li>Additional packet processing may be scheduled through mechanisms such as NAPI.</li>
+</ol>
+
+<p>For many Linux network drivers, the interrupt handler does not process every packet completely. It may schedule NAPI polling to process packets efficiently.</p>
+
+<div class="note">
+    NAPI is a networking-specific mechanism combining interrupt notification with polling-based packet processing. It is not a replacement for the entire Linux interrupt subsystem.
+</div>
+</section>
+
+<section>
+<h2>17. Important Data Structures and APIs</h2>
+
+<table>
+    <tr>
+        <th>Item</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>struct irq_desc</code></td>
+        <td>IRQ descriptor maintained by the kernel.</td>
+    </tr>
+    <tr>
+        <td><code>struct irq_data</code></td>
+        <td>IRQ data used by interrupt management and controller operations.</td>
+    </tr>
+    <tr>
+        <td><code>struct irqaction</code></td>
+        <td>Represents a registered interrupt action.</td>
+    </tr>
+    <tr>
+        <td><code>struct irq_chip</code></td>
+        <td>Interrupt-controller operation interface.</td>
+    </tr>
+    <tr>
+        <td><code>request_irq()</code></td>
+        <td>Registers an interrupt handler.</td>
+    </tr>
+    <tr>
+        <td><code>free_irq()</code></td>
+        <td>Releases an interrupt handler registration.</td>
+    </tr>
+    <tr>
+        <td><code>disable_irq()</code></td>
+        <td>Disables an IRQ and waits for active handling as specified by the API.</td>
+    </tr>
+    <tr>
+        <td><code>enable_irq()</code></td>
+        <td>Enables a disabled IRQ.</td>
+    </tr>
+    <tr>
+        <td><code>synchronize_irq()</code></td>
+        <td>Waits for active handlers for an IRQ to finish.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>18. Lesson Summary</h2>
+
+<ul>
+    <li>Interrupt handling involves hardware, interrupt controllers, CPUs and operating-system software.</li>
+    <li>Peripheral devices generate interrupt requests.</li>
+    <li>Interrupt controllers manage interrupt routing and delivery.</li>
+    <li>The CPU uses an architecture-specific interrupt entry mechanism.</li>
+    <li>Linux uses the Generic IRQ subsystem for common interrupt management.</li>
+    <li><code>struct irq_desc</code> represents an IRQ descriptor.</li>
+    <li>Interrupt domains map hardware interrupt identifiers to Linux IRQ numbers.</li>
+    <li>IRQ flow handlers manage different interrupt-triggering arrangements.</li>
+    <li>Interrupt acknowledgement and EOI depend on controller architecture.</li>
+    <li>Interrupt affinity controls CPU placement where supported.</li>
+    <li>Shared interrupts allow multiple handlers to be associated with an IRQ.</li>
+    <li><code>/proc/interrupts</code> provides useful interrupt statistics.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Short Answer Questions</h2>
+<ol>
+    <li>What is interrupt handling architecture?</li>
+    <li>What is the role of an interrupt controller?</li>
+    <li>What is an interrupt vector?</li>
+    <li>What is the Linux Generic IRQ subsystem?</li>
+    <li>What is an IRQ descriptor?</li>
+    <li>What is the purpose of <code>struct irq_data</code>?</li>
+    <li>What is an interrupt domain?</li>
+    <li>Differentiate a hardware IRQ identifier and a Linux IRQ number.</li>
+    <li>What is an interrupt flow handler?</li>
+    <li>What is an End of Interrupt operation?</li>
+    <li>What is interrupt affinity?</li>
+    <li>What is a shared interrupt?</li>
+    <li>What information is available in <code>/proc/interrupts</code>?</li>
+    <li>What is the purpose of <code>synchronize_irq()</code>?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Long Answer Questions</h2>
+<ol>
+    <li>Explain the complete Linux interrupt-handling architecture with a block diagram.</li>
+    <li>Describe the role of interrupt controllers in Linux systems.</li>
+    <li>Explain the CPU interrupt-entry mechanism.</li>
+    <li>Discuss the responsibilities of the Linux Generic IRQ subsystem.</li>
+    <li>Explain the purpose of IRQ descriptors and related internal data structures.</li>
+    <li>Explain hardware IRQ mapping through interrupt domains.</li>
+    <li>Discuss the different Linux IRQ flow-handling concepts.</li>
+    <li>Explain interrupt acknowledgement and End of Interrupt operations.</li>
+    <li>Describe interrupt affinity and its importance in multi-core systems.</li>
+    <li>Explain how Linux handles shared interrupts.</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Practical Exercises</h2>
+<ol>
+    <li>Execute <code>cat /proc/interrupts</code> in Ubuntu.</li>
+    <li>Identify the interrupt counts and CPU columns.</li>
+    <li>Execute <code>cat /proc/softirqs</code> and identify the softirq categories.</li>
+    <li>Explore the contents of <code>/proc/irq</code>.</li>
+    <li>Draw a block diagram of the Linux Generic IRQ subsystem.</li>
+    <li>Compare the interrupt-controller architecture of x86 and ARM systems.</li>
+    <li>Explain the difference between an IRQ descriptor and an interrupt action.</li>
+    <li>Study the relationship between hardware interrupt identifiers and Linux IRQ numbers.</li>
+    <li>Observe how interrupt counts change during suitable device activity.</li>
+</ol>
+
+<h3>Useful Commands</h3>
+<pre><code># Kernel version
+uname -r
+
+# Interrupt statistics
+cat /proc/interrupts
+
+# Software interrupt statistics
+cat /proc/softirqs
+
+# List IRQ directories
+ls /proc/irq
+
+# Recent kernel messages
+sudo dmesg | tail -30
+
+# CPU information
+lscpu</code></pre>
+</section>
+
+<section>
+<h2>22. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should understand the complete architecture through which hardware interrupts reach Linux device drivers.</p>
+
+<p>You should be able to explain the responsibilities of interrupt controllers, CPU interrupt entry, the Generic IRQ subsystem, IRQ descriptors, interrupt domains and interrupt affinity.</p>
+
+<p>You are now ready to study how Linux device drivers implement interrupt service routines.</p>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L01_Introduction_to_Hardware_Interrupts.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L03_Interrupt_Service_Routines_in_Linux.html">Next: Interrupt Service Routines →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 14 – Interrupt Handling in Linux Device Drivers</p>
+</footer>
+
+</body>
+</html>
