@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 3 - Block I/O and Request Processing</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 28px;
+}
+
+header p {
+    margin: 8px 0 0;
+}
+
+nav {
+    background: #fff;
+    padding: 13px;
+    text-align: center;
+    border-bottom: 1px solid #dce3ed;
+}
+
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+
+nav a:hover {
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 16px;
+}
+
+.lesson-info {
+    background: #e6f1ff;
+    border-left: 5px solid #2878d7;
+    padding: 15px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9e;
+}
+
+pre {
+    background: #172334;
+    color: #e8f0fa;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+.note {
+    background: #fff7df;
+    border-left: 5px solid #e5a000;
+    padding: 13px 16px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.example {
+    background: #eaf7ee;
+    border-left: 5px solid #269653;
+    padding: 13px 16px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5deea;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f0f5fc;
+    padding: 17px;
+    border-radius: 7px;
+    text-align: center;
+    font-family: Consolas, monospace;
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.8;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 600px) {
+    header h1 {
+        font-size: 22px;
+    }
+
+    nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+
+    section {
+        padding: 16px;
+    }
+
+    table {
+        font-size: 13px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Chapter 18: Block, Network and USB Device Drivers</h1>
+    <p>Lesson 3: Block I/O and Request Processing</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter Index</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson:</strong> 03<br>
+    <strong>Topic:</strong> Block I/O and Request Processing<br>
+    <strong>Chapter:</strong> Block, Network and USB Device Drivers<br>
+    <strong>Level:</strong> Intermediate to Advanced
+</div>
+
+<section>
+<h2>1. Introduction</h2>
+
+<p>
+Block I/O is the process of transferring data between system
+memory and a block storage device. Linux uses a structured
+request-processing mechanism to manage these operations.
+</p>
+
+<p>
+When an application reads or writes data, the kernel may need
+to convert the operation into one or more block I/O operations.
+The block layer organizes these operations and submits them
+to the appropriate storage driver.
+</p>
+
+<p>
+The driver communicates with the storage controller, and the
+controller performs the requested operation on the storage
+device.
+</p>
+
+<div class="example">
+<strong>Example:</strong> When Ubuntu reads a file from an SSD,
+the filesystem identifies the required storage blocks. The
+block layer organizes the I/O, the NVMe driver submits commands
+to the controller, and the SSD returns the requested data.
+</div>
+</section>
+
+<section>
+<h2>2. What Is Block I/O?</h2>
+
+<p>
+Block I/O refers to read and write operations performed on
+addressable storage regions.
+</p>
+
+<p>Two fundamental operations are:</p>
+
+<ul>
+    <li><strong>READ:</strong> Transfers data from a storage device
+    into system memory.</li>
+    <li><strong>WRITE:</strong> Transfers data from system memory
+    to a storage device.</li>
+</ul>
+
+<p>
+Block I/O operations are associated with a target block device,
+a storage location, a data length and the memory containing
+the data to be transferred.
+</p>
+
+<h3>Example</h3>
+
+<pre><code>Operation: READ
+Device: /dev/sda
+Starting sector: 1000
+Number of sectors: 8
+Logical sector size: 512 bytes</code></pre>
+
+<p>
+The requested data size is:
+</p>
+
+<pre><code>8 × 512 = 4096 bytes</code></pre>
+</section>
+
+<section>
+<h2>3. Block I/O Processing Overview</h2>
+
+<p>
+A typical block I/O operation passes through several stages.
+The exact path depends on the type of I/O, filesystem, device
+and kernel configuration.
+</p>
+
+<div class="diagram">
++--------------------------------+
+|        User Application        |
++--------------------------------+
+                |
+                v
++--------------------------------+
+|       System Call / VFS        |
++--------------------------------+
+                |
+                v
++--------------------------------+
+|     Filesystem / Page Cache    |
++--------------------------------+
+                |
+                v
++--------------------------------+
+|       BIO Creation             |
++--------------------------------+
+                |
+                v
++--------------------------------+
+|   Request Formation / Merge    |
++--------------------------------+
+                |
+                v
++--------------------------------+
+|        blk-mq Queues           |
++--------------------------------+
+                |
+                v
++--------------------------------+
+|      Block Device Driver       |
++--------------------------------+
+                |
+                v
++--------------------------------+
+|      Storage Controller        |
++--------------------------------+
+                |
+                v
++--------------------------------+
+|       Storage Hardware         |
++--------------------------------+
+                |
+                v
++--------------------------------+
+|       I/O Completion           |
++--------------------------------+
+</div>
+</section>
+
+<section>
+<h2>4. BIO Structure</h2>
+
+<p>
+The Linux kernel uses <code>struct bio</code> to represent
+a block I/O operation.
+</p>
+
+<p>
+A BIO contains information describing the operation, the target
+block device, the starting location and the memory segments
+involved in the transfer.
+</p>
+
+<h3>Important BIO Information</h3>
+
+<ul>
+    <li>Target block device.</li>
+    <li>Read or write operation.</li>
+    <li>Starting sector.</li>
+    <li>Data size.</li>
+    <li>Memory segments.</li>
+    <li>Completion information.</li>
+</ul>
+
+<div class="diagram">
++--------------------------------------+
+|               struct bio             |
++--------------------------------------+
+| Target Block Device                  |
+| Operation Type                       |
+| Starting Sector                      |
+| Data Length                          |
+| BIO Vector Information               |
+| Completion Information               |
++--------------------------------------+
+</div>
+
+<h3>BIO Vector</h3>
+
+<p>
+A BIO can describe data stored in one or more memory segments.
+The BIO vector information identifies the memory pages and
+regions involved in the I/O operation.
+</p>
+
+<p>
+This allows block I/O to work with data that is not necessarily
+stored in one physically contiguous memory region.
+</p>
+
+<div class="note">
+A BIO represents an I/O operation and its data segments.
+It should not be confused with a complete hardware command.
+The driver and block layer determine how operations are
+organized and submitted.
+</div>
+</section>
+
+<section>
+<h2>5. READ and WRITE BIO Operations</h2>
+
+<h3>READ Operation</h3>
+
+<p>
+A read BIO requests data from a block device and transfers
+the data into memory.
+</p>
+
+<div class="diagram">
+Storage Device
+      |
+      | READ
+      v
+Block Driver
+      |
+      v
+BIO Processing
+      |
+      v
+System Memory
+</div>
+
+<h3>WRITE Operation</h3>
+
+<p>
+A write BIO requests that data in memory be written to the
+specified storage location.
+</p>
+
+<div class="diagram">
+System Memory
+      |
+      | WRITE
+      v
+BIO Processing
+      |
+      v
+Block Driver
+      |
+      v
+Storage Device
+</div>
+
+<p>
+The operation type is represented through kernel block-layer
+operation definitions. The exact API names and flags should
+be checked against the target kernel version.
+</p>
+</section>
+
+<section>
+<h2>6. BIO Splitting</h2>
+
+<p>
+A single I/O operation may exceed the limits supported by a
+particular device or queue.
+</p>
+
+<p>
+In such situations, the block layer can split an operation
+into smaller BIOs or requests.
+</p>
+
+<h3>Example</h3>
+
+<p>
+Suppose an operation requests 64 KiB of data, but the relevant
+queue limit allows a maximum transfer size of 16 KiB.
+</p>
+
+<pre><code>Original I/O:
+64 KiB
+
+Possible split:
+BIO 1 = 16 KiB
+BIO 2 = 16 KiB
+BIO 3 = 16 KiB
+BIO 4 = 16 KiB</code></pre>
+
+<p>
+Each part can be processed according to the device's limits.
+The block layer tracks the completion of the split operations.
+</p>
+</section>
+
+<section>
+<h2>7. Request Structure</h2>
+
+<p>
+The <code>struct request</code> structure represents a block
+I/O request organized for processing by a device driver.
+</p>
+
+<p>
+A request may contain one or more BIOs. The block layer can
+merge compatible operations to improve efficiency.
+</p>
+
+<h3>Example</h3>
+
+<p>Assume two adjacent write operations:</p>
+
+<pre><code>BIO 1:
+Starting sector = 200
+Length = 8 sectors
+
+BIO 2:
+Starting sector = 208
+Length = 8 sectors</code></pre>
+
+<p>
+If their properties and queue limits allow merging, they may
+be represented as one larger request.
+</p>
+
+<pre><code>Combined Request:
+Starting sector = 200
+Length = 16 sectors</code></pre>
+
+<div class="note">
+Request merging is subject to device limits, operation flags,
+queue configuration and other block-layer constraints. It is
+not guaranteed for every adjacent operation.
+</div>
+</section>
+
+<section>
+<h2>8. Difference Between BIO and Request</h2>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>BIO</th>
+    <th>Request</th>
+</tr>
+<tr>
+    <td>Purpose</td>
+    <td>Represents a block I/O operation.</td>
+    <td>Represents an organized request for driver processing.</td>
+</tr>
+<tr>
+    <td>Data description</td>
+    <td>Describes memory segments and operation details.</td>
+    <td>Can contain one or more BIOs.</td>
+</tr>
+<tr>
+    <td>Merging</td>
+    <td>Can be combined with compatible operations.</td>
+    <td>Can represent merged BIO operations.</td>
+</tr>
+<tr>
+    <td>Role</td>
+    <td>I/O description.</td>
+    <td>Request dispatch and processing.</td>
+</tr>
+</table>
+
+<p>
+A useful way to remember the distinction is that a BIO describes
+an I/O operation, while a request organizes operations for
+submission to a storage driver.
+</p>
+</section>
+
+<section>
+<h2>9. Request Queue</h2>
+
+<p>
+A request queue is responsible for managing requests that
+are waiting to be dispatched to the storage device.
+</p>
+
+<p>Important queue responsibilities include:</p>
+
+<ul>
+    <li>Managing pending I/O requests.</li>
+    <li>Applying device queue limits.</li>
+    <li>Supporting request merging.</li>
+    <li>Coordinating request dispatch.</li>
+    <li>Supporting concurrent I/O operations.</li>
+</ul>
+
+<p>
+Modern Linux block drivers generally use the blk-mq framework
+for request queue management.
+</p>
+</section>
+
+<section>
+<h2>10. blk-mq Request Processing</h2>
+
+<p>
+blk-mq is the modern Linux block multi-queue framework.
+It provides an architecture for handling multiple requests
+efficiently across multiple CPU cores and hardware queues.
+</p>
+
+<h3>Important Components</h3>
+
+<ul>
+    <li><strong>Software staging queues:</strong> Organize requests
+    before dispatch to hardware queues.</li>
+    <li><strong>Hardware dispatch queues:</strong> Represent queues
+    used to submit requests to the device.</li>
+    <li><strong>Driver queue operations:</strong> Allow the driver
+    to prepare and submit requests.</li>
+    <li><strong>Completion handling:</strong> Reports finished
+    operations to the block layer.</li>
+</ul>
+
+<div class="diagram">
+           CPU Core 0        CPU Core 1
+                |                 |
+                v                 v
+        +---------------+ +---------------+
+        | Software Q0   | | Software Q1   |
+        +---------------+ +---------------+
+                |                 |
+                +--------+--------+
+                         |
+                         v
+                +------------------+
+                | Hardware Queues  |
+                +------------------+
+                         |
+                         v
+                +------------------+
+                | Storage Driver   |
+                +------------------+
+                         |
+                         v
+                +------------------+
+                | Storage Device   |
+                +------------------+
+</div>
+
+<p>
+The mapping and number of queues depend on the driver, hardware
+and system configuration.
+</p>
+</section>
+
+<section>
+<h2>11. Request Dispatch</h2>
+
+<p>
+Request dispatch is the process of submitting prepared storage
+requests to the device driver for execution.
+</p>
+
+<p>
+In a blk-mq driver, the driver implements queue operations
+appropriate to the device.
+</p>
+
+<p>
+A simplified conceptual sequence is:
+</p>
+
+<ol>
+    <li>The block layer prepares a request.</li>
+    <li>The request is assigned to an appropriate hardware queue.</li>
+    <li>The driver obtains the request for processing.</li>
+    <li>The driver prepares the required device command.</li>
+    <li>The command is submitted to the controller.</li>
+    <li>The device processes the command.</li>
+</ol>
+
+<div class="note">
+Modern blk-mq drivers use interfaces such as
+<code>struct blk_mq_ops</code>. The exact callbacks and
+registration process depend on the kernel version and driver type.
+</div>
+</section>
+
+<section>
+<h2>12. Request Merging</h2>
+
+<p>
+Request merging combines compatible adjacent I/O operations.
+It can reduce request-processing overhead and improve throughput.
+</p>
+
+<h3>Example</h3>
+
+<pre><code>Request A:
+Sector 500
+Length 4 sectors
+
+Request B:
+Sector 504
+Length 4 sectors</code></pre>
+
+<p>
+If the operations are compatible and the queue permits merging,
+the block layer may produce:
+</p>
+
+<pre><code>Merged Request:
+Sector 500
+Length 8 sectors</code></pre>
+
+<h3>Benefits</h3>
+
+<ul>
+    <li>Reduces the number of individual requests.</li>
+    <li>Can reduce command-submission overhead.</li>
+    <li>May improve sequential I/O performance.</li>
+</ul>
+</section>
+
+<section>
+<h2>13. I/O Scheduling</h2>
+
+<p>
+I/O scheduling determines how requests are organized and
+dispatched to a storage device.
+</p>
+
+<p>
+The goal may be to improve throughput, reduce latency or
+provide fairness among competing processes.
+</p>
+
+<p>Common scheduling considerations include:</p>
+
+<ul>
+    <li>Request ordering.</li>
+    <li>Read and write priority.</li>
+    <li>Fairness.</li>
+    <li>Latency targets.</li>
+    <li>Throughput.</li>
+</ul>
+
+<p>
+The scheduler options available depend on the kernel and
+storage device. Some high-performance devices may use different
+scheduling strategies from traditional rotational disks.
+</p>
+
+<h3>Inspect Scheduler</h3>
+
+<pre><code>cat /sys/block/sda/queue/scheduler</code></pre>
+
+<p>
+The scheduler shown in square brackets is generally the
+currently selected scheduler.
+</p>
+</section>
+
+<section>
+<h2>14. DMA in Block I/O</h2>
+
+<p>
+Direct Memory Access (DMA) allows a storage controller to
+transfer data between the device and system memory without
+requiring the CPU to copy every data unit individually.
+</p>
+
+<h3>Why DMA Is Used</h3>
+
+<ul>
+    <li>Reduces CPU involvement in data transfers.</li>
+    <li>Improves data-transfer efficiency.</li>
+    <li>Supports high-throughput storage devices.</li>
+    <li>Allows controllers to transfer data using memory buffers.</li>
+</ul>
+
+<div class="diagram">
++--------------------+
+|     CPU            |
++--------------------+
+          |
+          | Configure Transfer
+          v
++--------------------+
+| Storage Controller |
++--------------------+
+          |
+          | DMA Transfer
+          v
++--------------------+
+|    System RAM      |
++--------------------+
+</div>
+
+<p>
+Linux drivers normally use the kernel DMA mapping API to prepare
+memory for device access. The exact DMA operations depend on
+the hardware and the device's DMA capabilities.
+</p>
+
+<div class="note">
+DMA does not mean that the CPU is completely uninvolved.
+The CPU still prepares commands, configures transfers and
+handles completion or error notifications.
+</div>
+</section>
+
+<section>
+<h2>15. Interrupts and Polling</h2>
+
+<p>
+A storage controller needs a way to notify the driver that
+an operation has completed or requires attention.
+</p>
+
+<h3>Interrupt-Based Completion</h3>
+
+<p>
+The controller generates an interrupt. The driver processes
+the completion information and informs the block layer.
+</p>
+
+<h3>Polling-Based Completion</h3>
+
+<p>
+The driver or kernel checks completion status directly instead
+of waiting for a hardware interrupt.
+</p>
+
+<table>
+<tr>
+    <th>Interrupt</th>
+    <th>Polling</th>
+</tr>
+<tr>
+    <td>Device notifies the CPU.</td>
+    <td>CPU or driver checks device status.</td>
+</tr>
+<tr>
+    <td>Useful for asynchronous completion.</td>
+    <td>Can reduce interrupt overhead in selected workloads.</td>
+</tr>
+<tr>
+    <td>Requires interrupt handling.</td>
+    <td>Requires periodic or active status checking.</td>
+</tr>
+</table>
+
+<p>
+The appropriate method depends on the device, workload and
+driver implementation.
+</p>
+</section>
+
+<section>
+<h2>16. I/O Completion</h2>
+
+<p>
+After a request has been processed by the storage device,
+the driver must report its completion to the block layer.
+</p>
+
+<h3>Completion Sequence</h3>
+
+<ol>
+    <li>The driver submits a command to the controller.</li>
+    <li>The controller performs the requested operation.</li>
+    <li>The controller reports completion or an error.</li>
+    <li>The driver identifies the completed request.</li>
+    <li>The driver reports the result through the block-layer
+    completion mechanism.</li>
+    <li>The block layer completes the associated I/O operations.</li>
+    <li>Waiting processes can continue when appropriate.</li>
+</ol>
+
+<div class="diagram">
+Request Submitted
+       |
+       v
+Device Processes I/O
+       |
+       v
+Completion Detected
+       |
+       v
+Driver Handles Result
+       |
+       v
+Block I/O Completed
+       |
+       v
+Waiting Operation Continues
+</div>
+</section>
+
+<section>
+<h2>17. I/O Error Handling</h2>
+
+<p>
+A storage request can fail because of device errors, timeouts,
+media problems or controller failures.
+</p>
+
+<table>
+<tr>
+    <th>Error Type</th>
+    <th>Description</th>
+</tr>
+<tr>
+    <td>I/O Error</td>
+    <td>Requested data could not be read or written.</td>
+</tr>
+<tr>
+    <td>Timeout</td>
+    <td>The controller did not complete the command in time.</td>
+</tr>
+<tr>
+    <td>Media Error</td>
+    <td>The storage device reports a problem with its media.</td>
+</tr>
+<tr>
+    <td>Controller Error</td>
+    <td>The storage controller reports a command or hardware failure.</td>
+</tr>
+<tr>
+    <td>Device Removal</td>
+    <td>The device becomes unavailable during operation.</td>
+</tr>
+</table>
+
+<p>
+The driver must report the result correctly and follow the
+device-specific recovery and cleanup procedures.
+</p>
+</section>
+
+<section>
+<h2>18. Block I/O Request Processing Example</h2>
+
+<p>
+Consider an application reading 4096 bytes from a file stored
+on a block device with 512-byte logical sectors.
+</p>
+
+<h3>Step 1: Calculate the Number of Sectors</h3>
+
+<pre><code>Requested Data = 4096 bytes
+Logical Sector = 512 bytes
+
+Number of Sectors = 4096 / 512
+                  = 8 sectors</code></pre>
+
+<h3>Step 2: Identify the Storage Location</h3>
+
+<pre><code>Starting Sector = 1000
+Number of Sectors = 8</code></pre>
+
+<h3>Step 3: Create the I/O Operation</h3>
+
+<p>
+The relevant kernel I/O path creates the required block
+I/O representation and associates the memory buffers.
+</p>
+
+<h3>Step 4: Organize the Request</h3>
+
+<p>
+The block layer organizes the operation into requests and
+applies applicable queue limits.
+</p>
+
+<h3>Step 5: Dispatch</h3>
+
+<p>
+The storage driver submits the required command to the
+controller.
+</p>
+
+<h3>Step 6: Complete</h3>
+
+<p>
+The controller transfers the data, and the driver reports
+completion to the block layer.
+</p>
+
+<div class="example">
+<strong>Result:</strong> The requested 4096 bytes become available
+to the appropriate kernel I/O path and eventually to the
+application.
+</div>
+</section>
+
+<section>
+<h2>19. Observing Block I/O in Ubuntu</h2>
+
+<p>
+Linux provides tools that help inspect block devices and
+observe storage activity.
+</p>
+
+<h3>1. List Block Devices</h3>
+<pre><code>lsblk</code></pre>
+
+<h3>2. Display Device Statistics</h3>
+<pre><code>cat /proc/diskstats</code></pre>
+
+<p>
+This file provides kernel-maintained statistics for block devices.
+</p>
+
+<h3>3. Monitor I/O Statistics</h3>
+<pre><code>iostat -xz 1</code></pre>
+
+<p>
+If the command is unavailable, install the required package:
+</p>
+
+<pre><code>sudo apt update
+sudo apt install sysstat</code></pre>
+
+<h3>4. Monitor Processes Performing I/O</h3>
+<pre><code>sudo iotop</code></pre>
+
+<p>
+If required:
+</p>
+
+<pre><code>sudo apt install iotop</code></pre>
+
+<h3>5. Inspect Queue Settings</h3>
+<pre><code>ls /sys/block/sda/queue/</code></pre>
+
+<div class="note">
+The exact devices and statistics depend on the virtual storage
+controller and workload. A VirtualBox guest normally sees
+virtual disks rather than the host's physical storage controller.
+</div>
+</section>
+
+<section>
+<h2>20. Important Kernel Programming Concepts</h2>
+
+<p>
+Block drivers are developed using kernel interfaces. Some
+important concepts include:
+</p>
+
+<ul>
+    <li><code>struct bio</code> - describes block I/O operations.</li>
+    <li><code>struct request</code> - represents an organized request.</li>
+    <li><code>struct request_queue</code> - manages request queue state.</li>
+    <li><code>struct blk_mq_ops</code> - defines blk-mq driver operations.</li>
+    <li><code>blk_mq_tag_set</code> - configures request-tag and
+    queue-related resources.</li>
+    <li>DMA mapping APIs - prepare memory for device transfers.</li>
+    <li>Completion mechanisms - report the result of I/O.</li>
+</ul>
+
+<div class="note">
+These are conceptual introductions, not a complete driver API
+recipe. Function signatures, helper functions and registration
+steps must be verified against the exact Linux kernel version.
+</div>
+</section>
+
+<section>
+<h2>21. Practical Activity: Observe Block I/O</h2>
+
+<p>
+Perform the following activity in Ubuntu running inside
+VirtualBox.
+</p>
+
+<h3>Step 1: Identify the Disk</h3>
+<pre><code>lsblk</code></pre>
+
+<h3>Step 2: Read Disk Statistics</h3>
+<pre><code>cat /proc/diskstats</code></pre>
+
+<h3>Step 3: Install Monitoring Tools</h3>
+<pre><code>sudo apt update
+sudo apt install sysstat</code></pre>
+
+<h3>Step 4: Monitor I/O</h3>
+<pre><code>iostat -xz 1</code></pre>
+
+<h3>Step 5: Generate a Temporary Test File</h3>
+
+<p>
+Use a temporary file in your home directory. This example
+does not write directly to a raw disk device.
+</p>
+
+<pre><code>dd if=/dev/zero of=~/block_test.bin \
+bs=1M count=64 status=progress</code></pre>
+
+<h3>Step 6: Synchronize and Remove the Test File</h3>
+
+<pre><code>sync
+rm ~/block_test.bin</code></pre>
+
+<h3>Expected Result</h3>
+
+<ul>
+    <li>Observe block-device statistics.</li>
+    <li>Monitor storage activity during file creation.</li>
+    <li>Understand how filesystem operations generate block I/O.</li>
+    <li>Observe the effect of synchronization.</li>
+</ul>
+
+<div class="note">
+The page cache may affect the observed physical I/O. The
+<code>dd</code> command creates a regular file; it does not
+directly demonstrate individual BIO structures or hardware
+commands.
+</div>
+</section>
+
+<section>
+<h2>22. Review Questions</h2>
+
+<ol>
+    <li>What is block I/O?</li>
+    <li>Differentiate READ and WRITE operations.</li>
+    <li>What information does a BIO contain?</li>
+    <li>What is a BIO vector?</li>
+    <li>Why can a BIO be split?</li>
+    <li>What is the purpose of struct request?</li>
+    <li>Differentiate BIO and request structures.</li>
+    <li>What is a request queue?</li>
+    <li>What is blk-mq?</li>
+    <li>What are software and hardware queues?</li>
+    <li>What is request dispatch?</li>
+    <li>Why does the block layer merge requests?</li>
+    <li>What is the role of an I/O scheduler?</li>
+    <li>How does DMA help storage operations?</li>
+    <li>Differentiate interrupt-based completion and polling.</li>
+    <li>How is I/O completion reported?</li>
+    <li>What are common storage I/O errors?</li>
+    <li>Which commands can be used to monitor block I/O?</li>
+</ol>
+</section>
+
+<section>
+<h2>23. Practical Exercises</h2>
+
+<ol>
+    <li>Identify your Ubuntu virtual disk using <code>lsblk</code>.</li>
+    <li>Inspect its statistics in <code>/proc/diskstats</code>.</li>
+    <li>Install and run <code>iostat</code>.</li>
+    <li>Create a temporary 64 MiB file using <code>dd</code>.</li>
+    <li>Observe storage activity while the file is created.</li>
+    <li>Explain the relationship between BIOs and requests.</li>
+    <li>Draw a block I/O request-processing diagram.</li>
+    <li>Explain the role of blk-mq in modern Linux storage drivers.</li>
+</ol>
+</section>
+
+<section>
+<h2>24. Lesson Summary</h2>
+
+<p>
+Block I/O is the mechanism through which Linux transfers data
+between memory and storage devices. The kernel represents I/O
+operations using BIO structures, organizes them into requests
+and dispatches them through the blk-mq framework.
+</p>
+
+<p>
+The storage driver communicates with the controller, manages
+DMA and completion mechanisms where applicable, and reports
+success or failure to the block layer.
+</p>
+
+<p>
+Understanding request processing is essential for developing
+and debugging Linux storage drivers.
+</p>
+</section>
+
+<section>
+<h2>Navigation</h2>
+
+<p>
+<strong>Previous Lesson:</strong>
+<a href="L02_Block_Device_Architecture.html">
+Lesson 2 - Block Device Architecture
+</a>
+</p>
+
+<p>
+<strong>Next Lesson:</strong>
+<a href="L04_Introduction_to_Network_Device_Drivers.html">
+Lesson 4 - Introduction to Network Device Drivers
+</a>
+</p>
+
+<p>
+<a href="index.html">Back to Chapter 18 Index</a>
+</p>
+</section>
+
+</div>
+
+<footer>
+    <p>Linux Device Drivers | NS Learning Hub</p>
+    <p>Chapter 18 - Lesson 3</p>
+</footer>
+
+</body>
+</html>
