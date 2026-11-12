@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 8 - Top Half and Bottom Half | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    line-height: 1.7;
+    background: #f4f7fb;
+    color: #263238;
+}
+
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    padding: 35px 20px;
+    text-align: center;
+}
+
+.lesson-banner h1 {
+    margin: 0;
+    font-size: 30px;
+}
+
+.lesson-banner p { margin: 10px 0 0; }
+
+.top-nav {
+    background: #102f60;
+    padding: 12px;
+    text-align: center;
+}
+
+.top-nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+
+.top-nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3f0ff;
+    border-left: 5px solid #2878d7;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8f8;
+    padding-bottom: 7px;
+}
+
+h3 { color: #245a9c; }
+
+pre {
+    background: #17212b;
+    color: #e8f0f8;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+code { font-family: Consolas, monospace; }
+
+.note {
+    background: #fff8df;
+    border-left: 5px solid #e0a800;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.success {
+    background: #e8f5e9;
+    border-left: 5px solid #388e3c;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fe;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #b8cbea;
+    padding: 17px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px;
+    margin: 5px;
+    min-width: 190px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+    margin: 4px;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 12px 18px;
+    border-radius: 6px;
+}
+
+.lesson-nav a:hover { background: #0d3475; }
+
+footer {
+    text-align: center;
+    background: #102f60;
+    color: white;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    .lesson-banner h1 { font-size: 23px; }
+    .top-nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    .section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="lesson-banner">
+    <h1>Chapter 14: Interrupt Handling in Linux Device Drivers</h1>
+    <p>Lesson 8: Top Half and Bottom Half</p>
+</header>
+
+<nav class="top-nav">
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 14</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p>
+        Topic: Immediate and Deferred Interrupt Processing<br>
+        Chapter: Interrupt Handling in Linux Device Drivers<br>
+        Prerequisite: Interrupt Context and Process Context<br>
+        Difficulty: Intermediate
+    </p>
+</div>
+
+<section class="section">
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Define top-half and bottom-half processing.</li>
+    <li>Explain why interrupt processing is divided into two parts.</li>
+    <li>Understand the responsibilities of a top half.</li>
+    <li>Understand the responsibilities of a bottom half.</li>
+    <li>Differentiate immediate and deferred interrupt processing.</li>
+    <li>Identify Linux bottom-half mechanisms.</li>
+    <li>Understand the relationship between hard IRQ handlers and deferred work.</li>
+    <li>Select an appropriate deferred-processing mechanism for a driver.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. Introduction to Top Half and Bottom Half</h2>
+
+<p>
+When a hardware device generates an interrupt, the Linux kernel
+must respond quickly. However, some interrupt-related tasks may
+require considerable processing time.
+</p>
+
+<p>
+Performing all operations inside a hard interrupt handler can
+increase interrupt latency and delay the handling of other
+interrupts.
+</p>
+
+<p>
+To address this problem, interrupt processing is commonly
+divided into two conceptual parts:
+</p>
+
+<ul>
+    <li><strong>Top half:</strong> Immediate interrupt handling.</li>
+    <li><strong>Bottom half:</strong> Deferred processing performed later.</li>
+</ul>
+
+<div class="diagram">
+    <div class="diagram-box">Hardware Interrupt</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Top Half: Immediate Processing</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Schedule Deferred Work</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Bottom Half: Deferred Processing</div>
+</div>
+
+<p>
+The top half performs the time-critical work, while the bottom
+half performs the remaining processing outside the immediate
+hard interrupt handler.
+</p>
+</section>
+
+<section class="section">
+<h2>3. What Is the Top Half?</h2>
+
+<p>
+The top half is the immediate interrupt-handling portion of
+the driver. In a conventional Linux hard IRQ design, it is
+implemented by the registered interrupt handler.
+</p>
+
+<p>
+The top half executes in hard interrupt context and must
+complete quickly.
+</p>
+
+<h3>Responsibilities of the top half</h3>
+
+<ul>
+    <li>Identify whether the interrupt belongs to the device.</li>
+    <li>Read essential interrupt status information.</li>
+    <li>Acknowledge or clear the interrupt as required by the hardware.</li>
+    <li>Capture time-critical information.</li>
+    <li>Schedule deferred processing when necessary.</li>
+    <li>Return an appropriate IRQ result.</li>
+</ul>
+
+<h3>Example top-half handler</h3>
+
+<pre><code>static irqreturn_t my_interrupt_handler(int irq,
+                                        void *dev_id)
+{
+    struct my_device_data *data = dev_id;
+
+    /* Check whether the device generated the interrupt. */
+    if (!device_has_interrupt(data))
+        return IRQ_NONE;
+
+    /* Acknowledge the device interrupt. */
+    acknowledge_device_interrupt(data);
+
+    /* Schedule deferred processing. */
+    schedule_work(&amp;data-&gt;work);
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<p>
+This is a conceptual example. The device-specific functions
+and work structure must be defined and initialized by the
+actual driver.
+</p>
+
+<div class="warning">
+    The top half must not perform sleeping operations. It should
+    avoid lengthy calculations, blocking operations and
+    unnecessary processing.
+</div>
+</section>
+
+<section class="section">
+<h2>4. What Is the Bottom Half?</h2>
+
+<p>
+The bottom half is the deferred part of interrupt processing.
+It performs work that does not need to be completed immediately
+inside the hard IRQ handler.
+</p>
+
+<p>
+The bottom half is scheduled by the top half or another suitable
+kernel path.
+</p>
+
+<h3>Responsibilities of the bottom half</h3>
+
+<ul>
+    <li>Process data collected by the top half.</li>
+    <li>Perform longer calculations.</li>
+    <li>Update software data structures.</li>
+    <li>Process received data.</li>
+    <li>Notify other parts of the driver.</li>
+    <li>Perform operations that are inappropriate in hard IRQ context.</li>
+</ul>
+
+<p>
+The execution context of the bottom half depends on the
+mechanism used. A workqueue runs in process context, whereas
+softirqs and tasklets run in atomic context.
+</p>
+
+<div class="note">
+    Bottom half is a conceptual term, not a single Linux API.
+    Linux provides several mechanisms for deferred processing,
+    and they have different execution-context rules.
+</div>
+</section>
+
+<section class="section">
+<h2>5. Why Is Interrupt Processing Divided?</h2>
+
+<p>
+A hardware interrupt may arrive while the CPU is executing
+another task. The kernel must respond without keeping the
+system occupied in interrupt context for an unnecessarily
+long time.
+</p>
+
+<h3>Problems with lengthy interrupt handlers</h3>
+
+<ul>
+    <li>Increased interrupt latency.</li>
+    <li>Delayed processing of other interrupts.</li>
+    <li>Reduced system responsiveness.</li>
+    <li>Long periods spent in atomic context.</li>
+    <li>Difficulty managing complex driver operations.</li>
+</ul>
+
+<h3>Benefits of deferred processing</h3>
+
+<ul>
+    <li>Shorter hard IRQ execution time.</li>
+    <li>Better interrupt responsiveness.</li>
+    <li>Separation of time-critical and non-time-critical tasks.</li>
+    <li>Ability to use sleepable operations through workqueues.</li>
+    <li>Improved organization of driver code.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>6. Top Half vs Bottom Half</h2>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>Top Half</th>
+    <th>Bottom Half</th>
+</tr>
+<tr>
+    <td>Purpose</td>
+    <td>Immediate interrupt response</td>
+    <td>Deferred processing</td>
+</tr>
+<tr>
+    <td>Execution timing</td>
+    <td>Triggered immediately by the IRQ handling path</td>
+    <td>Scheduled for later execution</td>
+</tr>
+<tr>
+    <td>Typical context</td>
+    <td>Hard IRQ context</td>
+    <td>Depends on mechanism</td>
+</tr>
+<tr>
+    <td>Sleeping</td>
+    <td>Not allowed</td>
+    <td>Only permitted in sleepable mechanisms such as workqueues</td>
+</tr>
+<tr>
+    <td>Workload</td>
+    <td>Small and time-critical</td>
+    <td>Potentially longer processing</td>
+</tr>
+<tr>
+    <td>Typical operation</td>
+    <td>Acknowledge interrupt and schedule work</td>
+    <td>Process received data or perform lengthy operations</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>7. Linux Bottom-Half Mechanisms</h2>
+
+<p>
+Linux provides multiple mechanisms for deferred interrupt
+processing. The main mechanisms include:
+</p>
+
+<ol>
+    <li>Softirqs</li>
+    <li>Tasklets (legacy mechanism)</li>
+    <li>Workqueues</li>
+    <li>Threaded interrupt handlers</li>
+</ol>
+
+<h3>Overview</h3>
+
+<table>
+<tr>
+    <th>Mechanism</th>
+    <th>Execution Context</th>
+    <th>Can Sleep?</th>
+</tr>
+<tr>
+    <td>Softirq</td>
+    <td>Softirq context</td>
+    <td>No</td>
+</tr>
+<tr>
+    <td>Tasklet</td>
+    <td>Softirq-based atomic context</td>
+    <td>No</td>
+</tr>
+<tr>
+    <td>Workqueue</td>
+    <td>Worker-thread process context</td>
+    <td>Yes, when otherwise permitted</td>
+</tr>
+<tr>
+    <td>Threaded IRQ</td>
+    <td>Kernel thread context</td>
+    <td>Yes, when otherwise permitted</td>
+</tr>
+</table>
+
+<div class="note">
+    Tasklets are a legacy mechanism. New driver designs should
+    generally prefer workqueues or threaded IRQs where their
+    execution semantics are appropriate.
+</div>
+</section>
+
+<section class="section">
+<h2>8. Softirqs</h2>
+
+<p>
+A softirq is a statically defined deferred-processing mechanism
+used by the Linux kernel for high-priority, non-sleeping work.
+</p>
+
+<p>
+Softirqs execute in softirq context and cannot sleep.
+They are used by important kernel subsystems, including
+networking and timers.
+</p>
+
+<h3>Characteristics</h3>
+
+<ul>
+    <li>Designed for deferred processing.</li>
+    <li>Runs in atomic context.</li>
+    <li>Cannot use blocking operations.</li>
+    <li>Different softirq instances can execute concurrently on different CPUs.</li>
+    <li>Requires appropriate synchronization for shared data.</li>
+</ul>
+
+<h3>Examples of kernel softirq activities</h3>
+
+<ul>
+    <li>Network receive processing.</li>
+    <li>Network transmit completion processing.</li>
+    <li>Timer-related processing.</li>
+    <li>Some block I/O completion processing.</li>
+</ul>
+
+<div class="warning">
+    Softirqs are generally a kernel-subsystem mechanism.
+    Ordinary device drivers should not casually create their
+    own softirq types. Prefer established driver-facing
+    mechanisms such as workqueues or threaded IRQs.
+</div>
+</section>
+
+<section class="section">
+<h2>9. Tasklets</h2>
+
+<p>
+Tasklets are a deferred execution mechanism built on top of
+softirqs. They were historically used by drivers to perform
+work after the immediate interrupt handler completed.
+</p>
+
+<h3>Characteristics</h3>
+
+<ul>
+    <li>Execute in softirq-based atomic context.</li>
+    <li>Cannot sleep.</li>
+    <li>Provide a convenient deferred-processing abstraction.</li>
+    <li>Different tasklets can execute concurrently, but a particular tasklet instance is serialized against itself.</li>
+</ul>
+
+<p>
+Tasklets are now considered a legacy mechanism for new
+driver development. Modern code should generally consider
+workqueues or threaded IRQs instead.
+</p>
+
+<div class="note">
+    Older tutorials may demonstrate tasklet_setup(),
+    tasklet_schedule() and tasklet_kill(). Understand these
+    APIs when maintaining older drivers, but do not assume
+    they are the preferred choice for new code.
+</div>
+</section>
+
+<section class="section">
+<h2>10. Workqueues</h2>
+
+<p>
+A workqueue allows a driver to defer work to a kernel
+worker thread. Workqueue callbacks execute in process context.
+</p>
+
+<p>
+Because they run in process context, workqueue functions
+can sleep when the surrounding locking and API rules allow it.
+</p>
+
+<h3>Important characteristics</h3>
+
+<ul>
+    <li>Execute through kernel worker threads.</li>
+    <li>Run in process context.</li>
+    <li>Can perform sleepable operations.</li>
+    <li>Suitable for longer deferred tasks.</li>
+    <li>Can be scheduled from an interrupt handler.</li>
+</ul>
+
+<h3>Workqueue example</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/workqueue.h&gt;
+
+static struct work_struct my_work;
+
+static void my_work_handler(struct work_struct *work)
+{
+    pr_info("Deferred work executing\n");
+
+    /* Sleepable operations may be used
+       when otherwise permitted. */
+}
+
+static irqreturn_t my_interrupt_handler(int irq,
+                                        void *dev_id)
+{
+    pr_info("Top half executed\n");
+
+    schedule_work(&amp;my_work);
+
+    return IRQ_HANDLED;
+}
+
+static int __init my_init(void)
+{
+    INIT_WORK(&amp;my_work, my_work_handler);
+
+    pr_info("Work initialized\n");
+
+    return 0;
+}
+
+static void __exit my_exit(void)
+{
+    cancel_work_sync(&amp;my_work);
+
+    pr_info("Work cancelled or completed\n");
+}
+
+module_init(my_init);
+module_exit(my_exit);
+
+MODULE_LICENSE("GPL");</code></pre>
+
+<div class="warning">
+    This is a conceptual workqueue demonstration, not a complete
+    interrupt driver. A real driver must register its IRQ,
+    initialize device state, protect shared data and ensure that
+    no handler can schedule new work during teardown. The IRQ
+    should be unregistered and synchronized before the work
+    structure and its containing data are destroyed.
+</div>
+
+<h3>Important functions</h3>
+
+<table>
+<tr>
+    <th>Function</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>INIT_WORK()</code></td>
+    <td>Initializes a work structure.</td>
+</tr>
+<tr>
+    <td><code>schedule_work()</code></td>
+    <td>Schedules work on the system workqueue.</td>
+</tr>
+<tr>
+    <td><code>queue_work()</code></td>
+    <td>Queues work on a specified workqueue.</td>
+</tr>
+<tr>
+    <td><code>flush_work()</code></td>
+    <td>Waits for a particular work item to finish its pending execution.</td>
+</tr>
+<tr>
+    <td><code>cancel_work_sync()</code></td>
+    <td>Cancels pending work and waits for executing work to finish.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>11. Threaded Interrupt Handlers</h2>
+
+<p>
+Linux supports threaded interrupt handling through
+<code>request_threaded_irq()</code>.
+</p>
+
+<p>
+A threaded interrupt design separates a short primary
+handler from a threaded handler.
+</p>
+
+<ul>
+    <li>The primary handler runs in hard IRQ context.</li>
+    <li>The threaded handler runs in a kernel thread.</li>
+    <li>The threaded handler can perform sleepable operations.</li>
+    <li>The primary handler commonly verifies and acknowledges the interrupt and returns IRQ_WAKE_THREAD.</li>
+</ul>
+
+<h3>Conceptual example</h3>
+
+<pre><code>static irqreturn_t my_primary_handler(int irq,
+                                      void *dev_id)
+{
+    /*
+     * Perform minimal hard IRQ work.
+     * Verify the interrupt source.
+     */
+
+    return IRQ_WAKE_THREAD;
+}
+
+static irqreturn_t my_thread_handler(int irq,
+                                     void *dev_id)
+{
+    /*
+     * Perform deferred processing
+     * in threaded context.
+     */
+
+    pr_info("Threaded handler executing\n");
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<p>
+The handler pair can be registered using
+<code>request_threaded_irq()</code>, with the primary and
+threaded handler functions supplied separately.
+</p>
+
+<div class="note">
+    Threaded IRQs are especially useful when interrupt-related
+    processing needs to sleep, for example when accessing a
+    peripheral through a sleepable bus operation.
+</div>
+</section>
+
+<section class="section">
+<h2>12. Complete Interrupt Processing Flow</h2>
+
+<p>
+The following diagram shows a typical interrupt-driven
+device design using a hard IRQ handler and a workqueue.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">Hardware Device Generates IRQ</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">CPU Interrupt Entry</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Linux IRQ Subsystem</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Top Half / Hard IRQ Handler</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Acknowledge and Capture Essential Data</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Schedule Workqueue</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Worker Thread Executes Bottom Half</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Complete Deferred Processing</div>
+</div>
+
+<p>
+This approach keeps the immediate interrupt handler short
+while allowing longer work to execute in process context.
+</p>
+</section>
+
+<section class="section">
+<h2>13. Choosing the Correct Bottom-Half Mechanism</h2>
+
+<table>
+<tr>
+    <th>Requirement</th>
+    <th>Possible Mechanism</th>
+</tr>
+<tr>
+    <td>Short deferred processing that cannot sleep</td>
+    <td>Softirq-based mechanism where appropriate</td>
+</tr>
+<tr>
+    <td>Maintaining an older tasklet-based driver</td>
+    <td>Tasklet</td>
+</tr>
+<tr>
+    <td>Deferred processing that may sleep</td>
+    <td>Workqueue</td>
+</tr>
+<tr>
+    <td>Interrupt handling that needs a dedicated thread</td>
+    <td>Threaded IRQ</td>
+</tr>
+<tr>
+    <td>High-volume network packet processing</td>
+    <td>NAPI and networking subsystem mechanisms</td>
+</tr>
+</table>
+
+<p>
+The correct mechanism depends on latency requirements,
+execution-context requirements, concurrency, ordering and
+the type of work being performed.
+</p>
+</section>
+
+<section class="section">
+<h2>14. Common Mistakes</h2>
+
+<ol>
+    <li>
+        <strong>Performing lengthy work in the top half:</strong>
+        this increases interrupt latency.
+    </li>
+    <li>
+        <strong>Sleeping inside a hard IRQ handler:</strong>
+        hard IRQ context does not permit blocking operations.
+    </li>
+    <li>
+        <strong>Assuming every bottom half can sleep:</strong>
+        softirqs and tasklets execute in atomic context.
+    </li>
+    <li>
+        <strong>Failing to synchronize shared data:</strong>
+        top-half and deferred code may access the same data concurrently.
+    </li>
+    <li>
+        <strong>Freeing work data too early:</strong>
+        pending or executing work may still access its containing structure.
+    </li>
+    <li>
+        <strong>Ignoring teardown ordering:</strong>
+        stop new interrupt activity, unregister and synchronize the IRQ,
+        and then cancel or flush deferred work as appropriate before
+        freeing associated data.
+    </li>
+    <li>
+        <strong>Using legacy tasklets in new designs without reason:</strong>
+        consider workqueues or threaded IRQs where suitable.
+    </li>
+</ol>
+</section>
+
+<section class="section">
+<h2>15. Lesson Summary</h2>
+
+<ul>
+    <li>Top half performs immediate interrupt handling.</li>
+    <li>Bottom half performs deferred interrupt processing.</li>
+    <li>The top half normally executes in hard IRQ context.</li>
+    <li>Bottom-half execution context depends on the mechanism.</li>
+    <li>Softirqs and tasklets execute in atomic context.</li>
+    <li>Workqueues execute in process context.</li>
+    <li>Threaded IRQ handlers execute in kernel-thread context.</li>
+    <li>Deferred processing reduces the workload of hard IRQ handlers.</li>
+    <li>Correct synchronization and teardown are essential.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>16. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+    <li>What is a top half?</li>
+    <li>What is a bottom half?</li>
+    <li>Why is interrupt processing divided into two parts?</li>
+    <li>What are the main responsibilities of a top half?</li>
+    <li>What are the main responsibilities of a bottom half?</li>
+    <li>Can a softirq handler sleep?</li>
+    <li>In which context do workqueues execute?</li>
+    <li>What is a threaded interrupt handler?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+    <li>Explain top-half and bottom-half processing with a diagram.</li>
+    <li>Compare softirqs, tasklets, workqueues and threaded IRQs.</li>
+    <li>Explain why lengthy operations should not be performed in a hard IRQ handler.</li>
+    <li>Describe how a workqueue is used for deferred interrupt processing.</li>
+    <li>Explain the lifecycle and cleanup requirements of workqueue-based interrupt processing.</li>
+</ol>
+
+<h3>C. Practical Exercises</h3>
+<ol>
+    <li>Write a conceptual top-half handler that schedules deferred work.</li>
+    <li>Implement a workqueue callback that logs a message.</li>
+    <li>Explain why a workqueue callback can sleep while a hard IRQ handler cannot.</li>
+    <li>Draw the interrupt processing flow for a UART driver.</li>
+    <li>Compare a workqueue-based design with a threaded IRQ design.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>17. Expected Learning Outcome</h2>
+
+<div class="success">
+    After completing this lesson, you should understand
+    how Linux separates immediate interrupt handling from
+    deferred processing, identify the execution-context
+    restrictions of different bottom-half mechanisms, and
+    choose an appropriate design for interrupt-driven
+    device drivers.
+</div>
+</section>
+
+<div class="lesson-nav">
+    <a href="L07_Interrupt_Context_and_Process_Context.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L09_Tasklets_and_Workqueues.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 14 - Interrupt Handling in Linux Device Drivers</p>
+</footer>
+
+</body>
+</html>
