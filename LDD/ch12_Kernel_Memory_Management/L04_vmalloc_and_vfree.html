@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vmalloc() and vfree() | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>vmalloc() and vfree()</h1>
+    <p>Linux Device Drivers – Chapter 12, Lesson 4</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 12</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> Kernel Memory Management</p>
+    <p><strong>Lesson:</strong> 4 – vmalloc() and vfree()</p>
+    <p><strong>Prerequisites:</strong> C pointers, virtual memory, kmalloc(), kfree() and kernel memory allocation fundamentals.</p>
+    <p><strong>Objective:</strong> Understand virtually contiguous kernel memory, allocate larger virtual memory regions and release them safely.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction to vmalloc()</h2>
+
+<p><code>vmalloc()</code> is a Linux kernel memory allocation function that allocates a memory region which is contiguous in the kernel virtual address space.</p>
+
+<p>The physical pages backing this virtual region do not need to be adjacent in physical memory.</p>
+
+<p>It is useful when a kernel component needs a relatively large virtually contiguous memory region and physical contiguity is not required.</p>
+
+<h3>Common Applications</h3>
+<ul>
+    <li>Large kernel buffers.</li>
+    <li>Memory regions used for software processing.</li>
+    <li>Some internal kernel data structures.</li>
+    <li>Large temporary memory regions.</li>
+</ul>
+
+<div class="note">
+    vmalloc() is not automatically the best choice for every large allocation. Consider memory pressure, performance, allocation context and whether a specialized allocator is more suitable.
+</div>
+</section>
+
+<section class="section">
+<h2>2. Syntax of vmalloc()</h2>
+
+<pre><code>#include &lt;linux/vmalloc.h&gt;
+
+void *vmalloc(unsigned long size);</code></pre>
+
+<h3>Parameter</h3>
+
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr>
+    <td><code>size</code></td>
+    <td>Number of bytes to allocate.</td>
+</tr>
+</table>
+
+<h3>Return Value</h3>
+<ul>
+    <li>Returns a pointer to the allocated virtual memory region on success.</li>
+    <li>Returns <code>NULL</code> if the allocation fails.</li>
+</ul>
+
+<h3>Basic Example</h3>
+
+<pre><code>char *buffer;
+
+buffer = vmalloc(4096);
+
+if (!buffer) {
+    pr_err("vmalloc failed\n");
+    return -ENOMEM;
+}</code></pre>
+
+<p>The returned pointer can be used by kernel code to access the allocated virtual memory region.</p>
+</section>
+
+<section class="section">
+<h2>3. Understanding Virtual Contiguity</h2>
+
+<p>Virtual memory allows the kernel to map separate physical memory pages into a continuous virtual address range.</p>
+
+<div class="diagram">
+    <h3>Kernel Virtual Address Space</h3>
+    <div class="diagram-box">Virtual Page 1</div>
+    <div class="diagram-box">Virtual Page 2</div>
+    <div class="diagram-box">Virtual Page 3</div>
+    <div class="diagram-box">Virtual Page 4</div>
+    <p><strong>Continuous virtual address range</strong></p>
+    <div class="arrow">↓ Page-table mappings ↓</div>
+    <h3>Physical Memory</h3>
+    <div class="diagram-box">Physical Page A</div>
+    <div class="diagram-box">Physical Page C</div>
+    <div class="diagram-box">Physical Page B</div>
+    <div class="diagram-box">Physical Page D</div>
+    <p><strong>Physical pages may be located at different addresses</strong></p>
+</div>
+
+<p>The kernel's page tables map the virtual pages to their corresponding physical pages.</p>
+
+<p>Therefore, the kernel sees one continuous virtual region even though the physical pages may be scattered.</p>
+</section>
+
+<section class="section">
+<h2>4. kmalloc() vs vmalloc()</h2>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>kmalloc()</th>
+    <th>vmalloc()</th>
+</tr>
+<tr>
+    <td>Virtual contiguity</td>
+    <td>Yes</td>
+    <td>Yes</td>
+</tr>
+<tr>
+    <td>Physical contiguity</td>
+    <td>Yes</td>
+    <td>Not necessarily</td>
+</tr>
+<tr>
+    <td>Typical use</td>
+    <td>Small and moderate allocations.</td>
+    <td>Relatively large virtual regions.</td>
+</tr>
+<tr>
+    <td>Allocation infrastructure</td>
+    <td>Slab-family allocator and, depending on size, page allocation mechanisms.</td>
+    <td>Virtual memory area and backing physical pages.</td>
+</tr>
+<tr>
+    <td>Release function</td>
+    <td>kfree()</td>
+    <td>vfree()</td>
+</tr>
+<tr>
+    <td>DMA suitability</td>
+    <td>Not automatically DMA-ready.</td>
+    <td>Not automatically DMA-ready.</td>
+</tr>
+</table>
+
+<div class="important">
+    Use kmalloc() when physical contiguity is required by the kernel operation. Use vmalloc() when virtual contiguity is sufficient. For device DMA, use the Linux DMA API.
+</div>
+</section>
+
+<section class="section">
+<h2>5. Introduction to vfree()</h2>
+
+<p><code>vfree()</code> releases a memory region previously allocated using vmalloc() or a compatible vmalloc-family allocation interface.</p>
+
+<h3>Syntax</h3>
+
+<pre><code>void vfree(const void *addr);</code></pre>
+
+<h3>Example</h3>
+
+<pre><code>char *buffer;
+
+buffer = vmalloc(4096);
+
+if (!buffer)
+    return -ENOMEM;
+
+/* Use the allocated memory */
+
+vfree(buffer);
+buffer = NULL;</code></pre>
+
+<p>After vfree() releases the allocation, the pointer must not be used to access the old memory region.</p>
+
+<div class="note">
+    vfree() may defer some freeing work internally. Do not assume that the physical pages are synchronously returned at the exact instant the function is called.
+</div>
+</section>
+
+<section class="section">
+<h2>6. Initializing vmalloc() Memory</h2>
+
+<p>Memory returned by vmalloc() should be initialized before it is used.</p>
+
+<h3>Using memset()</h3>
+
+<pre><code>char *buffer;
+
+buffer = vmalloc(4096);
+
+if (!buffer)
+    return -ENOMEM;
+
+memset(buffer, 0, 4096);</code></pre>
+
+<h3>Using vzalloc()</h3>
+
+<p><code>vzalloc()</code> is a related function that allocates virtually contiguous memory and zero-initializes it.</p>
+
+<pre><code>#include &lt;linux/vmalloc.h&gt;
+
+buffer = vzalloc(4096);
+
+if (!buffer)
+    return -ENOMEM;</code></pre>
+
+<p>Memory allocated using vzalloc() is released using vfree().</p>
+</section>
+
+<section class="section">
+<h2>7. Allocation Constraints</h2>
+
+<p>vmalloc() is generally intended for contexts in which sleeping is allowed. It may perform operations that can block.</p>
+
+<table>
+<tr>
+    <th>Execution Context</th>
+    <th>vmalloc() Usage</th>
+</tr>
+<tr>
+    <td>Normal process context</td>
+    <td>Generally suitable when sleeping is permitted.</td>
+</tr>
+<tr>
+    <td>Hard interrupt context</td>
+    <td>Not suitable because it may sleep.</td>
+</tr>
+<tr>
+    <td>While holding a spinlock</td>
+    <td>Not suitable if the operation can sleep.</td>
+</tr>
+<tr>
+    <td>Atomic context</td>
+    <td>Not suitable.</td>
+</tr>
+</table>
+
+<div class="important">
+    Do not call vmalloc() from an interrupt handler or while holding a spinlock. Allocate memory in advance if an interrupt-time operation needs a buffer.
+</div>
+</section>
+
+<section class="section">
+<h2>8. Why vmalloc() Is Not a DMA Allocation Function</h2>
+
+<p>DMA stands for Direct Memory Access. It allows a hardware device to transfer data to or from memory without requiring the CPU to copy every byte.</p>
+
+<p>A device may use a DMA address that differs from the CPU's virtual address and may also differ from the physical address.</p>
+
+<p>Consequently, a vmalloc() pointer must not be treated as a DMA address.</p>
+
+<div class="diagram">
+    <div class="diagram-box">CPU Virtual Address</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Page Tables</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Physical Memory Pages</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">DMA API / IOMMU Mapping</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Device DMA Address</div>
+</div>
+
+<p>For DMA-capable devices, use suitable interfaces such as:</p>
+
+<ul>
+    <li><code>dma_alloc_coherent()</code> for coherent DMA allocations.</li>
+    <li><code>dma_map_single()</code> or other streaming DMA mapping functions for suitable existing buffers.</li>
+</ul>
+
+<p>The DMA API handles device addressing and architecture-specific mapping requirements.</p>
+</section>
+
+<section class="section">
+<h2>9. Practical Example: vmalloc() and vfree() Module</h2>
+
+<p>Create a source file named <code>vmalloc_demo.c</code>.</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/vmalloc.h&gt;
+#include &lt;linux/string.h&gt;
+
+#define BUFFER_SIZE (64 * 1024)
+
+static char *buffer;
+
+static int __init vmalloc_demo_init(void)
+{
+    buffer = vmalloc(BUFFER_SIZE);
+
+    if (!buffer) {
+        pr_err("vmalloc: allocation failed\n");
+        return -ENOMEM;
+    }
+
+    memset(buffer, 0, BUFFER_SIZE);
+
+    snprintf(buffer, BUFFER_SIZE,
+             "Linux vmalloc demonstration");
+
+    pr_info("vmalloc: allocated %d bytes\n",
+            BUFFER_SIZE);
+
+    pr_info("Buffer content: %s\n", buffer);
+
+    return 0;
+}
+
+static void __exit vmalloc_demo_exit(void)
+{
+    vfree(buffer);
+    buffer = NULL;
+
+    pr_info("vmalloc: memory released\n");
+}
+
+module_init(vmalloc_demo_init);
+module_exit(vmalloc_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("vmalloc and vfree demonstration");</code></pre>
+
+<h3>Code Explanation</h3>
+
+<ol>
+    <li>The module requests a 64 KB virtual memory region.</li>
+    <li>vmalloc() allocates a virtually contiguous region.</li>
+    <li>The NULL check handles allocation failure.</li>
+    <li>memset() initializes the memory.</li>
+    <li>snprintf() stores a message in the buffer.</li>
+    <li>pr_info() displays the message in the kernel log.</li>
+    <li>vfree() releases the allocation during module cleanup.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>10. Makefile</h2>
+
+<p>Create a Makefile in the same directory.</p>
+
+<pre><code>obj-m += vmalloc_demo.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>Use actual tab characters before the two recipe commands.</p>
+</section>
+
+<section class="section">
+<h2>11. Compile and Test in Ubuntu</h2>
+
+<h3>Step 1: Install Dependencies</h3>
+
+<pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+<h3>Step 2: Compile</h3>
+
+<pre><code>make</code></pre>
+
+<h3>Step 3: Load the Module</h3>
+
+<pre><code>sudo insmod vmalloc_demo.ko</code></pre>
+
+<h3>Step 4: View Kernel Messages</h3>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<p>Illustrative output:</p>
+
+<pre><code>vmalloc: allocated 65536 bytes
+Buffer content: Linux vmalloc demonstration</code></pre>
+
+<h3>Step 5: Remove the Module</h3>
+
+<pre><code>sudo rmmod vmalloc_demo</code></pre>
+
+<p>Illustrative cleanup message:</p>
+
+<pre><code>vmalloc: memory released</code></pre>
+
+<h3>Step 6: Clean Build Files</h3>
+
+<pre><code>make clean</code></pre>
+
+</section>
+
+<section class="section">
+<h2>12. Common Errors</h2>
+
+<table>
+<tr>
+    <th>Error</th>
+    <th>Problem</th>
+    <th>Correct Practice</th>
+</tr>
+<tr>
+    <td>Using kfree() on vmalloc() memory</td>
+    <td>Incorrect allocator pairing.</td>
+    <td>Use vfree().</td>
+</tr>
+<tr>
+    <td>Not checking NULL</td>
+    <td>Possible NULL pointer dereference.</td>
+    <td>Check the allocation result.</td>
+</tr>
+<tr>
+    <td>Not releasing memory</td>
+    <td>Memory leak.</td>
+    <td>Release the allocation during cleanup.</td>
+</tr>
+<tr>
+    <td>Using memory after vfree()</td>
+    <td>Use-after-free error.</td>
+    <td>Manage references and object lifetime.</td>
+</tr>
+<tr>
+    <td>Using vmalloc() in interrupt context</td>
+    <td>Potential sleeping in atomic context.</td>
+    <td>Preallocate memory in a sleepable context.</td>
+</tr>
+<tr>
+    <td>Using vmalloc() memory directly for DMA</td>
+    <td>Invalid assumption about device addressing and physical layout.</td>
+    <td>Use the DMA API.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>13. Kernel Memory Inspection Tools</h2>
+
+<p>Linux provides several tools for observing memory usage.</p>
+
+<table>
+<tr>
+    <th>Command</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>free -h</code></td>
+    <td>Displays system memory usage in human-readable form.</td>
+</tr>
+<tr>
+    <td><code>cat /proc/meminfo</code></td>
+    <td>Displays detailed system memory statistics.</td>
+</tr>
+<tr>
+    <td><code>slabtop</code></td>
+    <td>Displays slab allocator usage.</td>
+</tr>
+<tr>
+    <td><code>sudo dmesg | tail</code></td>
+    <td>Displays recent kernel ring-buffer messages.</td>
+</tr>
+</table>
+
+<p>These tools provide system-level information. They do not directly prove that a particular vmalloc() allocation belongs to a specific module.</p>
+</section>
+
+<section class="section">
+<h2>14. Lesson Summary</h2>
+
+<ul>
+    <li>vmalloc() allocates virtually contiguous kernel memory.</li>
+    <li>The backing physical pages do not need to be contiguous.</li>
+    <li>vfree() releases vmalloc() memory.</li>
+    <li>vmalloc() may sleep and is unsuitable for atomic contexts.</li>
+    <li>vmalloc() memory is not automatically suitable for DMA.</li>
+    <li>vzalloc() provides zero-initialized virtually contiguous memory.</li>
+    <li>Always check allocation results and release memory correctly.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>15. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>What is vmalloc()?</li>
+    <li>Which header file declares vmalloc()?</li>
+    <li>What does virtual contiguity mean?</li>
+    <li>Which function releases vmalloc() memory?</li>
+    <li>Does vmalloc() guarantee physical contiguity?</li>
+    <li>What is the difference between kmalloc() and vmalloc()?</li>
+    <li>What is vzalloc()?</li>
+    <li>Why is vmalloc() unsuitable for interrupt context?</li>
+    <li>Why should vmalloc() memory not be used directly as a DMA address?</li>
+    <li>Which command displays system memory information?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain the working principle of vmalloc().</li>
+    <li>Differentiate between physical and virtual memory contiguity.</li>
+    <li>Compare kmalloc() and vmalloc() in detail.</li>
+    <li>Explain the syntax and usage of vfree().</li>
+    <li>Discuss why vmalloc() cannot be used as a general DMA allocation interface.</li>
+    <li>Explain memory allocation constraints in process and interrupt contexts.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Write a module that allocates 4 KB using vmalloc().</li>
+    <li>Modify it to allocate 64 KB.</li>
+    <li>Initialize the allocated memory using memset().</li>
+    <li>Use vzalloc() and compare its behavior.</li>
+    <li>Release the allocation using vfree().</li>
+    <li>Load and unload the module in Ubuntu.</li>
+    <li>Inspect kernel messages and system memory statistics.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>16. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Explain virtually contiguous memory.</li>
+    <li>Understand the purpose of vmalloc() and vfree().</li>
+    <li>Compare kmalloc() and vmalloc().</li>
+    <li>Understand why vmalloc() is not a DMA allocation API.</li>
+    <li>Write and test a kernel module using vmalloc().</li>
+    <li>Identify common errors in virtual memory allocation.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L03_kmalloc_and_kfree.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 12 Index</a>
+    <a href="L05_kzalloc_and_kcalloc.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 12 – Kernel Memory Management</p>
+</footer>
+
+</body>
+</html>
