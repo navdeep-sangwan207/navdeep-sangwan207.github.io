@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Device File Permissions | Linux Device Drivers</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+
+nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+
+h3 { color: #245b9e; margin-top: 22px; }
+
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+code { font-family: Consolas, monospace; }
+
+.inline-code {
+    background: #edf2f8;
+    color: #b42318;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-family: Consolas, monospace;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-weight: bold;
+    font-size: 20px;
+}
+
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+
+.lesson-nav a:hover { background: #2878d7; }
+
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Device File Permissions</h1>
+    <p>Linux Device Drivers – Chapter 10, Lesson 6</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 10</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson Information</strong>
+        <p><strong>Chapter:</strong> Device Files and Device Interfaces</p>
+        <p><strong>Lesson:</strong> 6 – Device File Permissions</p>
+        <p><strong>Prerequisites:</strong> Device Nodes, Major and Minor Number Mapping, Basic Linux File Permissions.</p>
+        <p><strong>Objective:</strong> Understand how Linux controls access to device nodes using ownership, groups, permission bits, and device-management rules.</p>
+    </div>
+
+    <section class="section">
+        <h2>1. Introduction</h2>
+
+        <p>Linux represents many hardware and software device interfaces through special files under the <code>/dev</code> directory.</p>
+
+        <p>Although these are device nodes rather than ordinary data files, Linux applies standard filesystem permission mechanisms to control which users can access them.</p>
+
+        <p>For example, inspect a device node:</p>
+
+        <pre><code>ls -l /dev/null
+ls -l /dev/tty
+ls -l /dev/zero</code></pre>
+
+        <p>Example output format:</p>
+
+        <pre><code>crw-rw-rw- 1 root root 1, 3 Nov 12 10:30 /dev/null</code></pre>
+
+        <p>The permission string, owner, group, major number, and minor number provide information about the device node.</p>
+    </section>
+
+    <section class="section">
+        <h2>2. Understanding Device File Permission Notation</h2>
+
+        <p>Consider this example:</p>
+
+        <pre><code>crw-rw---- 1 root dialout 188, 0 /dev/example0</code></pre>
+
+        <table>
+            <tr>
+                <th>Field</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td><code>c</code></td>
+                <td>Character device file.</td>
+            </tr>
+            <tr>
+                <td><code>rw-</code></td>
+                <td>Owner has read and write permissions.</td>
+            </tr>
+            <tr>
+                <td><code>rw-</code></td>
+                <td>Group has read and write permissions.</td>
+            </tr>
+            <tr>
+                <td><code>---</code></td>
+                <td>Other users have no permissions.</td>
+            </tr>
+            <tr>
+                <td><code>root</code></td>
+                <td>Owner of the device node.</td>
+            </tr>
+            <tr>
+                <td><code>dialout</code></td>
+                <td>Group assigned to the device node.</td>
+            </tr>
+            <tr>
+                <td><code>188, 0</code></td>
+                <td>Major and minor device numbers.</td>
+            </tr>
+        </table>
+
+        <p>The three permission groups are:</p>
+
+        <ul>
+            <li><strong>User (u):</strong> The owner of the device node.</li>
+            <li><strong>Group (g):</strong> Users belonging to the assigned group.</li>
+            <li><strong>Others (o):</strong> All other users.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>3. Read, Write and Execute Permissions</h2>
+
+        <p>Linux uses three basic permission bits.</p>
+
+        <table>
+            <tr>
+                <th>Permission</th>
+                <th>Symbol</th>
+                <th>Numeric Value</th>
+                <th>General Meaning for a Device Node</th>
+            </tr>
+            <tr>
+                <td>Read</td>
+                <td>r</td>
+                <td>4</td>
+                <td>Allows opening the device with read access, subject to driver and system checks.</td>
+            </tr>
+            <tr>
+                <td>Write</td>
+                <td>w</td>
+                <td>2</td>
+                <td>Allows opening the device with write access, subject to driver and system checks.</td>
+            </tr>
+            <tr>
+                <td>Execute</td>
+                <td>x</td>
+                <td>1</td>
+                <td>Execute permission is generally not meaningful for ordinary device I/O.</td>
+            </tr>
+        </table>
+
+        <p>Read and write permissions are particularly important for character-device interfaces.</p>
+
+        <p>For example:</p>
+
+        <pre><code>crw-rw---- </code></pre>
+
+        <p>This means the owner and group have read/write permission, while other users have no permission.</p>
+
+        <div class="note">
+            Filesystem permission bits are only one part of device access control. The driver may impose additional restrictions, and security mechanisms such as Linux capabilities, device cgroups, and security modules can also affect access.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>4. Numeric Permission Representation</h2>
+
+        <p>Linux permissions can be represented using octal numbers.</p>
+
+        <table>
+            <tr>
+                <th>Permission</th>
+                <th>Value</th>
+            </tr>
+            <tr><td>Read (r)</td><td>4</td></tr>
+            <tr><td>Write (w)</td><td>2</td></tr>
+            <tr><td>Execute (x)</td><td>1</td></tr>
+            <tr><td>No permission</td><td>0</td></tr>
+        </table>
+
+        <p>Each digit represents permissions for one category: owner, group, or others.</p>
+
+        <h3>Example: Permission 660</h3>
+
+        <pre><code>sudo chmod 660 /dev/example0</code></pre>
+
+        <table>
+            <tr>
+                <th>Digit</th>
+                <th>Category</th>
+                <th>Permission</th>
+            </tr>
+            <tr>
+                <td>6</td>
+                <td>Owner</td>
+                <td>Read + Write (4 + 2)</td>
+            </tr>
+            <tr>
+                <td>6</td>
+                <td>Group</td>
+                <td>Read + Write (4 + 2)</td>
+            </tr>
+            <tr>
+                <td>0</td>
+                <td>Others</td>
+                <td>No permission</td>
+            </tr>
+        </table>
+
+        <h3>Common Permission Examples</h3>
+
+        <table>
+            <tr>
+                <th>Mode</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>600</td>
+                <td>Owner read/write only.</td>
+            </tr>
+            <tr>
+                <td>640</td>
+                <td>Owner read/write; group read.</td>
+            </tr>
+            <tr>
+                <td>660</td>
+                <td>Owner and group read/write.</td>
+            </tr>
+            <tr>
+                <td>666</td>
+                <td>Everyone read/write.</td>
+            </tr>
+            <tr>
+                <td>000</td>
+                <td>No permission for owner, group, or others.</td>
+            </tr>
+        </table>
+
+        <div class="important">
+            Do not use permissive settings such as 666 as a general solution to device-access problems. Grant only the permissions required by the intended users and applications.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>5. Changing Device Node Permissions Using chmod</h2>
+
+        <p>The <code>chmod</code> command changes permission bits on a device node, provided the user has sufficient privileges.</p>
+
+        <h3>Syntax</h3>
+
+        <pre><code>sudo chmod MODE DEVICE_NODE</code></pre>
+
+        <h3>Example</h3>
+
+        <pre><code>sudo chmod 660 /dev/example0</code></pre>
+
+        <p>This requests read/write access for the owner and group and removes permissions for others.</p>
+
+        <h3>Verify the Permissions</h3>
+
+        <pre><code>ls -l /dev/example0</code></pre>
+
+        <p>Possible permission display:</p>
+
+        <pre><code>crw-rw---- 1 root root 240, 0 /dev/example0</code></pre>
+
+        <p>The displayed ownership and device numbers are illustrative. Actual values depend on the system and driver.</p>
+
+        <div class="note">
+            A manually changed permission on a device node may not persist after the node is removed and recreated. Device-management rules should be used for persistent configuration.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>6. Changing Device Node Ownership Using chown</h2>
+
+        <p>Linux uses ownership to determine which user and group receive the owner and group permission bits.</p>
+
+        <p>The <code>chown</code> command changes ownership.</p>
+
+        <h3>Syntax</h3>
+
+        <pre><code>sudo chown USER:GROUP DEVICE_NODE</code></pre>
+
+        <h3>Example</h3>
+
+        <pre><code>sudo chown root:dialout /dev/example0</code></pre>
+
+        <p>This sets:</p>
+
+        <ul>
+            <li>Owner: <code>root</code></li>
+            <li>Group: <code>dialout</code></li>
+        </ul>
+
+        <p>Verify the result:</p>
+
+        <pre><code>ls -l /dev/example0</code></pre>
+
+        <p>Example:</p>
+
+        <pre><code>crw-rw---- 1 root dialout 240, 0 /dev/example0</code></pre>
+    </section>
+
+    <section class="section">
+        <h2>7. Device Groups in Linux</h2>
+
+        <p>Linux systems commonly use groups to grant access to particular device interfaces without granting every user unrestricted access.</p>
+
+        <p>Some commonly encountered groups include:</p>
+
+        <table>
+            <tr>
+                <th>Group</th>
+                <th>Typical Context</th>
+            </tr>
+            <tr>
+                <td><code>dialout</code></td>
+                <td>Serial ports and related communication devices on many distributions.</td>
+            </tr>
+            <tr>
+                <td><code>plugdev</code></td>
+                <td>Some removable or plug-in device access arrangements, depending on distribution configuration.</td>
+            </tr>
+            <tr>
+                <td><code>video</code></td>
+                <td>Some video and graphics device interfaces.</td>
+            </tr>
+            <tr>
+                <td><code>audio</code></td>
+                <td>Some audio device interfaces.</td>
+            </tr>
+        </table>
+
+        <p>Group assignments are distribution- and device-specific. A device does not automatically belong to a particular group simply because of its function.</p>
+
+        <h3>Check Your Groups</h3>
+
+        <pre><code>groups
+id</code></pre>
+
+        <h3>Inspect a Group</h3>
+
+        <pre><code>getent group dialout</code></pre>
+
+        <h3>Add a User to a Group</h3>
+
+        <pre><code>sudo usermod -aG dialout $USER</code></pre>
+
+        <p>After changing supplementary group membership, start a new login session for the change to take effect in newly started processes. Logging out and logging back in is the usual approach.</p>
+
+        <div class="note">
+            Add a user to a device group only when that user genuinely needs access. Membership can grant access to multiple devices assigned to that group.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>8. Access Control During Device File Operations</h2>
+
+        <p>When a user-space application opens a device node, Linux performs permission and security checks before allowing access.</p>
+
+        <div class="diagram">
+            <div class="diagram-box">User-Space Application</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">open("/dev/example0", flags)</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Filesystem Permission Checks</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Additional Security Checks</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Device Driver Open Operation</div>
+        </div>
+
+        <p>If access is denied during the permission checks, the application may receive an error such as <code>EACCES</code> or <code>EPERM</code>, depending on the reason.</p>
+
+        <p>If access is allowed, the kernel proceeds through the device interface and the driver's relevant file operation, such as its <code>open()</code> callback.</p>
+
+        <p>Successful permission checks do not guarantee that the driver will accept the operation. The driver can still reject it for device-specific reasons.</p>
+    </section>
+
+    <section class="section">
+        <h2>9. Device File Permissions and udev</h2>
+
+        <p>Modern Linux systems commonly use <code>udev</code> rules to manage device-node ownership, group assignments, permissions, and symbolic links.</p>
+
+        <p>When a device is detected and its device-model information is available, udev processes matching rules and can configure the corresponding device node.</p>
+
+        <p>This is useful because device nodes may be removed and recreated as devices are connected, disconnected, or managed by the system.</p>
+
+        <h3>Example udev Rule</h3>
+
+        <p>The following is an illustrative rule for a device identified by its kernel device name. The actual match conditions must be selected for the real device.</p>
+
+        <pre><code># Example only: match a device with kernel name example0
+SUBSYSTEM=="example", KERNEL=="example0", \
+    GROUP="dialout", MODE="0660"</code></pre>
+
+        <p>This rule requests:</p>
+
+        <ul>
+            <li>Group ownership: <code>dialout</code></li>
+            <li>Permission mode: <code>0660</code></li>
+        </ul>
+
+        <p>A rule must match the actual device properties. An arbitrary example rule will not automatically affect a device on every Linux system.</p>
+
+        <h3>Inspect udev Information</h3>
+
+        <pre><code>udevadm info --query=all --name=/dev/null</code></pre>
+
+        <p>For a real device node, this command displays available udev properties and device information.</p>
+
+        <h3>Inspect udev Rules</h3>
+
+        <pre><code>ls /etc/udev/rules.d/
+ls /usr/lib/udev/rules.d/</code></pre>
+
+        <p>Rule locations can vary by distribution. Local administrator rules are commonly placed under <code>/etc/udev/rules.d/</code>.</p>
+    </section>
+
+    <section class="section">
+        <h2>10. Device Node Permissions and devtmpfs</h2>
+
+        <p><code>devtmpfs</code> is a kernel-managed filesystem used on many Linux systems to provide device nodes under <code>/dev</code>.</p>
+
+        <p>When a driver creates a device-model object using an appropriate interface, such as <code>device_create()</code>, devtmpfs and the user-space device-management system can participate in making the device node available.</p>
+
+        <p>Initial ownership and permissions may be influenced by device registration details, devtmpfs behavior, udev rules, and distribution configuration.</p>
+
+        <div class="important">
+            Do not assume that calling <code>device_create()</code> alone permanently sets every desired permission. Use appropriate device-management rules when persistent ownership and permission configuration is required.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>11. Understanding Permission Errors</h2>
+
+        <p>Consider a user-space program attempting to open a device node:</p>
+
+        <pre><code>int fd = open("/dev/example0", O_RDWR);</code></pre>
+
+        <p>If the user lacks the required permissions, the operation may fail.</p>
+
+        <p>Example shell diagnostic:</p>
+
+        <pre><code>ls -l /dev/example0
+id
+getent group dialout</code></pre>
+
+        <p>Common causes include:</p>
+
+        <ul>
+            <li>The user is not the owner of the node.</li>
+            <li>The user's groups do not include the node's assigned group.</li>
+            <li>The node does not grant the required read or write permission.</li>
+            <li>A security policy or device access-control mechanism denies access.</li>
+            <li>The device node does not exist or refers to an unavailable interface.</li>
+            <li>The driver rejects the open operation even after permission checks succeed.</li>
+        </ul>
+
+        <p>When diagnosing a failure, inspect ownership, permissions, group membership, device registration, and kernel logs rather than immediately changing permissions to 777.</p>
+    </section>
+
+    <section class="section">
+        <h2>12. Safe Practical Exercise in Ubuntu</h2>
+
+        <p>This exercise uses the existing <code>/dev/null</code> device node to inspect permissions. It does not require a physical device or a custom kernel driver.</p>
+
+        <h3>Step 1: Inspect the Device Node</h3>
+
+        <pre><code>ls -l /dev/null</code></pre>
+
+        <h3>Step 2: Inspect Detailed Metadata</h3>
+
+        <pre><code>stat /dev/null</code></pre>
+
+        <h3>Step 3: Check Your User and Groups</h3>
+
+        <pre><code>id
+groups</code></pre>
+
+        <h3>Step 4: Test Normal Device Access</h3>
+
+        <pre><code>echo "Linux device permission test" > /dev/null
+cat /dev/null</code></pre>
+
+        <p>The write operation is accepted and discarded by <code>/dev/null</code>. Reading from it returns end-of-file immediately.</p>
+
+        <h3>Step 5: Restore or Verify the Standard Device Configuration</h3>
+
+        <pre><code>ls -l /dev/null</code></pre>
+
+        <p>On a typical Ubuntu installation, <code>/dev/null</code> is a character device with permissions commonly displayed as <code>crw-rw-rw-</code> and ownership <code>root:root</code>.</p>
+
+        <div class="note">
+            Do not change permissions or ownership of important system device nodes as part of this exercise. Use inspection commands only.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>13. Best Practices for Device Access Control</h2>
+
+        <ul>
+            <li>Grant the minimum permissions required by the application.</li>
+            <li>Prefer suitable group-based access over unrestricted access.</li>
+            <li>Use udev rules for persistent device-node configuration where appropriate.</li>
+            <li>Do not use <code>chmod 777</code> as a routine troubleshooting method.</li>
+            <li>Keep device ownership and group assignments consistent with system policy.</li>
+            <li>Check the actual device node rather than assuming its permissions.</li>
+            <li>Remember that filesystem permissions do not replace driver-level validation.</li>
+            <li>Do not assume that a process running as root bypasses every security restriction.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>14. Lesson Summary</h2>
+
+        <ul>
+            <li>Device nodes use Linux filesystem ownership and permission mechanisms.</li>
+            <li>Permissions are divided into owner, group, and others.</li>
+            <li>Read and write permissions control ordinary device-file access requests.</li>
+            <li><code>chmod</code> changes permission bits.</li>
+            <li><code>chown</code> changes ownership.</li>
+            <li>Groups provide controlled access to device interfaces.</li>
+            <li>udev rules can configure device-node ownership and permissions.</li>
+            <li>devtmpfs and udev commonly participate in device-node management.</li>
+            <li>Driver callbacks and other security mechanisms can impose additional restrictions.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>15. Practice Questions</h2>
+
+        <h3>Short Answer Questions</h3>
+        <ol>
+            <li>What are device file permissions?</li>
+            <li>What do owner, group, and others represent?</li>
+            <li>What are the numeric values of read, write, and execute permissions?</li>
+            <li>What is the purpose of the <code>chmod</code> command?</li>
+            <li>What is the purpose of the <code>chown</code> command?</li>
+            <li>What is the role of the <code>dialout</code> group on many Linux distributions?</li>
+            <li>What is the purpose of udev rules?</li>
+        </ol>
+
+        <h3>Long Answer Questions</h3>
+        <ol>
+            <li>Explain Linux device-node permission notation with an example.</li>
+            <li>Explain numeric permission representation using octal values.</li>
+            <li>Describe how Linux checks access when an application opens a device node.</li>
+            <li>Explain how group membership can be used to control device access.</li>
+            <li>Explain how udev helps manage device-node permissions.</li>
+        </ol>
+
+        <h3>Practical Exercises</h3>
+        <ol>
+            <li>Inspect the permissions of <code>/dev/null</code> using <code>ls -l</code>.</li>
+            <li>Use <code>stat</code> to inspect device-node metadata.</li>
+            <li>Check your current groups using <code>id</code> and <code>groups</code>.</li>
+            <li>Inspect the available udev rule directories.</li>
+            <li>Explain why changing a device node's permissions manually may not persist after the node is recreated.</li>
+        </ol>
+    </section>
+
+    <section class="section">
+        <h2>16. Expected Learning Outcome</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Read and interpret device-node permission strings.</li>
+            <li>Understand owner, group, and others permissions.</li>
+            <li>Use Linux commands to inspect permissions and ownership.</li>
+            <li>Explain how group membership affects device access.</li>
+            <li>Understand the role of udev and devtmpfs in device-node management.</li>
+            <li>Diagnose common device permission errors.</li>
+            <li>Apply least-privilege principles when configuring device access.</li>
+        </ul>
+    </section>
+
+    <div class="lesson-nav">
+        <a href="L05_Major_and_Minor_Number_Mapping.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L07_udev_and_Device_Management.html">Next Lesson →</a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 10 – Device Files and Device Interfaces</p>
+</footer>
+
+</body>
+</html>
