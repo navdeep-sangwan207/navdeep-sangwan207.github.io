@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 9: Kernel Sanitizers and Debugging Tools</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+body{font-family:Arial,sans-serif;line-height:1.7;margin:0;background:#f4f7fb;color:#222}
+.lesson-banner{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+.lesson-banner h1{margin:0;font-size:28px}
+.lesson-banner p{margin:8px 0 0}
+nav{text-align:center;padding:14px;background:white;box-shadow:0 2px 5px rgba(0,0,0,.08)}
+nav a{display:inline-block;margin:5px 12px;color:#174ea6;text-decoration:none;font-weight:bold}
+.lesson-info{max-width:1000px;margin:22px auto;padding:16px 20px;background:#e8f1ff;border-left:5px solid #2878d7;border-radius:6px}
+.container{max-width:1000px;margin:auto;padding:0 15px 30px}
+section{background:white;padding:22px;margin:18px 0;border-radius:8px;box-shadow:0 2px 7px rgba(0,0,0,.06)}
+h2{color:#174ea6;border-bottom:2px solid #e3ebf7;padding-bottom:8px}
+h3{color:#245b9e}
+pre{background:#17202b;color:#e8edf2;padding:16px;border-radius:6px;overflow-x:auto;font-size:14px}
+code{font-family:Consolas,monospace}
+.note{background:#fff7df;border-left:4px solid #e0a000;padding:12px 15px;margin:15px 0}
+.success{background:#eaf7ed;border-left:4px solid #269447;padding:12px 15px;margin:15px 0}
+.warning{background:#fff0f0;border-left:4px solid #c83b3b;padding:12px 15px;margin:15px 0}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d8e0ea;padding:10px;text-align:left}
+th{background:#eaf1fb}
+.lesson-navigation{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:25px 0}
+.lesson-navigation a{background:#174ea6;color:white;padding:11px 18px;text-decoration:none;border-radius:5px}
+footer{text-align:center;padding:20px;background:#123b80;color:white}
+@media(max-width:600px){.lesson-banner h1{font-size:22px}section{padding:16px}.lesson-navigation{flex-direction:column}.lesson-navigation a{text-align:center}}
+</style>
+</head>
+<body>
+
+<header class="lesson-banner">
+<h1>Chapter 19: Driver Debugging, Testing and Performance</h1>
+<p>Lesson 9: Kernel Sanitizers and Debugging Tools</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">Linux Device Drivers</a>
+<a href="index.html">Chapter 19</a>
+</nav>
+
+<div class="lesson-info">
+<strong>Lesson:</strong> 09 of 12<br>
+<strong>Topic:</strong> Kernel Sanitizers and Debugging Tools<br>
+<strong>Level:</strong> Intermediate to Advanced<br>
+<strong>Prerequisites:</strong> Kernel Modules, Memory Management, Kernel Debugging, Synchronization
+</div>
+
+<main class="container">
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+<li>Understand kernel sanitizers and their purpose.</li>
+<li>Identify memory safety and concurrency bugs.</li>
+<li>Understand KASAN, KCSAN, UBSAN and KFENCE.</li>
+<li>Use kmemleak for possible memory leak detection.</li>
+<li>Understand Lockdep and slab debugging.</li>
+<li>Use GDB, ftrace, perf and kernel logs.</li>
+<li>Check kernel debugging configuration.</li>
+<li>Interpret sanitizer reports.</li>
+<li>Select appropriate debugging tools for driver problems.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Kernel Sanitizers</h2>
+<p>A <strong>kernel sanitizer</strong> is a debugging facility that detects certain classes of programming errors while the Linux kernel is running or being tested.</p>
+
+<p>Kernel device drivers interact with memory, hardware, interrupts, processes and shared resources. Incorrect handling can result in:</p>
+<ul>
+<li>Memory corruption.</li>
+<li>Buffer overflows.</li>
+<li>Use-after-free errors.</li>
+<li>Data races.</li>
+<li>Undefined behavior.</li>
+<li>Memory leaks.</li>
+<li>Invalid memory accesses.</li>
+</ul>
+
+<p>Sanitizers instrument or monitor kernel operations to help identify these problems.</p>
+
+<h3>Why Sanitizers Are Important</h3>
+<ol>
+<li>Detect bugs during development.</li>
+<li>Provide diagnostic information.</li>
+<li>Identify the source of memory errors.</li>
+<li>Improve driver reliability.</li>
+<li>Reduce difficult-to-reproduce failures.</li>
+</ol>
+
+<div class="note">
+Sanitizers are debugging aids. They do not guarantee that a driver is completely free from defects.
+</div>
+</section>
+
+<section>
+<h2>3. Overview of Kernel Sanitizers and Tools</h2>
+
+<table>
+<tr><th>Tool</th><th>Primary Purpose</th></tr>
+<tr><td>KASAN</td><td>Detects many memory safety errors, including out-of-bounds and use-after-free accesses.</td></tr>
+<tr><td>KCSAN</td><td>Detects data races.</td></tr>
+<tr><td>UBSAN</td><td>Detects selected forms of undefined behavior.</td></tr>
+<tr><td>KFENCE</td><td>Detects selected memory safety errors using sampled guarded allocations.</td></tr>
+<tr><td>kmemleak</td><td>Finds possible unreachable kernel memory allocations.</td></tr>
+<tr><td>Lockdep</td><td>Validates locking dependencies and helps detect potential deadlocks.</td></tr>
+<tr><td>SLUB Debugging</td><td>Helps detect slab allocator corruption and object misuse.</td></tr>
+<tr><td>Ftrace</td><td>Traces kernel functions and events.</td></tr>
+<tr><td>Perf</td><td>Analyzes performance and profiling information.</td></tr>
+<tr><td>KGDB</td><td>Supports source-level kernel debugging.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. KASAN – Kernel Address Sanitizer</h2>
+
+<p><strong>KASAN</strong> is a kernel memory error detector.</p>
+
+<p>It helps detect invalid memory accesses during kernel execution.</p>
+
+<h3>Errors Detected by KASAN</h3>
+<ul>
+<li>Out-of-bounds access.</li>
+<li>Use-after-free.</li>
+<li>Some stack and global memory access errors, depending on configuration and mode.</li>
+</ul>
+
+<h3>Working Principle</h3>
+<ol>
+<li>Compiler instrumentation checks memory accesses.</li>
+<li>Shadow memory records whether memory regions are accessible.</li>
+<li>Invalid accesses are detected by the runtime.</li>
+<li>The kernel generates a diagnostic report.</li>
+<li>Developers inspect the access and allocation stack traces.</li>
+</ol>
+
+<h3>Check KASAN Configuration</h3>
+<pre><code>grep CONFIG_KASAN /boot/config-$(uname -r)</code></pre>
+
+<h3>Check Kernel Logs</h3>
+<pre><code>dmesg | grep -i KASAN</code></pre>
+
+<h3>Illustrative Report</h3>
+<pre><code>BUG: KASAN: slab-out-of-bounds
+Read of size 4 at address ...
+Call Trace:
+ driver_read_function
+ ...
+</code></pre>
+
+<p>This is an illustrative report. Actual output depends on the kernel version and detected error.</p>
+
+<h3>Advantages</h3>
+<ul>
+<li>Provides detailed memory error reports.</li>
+<li>Can identify allocation and access locations.</li>
+<li>Useful during driver development and testing.</li>
+</ul>
+
+<div class="warning">
+KASAN can add substantial memory and execution overhead. It is generally intended for debugging kernels rather than ordinary production deployments.
+</div>
+</section>
+
+<section>
+<h2>5. KCSAN – Kernel Concurrency Sanitizer</h2>
+
+<p><strong>KCSAN</strong> is a dynamic data-race detector for Linux kernel code.</p>
+
+<h3>Purpose</h3>
+<p>It identifies conflicting memory accesses that occur concurrently without suitable synchronization.</p>
+
+<h3>Working Principle</h3>
+<ol>
+<li>Kernel memory accesses are instrumented.</li>
+<li>KCSAN samples selected accesses.</li>
+<li>It monitors whether conflicting accesses occur.</li>
+<li>Potential data races are reported.</li>
+<li>Developers review the synchronization design.</li>
+</ol>
+
+<h3>Check Configuration</h3>
+<pre><code>grep CONFIG_KCSAN /boot/config-$(uname -r)</code></pre>
+
+<h3>Inspect Reports</h3>
+<pre><code>dmesg | grep -i KCSAN</code></pre>
+
+<h3>Typical Problems</h3>
+<ul>
+<li>Unsynchronized shared counters.</li>
+<li>Concurrent access to driver state.</li>
+<li>Interrupt and process context data races.</li>
+<li>Workqueue and system-call concurrency bugs.</li>
+</ul>
+
+<div class="note">
+KCSAN is dynamic and sampling-based. A clean test run does not prove that all data races have been eliminated.
+</div>
+</section>
+
+<section>
+<h2>6. UBSAN – Undefined Behavior Sanitizer</h2>
+
+<p><strong>UBSAN</strong> detects selected forms of undefined behavior in C code.</p>
+
+<h3>Examples of Problems</h3>
+<ul>
+<li>Invalid shift operations.</li>
+<li>Some forms of signed integer overflow.</li>
+<li>Misaligned memory accesses.</li>
+<li>Invalid assumptions about certain data types.</li>
+</ul>
+
+<h3>Check Configuration</h3>
+<pre><code>grep CONFIG_UBSAN /boot/config-$(uname -r)</code></pre>
+
+<h3>Inspect Kernel Logs</h3>
+<pre><code>dmesg | grep -i UBSAN</code></pre>
+
+<h3>Illustrative Report</h3>
+<pre><code>UBSAN: Undefined behaviour in driver_example.c
+shift exponent is too large for type</code></pre>
+
+<p>This is an illustrative message, not guaranteed literal output.</p>
+
+<h3>Why UBSAN Is Useful</h3>
+<p>It can detect suspicious operations that may cause unpredictable results or hardware-dependent failures.</p>
+</section>
+
+<section>
+<h2>7. KFENCE – Kernel Electric-Fence</h2>
+
+<p><strong>KFENCE</strong> is a low-overhead sampling-based memory error detector.</p>
+
+<p>It uses guarded memory allocations to detect selected memory safety errors.</p>
+
+<h3>Problems It Can Detect</h3>
+<ul>
+<li>Out-of-bounds accesses involving guarded objects.</li>
+<li>Use-after-free involving monitored allocations.</li>
+</ul>
+
+<h3>Working Principle</h3>
+<ol>
+<li>Selected allocations are monitored.</li>
+<li>Guard pages are placed around monitored memory.</li>
+<li>Invalid accesses may hit protected regions.</li>
+<li>The kernel reports the detected error.</li>
+</ol>
+
+<h3>Check Configuration</h3>
+<pre><code>grep CONFIG_KFENCE /boot/config-$(uname -r)</code></pre>
+
+<h3>Inspect Kernel Logs</h3>
+<pre><code>dmesg | grep -i KFENCE</code></pre>
+
+<div class="note">
+KFENCE samples allocations. It is not expected to detect every invalid access.
+</div>
+</section>
+
+<section>
+<h2>8. kmemleak – Memory Leak Detection</h2>
+
+<p><strong>kmemleak</strong> helps identify possible unreachable kernel memory allocations.</p>
+
+<h3>Check Availability</h3>
+<pre><code>ls /sys/kernel/debug/kmemleak</code></pre>
+
+<h3>Mount Debugfs</h3>
+<pre><code>sudo mount -t debugfs none /sys/kernel/debug</code></pre>
+
+<h3>Request a Scan</h3>
+<pre><code>echo scan | sudo tee /sys/kernel/debug/kmemleak</code></pre>
+
+<h3>Read Reports</h3>
+<pre><code>sudo cat /sys/kernel/debug/kmemleak</code></pre>
+
+<h3>Use Cases</h3>
+<ul>
+<li>Investigating unreleased driver allocations.</li>
+<li>Testing module initialization and removal.</li>
+<li>Checking repeated device bind and unbind operations.</li>
+<li>Reviewing error-path cleanup.</li>
+</ul>
+
+<p>Refer to Lesson 7 for the complete kmemleak workflow.</p>
+</section>
+
+<section>
+<h2>9. Lockdep – Lock Dependency Validator</h2>
+
+<p>Lockdep validates kernel locking behavior and detects potential locking problems.</p>
+
+<h3>Problems It Helps Identify</h3>
+<ul>
+<li>Potential circular lock dependencies.</li>
+<li>Inconsistent lock ordering.</li>
+<li>Some recursive locking errors.</li>
+<li>Some incorrect interrupt-context locking combinations.</li>
+</ul>
+
+<h3>Check Configuration</h3>
+<pre><code>grep -E "CONFIG_LOCKDEP|CONFIG_PROVE_LOCKING" \
+/boot/config-$(uname -r)</code></pre>
+
+<h3>Inspect Kernel Logs</h3>
+<pre><code>dmesg | grep -i -E "lockdep|possible deadlock|locking"</code></pre>
+
+<h3>Importance in Drivers</h3>
+<p>Drivers often combine mutexes, spinlocks, interrupts and workqueues. Lockdep helps developers validate their locking design.</p>
+</section>
+
+<section>
+<h2>10. SLUB Debugging</h2>
+
+<p>SLUB is a slab allocator implementation used by the Linux kernel on many configurations.</p>
+
+<p>SLUB debugging features help identify memory corruption and allocator misuse.</p>
+
+<h3>Important Debugging Features</h3>
+<ul>
+<li><strong>Red zoning:</strong> Helps detect accesses beyond object boundaries.</li>
+<li><strong>Poisoning:</strong> Fills selected memory regions with known patterns to help identify invalid usage.</li>
+<li><strong>Allocation tracking:</strong> Records allocation information where enabled.</li>
+<li><strong>Consistency checks:</strong> Detect certain allocator metadata problems.</li>
+</ul>
+
+<h3>Inspect Slab Information</h3>
+<pre><code>cat /proc/slabinfo</code></pre>
+
+<h3>Use slabtop</h3>
+<pre><code>sudo slabtop</code></pre>
+
+<h3>Check SLUB Debug Configuration</h3>
+<pre><code>grep CONFIG_SLUB_DEBUG /boot/config-$(uname -r)</code></pre>
+
+<div class="warning">
+SLUB debugging options and boot parameters vary across kernel versions. Some debugging modes require a kernel configured with the relevant support.
+</div>
+</section>
+
+<section>
+<h2>11. Ftrace – Function Tracing</h2>
+
+<p><strong>Ftrace</strong> is the Linux kernel tracing framework.</p>
+
+<p>It helps developers understand kernel execution paths and timing.</p>
+
+<h3>Common Uses</h3>
+<ul>
+<li>Function tracing.</li>
+<li>Function graph tracing.</li>
+<li>Interrupt and scheduling event analysis.</li>
+<li>Investigating unexpected execution sequences.</li>
+<li>Driver performance analysis.</li>
+</ul>
+
+<h3>Check Tracefs</h3>
+<pre><code>mount | grep tracefs</code></pre>
+
+<h3>Mount Tracefs if Required</h3>
+<pre><code>sudo mount -t tracefs nodev /sys/kernel/tracing</code></pre>
+
+<h3>Inspect Available Tracers</h3>
+<pre><code>cat /sys/kernel/tracing/available_tracers</code></pre>
+
+<h3>Inspect Available Events</h3>
+<pre><code>cat /sys/kernel/tracing/available_events</code></pre>
+
+<h3>Enable Function Tracing</h3>
+<pre><code>cd /sys/kernel/tracing
+
+echo function | sudo tee current_tracer
+
+echo 1 | sudo tee tracing_on
+
+sudo cat trace</code></pre>
+
+<h3>Stop Tracing</h3>
+<pre><code>echo 0 | sudo tee tracing_on
+
+echo nop | sudo tee current_tracer</code></pre>
+
+<div class="note">
+Use a suitable test environment. Function tracing may generate substantial output and add overhead.
+</div>
+</section>
+
+<section>
+<h2>12. Perf – Linux Performance Analysis Tool</h2>
+
+<p><strong>perf</strong> is a performance analysis tool for Linux.</p>
+
+<h3>Common Applications</h3>
+<ul>
+<li>CPU profiling.</li>
+<li>Hardware performance counter analysis.</li>
+<li>Software event analysis.</li>
+<li>Scheduler behavior investigation.</li>
+<li>Function-level performance analysis.</li>
+</ul>
+
+<h3>Check Installation</h3>
+<pre><code>perf --version</code></pre>
+
+<h3>List Available Events</h3>
+<pre><code>perf list</code></pre>
+
+<h3>Record Performance Data</h3>
+<pre><code>sudo perf record -a -g -- sleep 10</code></pre>
+
+<h3>View Report</h3>
+<pre><code>sudo perf report</code></pre>
+
+<h3>Trace Selected System Calls</h3>
+<pre><code>sudo perf trace -- sleep 2</code></pre>
+
+<p>Exact event availability depends on CPU hardware, kernel configuration and permissions.</p>
+</section>
+
+<section>
+<h2>13. GDB and KGDB</h2>
+
+<h3>GDB</h3>
+<p>GDB is a debugger used to inspect program execution, variables, stack frames and symbols.</p>
+
+<h3>KGDB</h3>
+<p>KGDB provides kernel debugging support through a debugger connection, commonly using a serial connection or another supported transport.</p>
+
+<h3>Common GDB Commands</h3>
+<pre><code>gdb vmlinux
+
+(gdb) list
+(gdb) info functions
+(gdb) info variables
+(gdb) bt
+(gdb) quit</code></pre>
+
+<h3>Useful Kernel Debugging Information</h3>
+<ul>
+<li>Kernel symbols.</li>
+<li>Debug information.</li>
+<li>Matching vmlinux image.</li>
+<li>Kernel configuration.</li>
+<li>Matching source code.</li>
+</ul>
+
+<div class="note">
+A normal GDB session can inspect kernel symbols and offline data. Live kernel debugging requires an appropriate setup such as KGDB or another supported debugging interface.
+</div>
+</section>
+
+<section>
+<h2>14. Additional Kernel Debugging Tools</h2>
+
+<table>
+<tr><th>Tool</th><th>Purpose</th></tr>
+<tr><td>dmesg</td><td>Displays kernel ring-buffer messages.</td></tr>
+<tr><td>journalctl -k</td><td>Displays kernel messages stored in the system journal.</td></tr>
+<tr><td>debugfs</td><td>Provides debugging interfaces for kernel subsystems and drivers.</td></tr>
+<tr><td>crash</td><td>Analyzes kernel crash dumps.</td></tr>
+<tr><td>addr2line</td><td>Maps addresses to source locations when matching debug information is available.</td></tr>
+<tr><td>objdump</td><td>Examines object files and disassembly.</td></tr>
+<tr><td>readelf</td><td>Displays ELF file information.</td></tr>
+<tr><td>strace</td><td>Traces system calls made by user-space programs.</td></tr>
+<tr><td>ftrace</td><td>Traces kernel functions and events.</td></tr>
+<tr><td>perf</td><td>Profiles and analyzes performance.</td></tr>
+</table>
+
+<h3>Useful Commands</h3>
+<pre><code>dmesg -w
+
+journalctl -k -f
+
+uname -a
+
+lsmod
+
+modinfo driver_name
+
+readelf -S driver.ko
+
+objdump -d driver.ko</code></pre>
+</section>
+
+<section>
+<h2>15. Selecting the Right Debugging Tool</h2>
+
+<table>
+<tr><th>Problem</th><th>Recommended Tool</th></tr>
+<tr><td>Out-of-bounds memory access</td><td>KASAN or KFENCE</td></tr>
+<tr><td>Use-after-free</td><td>KASAN or KFENCE</td></tr>
+<tr><td>Possible memory leak</td><td>kmemleak</td></tr>
+<tr><td>Data race</td><td>KCSAN</td></tr>
+<tr><td>Potential deadlock</td><td>Lockdep</td></tr>
+<tr><td>Undefined behavior</td><td>UBSAN</td></tr>
+<tr><td>Slab allocator corruption</td><td>SLUB debugging</td></tr>
+<tr><td>Function execution sequence</td><td>Ftrace</td></tr>
+<tr><td>Performance bottleneck</td><td>perf</td></tr>
+<tr><td>Kernel crash dump</td><td>crash and GDB</td></tr>
+<tr><td>Kernel log investigation</td><td>dmesg and journalctl</td></tr>
+</table>
+
+<p>Often, multiple tools are needed to investigate one complicated driver defect.</p>
+</section>
+
+<section>
+<h2>16. Practical Lab: Inspect Kernel Debugging Support</h2>
+
+<h3>Objective</h3>
+<p>Inspect the debugging and sanitizer options available in the running Ubuntu kernel.</p>
+
+<h3>Step 1: Check Kernel Version</h3>
+<pre><code>uname -r</code></pre>
+
+<h3>Step 2: Check Kernel Configuration File</h3>
+<pre><code>ls /boot/config-$(uname -r)</code></pre>
+
+<h3>Step 3: Inspect Sanitizer Options</h3>
+<pre><code>grep -E "CONFIG_(KASAN|KCSAN|UBSAN|KFENCE|DEBUG_KMEMLEAK)=" \
+/boot/config-$(uname -r)</code></pre>
+
+<h3>Step 4: Inspect Lockdep Options</h3>
+<pre><code>grep -E "CONFIG_(LOCKDEP|PROVE_LOCKING|DEBUG_LOCK_ALLOC)=" \
+/boot/config-$(uname -r)</code></pre>
+
+<h3>Step 5: Check Debugging Interfaces</h3>
+<pre><code>ls /sys/kernel/debug
+
+ls /sys/kernel/tracing</code></pre>
+
+<h3>Step 6: Check Tools</h3>
+<pre><code>gdb --version
+
+perf --version
+
+crash --version</code></pre>
+
+<p>Some tools may not be installed. Some kernel interfaces may be unavailable because the kernel was not built with the relevant configuration.</p>
+
+<div class="success">
+<strong>Expected Result:</strong> You should be able to identify which debugging facilities and tools are available in your Ubuntu environment.
+</div>
+</section>
+
+<section>
+<h2>17. Practical Lab: Analyze Kernel Messages</h2>
+
+<h3>Objective</h3>
+<p>Use kernel logs to identify diagnostic messages associated with memory and concurrency debugging.</p>
+
+<h3>Step 1: Display Recent Messages</h3>
+<pre><code>dmesg | tail -n 50</code></pre>
+
+<h3>Step 2: Search for Sanitizer Messages</h3>
+<pre><code>dmesg | grep -i -E "KASAN|KCSAN|UBSAN|KFENCE"</code></pre>
+
+<h3>Step 3: Search for Locking Warnings</h3>
+<pre><code>dmesg | grep -i -E "lockdep|possible deadlock|locking"</code></pre>
+
+<h3>Step 4: Follow Kernel Logs</h3>
+<pre><code>sudo dmesg -w</code></pre>
+
+<h3>Step 5: Stop Following Logs</h3>
+<pre><code>Ctrl + C</code></pre>
+
+<h3>Expected Result</h3>
+<p>The commands display available kernel messages. A system without sanitizer support or detected problems may produce no matching messages.</p>
+</section>
+
+<section>
+<h2>18. Practical Lab: Function Tracing with Ftrace</h2>
+
+<h3>Objective</h3>
+<p>Enable function tracing and inspect the resulting trace output.</p>
+
+<h3>Step 1: Mount Tracefs</h3>
+<pre><code>sudo mount -t tracefs nodev /sys/kernel/tracing</code></pre>
+
+<h3>Step 2: Enter Trace Directory</h3>
+<pre><code>cd /sys/kernel/tracing</code></pre>
+
+<h3>Step 3: Check Available Tracers</h3>
+<pre><code>cat available_tracers</code></pre>
+
+<h3>Step 4: Enable Function Tracing</h3>
+<pre><code>echo function | sudo tee current_tracer
+
+echo 1 | sudo tee tracing_on</code></pre>
+
+<h3>Step 5: Generate Some Activity</h3>
+<pre><code>ls
+sleep 1</code></pre>
+
+<h3>Step 6: Inspect Trace Output</h3>
+<pre><code>sudo cat trace</code></pre>
+
+<h3>Step 7: Disable Tracing</h3>
+<pre><code>echo 0 | sudo tee tracing_on
+
+echo nop | sudo tee current_tracer</code></pre>
+
+<div class="note">
+Function tracing may not be available in every kernel. It can also produce a large trace. Use short test intervals and inspect available tracing options first.
+</div>
+</section>
+
+<section>
+<h2>19. Common Problems and Troubleshooting</h2>
+
+<table>
+<tr><th>Problem</th><th>Possible Cause</th><th>Solution</th></tr>
+<tr><td>KASAN not available</td><td>Kernel lacks KASAN support</td><td>Use a suitably configured debugging kernel.</td></tr>
+<tr><td>No KCSAN reports</td><td>No detected race or KCSAN unavailable</td><td>Verify configuration and run suitable concurrency tests.</td></tr>
+<tr><td>kmemleak file missing</td><td>kmemleak not enabled or debugfs unavailable</td><td>Check kernel configuration and mount debugfs.</td></tr>
+<tr><td>Tracefs directory empty or unavailable</td><td>Tracefs not mounted or tracing support missing</td><td>Check kernel support and mount tracefs.</td></tr>
+<tr><td>perf permission denied</td><td>Kernel perf security restrictions</td><td>Check permissions and system perf settings.</td></tr>
+<tr><td>GDB cannot find symbols</td><td>Missing or mismatched debug symbols</td><td>Use matching unstripped kernel image and debug information.</td></tr>
+<tr><td>Lockdep warning</td><td>Potential locking misuse</td><td>Inspect lock ordering and execution context.</td></tr>
+<tr><td>Sanitizer overhead is high</td><td>Instrumentation overhead</td><td>Use sanitizers in a dedicated debugging environment.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>20. Best Practices for Kernel Debugging</h2>
+
+<ul>
+<li>Select the debugging tool according to the suspected defect.</li>
+<li>Use a dedicated test kernel for sanitizer-based debugging.</li>
+<li>Preserve kernel logs and crash reports.</li>
+<li>Use matching source code and debug symbols.</li>
+<li>Test drivers under realistic workloads.</li>
+<li>Use stress testing for concurrency problems.</li>
+<li>Check every allocation and cleanup path.</li>
+<li>Review lock ordering and interrupt context.</li>
+<li>Use ftrace and perf to investigate execution and performance.</li>
+<li>Record the exact kernel version and configuration.</li>
+<li>Reproduce and retest after every fix.</li>
+<li>Do not treat a clean sanitizer run as proof of defect-free code.</li>
+</ul>
+</section>
+
+<section>
+<h2>21. Important Exercises</h2>
+<ol>
+<li>Define a kernel sanitizer.</li>
+<li>What is KASAN?</li>
+<li>Explain the working principle of KASAN.</li>
+<li>What is KCSAN?</li>
+<li>Differentiate KASAN and KCSAN.</li>
+<li>Explain UBSAN.</li>
+<li>What is KFENCE?</li>
+<li>Differentiate KFENCE and KASAN.</li>
+<li>What is kmemleak?</li>
+<li>Explain Lockdep.</li>
+<li>What is SLUB debugging?</li>
+<li>Explain ftrace.</li>
+<li>What is perf?</li>
+<li>Differentiate GDB and KGDB.</li>
+<li>What is the purpose of debugfs?</li>
+<li>Explain how to inspect kernel sanitizer configuration.</li>
+<li>Write commands to search kernel logs for sanitizer messages.</li>
+<li>How can ftrace help debug a driver?</li>
+<li>Which tool would you use to detect a data race?</li>
+<li>Prepare a debugging tool selection chart for a Linux device driver.</li>
+</ol>
+</section>
+
+<section>
+<h2>22. Interview Questions and Answers</h2>
+
+<h3>Q1. What is a kernel sanitizer?</h3>
+<p><strong>Answer:</strong> It is a kernel debugging facility that detects selected programming errors during testing or execution.</p>
+
+<h3>Q2. What is KASAN?</h3>
+<p><strong>Answer:</strong> KASAN is the Kernel Address Sanitizer. It detects many memory safety errors such as out-of-bounds and use-after-free accesses.</p>
+
+<h3>Q3. What is KCSAN?</h3>
+<p><strong>Answer:</strong> KCSAN is the Kernel Concurrency Sanitizer, used to detect data races.</p>
+
+<h3>Q4. What is UBSAN?</h3>
+<p><strong>Answer:</strong> UBSAN detects selected forms of undefined behavior in kernel code.</p>
+
+<h3>Q5. What is KFENCE?</h3>
+<p><strong>Answer:</strong> KFENCE is a low-overhead sampling-based memory error detector that uses guarded allocations.</p>
+
+<h3>Q6. What is kmemleak?</h3>
+<p><strong>Answer:</strong> kmemleak helps identify possible unreachable kernel memory allocations.</p>
+
+<h3>Q7. What is Lockdep?</h3>
+<p><strong>Answer:</strong> Lockdep validates locking dependencies and helps identify potential deadlocks.</p>
+
+<h3>Q8. What is SLUB debugging?</h3>
+<p><strong>Answer:</strong> It provides slab allocator debugging features that help detect memory corruption and allocator misuse.</p>
+
+<h3>Q9. What is ftrace?</h3>
+<p><strong>Answer:</strong> Ftrace is a Linux kernel tracing framework used to inspect function execution and kernel events.</p>
+
+<h3>Q10. What is perf?</h3>
+<p><strong>Answer:</strong> Perf is a Linux performance analysis tool used for profiling and performance counter analysis.</p>
+
+<h3>Q11. What is KGDB?</h3>
+<p><strong>Answer:</strong> KGDB is a kernel debugging facility that supports source-level debugging through a debugger connection.</p>
+
+<h3>Q12. Can KASAN detect memory leaks?</h3>
+<p><strong>Answer:</strong> KASAN primarily detects memory safety errors. kmemleak is the dedicated kernel facility for identifying possible memory leaks.</p>
+
+<h3>Q13. Can KCSAN detect every data race?</h3>
+<p><strong>Answer:</strong> No. It is a dynamic sampling-based detector and may not observe every race.</p>
+
+<h3>Q14. Why are debugging kernels useful?</h3>
+<p><strong>Answer:</strong> They can include instrumentation and diagnostic facilities that help identify errors that are difficult to detect in normal builds.</p>
+
+<h3>Q15. Why should sanitizer overhead be considered?</h3>
+<p><strong>Answer:</strong> Instrumentation can increase memory usage and execution time, so performance results from debugging kernels may differ from production kernels.</p>
+
+<h3>Q16. What is the purpose of /proc/slabinfo?</h3>
+<p><strong>Answer:</strong> It provides statistics about kernel slab caches.</p>
+
+<h3>Q17. What is the purpose of tracefs?</h3>
+<p><strong>Answer:</strong> It provides the interface used to configure and read Linux kernel tracing information.</p>
+
+<h3>Q18. What is the difference between ftrace and perf?</h3>
+<p><strong>Answer:</strong> Ftrace focuses on kernel function and event tracing, while perf provides broader performance profiling and event analysis.</p>
+
+<h3>Q19. Why are matching debug symbols important?</h3>
+<p><strong>Answer:</strong> They allow debugging tools to map machine addresses to functions, source files and line numbers.</p>
+
+<h3>Q20. Which tool should be used to detect a kernel data race?</h3>
+<p><strong>Answer:</strong> KCSAN is specifically designed to detect kernel data races.</p>
+</section>
+
+<section>
+<h2>23. Lesson Summary</h2>
+<ul>
+<li>Kernel sanitizers detect selected classes of programming errors.</li>
+<li>KASAN detects many memory safety errors.</li>
+<li>KCSAN detects data races.</li>
+<li>UBSAN detects selected undefined behavior.</li>
+<li>KFENCE detects selected memory errors using sampled guarded allocations.</li>
+<li>kmemleak identifies possible unreachable allocations.</li>
+<li>Lockdep validates locking behavior.</li>
+<li>SLUB debugging helps investigate allocator problems.</li>
+<li>Ftrace traces kernel functions and events.</li>
+<li>Perf analyzes performance.</li>
+<li>GDB and KGDB support kernel debugging workflows.</li>
+<li>Tool selection depends on the type of defect.</li>
+</ul>
+
+<div class="success">
+<strong>Lesson Completed:</strong> You have learned the major Linux kernel sanitizers, debugging facilities, diagnostic commands and practical workflows for investigating driver defects.
+</div>
+</section>
+
+<div class="lesson-navigation">
+<a href="L08_Race_Condition_Detection.html">← Previous: Lesson 8</a>
+<a href="index.html">Chapter 19 Index</a>
+<a href="L10_Driver_Testing_and_Validation.html">Next: Lesson 10 →</a>
+</div>
+
+</main>
+
+<footer>
+<p>NS Learning Hub | Linux Device Drivers</p>
+<p>Chapter 19 – Driver Debugging, Testing and Performance</p>
+</footer>
+
+</body>
+</html>
