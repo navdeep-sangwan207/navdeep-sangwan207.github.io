@@ -1,1 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 6: Procfs-Based Device Interface Project</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 18px}
+header h1{margin:0;font-size:27px}
+nav{background:white;text-align:center;padding:14px;box-shadow:0 2px 6px #00000012}
+nav a{display:inline-block;margin:5px 12px;color:#174ea6;text-decoration:none;font-weight:bold}
+.container{max-width:1050px;margin:25px auto;padding:0 16px}
+.info{background:#e8f1ff;border-left:5px solid #2878d7;padding:15px 20px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:22px 25px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 8px #0000000b}
+h2{color:#174ea6;border-bottom:2px solid #e5edf8;padding-bottom:8px}
+h3{color:#245b9e}
+pre{background:#172334;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note{background:#fff6df;border-left:4px solid #e0a000;padding:12px 15px;margin:15px 0}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #dce3ed;padding:10px;text-align:left}
+th{background:#eaf1fb}
+footer{text-align:center;padding:22px;color:#64748b}
+@media(max-width:600px){header h1{font-size:22px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 20: Linux Device Driver Practical Projects and Interview Preparation</h1>
+<p>Lesson 6: Procfs-Based Device Interface Project</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">Linux Device Drivers</a>
+<a href="index.html">Chapter 20</a>
+<a href="L05_IOCTL_Based_Device_Control_Project.html">Previous Lesson</a>
+</nav>
+
+<div class="container">
+
+<div class="info">
+<strong>Lesson:</strong> L06 – Procfs-Based Device Interface Project<br>
+<strong>Level:</strong> Intermediate<br>
+<strong>Environment:</strong> Ubuntu Linux in VirtualBox
+</div>
+
+<section>
+<h2>1. Introduction to Procfs</h2>
+<p>Procfs is a virtual filesystem provided by the Linux kernel. It is normally mounted at <code>/proc</code>.</p>
+
+<p>Unlike a conventional filesystem, procfs primarily exposes information generated dynamically by the kernel and its subsystems.</p>
+
+<p>Examples of standard procfs entries include:</p>
+<ul>
+<li><code>/proc/cpuinfo</code> – CPU information.</li>
+<li><code>/proc/meminfo</code> – Memory statistics.</li>
+<li><code>/proc/uptime</code> – System uptime.</li>
+<li><code>/proc/modules</code> – Loaded kernel modules.</li>
+<li><code>/proc/devices</code> – Registered device major numbers.</li>
+</ul>
+
+<p>A kernel module can create its own procfs entry to expose information or provide a simple user-space control interface.</p>
+</section>
+
+<section>
+<h2>2. Project Objectives</h2>
+<ul>
+<li>Understand the purpose of procfs.</li>
+<li>Create a procfs entry using <code>proc_create()</code>.</li>
+<li>Implement read and write callbacks.</li>
+<li>Understand the modern <code>struct proc_ops</code> interface.</li>
+<li>Transfer information between user space and kernel space.</li>
+<li>Remove procfs entries safely when unloading the module.</li>
+<li>Test the interface using Linux shell commands.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. Procfs Communication Architecture</h2>
+<pre><code>        User-Space Application
+                  |
+                  v
+          cat /proc/my_driver
+          echo "value" &gt; /proc/my_driver
+                  |
+                  v
+             VFS Layer
+                  |
+                  v
+          Linux Procfs Interface
+                  |
+                  v
+              proc_ops
+                  |
+           +------+------+
+           |             |
+           v             v
+        proc_read     proc_write
+           |             |
+           v             v
+       Kernel Data &lt;-----+
+                  |
+                  v
+           Linux Kernel</code></pre>
+</section>
+
+<section>
+<h2>4. Important Procfs Functions</h2>
+<table>
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>proc_create()</td><td>Creates a procfs entry.</td></tr>
+<tr><td>proc_remove()</td><td>Removes a procfs entry.</td></tr>
+<tr><td>copy_to_user()</td><td>Transfers data from kernel to user space.</td></tr>
+<tr><td>copy_from_user()</td><td>Transfers data from user space to kernel.</td></tr>
+<tr><td>simple_read_from_buffer()</td><td>Provides convenient buffered read handling.</td></tr>
+</table>
+
+<h3>4.1 Modern proc_ops Structure</h3>
+<pre><code>static const struct proc_ops my_proc_ops = {
+    .proc_read  = my_proc_read,
+    .proc_write = my_proc_write,
+};</code></pre>
+
+<div class="note">
+<strong>Kernel version note:</strong> Modern Linux kernels use <code>struct proc_ops</code>. Older kernel versions used <code>struct file_operations</code> for procfs callbacks. This project targets kernels supporting <code>proc_ops</code>.
+</div>
+</section>
+
+<section>
+<h2>5. Project Directory Structure</h2>
+<pre><code>procfs_project/
+|
+|-- proc_driver.c
+|-- Makefile</code></pre>
+
+<pre><code>mkdir -p ~/Linux_Driver_Projects/procfs_project
+cd ~/Linux_Driver_Projects/procfs_project</code></pre>
+</section>
+
+<section>
+<h2>6. Complete Procfs Driver Source Code</h2>
+<p>Create the source file:</p>
+<pre><code>nano proc_driver.c</code></pre>
+
+<h3>File: proc_driver.c</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/proc_fs.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/mutex.h&gt;
+#include &lt;linux/string.h&gt;
+#include &lt;linux/errno.h&gt;
+
+#define PROC_NAME "my_driver"
+#define BUFFER_SIZE 256
+
+static struct proc_dir_entry *proc_entry;
+
+static char device_message[BUFFER_SIZE] =
+    "Linux Procfs Driver Ready\n";
+
+static DEFINE_MUTEX(proc_mutex);
+
+/* Procfs read callback */
+static ssize_t my_proc_read(
+    struct file *file,
+    char __user *user_buffer,
+    size_t count,
+    loff_t *offset)
+{
+    ssize_t ret;
+
+    if (mutex_lock_interruptible(&amp;proc_mutex))
+        return -ERESTARTSYS;
+
+    ret = simple_read_from_buffer(
+        user_buffer,
+        count,
+        offset,
+        device_message,
+        strlen(device_message)
+    );
+
+    mutex_unlock(&amp;proc_mutex);
+
+    return ret;
+}
+
+/* Procfs write callback */
+static ssize_t my_proc_write(
+    struct file *file,
+    const char __user *user_buffer,
+    size_t count,
+    loff_t *offset)
+{
+    size_t bytes_to_copy;
+    char temporary_buffer[BUFFER_SIZE];
+    ssize_t ret;
+
+    if (count == 0)
+        return 0;
+
+    bytes_to_copy = min(count, (size_t)BUFFER_SIZE - 1);
+
+    if (copy_from_user(temporary_buffer,
+                       user_buffer,
+                       bytes_to_copy))
+        return -EFAULT;
+
+    temporary_buffer[bytes_to_copy] = '\0';
+
+    if (mutex_lock_interruptible(&amp;proc_mutex))
+        return -ERESTARTSYS;
+
+    strscpy(device_message,
+            temporary_buffer,
+            sizeof(device_message));
+
+    mutex_unlock(&amp;proc_mutex);
+
+    pr_info("proc_driver: Received %zu bytes\n",
+            bytes_to_copy);
+
+    ret = bytes_to_copy;
+    return ret;
+}
+
+/* Procfs operations */
+static const struct proc_ops my_proc_ops = {
+    .proc_read  = my_proc_read,
+    .proc_write = my_proc_write,
+};
+
+/* Module initialization */
+static int __init proc_driver_init(void)
+{
+    proc_entry = proc_create(
+        PROC_NAME,
+        0666,
+        NULL,
+        &amp;my_proc_ops
+    );
+
+    if (!proc_entry) {
+        pr_err("proc_driver: Failed to create proc entry\n");
+        return -ENOMEM;
+    }
+
+    pr_info("proc_driver: /proc/%s created\n", PROC_NAME);
+
+    return 0;
+}
+
+/* Module cleanup */
+static void __exit proc_driver_exit(void)
+{
+    proc_remove(proc_entry);
+
+    pr_info("proc_driver: Procfs entry removed\n");
+}
+
+module_init(proc_driver_init);
+module_exit(proc_driver_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Procfs Based Device Interface Driver");
+MODULE_VERSION("1.0");</code></pre>
+</section>
+
+<section>
+<h2>7. Understanding the Driver Code</h2>
+
+<h3>7.1 Creating a Procfs Entry</h3>
+<pre><code>proc_entry = proc_create(
+    PROC_NAME,
+    0666,
+    NULL,
+    &amp;my_proc_ops
+);</code></pre>
+<p>This creates <code>/proc/my_driver</code>.</p>
+
+<ul>
+<li><code>PROC_NAME</code> specifies the entry name.</li>
+<li><code>0666</code> specifies the requested permissions.</li>
+<li><code>NULL</code> selects the root of procfs as the parent directory.</li>
+<li><code>my_proc_ops</code> provides the callbacks.</li>
+</ul>
+
+<h3>7.2 Reading Data</h3>
+<p>The read callback uses <code>simple_read_from_buffer()</code> to copy the current message to user space while managing the file offset.</p>
+
+<h3>7.3 Writing Data</h3>
+<p>The write callback copies user data into a temporary kernel buffer, adds a terminating null character and updates the driver's stored message.</p>
+
+<h3>7.4 Removing the Entry</h3>
+<pre><code>proc_remove(proc_entry);</code></pre>
+<p>This removes the procfs entry when the module is unloaded.</p>
+</section>
+
+<section>
+<h2>8. Create the Makefile</h2>
+<pre><code>nano Makefile</code></pre>
+
+<h3>File: Makefile</h3>
+<pre><code>obj-m += proc_driver.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+<p>Use a real tab character before each command under the targets.</p>
+</section>
+
+<section>
+<h2>9. Compile the Kernel Module</h2>
+<pre><code>make
+
+modinfo proc_driver.ko</code></pre>
+
+<p>If compilation succeeds, the file <code>proc_driver.ko</code> will be generated.</p>
+</section>
+
+<section>
+<h2>10. Load the Driver</h2>
+<pre><code>sudo insmod proc_driver.ko
+
+ls -l /proc/my_driver
+
+sudo dmesg | tail -20</code></pre>
+
+<p>Expected kernel message:</p>
+<pre><code>proc_driver: /proc/my_driver created</code></pre>
+
+<p>The procfs entry should now be available at:</p>
+<pre><code>/proc/my_driver</code></pre>
+</section>
+
+<section>
+<h2>11. Read Data from Procfs</h2>
+<p>Use the <code>cat</code> command:</p>
+<pre><code>cat /proc/my_driver</code></pre>
+
+<p>Expected output:</p>
+<pre><code>Linux Procfs Driver Ready</code></pre>
+</section>
+
+<section>
+<h2>12. Write Data to Procfs</h2>
+<p>Send a message to the driver:</p>
+<pre><code>echo "Hello from user space" | sudo tee /proc/my_driver</code></pre>
+
+<p>Read the updated message:</p>
+<pre><code>cat /proc/my_driver</code></pre>
+
+<p>Expected output:</p>
+<pre><code>Hello from user space</code></pre>
+
+<p>Check kernel messages:</p>
+<pre><code>sudo dmesg | tail -20</code></pre>
+
+<p>Expected message:</p>
+<pre><code>proc_driver: Received 23 bytes</code></pre>
+
+<p>The exact byte count depends on the message and its newline character.</p>
+</section>
+
+<section>
+<h2>13. Test with Different Messages</h2>
+<pre><code>echo "Linux Kernel" | sudo tee /proc/my_driver
+cat /proc/my_driver
+
+echo "Device Driver Testing" | sudo tee /proc/my_driver
+cat /proc/my_driver
+
+echo "NS Learning Hub" | sudo tee /proc/my_driver
+cat /proc/my_driver</code></pre>
+
+<p>Each write replaces the previously stored message.</p>
+</section>
+
+<section>
+<h2>14. Remove the Driver</h2>
+<pre><code>sudo rmmod proc_driver
+
+ls /proc/my_driver</code></pre>
+
+<p>Expected result:</p>
+<pre><code>ls: cannot access '/proc/my_driver': No such file or directory</code></pre>
+
+<p>Clean the project:</p>
+<pre><code>make clean</code></pre>
+</section>
+
+<section>
+<h2>15. Procfs vs Sysfs</h2>
+<table>
+<tr><th>Feature</th><th>Procfs</th><th>Sysfs</th></tr>
+<tr><td>Mount point</td><td>/proc</td><td>/sys</td></tr>
+<tr><td>Main purpose</td><td>Process and kernel information, interfaces</td><td>Kernel objects, devices and attributes</td></tr>
+<tr><td>Typical interface</td><td>Procfs entries</td><td>Attribute files</td></tr>
+<tr><td>Driver use</td><td>Custom status or control interfaces</td><td>Device configuration and attributes</td></tr>
+<tr><td>Common APIs</td><td>proc_create(), proc_remove()</td><td>sysfs_create_file(), device attributes</td></tr>
+</table>
+</section>
+
+<section>
+<h2>16. Common Errors and Troubleshooting</h2>
+<table>
+<tr><th>Error</th><th>Possible Cause</th><th>Solution</th></tr>
+<tr><td>Failed to create proc entry</td><td>Entry creation failed</td><td>Check the return value and existing procfs state.</td></tr>
+<tr><td>Permission denied</td><td>Insufficient permissions</td><td>Use appropriate privileges and check permissions.</td></tr>
+<tr><td>Unknown symbol</td><td>Kernel API or module mismatch</td><td>Rebuild using matching kernel headers.</td></tr>
+<tr><td>Invalid module format</td><td>Wrong kernel build environment</td><td>Verify uname -r and installed headers.</td></tr>
+<tr><td>Proc entry missing</td><td>Module not loaded or creation failed</td><td>Check lsmod and dmesg.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>17. Practical Exercises</h2>
+<ol>
+<li>Change the procfs entry name to <code>/proc/device_status</code>.</li>
+<li>Modify the driver to return a different default message.</li>
+<li>Add a maximum message length of 100 bytes.</li>
+<li>Implement a command that clears the stored message.</li>
+<li>Study the behavior of file offsets during repeated reads.</li>
+<li>Explore the standard entries under <code>/proc</code>.</li>
+<li>Extend the interface to expose a numeric device status.</li>
+</ol>
+</section>
+
+<section>
+<h2>18. Interview Questions</h2>
+<ol>
+<li>What is procfs in Linux?</li>
+<li>Why is procfs called a virtual filesystem?</li>
+<li>What is the purpose of proc_create()?</li>
+<li>What is the difference between proc_ops and file_operations?</li>
+<li>What is the purpose of proc_remove()?</li>
+<li>How does a user-space application read data from procfs?</li>
+<li>How does a user-space application write data to procfs?</li>
+<li>What is simple_read_from_buffer()?</li>
+<li>Why is copy_from_user() required?</li>
+<li>What is the difference between procfs and sysfs?</li>
+<li>Why should a driver remove its procfs entries during cleanup?</li>
+<li>Can a procfs entry be used as a hardware device node?</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Lesson Summary</h2>
+<ul>
+<li>Procfs is a virtual filesystem mounted at <code>/proc</code>.</li>
+<li>Kernel modules can create custom procfs entries.</li>
+<li>proc_create() creates an entry and proc_remove() removes it.</li>
+<li>Modern kernels use struct proc_ops for procfs callbacks.</li>
+<li>Read and write callbacks enable user/kernel communication.</li>
+<li>simple_read_from_buffer() simplifies buffered read handling.</li>
+<li>copy_from_user() provides safe input transfer.</li>
+<li>Procfs and sysfs serve different kernel-interface purposes.</li>
+</ul>
+</section>
+
+<div class="info">
+<strong>Next Lesson:</strong> Lesson 7 – Sysfs-Based Device Interface Project
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | Linux Device Drivers Course</p>
+</footer>
+
+</body>
+</html>
