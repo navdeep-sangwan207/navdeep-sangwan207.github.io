@@ -1,1 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 5: IOCTL-Based Device Control Project</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 18px}
+header h1{margin:0;font-size:27px}
+nav{background:white;text-align:center;padding:14px;box-shadow:0 2px 6px #00000012}
+nav a{display:inline-block;margin:5px 12px;color:#174ea6;text-decoration:none;font-weight:bold}
+.container{max-width:1050px;margin:25px auto;padding:0 16px}
+.info{background:#e8f1ff;border-left:5px solid #2878d7;padding:15px 20px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:22px 25px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 8px #0000000b}
+h2{color:#174ea6;border-bottom:2px solid #e5edf8;padding-bottom:8px}
+h3{color:#245b9e}
+pre{background:#172334;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note{background:#fff6df;border-left:4px solid #e0a000;padding:12px 15px;margin:15px 0}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #dce3ed;padding:10px;text-align:left}
+th{background:#eaf1fb}
+footer{text-align:center;padding:22px;color:#64748b}
+@media(max-width:600px){header h1{font-size:22px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 20: Linux Device Driver Practical Projects and Interview Preparation</h1>
+<p>Lesson 5: IOCTL-Based Device Control Project</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">Linux Device Drivers</a>
+<a href="index.html">Chapter 20</a>
+<a href="L04_Character_Driver_Read_Write_Project.html">Previous Lesson</a>
+</nav>
+
+<div class="container">
+
+<div class="info">
+<strong>Lesson:</strong> L05 – IOCTL-Based Device Control Project<br>
+<strong>Chapter:</strong> Practical Projects and Interview Preparation<br>
+<strong>Level:</strong> Intermediate<br>
+<strong>Environment:</strong> Ubuntu Linux in VirtualBox
+</div>
+
+<section>
+<h2>1. Introduction to IOCTL</h2>
+<p>IOCTL stands for Input/Output Control. It is a mechanism used by user-space applications to send device-specific control commands to a kernel driver.</p>
+
+<p>Normal read() and write() operations transfer data. However, many devices also require control operations such as:</p>
+<ul>
+<li>Resetting a device.</li>
+<li>Changing operating modes.</li>
+<li>Setting configuration parameters.</li>
+<li>Reading device status.</li>
+<li>Starting or stopping an operation.</li>
+</ul>
+
+<p>The Linux <code>ioctl()</code> system call provides an interface for these operations.</p>
+</section>
+
+<section>
+<h2>2. Project Objectives</h2>
+<ul>
+<li>Understand the purpose of IOCTL.</li>
+<li>Learn the Linux IOCTL command macros.</li>
+<li>Define a shared interface between kernel and user space.</li>
+<li>Implement an unlocked_ioctl() callback.</li>
+<li>Transfer configuration data safely.</li>
+<li>Develop a user-space IOCTL test application.</li>
+<li>Test device reset, status, and configuration operations.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. IOCTL Communication Architecture</h2>
+<pre><code>          User-Space Application
+                    |
+                    v
+             ioctl(fd, cmd, arg)
+                    |
+                    v
+               Linux VFS
+                    |
+                    v
+          file_operations Structure
+                    |
+                    v
+              unlocked_ioctl()
+                    |
+          +---------+---------+
+          |         |         |
+          v         v         v
+        RESET     SET_VALUE  GET_STATUS
+          |         |         |
+          +---------+---------+
+                    |
+                    v
+             Kernel Driver Data
+                    |
+                    v
+                Device</code></pre>
+</section>
+
+<section>
+<h2>4. IOCTL Command Macros</h2>
+<p>Linux provides four commonly used macros in <code>&lt;linux/ioctl.h&gt;</code>.</p>
+
+<table>
+<tr><th>Macro</th><th>Purpose</th></tr>
+<tr><td>_IO</td><td>Command without an associated data transfer.</td></tr>
+<tr><td>_IOR</td><td>Command for reading data from the driver into user space.</td></tr>
+<tr><td>_IOW</td><td>Command for writing data from user space to the driver.</td></tr>
+<tr><td>_IOWR</td><td>Command for bidirectional data transfer.</td></tr>
+</table>
+
+<h3>4.1 _IO</h3>
+<pre><code>#define MYDEV_RESET _IO('M', 0)</code></pre>
+<p>Used for an operation such as resetting the device.</p>
+
+<h3>4.2 _IOR</h3>
+<pre><code>#define MYDEV_GET_STATUS _IOR('M', 1, int)</code></pre>
+<p>Used when the driver returns an integer status to the application.</p>
+
+<h3>4.3 _IOW</h3>
+<pre><code>#define MYDEV_SET_VALUE _IOW('M', 2, int)</code></pre>
+<p>Used when the application sends an integer configuration value to the driver.</p>
+
+<h3>4.4 _IOWR</h3>
+<pre><code>#define MYDEV_EXCHANGE _IOWR('M', 3, int)</code></pre>
+<p>Used when the driver and application exchange data in both directions.</p>
+
+<div class="note">
+<strong>Important:</strong> The direction encoded in an IOCTL command describes data transfer from the application's perspective. The macros also encode command type, command number and data size. They do not automatically copy data; the driver must implement safe copying.
+</div>
+</section>
+
+<section>
+<h2>5. Shared IOCTL Header File</h2>
+<p>The kernel driver and user-space application must use the same command definitions. Create a shared header file.</p>
+
+<pre><code>nano my_ioctl.h</code></pre>
+
+<h3>File: my_ioctl.h</h3>
+<pre><code>#ifndef MY_IOCTL_H
+#define MY_IOCTL_H
+
+#ifdef __KERNEL__
+#include &lt;linux/ioctl.h&gt;
+#include &lt;linux/types.h&gt;
+#else
+#include &lt;sys/ioctl.h&gt;
+#include &lt;stdint.h&gt;
+#endif
+
+#define MYDEV_MAGIC 'M'
+
+#define MYDEV_RESET \
+    _IO(MYDEV_MAGIC, 0)
+
+#define MYDEV_GET_STATUS \
+    _IOR(MYDEV_MAGIC, 1, int)
+
+#define MYDEV_SET_VALUE \
+    _IOW(MYDEV_MAGIC, 2, int)
+
+#define MYDEV_EXCHANGE \
+    _IOWR(MYDEV_MAGIC, 3, int)
+
+#endif</code></pre>
+<p>This header provides consistent command numbers and definitions for both sides of the interface.</p>
+</section>
+
+<section>
+<h2>6. Project Directory Structure</h2>
+<pre><code>ioctl_project/
+|
+|-- ioctl_driver.c
+|-- my_ioctl.h
+|-- Makefile
+|-- ioctl_test.c</code></pre>
+
+<pre><code>mkdir -p ~/Linux_Driver_Projects/ioctl_project
+cd ~/Linux_Driver_Projects/ioctl_project</code></pre>
+</section>
+
+<section>
+<h2>7. Complete Kernel Driver Source Code</h2>
+<p>Create the kernel module:</p>
+<pre><code>nano ioctl_driver.c</code></pre>
+
+<h3>File: ioctl_driver.c</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/cdev.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/mutex.h&gt;
+#include &lt;linux/errno.h&gt;
+
+#include "my_ioctl.h"
+
+#define DEVICE_NAME "myioctl"
+
+static dev_t dev_num;
+static struct cdev my_cdev;
+
+static int device_value = 0;
+static int device_status = 1;
+
+static DEFINE_MUTEX(device_mutex);
+
+/* Open callback */
+static int my_open(struct inode *inode, struct file *file)
+{
+    pr_info("myioctl: Device opened\n");
+    return 0;
+}
+
+/* IOCTL callback */
+static long my_ioctl(
+    struct file *file,
+    unsigned int cmd,
+    unsigned long arg)
+{
+    int value;
+    long ret = 0;
+
+    if (_IOC_TYPE(cmd) != MYDEV_MAGIC)
+        return -ENOTTY;
+
+    if (_IOC_NR(cmd) &gt; 3)
+        return -ENOTTY;
+
+    switch (cmd) {
+
+    case MYDEV_RESET:
+
+        if (mutex_lock_interruptible(&amp;device_mutex))
+            return -ERESTARTSYS;
+
+        device_value = 0;
+        device_status = 1;
+
+        mutex_unlock(&amp;device_mutex);
+
+        pr_info("myioctl: Device reset\n");
+        break;
+
+    case MYDEV_GET_STATUS:
+
+        if (mutex_lock_interruptible(&amp;device_mutex))
+            return -ERESTARTSYS;
+
+        value = device_status;
+
+        mutex_unlock(&amp;device_mutex);
+
+        if (copy_to_user((int __user *)arg,
+                         &amp;value,
+                         sizeof(value)))
+            ret = -EFAULT;
+
+        break;
+
+    case MYDEV_SET_VALUE:
+
+        if (copy_from_user(&amp;value,
+                           (int __user *)arg,
+                           sizeof(value))) {
+            ret = -EFAULT;
+            break;
+        }
+
+        if (mutex_lock_interruptible(&amp;device_mutex))
+            return -ERESTARTSYS;
+
+        device_value = value;
+
+        mutex_unlock(&amp;device_mutex);
+
+        pr_info("myioctl: Value set to %d\n", value);
+        break;
+
+    case MYDEV_EXCHANGE:
+
+        if (copy_from_user(&amp;value,
+                           (int __user *)arg,
+                           sizeof(value))) {
+            ret = -EFAULT;
+            break;
+        }
+
+        if (mutex_lock_interruptible(&amp;device_mutex))
+            return -ERESTARTSYS;
+
+        device_value = value;
+        value = device_value;
+
+        mutex_unlock(&amp;device_mutex);
+
+        if (copy_to_user((int __user *)arg,
+                         &amp;value,
+                         sizeof(value)))
+            ret = -EFAULT;
+
+        break;
+
+    default:
+        ret = -ENOTTY;
+        break;
+    }
+
+    return ret;
+}
+
+/* Release callback */
+static int my_release(struct inode *inode, struct file *file)
+{
+    pr_info("myioctl: Device released\n");
+    return 0;
+}
+
+/* File operations */
+static const struct file_operations my_fops = {
+    .owner          = THIS_MODULE,
+    .open           = my_open,
+    .unlocked_ioctl = my_ioctl,
+    .release        = my_release,
+};
+
+/* Module initialization */
+static int __init ioctl_init(void)
+{
+    int ret;
+
+    ret = alloc_chrdev_region(&amp;dev_num, 0, 1, DEVICE_NAME);
+
+    if (ret &lt; 0)
+        return ret;
+
+    cdev_init(&amp;my_cdev, &amp;my_fops);
+    my_cdev.owner = THIS_MODULE;
+
+    ret = cdev_add(&amp;my_cdev, dev_num, 1);
+
+    if (ret &lt; 0) {
+        unregister_chrdev_region(dev_num, 1);
+        return ret;
+    }
+
+    pr_info("myioctl: Registered Major=%d Minor=%d\n",
+            MAJOR(dev_num), MINOR(dev_num));
+
+    return 0;
+}
+
+/* Module cleanup */
+static void __exit ioctl_exit(void)
+{
+    cdev_del(&amp;my_cdev);
+    unregister_chrdev_region(dev_num, 1);
+
+    pr_info("myioctl: Driver removed\n");
+}
+
+module_init(ioctl_init);
+module_exit(ioctl_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("IOCTL Based Character Device Driver");
+MODULE_VERSION("1.0");</code></pre>
+</section>
+
+<section>
+<h2>8. Understanding the Driver Code</h2>
+
+<h3>8.1 unlocked_ioctl()</h3>
+<pre><code>.unlocked_ioctl = my_ioctl</code></pre>
+<p>This connects the user-space ioctl() system call to the driver's IOCTL callback.</p>
+
+<h3>8.2 Command Validation</h3>
+<pre><code>if (_IOC_TYPE(cmd) != MYDEV_MAGIC)
+    return -ENOTTY;
+
+if (_IOC_NR(cmd) &gt; 3)
+    return -ENOTTY;</code></pre>
+<p>The driver checks the command type and command number before processing it.</p>
+
+<h3>8.3 Device Reset</h3>
+<p><code>MYDEV_RESET</code> resets the stored value and restores the device status.</p>
+
+<h3>8.4 Reading Status</h3>
+<p><code>MYDEV_GET_STATUS</code> copies the status from kernel memory to the user-space application.</p>
+
+<h3>8.5 Setting a Value</h3>
+<p><code>MYDEV_SET_VALUE</code> receives an integer from the application and stores it in the driver.</p>
+
+<h3>8.6 Bidirectional Exchange</h3>
+<p><code>MYDEV_EXCHANGE</code> receives an integer and returns the value after processing it. This example echoes the value to demonstrate bidirectional transfer.</p>
+
+<div class="note">
+<strong>Kernel compatibility:</strong> This example uses <code>unlocked_ioctl</code> for a normal 64-bit Linux environment. Drivers supporting 32-bit applications on a 64-bit kernel may also need a carefully implemented <code>compat_ioctl</code> handler.
+</div>
+</section>
+
+<section>
+<h2>9. Create the Makefile</h2>
+<pre><code>nano Makefile</code></pre>
+
+<h3>File: Makefile</h3>
+<pre><code>obj-m += ioctl_driver.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>Use a real tab character before each command under the targets.</p>
+</section>
+
+<section>
+<h2>10. Compile the Kernel Module</h2>
+<pre><code>make
+
+modinfo ioctl_driver.ko</code></pre>
+
+<p>If compilation is successful, the module file <code>ioctl_driver.ko</code> will be generated.</p>
+</section>
+
+<section>
+<h2>11. Create the User-Space Test Application</h2>
+<p>Create the test application:</p>
+<pre><code>nano ioctl_test.c</code></pre>
+
+<h3>File: ioctl_test.c</h3>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/ioctl.h&gt;
+#include &lt;stdlib.h&gt;
+
+#include "my_ioctl.h"
+
+int main(void)
+{
+    int fd;
+    int value;
+    int status;
+
+    fd = open("/dev/myioctl", O_RDWR);
+
+    if (fd &lt; 0) {
+        perror("open");
+        return 1;
+    }
+
+    printf("IOCTL Character Driver Test\n");
+
+    /* Set device value */
+    value = 125;
+
+    if (ioctl(fd, MYDEV_SET_VALUE, &amp;value) &lt; 0) {
+        perror("MYDEV_SET_VALUE");
+        close(fd);
+        return 1;
+    }
+
+    printf("Value sent to driver: %d\n", value);
+
+    /* Exchange value */
+    value = 250;
+
+    if (ioctl(fd, MYDEV_EXCHANGE, &amp;value) &lt; 0) {
+        perror("MYDEV_EXCHANGE");
+        close(fd);
+        return 1;
+    }
+
+    printf("Value returned by driver: %d\n", value);
+
+    /* Get device status */
+    if (ioctl(fd, MYDEV_GET_STATUS, &amp;status) &lt; 0) {
+        perror("MYDEV_GET_STATUS");
+        close(fd);
+        return 1;
+    }
+
+    printf("Device status: %d\n", status);
+
+    /* Reset device */
+    if (ioctl(fd, MYDEV_RESET) &lt; 0) {
+        perror("MYDEV_RESET");
+        close(fd);
+        return 1;
+    }
+
+    printf("Device reset command completed\n");
+
+    close(fd);
+
+    return 0;
+}</code></pre>
+</section>
+
+<section>
+<h2>12. Compile the User-Space Application</h2>
+<pre><code>gcc -Wall -Wextra ioctl_test.c -o ioctl_test</code></pre>
+
+<p>The application and driver must use the same <code>my_ioctl.h</code> definitions.</p>
+</section>
+
+<section>
+<h2>13. Load the Driver and Create the Device Node</h2>
+<pre><code># Load the module
+sudo insmod ioctl_driver.ko
+
+# Check kernel messages
+sudo dmesg | tail -20
+
+# Find the assigned major number
+cat /proc/devices | grep myioctl</code></pre>
+
+<p>Suppose the kernel reports major number 240. Create the device node:</p>
+<pre><code>sudo mknod /dev/myioctl c 240 0
+sudo chmod 666 /dev/myioctl
+
+ls -l /dev/myioctl</code></pre>
+
+<p>Replace 240 with the actual major number reported by your system.</p>
+</section>
+
+<section>
+<h2>14. Execute the Test Application</h2>
+<pre><code>./ioctl_test</code></pre>
+
+<h3>Expected Output</h3>
+<pre><code>IOCTL Character Driver Test
+Value sent to driver: 125
+Value returned by driver: 250
+Device status: 1
+Device reset command completed</code></pre>
+
+<p>Check the kernel log:</p>
+<pre><code>sudo dmesg | tail -30</code></pre>
+
+<p>Example driver messages:</p>
+<pre><code>myioctl: Device opened
+myioctl: Value set to 125
+myioctl: Device reset
+myioctl: Device released</code></pre>
+</section>
+
+<section>
+<h2>15. IOCTL Command Summary</h2>
+<table>
+<tr><th>Command</th><th>Macro</th><th>Operation</th></tr>
+<tr><td>MYDEV_RESET</td><td>_IO</td><td>Reset device state</td></tr>
+<tr><td>MYDEV_GET_STATUS</td><td>_IOR</td><td>Read device status</td></tr>
+<tr><td>MYDEV_SET_VALUE</td><td>_IOW</td><td>Set device value</td></tr>
+<tr><td>MYDEV_EXCHANGE</td><td>_IOWR</td><td>Exchange data</td></tr>
+</table>
+</section>
+
+<section>
+<h2>16. Common Errors and Troubleshooting</h2>
+<table>
+<tr><th>Error</th><th>Possible Cause</th><th>Solution</th></tr>
+<tr><td>Inappropriate ioctl for device</td><td>Wrong device or unsupported command</td><td>Verify device node and command definitions.</td></tr>
+<tr><td>Bad address</td><td>Invalid user-space pointer or failed copy</td><td>Check the application pointer and transfer size.</td></tr>
+<tr><td>No such file or directory</td><td>Device node is missing</td><td>Create /dev/myioctl using mknod.</td></tr>
+<tr><td>Permission denied</td><td>Insufficient permissions</td><td>Check device ownership and permissions.</td></tr>
+<tr><td>Invalid module format</td><td>Kernel/header mismatch</td><td>Build against the running kernel headers.</td></tr>
+<tr><td>Unknown IOCTL command</td><td>Command not implemented</td><td>Check the command macro and switch statement.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>17. Practical Exercises</h2>
+<ol>
+<li>Add an IOCTL command to read the current stored value.</li>
+<li>Add a command to multiply the stored value by two.</li>
+<li>Implement a command to clear the stored value.</li>
+<li>Change the device status using a user-space command.</li>
+<li>Define an IOCTL command that transfers a custom structure.</li>
+<li>Study the difference between _IOR, _IOW and _IOWR.</li>
+<li>Investigate how compat_ioctl supports 32-bit applications.</li>
+</ol>
+</section>
+
+<section>
+<h2>18. Interview Questions</h2>
+<ol>
+<li>What is IOCTL in Linux?</li>
+<li>Why is IOCTL required when read() and write() already exist?</li>
+<li>What is the purpose of unlocked_ioctl?</li>
+<li>What is the difference between _IO and _IOR?</li>
+<li>What is the purpose of _IOW?</li>
+<li>When should _IOWR be used?</li>
+<li>What information is encoded in an IOCTL command?</li>
+<li>Why should user pointers be accessed using copy_to_user() and copy_from_user()?</li>
+<li>What is the purpose of the IOCTL magic number?</li>
+<li>What does -ENOTTY indicate?</li>
+<li>What is compat_ioctl?</li>
+<li>Why should IOCTL commands be defined in a shared header file?</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Lesson Summary</h2>
+<ul>
+<li>IOCTL provides device-specific control operations.</li>
+<li>The user-space ioctl() call communicates with the driver's unlocked_ioctl callback.</li>
+<li>_IO, _IOR, _IOW and _IOWR define common IOCTL command formats.</li>
+<li>copy_from_user() and copy_to_user() safely transfer data across the user/kernel boundary.</li>
+<li>A shared header file keeps kernel and user-space command definitions consistent.</li>
+<li>Command validation and input validation are essential for reliable driver design.</li>
+</ul>
+</section>
+
+<div class="info">
+<strong>Next Lesson:</strong> Lesson 6 – Procfs-Based Device Interface Project
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | Linux Device Drivers Course</p>
+</footer>
+
+</body>
+</html>
