@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 1: Introduction to Hardware Interrupts | Linux Device Drivers</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 20px;
+}
+
+header h1 { margin: 0 0 10px; font-size: 30px; }
+header p { margin: 0; }
+
+nav {
+    background: white;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+
+nav a {
+    display: inline-block;
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 5px 12px;
+}
+
+nav a:hover {
+    color: #007bff;
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e4efff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e2eaf5;
+    padding-bottom: 8px;
+}
+
+h3 { color: #245b9c; margin-top: 24px; }
+
+pre {
+    background: #17212e;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    line-height: 1.55;
+    font-size: 14px;
+}
+
+code { font-family: Consolas, monospace; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+
+th, td {
+    border: 1px solid #d5dfeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #edf4ff;
+    border: 1px solid #bfd4f3;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+    font-weight: bold;
+}
+
+.diagram .arrow {
+    color: #174ea6;
+    font-size: 23px;
+    margin: 5px;
+}
+
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #fff0f0;
+    border-left: 5px solid #d9534f;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.navigation-buttons a:hover { background: #2878d7; }
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .navigation-buttons { flex-direction: column; }
+    .navigation-buttons a { text-align: center; }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Lesson 1: Introduction to Hardware Interrupts</h1>
+    <p>Linux Device Drivers – Interrupt Handling</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 14</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> 14 – Interrupt Handling in Linux Device Drivers<br>
+    <strong>Lesson:</strong> 1 – Introduction to Hardware Interrupts<br>
+    <strong>Level:</strong> Intermediate<br>
+    <strong>Prerequisites:</strong> Linux Kernel Architecture, Kernel Execution Context, Character Drivers, CPU Architecture and Basic Digital Electronics.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Define hardware interrupts.</li>
+    <li>Understand why interrupts are required in computer systems.</li>
+    <li>Differentiate interrupts from polling.</li>
+    <li>Understand the basic interrupt-handling sequence.</li>
+    <li>Identify common hardware interrupt sources.</li>
+    <li>Understand interrupt requests and interrupt controllers.</li>
+    <li>Understand the relationship between hardware interrupts and Linux device drivers.</li>
+    <li>Distinguish hardware interrupts from software-generated interrupts and exceptions.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. What Is an Interrupt?</h2>
+
+<p>An <strong>interrupt</strong> is an event that causes the processor to temporarily suspend its current execution flow and transfer control to a predefined interrupt-handling mechanism.</p>
+
+<p>The processor responds to the event by saving the necessary execution state and transferring control to an appropriate handler or exception entry point.</p>
+
+<p>After the interrupt has been handled, execution can resume according to the processor architecture and operating-system rules.</p>
+
+<h3>Simple Example</h3>
+
+<p>Suppose a keyboard is connected to a computer. When a user presses a key, the keyboard controller generates an interrupt request.</p>
+
+<p>The processor receives the interrupt and Linux arranges for the keyboard driver's interrupt-handling code to process the event.</p>
+
+<div class="diagram">
+    <div>User Presses a Keyboard Key</div>
+    <div class="arrow">↓</div>
+    <div>Keyboard Controller Generates an Interrupt Request</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Controller Routes the Request</div>
+    <div class="arrow">↓</div>
+    <div>Processor Accepts the Interrupt</div>
+    <div class="arrow">↓</div>
+    <div>Linux Executes the Registered Handler</div>
+    <div class="arrow">↓</div>
+    <div>Processor Resumes Appropriate Execution</div>
+</div>
+
+</section>
+
+<section>
+<h2>3. Why Are Interrupts Required?</h2>
+
+<p>Hardware devices operate independently of the CPU. A device may generate data or complete an operation at a time that is not known in advance to the processor.</p>
+
+<p>Examples include:</p>
+
+<ul>
+    <li>A keyboard receiving a key press.</li>
+    <li>A network interface receiving a packet.</li>
+    <li>A timer reaching its configured count.</li>
+    <li>A UART receiving a character.</li>
+    <li>A storage controller completing a data transfer.</li>
+    <li>A GPIO controller detecting an external signal transition.</li>
+</ul>
+
+<p>Without interrupts, the processor may need to repeatedly check device status to discover whether an event has occurred.</p>
+
+<p>Interrupts provide an event-driven mechanism through which hardware can request processor attention.</p>
+
+<h3>Advantages of Interrupts</h3>
+
+<ol>
+    <li>Reduce the need for continuous status checking.</li>
+    <li>Allow the CPU to perform other work while a device is idle.</li>
+    <li>Provide a mechanism for responding to asynchronous hardware events.</li>
+    <li>Support efficient handling of device events.</li>
+    <li>Help coordinate CPU and peripheral operations.</li>
+</ol>
+
+<div class="note">
+    Interrupts do not eliminate all CPU overhead. Interrupt entry, handler execution, synchronization and deferred processing also consume processor time.
+</div>
+</section>
+
+<section>
+<h2>4. Interrupts vs Polling</h2>
+
+<p>Polling and interrupts are two different techniques used to detect hardware events.</p>
+
+<h3>Polling</h3>
+
+<p>In polling, the CPU repeatedly checks a device status register to determine whether an event has occurred.</p>
+
+<pre><code>while (1)
+{
+    if (device_status_is_ready())
+    {
+        process_device_event();
+    }
+}</code></pre>
+
+<p>This is a conceptual example. Actual device drivers use hardware-specific register access and appropriate synchronization.</p>
+
+<h3>Interrupt-Based Approach</h3>
+
+<p>In an interrupt-based design, the device signals the processor when an event requires attention.</p>
+
+<pre><code>Device generates interrupt
+        |
+        v
+Processor receives interrupt
+        |
+        v
+Registered handler executes
+        |
+        v
+Device event is processed</code></pre>
+
+<h3>Comparison</h3>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Polling</th>
+        <th>Interrupts</th>
+    </tr>
+    <tr>
+        <td>Event detection</td>
+        <td>CPU repeatedly checks device status.</td>
+        <td>Device or interrupt controller signals an event.</td>
+    </tr>
+    <tr>
+        <td>CPU involvement</td>
+        <td>CPU performs repeated checks.</td>
+        <td>CPU responds when an interrupt is accepted.</td>
+    </tr>
+    <tr>
+        <td>Idle behavior</td>
+        <td>Polling may consume CPU time.</td>
+        <td>CPU can perform other work or enter an idle state.</td>
+    </tr>
+    <tr>
+        <td>Implementation</td>
+        <td>Requires a checking loop or periodic check.</td>
+        <td>Requires interrupt configuration and a handler.</td>
+    </tr>
+    <tr>
+        <td>Typical use</td>
+        <td>Simple devices, short checks or specific high-performance designs.</td>
+        <td>Asynchronous events and many peripheral drivers.</td>
+    </tr>
+</table>
+
+<div class="note">
+    Polling is not always inefficient. It can be appropriate when event frequency is very high, latency requirements are strict, or hardware and system design favor polling.
+</div>
+</section>
+
+<section>
+<h2>5. Basic Interrupt Handling Architecture</h2>
+
+<p>An interrupt-handling system involves hardware and software components.</p>
+
+<h3>Main Components</h3>
+
+<table>
+    <tr>
+        <th>Component</th>
+        <th>Function</th>
+    </tr>
+    <tr>
+        <td>Interrupt source</td>
+        <td>Peripheral or hardware logic that generates an interrupt request.</td>
+    </tr>
+    <tr>
+        <td>Interrupt controller</td>
+        <td>Manages interrupt requests, priorities, masking and routing according to its architecture.</td>
+    </tr>
+    <tr>
+        <td>CPU</td>
+        <td>Accepts the interrupt and transfers execution to the appropriate entry point.</td>
+    </tr>
+    <tr>
+        <td>Interrupt vector or entry mechanism</td>
+        <td>Identifies the architecture-specific entry point for the interrupt.</td>
+    </tr>
+    <tr>
+        <td>Linux interrupt subsystem</td>
+        <td>Manages interrupt descriptors, registered handlers and interrupt flow.</td>
+    </tr>
+    <tr>
+        <td>Device driver</td>
+        <td>Processes the event associated with its device.</td>
+    </tr>
+</table>
+
+<div class="diagram">
+    <div>Hardware Peripheral</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Request</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Controller</div>
+    <div class="arrow">↓</div>
+    <div>CPU Interrupt Entry</div>
+    <div class="arrow">↓</div>
+    <div>Linux Interrupt Subsystem</div>
+    <div class="arrow">↓</div>
+    <div>Registered Device Driver Handler</div>
+</div>
+
+<p>The exact interrupt-controller architecture differs between platforms. For example, x86 systems commonly use APIC-based interrupt routing, while ARM systems commonly use a Generic Interrupt Controller (GIC) on many platforms.</p>
+</section>
+
+<section>
+<h2>6. Common Sources of Hardware Interrupts</h2>
+
+<p>Hardware interrupts can originate from many different peripheral devices and system components.</p>
+
+<table>
+    <tr>
+        <th>Hardware Source</th>
+        <th>Example Event</th>
+    </tr>
+    <tr>
+        <td>Keyboard</td>
+        <td>A key is pressed or released.</td>
+    </tr>
+    <tr>
+        <td>Mouse</td>
+        <td>Movement or button activity is reported.</td>
+    </tr>
+    <tr>
+        <td>UART</td>
+        <td>Data is received or transmission completes.</td>
+    </tr>
+    <tr>
+        <td>Timer</td>
+        <td>A timer reaches a programmed event.</td>
+    </tr>
+    <tr>
+        <td>Network interface</td>
+        <td>A packet is received or transmission status changes.</td>
+    </tr>
+    <tr>
+        <td>Storage controller</td>
+        <td>A read or write operation completes.</td>
+    </tr>
+    <tr>
+        <td>GPIO controller</td>
+        <td>An input pin detects a configured edge or level.</td>
+    </tr>
+    <tr>
+        <td>USB controller</td>
+        <td>A USB transfer or device event occurs.</td>
+    </tr>
+    <tr>
+        <td>Power-management hardware</td>
+        <td>A power-related event is detected.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>7. Interrupt Request (IRQ)</h2>
+
+<p>An <strong>Interrupt Request (IRQ)</strong> is a request for processor attention generated by a hardware source or represented through an interrupt-controller mechanism.</p>
+
+<p>Linux uses IRQ numbers and interrupt descriptors to manage interrupt handling.</p>
+
+<h3>IRQ Number</h3>
+
+<p>An IRQ number identifies an interrupt line or logical interrupt in the Linux interrupt subsystem.</p>
+
+<p>For example, a driver may request an IRQ using:</p>
+
+<pre><code>request_irq(
+    irq_number,
+    interrupt_handler,
+    IRQF_SHARED,
+    "my_device",
+    device_data
+);</code></pre>
+
+<p>This function will be studied in detail in Lesson 4.</p>
+
+<div class="note">
+    Linux IRQ numbers are not necessarily identical to physical interrupt-controller input numbers. Firmware descriptions, interrupt domains and controller mappings may translate hardware interrupt identifiers into Linux IRQ numbers.
+</div>
+</section>
+
+<section>
+<h2>8. Types of Hardware Interrupts</h2>
+
+<p>Interrupts can be classified according to how the interrupt signal is generated and handled.</p>
+
+<h3>8.1 Maskable Interrupt</h3>
+
+<p>A maskable interrupt is an interrupt that can be disabled or masked by the processor or interrupt controller, according to the architecture and controller design.</p>
+
+<p>Most ordinary peripheral interrupts are maskable.</p>
+
+<h3>8.2 Non-Maskable Interrupt (NMI)</h3>
+
+<p>A Non-Maskable Interrupt is a high-priority interrupt mechanism that is not controlled by ordinary interrupt masking in the same way as normal maskable interrupts.</p>
+
+<p>It is commonly used for critical system events such as certain hardware errors or platform-specific diagnostic events.</p>
+
+<h3>8.3 Edge-Triggered Interrupt</h3>
+
+<p>An edge-triggered interrupt is generated when a signal changes state.</p>
+
+<p>Common edge definitions include:</p>
+
+<ul>
+    <li>Rising edge: LOW to HIGH transition.</li>
+    <li>Falling edge: HIGH to LOW transition.</li>
+</ul>
+
+<div class="diagram">
+    <div>LOW → HIGH = Rising Edge</div>
+    <div class="arrow">↓</div>
+    <div>HIGH → LOW = Falling Edge</div>
+</div>
+
+<h3>8.4 Level-Triggered Interrupt</h3>
+
+<p>A level-triggered interrupt remains asserted while the configured active signal level is present.</p>
+
+<p>For example, an interrupt may remain active while a device's interrupt-status condition is asserted.</p>
+
+<h3>Edge vs Level Triggering</h3>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Edge-Triggered</th>
+        <th>Level-Triggered</th>
+    </tr>
+    <tr>
+        <td>Activation</td>
+        <td>Signal transition.</td>
+        <td>Active signal level.</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td>Rising edge of GPIO signal.</td>
+        <td>Active-low interrupt signal.</td>
+    </tr>
+    <tr>
+        <td>Handling consideration</td>
+        <td>Events must be captured without missing transitions.</td>
+        <td>Source generally needs to be serviced or deasserted.</td>
+    </tr>
+</table>
+
+<p>The trigger type is determined by the hardware and interrupt-controller configuration. It is not freely interchangeable for every device.</p>
+</section>
+
+<section>
+<h2>9. Hardware Interrupts, Software Interrupts and Exceptions</h2>
+
+<p>These terms describe different event mechanisms, although exact terminology varies between processor architectures.</p>
+
+<table>
+    <tr>
+        <th>Type</th>
+        <th>Origin</th>
+        <th>Example</th>
+    </tr>
+    <tr>
+        <td>Hardware interrupt</td>
+        <td>External hardware or peripheral event.</td>
+        <td>UART receives data.</td>
+    </tr>
+    <tr>
+        <td>Software interrupt</td>
+        <td>Software instruction or architecture-defined mechanism.</td>
+        <td>Software-triggered interrupt or legacy system-call mechanism.</td>
+    </tr>
+    <tr>
+        <td>Exception</td>
+        <td>Condition detected during instruction execution.</td>
+        <td>Invalid instruction or page fault.</td>
+    </tr>
+</table>
+
+<h3>Important Distinction</h3>
+
+<p>A hardware interrupt is generally asynchronous to the instruction currently being executed.</p>
+
+<p>An exception is generally associated with the execution of an instruction or an instruction-related condition.</p>
+
+<p>System-call mechanisms are architecture-dependent. For example, modern x86-64 Linux commonly uses dedicated system-call instructions rather than the older software interrupt instruction.</p>
+</section>
+
+<section>
+<h2>10. Synchronous and Asynchronous Events</h2>
+
+<h3>Synchronous Event</h3>
+
+<p>A synchronous event is directly related to the instruction stream being executed by the CPU.</p>
+
+<p>Examples include:</p>
+
+<ul>
+    <li>Invalid instruction exception.</li>
+    <li>Arithmetic exception where supported.</li>
+    <li>Page fault.</li>
+</ul>
+
+<h3>Asynchronous Event</h3>
+
+<p>An asynchronous event occurs independently of the current instruction being executed.</p>
+
+<p>Examples include:</p>
+
+<ul>
+    <li>Keyboard interrupt.</li>
+    <li>Timer interrupt.</li>
+    <li>Network interface interrupt.</li>
+    <li>UART receive interrupt.</li>
+</ul>
+
+<div class="note">
+    Hardware interrupts are commonly asynchronous. Exceptions are generally synchronous, although some architectures use broader terminology for different processor events.
+</div>
+</section>
+
+<section>
+<h2>11. What Happens When an Interrupt Occurs?</h2>
+
+<p>The following sequence describes a simplified hardware-interrupt flow.</p>
+
+<ol>
+    <li>A hardware device generates an interrupt request.</li>
+    <li>The interrupt controller receives and evaluates the request.</li>
+    <li>The request is routed to an appropriate CPU according to the system configuration.</li>
+    <li>The CPU accepts the interrupt when permitted by its interrupt state and priority rules.</li>
+    <li>The processor transfers execution to an architecture-specific interrupt entry point.</li>
+    <li>The operating system identifies the interrupt and dispatches the appropriate handling mechanism.</li>
+    <li>The registered device handler services the event.</li>
+    <li>The interrupt-handling mechanism completes and execution resumes appropriately.</li>
+</ol>
+
+<h3>Detailed Flow</h3>
+
+<div class="diagram">
+    <div>Device Event Occurs</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Request Generated</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Controller Processes Request</div>
+    <div class="arrow">↓</div>
+    <div>CPU Accepts Interrupt</div>
+    <div class="arrow">↓</div>
+    <div>Architecture-Specific Interrupt Entry</div>
+    <div class="arrow">↓</div>
+    <div>Linux Interrupt Dispatch</div>
+    <div class="arrow">↓</div>
+    <div>Device Driver Handler</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Completion and Appropriate Return</div>
+</div>
+
+<p>This is a conceptual flow. Actual Linux interrupt handling may involve interrupt domains, generic IRQ flow handlers, threaded IRQs, deferred work and architecture-specific code.</p>
+</section>
+
+<section>
+<h2>12. Interrupt Handling in Linux Device Drivers</h2>
+
+<p>Linux provides an interrupt-management framework that allows device drivers to register handlers for their devices.</p>
+
+<p>A driver generally performs the following operations:</p>
+
+<ol>
+    <li>Obtain the appropriate IRQ number from the platform or device configuration.</li>
+    <li>Prepare the device and its interrupt-related state.</li>
+    <li>Register an interrupt handler.</li>
+    <li>Handle the device event when the interrupt is delivered.</li>
+    <li>Release the IRQ when the driver no longer needs it.</li>
+</ol>
+
+<h3>Important Linux Interrupt APIs</h3>
+
+<table>
+    <tr>
+        <th>API</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>request_irq()</code></td>
+        <td>Registers an interrupt handler.</td>
+    </tr>
+    <tr>
+        <td><code>free_irq()</code></td>
+        <td>Releases a previously registered interrupt handler.</td>
+    </tr>
+    <tr>
+        <td><code>disable_irq()</code></td>
+        <td>Disables a specified IRQ and waits for active handling to complete where required by the API.</td>
+    </tr>
+    <tr>
+        <td><code>enable_irq()</code></td>
+        <td>Enables a previously disabled IRQ.</td>
+    </tr>
+    <tr>
+        <td><code>disable_irq_nosync()</code></td>
+        <td>Disables an IRQ without waiting for an active handler to finish.</td>
+    </tr>
+    <tr>
+        <td><code>synchronize_irq()</code></td>
+        <td>Waits for active handling of the specified IRQ to complete.</td>
+    </tr>
+</table>
+
+<p>These APIs will be studied in subsequent lessons.</p>
+</section>
+
+<section>
+<h2>13. Example: UART Receive Interrupt</h2>
+
+<p>Consider a UART peripheral connected to a microcontroller or embedded processor.</p>
+
+<p>When a character arrives through the serial communication line, the UART hardware may generate a receive interrupt.</p>
+
+<h3>Sequence</h3>
+
+<div class="diagram">
+    <div>External Device Sends Serial Data</div>
+    <div class="arrow">↓</div>
+    <div>UART Receives Character</div>
+    <div class="arrow">↓</div>
+    <div>UART Sets Receive Status</div>
+    <div class="arrow">↓</div>
+    <div>UART Generates Interrupt Request</div>
+    <div class="arrow">↓</div>
+    <div>CPU Runs Interrupt Handling Path</div>
+    <div class="arrow">↓</div>
+    <div>UART Driver Processes Received Data</div>
+</div>
+
+<h3>Conceptual Pseudocode</h3>
+
+<pre><code>interrupt_handler()
+{
+    if (uart_receive_event())
+    {
+        data = read_uart_data_register();
+
+        store_received_data(data);
+    }
+
+    return;
+}</code></pre>
+
+<p>This is architecture-independent pseudocode, not a compilable Linux driver. A real Linux UART driver uses the appropriate UART subsystem and hardware-specific register-access methods.</p>
+</section>
+
+<section>
+<h2>14. Interrupts in Embedded Systems and Linux</h2>
+
+<p>Interrupts are important in both bare-metal embedded programming and Linux device-driver development.</p>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Bare-Metal Embedded System</th>
+        <th>Linux Device Driver</th>
+    </tr>
+    <tr>
+        <td>Interrupt setup</td>
+        <td>Often configured using MCU registers and vendor libraries.</td>
+        <td>Managed through Linux IRQ and device-driver frameworks.</td>
+    </tr>
+    <tr>
+        <td>Handler</td>
+        <td>Typically an interrupt service routine defined by the MCU toolchain.</td>
+        <td>Registered Linux interrupt handler or threaded handler.</td>
+    </tr>
+    <tr>
+        <td>Interrupt vector</td>
+        <td>Defined by the microcontroller architecture.</td>
+        <td>Managed through architecture and kernel interrupt infrastructure.</td>
+    </tr>
+    <tr>
+        <td>Concurrency</td>
+        <td>Depends on MCU interrupt and execution model.</td>
+        <td>Must account for kernel execution contexts, SMP and synchronization.</td>
+    </tr>
+    <tr>
+        <td>Deferred work</td>
+        <td>Often implemented using flags or a main loop.</td>
+        <td>Can use threaded IRQs, workqueues and other kernel mechanisms.</td>
+    </tr>
+</table>
+
+<h3>Connection to LPC2129</h3>
+
+<p>In an ARM7 LPC2129 embedded project, a peripheral such as UART0, Timer0 or an external interrupt pin can generate an interrupt.</p>
+
+<p>The microcontroller's VIC (Vectored Interrupt Controller) manages interrupt requests and vector selection.</p>
+
+<p>In Linux, interrupt management is handled through the kernel IRQ subsystem and the interrupt controller available on the target platform.</p>
+
+<div class="note">
+    Your LPC2129 Keil simulator exercises and Linux device-driver exercises use different programming environments. LPC2129 VIC register programming is not the same as Linux <code>request_irq()</code> programming.
+</div>
+</section>
+
+<section>
+<h2>15. Advantages and Limitations of Interrupts</h2>
+
+<h3>Advantages</h3>
+
+<ul>
+    <li>Event-driven operation.</li>
+    <li>Reduced continuous polling overhead in suitable workloads.</li>
+    <li>Efficient peripheral event notification.</li>
+    <li>Support for asynchronous hardware communication.</li>
+    <li>Useful for timers, communication devices and external signals.</li>
+</ul>
+
+<h3>Limitations and Challenges</h3>
+
+<ul>
+    <li>Interrupt entry and handling introduce overhead.</li>
+    <li>High interrupt rates can consume substantial CPU time.</li>
+    <li>Interrupt handlers have execution-context restrictions.</li>
+    <li>Shared device data requires synchronization.</li>
+    <li>Interrupt storms can degrade system performance.</li>
+    <li>Incorrect acknowledgement or clearing of a device interrupt condition may cause repeated interrupts.</li>
+</ul>
+</section>
+
+<section>
+<h2>16. Important Linux Interrupt Concepts</h2>
+
+<table>
+    <tr>
+        <th>Concept</th>
+        <th>Meaning</th>
+    </tr>
+    <tr>
+        <td>IRQ</td>
+        <td>Interrupt request represented in the Linux interrupt subsystem.</td>
+    </tr>
+    <tr>
+        <td>ISR</td>
+        <td>Interrupt Service Routine; commonly used to describe the interrupt handler.</td>
+    </tr>
+    <tr>
+        <td>IRQ descriptor</td>
+        <td>Kernel data structure that represents and manages an IRQ.</td>
+    </tr>
+    <tr>
+        <td>Interrupt controller</td>
+        <td>Hardware that manages and routes interrupt requests.</td>
+    </tr>
+    <tr>
+        <td>Interrupt context</td>
+        <td>Execution context associated with interrupt handling.</td>
+    </tr>
+    <tr>
+        <td>Hard IRQ</td>
+        <td>Immediate interrupt-handling path.</td>
+    </tr>
+    <tr>
+        <td>Threaded IRQ</td>
+        <td>Interrupt handling performed in a kernel thread, allowing sleepable processing in the thread function.</td>
+    </tr>
+    <tr>
+        <td>Deferred processing</td>
+        <td>Moving suitable work out of the immediate interrupt-handling path.</td>
+    </tr>
+</table>
+
+<p>Hard IRQ handling, threaded IRQs and deferred processing are covered in later lessons of this chapter.</p>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+
+<ul>
+    <li>An interrupt is an event that causes the processor to transfer execution to an interrupt-handling path.</li>
+    <li>Hardware devices generate interrupt requests when events occur.</li>
+    <li>Interrupts reduce the need for continuous polling in suitable designs.</li>
+    <li>An interrupt controller manages interrupt requests and routing.</li>
+    <li>Linux provides an interrupt subsystem for registering and managing device handlers.</li>
+    <li>IRQ numbers identify logical interrupts within Linux.</li>
+    <li>Interrupts may be edge-triggered or level-triggered.</li>
+    <li>Maskable interrupts and NMIs have different masking characteristics.</li>
+    <li>Hardware interrupts are generally asynchronous to the current instruction stream.</li>
+    <li>Linux drivers use APIs such as request_irq() and free_irq().</li>
+    <li>Interrupt handlers must follow strict execution-context rules.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Short Answer Questions</h2>
+
+<ol>
+    <li>What is an interrupt?</li>
+    <li>Why are interrupts required?</li>
+    <li>What is an Interrupt Request (IRQ)?</li>
+    <li>What is an interrupt controller?</li>
+    <li>What is polling?</li>
+    <li>Differentiate polling and interrupts.</li>
+    <li>What is an interrupt service routine?</li>
+    <li>What is a maskable interrupt?</li>
+    <li>What is a Non-Maskable Interrupt?</li>
+    <li>What is an edge-triggered interrupt?</li>
+    <li>What is a level-triggered interrupt?</li>
+    <li>What is the purpose of request_irq()?</li>
+    <li>What is the difference between an interrupt and an exception?</li>
+    <li>Give four examples of hardware interrupt sources.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Long Answer Questions</h2>
+
+<ol>
+    <li>Define hardware interrupts and explain their importance in computer systems.</li>
+    <li>Explain the complete sequence of interrupt handling.</li>
+    <li>Compare polling and interrupt-based device communication.</li>
+    <li>Explain the role of an interrupt controller.</li>
+    <li>Discuss different types of hardware interrupts.</li>
+    <li>Differentiate hardware interrupts, software interrupts and exceptions.</li>
+    <li>Explain the role of the Linux interrupt subsystem in device-driver development.</li>
+    <li>Explain UART receive interrupt handling with a suitable diagram.</li>
+    <li>Compare interrupt handling in bare-metal embedded systems and Linux.</li>
+    <li>Discuss the advantages and limitations of interrupt-driven systems.</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Practical Exercises</h2>
+
+<ol>
+    <li>Draw the architecture of a hardware interrupt-handling system.</li>
+    <li>Prepare a comparison table between polling and interrupt-driven communication.</li>
+    <li>Draw rising-edge and falling-edge signal diagrams.</li>
+    <li>Explain how a UART receive interrupt is generated and handled.</li>
+    <li>Identify interrupt sources in a typical computer system.</li>
+    <li>Inspect interrupt information using the Linux command <code>cat /proc/interrupts</code>.</li>
+    <li>Compare interrupt information before and after generating suitable device activity.</li>
+    <li>Identify the interrupt controller architecture used by a Linux system.</li>
+    <li>Study the difference between an IRQ number and a hardware interrupt-controller identifier.</li>
+</ol>
+
+<h3>Useful Linux Commands</h3>
+
+<pre><code># Display interrupt statistics
+cat /proc/interrupts
+
+# Display soft interrupt statistics
+cat /proc/softirqs
+
+# Display kernel version
+uname -r
+
+# Display recent kernel messages
+sudo dmesg | tail -30</code></pre>
+
+<p><code>/proc/interrupts</code> displays interrupt statistics maintained by the kernel, commonly including per-CPU counts and interrupt-controller information.</p>
+
+<p><code>/proc/softirqs</code> displays statistics for software-interrupt processing categories. Softirqs are a Linux deferred-processing mechanism, not hardware IRQ lines.</p>
+</section>
+
+<section>
+<h2>21. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should understand the fundamentals of hardware interrupts, why interrupt-driven communication is useful, how hardware events reach the CPU, and how Linux provides an interrupt-management framework for device drivers.</p>
+
+<p>You should also be prepared to study interrupt registration, interrupt handlers, interrupt context and deferred interrupt processing in the remaining lessons of this chapter.</p>
+</section>
+
+<div class="navigation-buttons">
+    <a href="../../ldd.html">← Course Chapters</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L02_Interrupt_Handling_Architecture.html">Next: Interrupt Handling Architecture →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 14 – Interrupt Handling in Linux Device Drivers</p>
+</footer>
+
+</body>
+</html>
