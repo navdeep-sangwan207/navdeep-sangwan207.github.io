@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Physical and Virtual Memory | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Physical and Virtual Memory</h1>
+    <p>Linux Device Drivers – Chapter 12, Lesson 8</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 12</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> Kernel Memory Management</p>
+    <p><strong>Lesson:</strong> 8 – Physical and Virtual Memory</p>
+    <p><strong>Prerequisites:</strong> Kernel memory allocation, kmalloc(), vmalloc(), GFP flags and kernel address spaces.</p>
+    <p><strong>Objective:</strong> Understand physical addresses, virtual addresses, address translation, page tables and their importance in Linux device drivers.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction</h2>
+
+<p>Computer systems use physical memory and virtual memory to manage data and provide memory protection.</p>
+
+<p>Linux uses a virtual memory system that allows software to work with virtual addresses while the Memory Management Unit (MMU) translates those addresses into physical addresses when memory is accessed.</p>
+
+<p>Device driver developers must understand this distinction because a CPU virtual address is not automatically a physical address or a DMA address.</p>
+
+<div class="diagram">
+    <div class="diagram-box">CPU Virtual Address</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">MMU and Page Tables</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Physical Address</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Physical RAM</div>
+</div>
+</section>
+
+<section class="section">
+<h2>2. What Is Physical Memory?</h2>
+
+<p>Physical memory refers to the actual RAM installed in a computer system.</p>
+
+<p>It stores instructions and data that the processor and other hardware components access during operation.</p>
+
+<h3>Characteristics</h3>
+
+<ul>
+    <li>It consists of physical memory locations.</li>
+    <li>It is implemented using RAM hardware.</li>
+    <li>Physical addresses identify locations in the system's physical address space.</li>
+    <li>The MMU and memory subsystem translate and route memory accesses as required.</li>
+</ul>
+
+<p>Example: A system may contain 8 GB of RAM. This RAM provides physical storage for operating-system data, applications, kernel objects and buffers.</p>
+</section>
+
+<section class="section">
+<h2>3. What Is Virtual Memory?</h2>
+
+<p>Virtual memory is an abstraction that gives each process its own virtual address space.</p>
+
+<p>A program normally uses virtual addresses rather than directly specifying physical RAM locations.</p>
+
+<h3>Characteristics</h3>
+
+<ul>
+    <li>Processes have separate virtual address spaces.</li>
+    <li>Virtual addresses are translated through page tables.</li>
+    <li>Memory protection prevents unauthorized access between processes.</li>
+    <li>Virtual memory can map pages to physical RAM or other backing mechanisms.</li>
+    <li>Kernel code also uses virtual addressing, with architecture-specific arrangements.</li>
+</ul>
+
+<div class="important">
+    A virtual address is not necessarily equal to a physical address. The mapping must be established and interpreted using the appropriate kernel and architecture interfaces.
+</div>
+</section>
+
+<section class="section">
+<h2>4. Virtual Address Space</h2>
+
+<p>Each user process operates within its own virtual address space.</p>
+
+<p>A simplified process address-space layout contains regions such as:</p>
+
+<ul>
+    <li>Text segment – program instructions.</li>
+    <li>Data segment – initialized global and static variables.</li>
+    <li>BSS – uninitialized or zero-initialized global and static variables.</li>
+    <li>Heap – dynamically allocated application memory.</li>
+    <li>Stack – function-call and local-variable storage.</li>
+    <li>Memory-mapped regions – shared libraries, mapped files and other mappings.</li>
+</ul>
+
+<div class="diagram">
+    <div class="diagram-box">High Virtual Addresses</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Stack</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Memory-Mapped Regions</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Heap</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">BSS and Data</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Text Segment</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Low Virtual Addresses</div>
+</div>
+
+<p>This is a conceptual layout. Actual address-space arrangements vary by architecture, process configuration, ASLR and kernel implementation.</p>
+</section>
+
+<section class="section">
+<h2>5. Virtual Address Space in the Linux Kernel</h2>
+
+<p>The Linux kernel has its own virtual address mappings and manages access to physical memory.</p>
+
+<p>Kernel virtual addresses are used by kernel code to access kernel objects, allocated buffers and mapped hardware resources.</p>
+
+<p>On many architectures, kernel virtual addresses occupy a region separate from user-process virtual addresses. The exact layout is architecture-dependent.</p>
+
+<h3>Important Distinction</h3>
+
+<ul>
+    <li><strong>User virtual address:</strong> Address used by a user-space process.</li>
+    <li><strong>Kernel virtual address:</strong> Address used by kernel code.</li>
+    <li><strong>Physical address:</strong> Address in the system's physical address space.</li>
+</ul>
+
+<p>A driver must use suitable APIs to transfer data between user space and kernel space. It must not directly dereference an arbitrary user-space pointer as if it were a kernel pointer.</p>
+</section>
+
+<section class="section">
+<h2>6. Memory Management Unit (MMU)</h2>
+
+<p>The Memory Management Unit is hardware that performs address translation and enforces memory-access permissions.</p>
+
+<p>When the CPU accesses a virtual address, the MMU uses translation information maintained by the operating system.</p>
+
+<h3>Main Responsibilities</h3>
+
+<ul>
+    <li>Translate virtual addresses to physical addresses.</li>
+    <li>Enforce read, write and execute permissions.</li>
+    <li>Support memory isolation between processes.</li>
+    <li>Generate page faults when mappings or permissions do not permit an access.</li>
+</ul>
+
+<div class="diagram">
+    <div class="diagram-box">CPU</div>
+    <div class="arrow">↓ Virtual Address</div>
+    <div class="diagram-box">MMU</div>
+    <div class="arrow">↔</div>
+    <div class="diagram-box">Page Tables</div>
+    <div class="arrow">↓ Physical Address</div>
+    <div class="diagram-box">RAM</div>
+</div>
+</section>
+
+<section class="section">
+<h2>7. Page Tables</h2>
+
+<p>Page tables contain mappings and permission information used by the MMU to translate virtual addresses.</p>
+
+<p>Linux manages page tables using architecture-specific mechanisms and common kernel memory-management abstractions.</p>
+
+<h3>Basic Translation Concept</h3>
+
+<p>A virtual address can be divided conceptually into:</p>
+
+<ul>
+    <li>Virtual page number.</li>
+    <li>Offset within the page.</li>
+</ul>
+
+<p>The page table identifies the corresponding physical page. The offset identifies the byte within that page.</p>
+
+<div class="diagram">
+    <div class="diagram-box">Virtual Address</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Virtual Page Number + Page Offset</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Page Table Translation</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Physical Page Number + Same Offset</div>
+</div>
+
+<p>Modern systems commonly use multiple levels of page tables. The number of levels and exact format depend on the architecture and configuration.</p>
+</section>
+
+<section class="section">
+<h2>8. What Is a Memory Page?</h2>
+
+<p>A page is a fixed-size unit used by the virtual memory system.</p>
+
+<p>Many Linux systems use a base page size of 4 KB, but page size is architecture- and configuration-dependent.</p>
+
+<p>For a system using 4 KB pages:</p>
+
+<pre><code>Page Size = 4096 bytes
+
+Page Offset Range:
+0 to 4095</code></pre>
+
+<p>For example, a virtual address belongs to a virtual page and has an offset within that page. The page-table mapping determines which physical page corresponds to it.</p>
+
+<h3>Why Pages Are Important</h3>
+
+<ul>
+    <li>Memory allocation and mapping.</li>
+    <li>Virtual-to-physical address translation.</li>
+    <li>Memory protection.</li>
+    <li>Page reclaim and swapping where supported.</li>
+    <li>DMA mapping and memory-management operations.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>9. Physical Contiguity vs Virtual Contiguity</h2>
+
+<p>This distinction is particularly important when selecting kernel memory allocation functions.</p>
+
+<h3>Physically Contiguous Memory</h3>
+
+<p>A range of memory is physically contiguous when its physical addresses are consecutive.</p>
+
+<h3>Virtually Contiguous Memory</h3>
+
+<p>A range is virtually contiguous when consecutive virtual addresses map to consecutive positions in the virtual address range. The corresponding physical pages do not necessarily need to be adjacent.</p>
+
+<div class="diagram">
+    <h3>Physically Contiguous</h3>
+    <div class="diagram-box">Physical Page 10</div>
+    <div class="diagram-box">Page 11</div>
+    <div class="diagram-box">Page 12</div>
+    <p>Consecutive physical pages</p>
+    <hr>
+    <h3>Virtually Contiguous</h3>
+    <div class="diagram-box">Virtual Page A</div>
+    <div class="diagram-box">Virtual Page B</div>
+    <div class="diagram-box">Virtual Page C</div>
+    <p>These pages may map to non-adjacent physical pages.</p>
+</div>
+</section>
+
+<section class="section">
+<h2>10. kmalloc() and Physical Contiguity</h2>
+
+<p><code>kmalloc()</code> returns a kernel virtual address for a memory allocation whose backing physical memory is contiguous.</p>
+
+<h3>Example</h3>
+
+<pre><code>#include &lt;linux/slab.h&gt;
+
+char *buffer;
+
+buffer = kmalloc(1024, GFP_KERNEL);
+
+if (!buffer) {
+    return -ENOMEM;
+}
+
+/* Use the buffer */
+
+kfree(buffer);</code></pre>
+
+<p>The returned pointer is a kernel virtual address. The memory backing the allocation is physically contiguous for the requested range.</p>
+
+<p>This property is useful for some kernel operations, but it does not automatically make the memory suitable for every DMA device.</p>
+</section>
+
+<section class="section">
+<h2>11. vmalloc() and Virtual Contiguity</h2>
+
+<p><code>vmalloc()</code> allocates memory that is virtually contiguous but does not require the backing physical pages to be contiguous.</p>
+
+<h3>Example</h3>
+
+<pre><code>#include &lt;linux/vmalloc.h&gt;
+
+char *buffer;
+
+buffer = vmalloc(1024 * 1024);
+
+if (!buffer) {
+    return -ENOMEM;
+}
+
+/* Use the buffer */
+
+vfree(buffer);</code></pre>
+
+<h3>Comparison</h3>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>kmalloc()</th>
+    <th>vmalloc()</th>
+</tr>
+<tr>
+    <td>Virtual contiguity</td>
+    <td>Yes</td>
+    <td>Yes</td>
+</tr>
+<tr>
+    <td>Physical contiguity</td>
+    <td>Yes, for the allocation</td>
+    <td>Not required</td>
+</tr>
+<tr>
+    <td>Typical use</td>
+    <td>Small and medium kernel allocations</td>
+    <td>Larger virtually contiguous buffers</td>
+</tr>
+<tr>
+    <td>Release function</td>
+    <td>kfree()</td>
+    <td>vfree()</td>
+</tr>
+</table>
+
+<p>Both functions return kernel virtual addresses, not raw physical addresses.</p>
+</section>
+
+<section class="section">
+<h2>12. Physical Address and Virtual Address in Drivers</h2>
+
+<p>Device drivers sometimes need to work with hardware resources described using physical addresses.</p>
+
+<p>For example, a peripheral may expose registers at a physical address. A driver generally maps those registers into kernel virtual address space before accessing them.</p>
+
+<h3>Conceptual Register Mapping</h3>
+
+<pre><code>Physical Hardware Register Address
+             |
+             v
+      ioremap() / Managed Mapping API
+             |
+             v
+      Kernel Virtual Address
+             |
+             v
+       readl() / writel()</code></pre>
+
+<p>Example of the mapping pattern:</p>
+
+<pre><code>#include &lt;linux/io.h&gt;
+
+void __iomem *regs;
+
+regs = ioremap(physical_address, resource_size);
+
+if (!regs)
+    return -ENOMEM;
+
+/* Access mapped registers with suitable I/O accessors. */
+
+iounmap(regs);</code></pre>
+
+<div class="note">
+    This is a conceptual pattern. Real drivers should normally obtain resources from the platform, PCI or other device subsystem and use managed resource APIs where appropriate. Do not invent or hardcode hardware addresses for testing.
+</div>
+</section>
+
+<section class="section">
+<h2>13. Why Virtual Address Is Not a DMA Address</h2>
+
+<p>DMA stands for <strong>Direct Memory Access</strong>. A DMA-capable device can transfer data between the device and system memory without requiring the CPU to copy every byte.</p>
+
+<p>A device may use a DMA address or I/O virtual address that is different from both the CPU virtual address and the physical address.</p>
+
+<div class="diagram">
+    <div class="diagram-box">CPU Virtual Address</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">CPU MMU Translation</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Physical Address</div>
+    <hr>
+    <div class="diagram-box">DMA Address / IOVA</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Device DMA Translation Path</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">System Memory</div>
+</div>
+
+<p>The DMA address may be translated by an IOMMU or handled by architecture-specific DMA mechanisms.</p>
+
+<div class="important">
+    Never assume that a CPU virtual address can be passed directly to a DMA device. Use the Linux DMA API, such as dma_map_single() or dma_alloc_coherent(), according to the device's requirements.
+</div>
+</section>
+
+<section class="section">
+<h2>14. Kernel Functions Related to Address Translation</h2>
+
+<p>Linux provides interfaces for working with memory addresses. Their availability and correct use depend on the architecture and the type of memory.</p>
+
+<table>
+<tr>
+    <th>Function / Interface</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>virt_to_phys()</code></td>
+    <td>Converts certain kernel virtual addresses to physical addresses. It is not valid for arbitrary pointers.</td>
+</tr>
+<tr>
+    <td><code>phys_to_virt()</code></td>
+    <td>Converts certain physical addresses into kernel virtual addresses on architectures that support the relevant direct mapping.</td>
+</tr>
+<tr>
+    <td><code>ioremap()</code></td>
+    <td>Maps an I/O physical resource into kernel virtual address space.</td>
+</tr>
+<tr>
+    <td><code>iounmap()</code></td>
+    <td>Releases an I/O mapping created with ioremap().</td>
+</tr>
+<tr>
+    <td><code>page_to_pfn()</code></td>
+    <td>Obtains the page-frame number associated with a struct page.</td>
+</tr>
+<tr>
+    <td><code>pfn_to_page()</code></td>
+    <td>Obtains a struct page for a valid page-frame number on supported configurations.</td>
+</tr>
+</table>
+
+<div class="note">
+    Do not use virt_to_phys() as a generic way to obtain DMA addresses. The DMA API handles device-specific addressing, mapping and cache-coherency requirements.
+</div>
+</section>
+
+<section class="section">
+<h2>15. Page Faults</h2>
+
+<p>A page fault occurs when the CPU attempts to access a virtual address that requires page-table handling or violates the permitted memory-access rules.</p>
+
+<p>Page faults are not always errors. Some are normal parts of virtual memory operation.</p>
+
+<h3>Examples</h3>
+
+<ul>
+    <li>A process accesses a valid page that has not yet been mapped into physical memory.</li>
+    <li>A copy-on-write page is written and requires a private writable page.</li>
+    <li>A process attempts to access an unmapped or protected address.</li>
+</ul>
+
+<h3>Page Fault Handling</h3>
+
+<div class="diagram">
+    <div class="diagram-box">CPU Memory Access</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Page Fault</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Fault Handler</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Resolve Mapping or Report Error</div>
+</div>
+
+<p>If the fault can be resolved, execution may continue. If the access is invalid or cannot be resolved, the kernel may report an error or terminate the affected process. A fault caused by invalid kernel access can result in a kernel oops or panic.</p>
+</section>
+
+<section class="section">
+<h2>16. Practical Demonstration: Allocation Types</h2>
+
+<p>The following module demonstrates that kernel allocations return virtual pointers. It does not attempt to translate arbitrary pointers into physical or DMA addresses.</p>
+
+<p>Create <code>memory_types_demo.c</code>:</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/slab.h&gt;
+#include &lt;linux/vmalloc.h&gt;
+
+static char *small_buffer;
+static char *large_buffer;
+
+static int __init memory_demo_init(void)
+{
+    small_buffer = kmalloc(256, GFP_KERNEL);
+
+    if (!small_buffer)
+        return -ENOMEM;
+
+    large_buffer = vmalloc(1024 * 1024);
+
+    if (!large_buffer) {
+        kfree(small_buffer);
+        small_buffer = NULL;
+        return -ENOMEM;
+    }
+
+    snprintf(small_buffer, 256,
+             "kmalloc virtual buffer");
+
+    snprintf(large_buffer, 128,
+             "vmalloc virtual buffer");
+
+    pr_info("%s\n", small_buffer);
+    pr_info("%s\n", large_buffer);
+
+    return 0;
+}
+
+static void __exit memory_demo_exit(void)
+{
+    vfree(large_buffer);
+    kfree(small_buffer);
+
+    large_buffer = NULL;
+    small_buffer = NULL;
+
+    pr_info("Memory allocations released\n");
+}
+
+module_init(memory_demo_init);
+module_exit(memory_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Physical and virtual memory allocation demo");</code></pre>
+
+<h3>What This Demonstrates</h3>
+
+<ol>
+    <li><code>kmalloc()</code> allocates physically contiguous backing memory.</li>
+    <li><code>vmalloc()</code> provides a virtually contiguous allocation.</li>
+    <li>Both returned pointers are kernel virtual addresses.</li>
+    <li><code>kfree()</code> releases the kmalloc allocation.</li>
+    <li><code>vfree()</code> releases the vmalloc allocation.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>17. Makefile</h2>
+
+<pre><code>obj-m += memory_types_demo.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>Save this Makefile in the same directory as <code>memory_types_demo.c</code>.</p>
+</section>
+
+<section class="section">
+<h2>18. Compile and Test in Ubuntu</h2>
+
+<h3>Install Dependencies</h3>
+
+<pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+<h3>Compile</h3>
+
+<pre><code>make</code></pre>
+
+<h3>Load Module</h3>
+
+<pre><code>sudo insmod memory_types_demo.ko</code></pre>
+
+<h3>View Kernel Messages</h3>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<p>Illustrative output:</p>
+
+<pre><code>kmalloc virtual buffer
+vmalloc virtual buffer</code></pre>
+
+<h3>Remove Module</h3>
+
+<pre><code>sudo rmmod memory_types_demo</code></pre>
+
+<h3>Clean Build Files</h3>
+
+<pre><code>make clean</code></pre>
+</section>
+
+<section class="section">
+<h2>19. Common Mistakes</h2>
+
+<table>
+<tr>
+    <th>Mistake</th>
+    <th>Why It Is Incorrect</th>
+    <th>Correct Practice</th>
+</tr>
+<tr>
+    <td>Assuming virtual and physical addresses are identical</td>
+    <td>They represent different address spaces.</td>
+    <td>Use appropriate kernel address-management APIs.</td>
+</tr>
+<tr>
+    <td>Passing a kernel virtual pointer directly to a DMA device</td>
+    <td>The device requires a DMA address.</td>
+    <td>Use the Linux DMA API.</td>
+</tr>
+<tr>
+    <td>Using virt_to_phys() on arbitrary memory</td>
+    <td>Not every virtual address has the required direct mapping.</td>
+    <td>Use it only for supported address types and situations.</td>
+</tr>
+<tr>
+    <td>Using kmalloc() and releasing with vfree()</td>
+    <td>Allocation and release functions do not match.</td>
+    <td>Use kfree() for kmalloc() allocations.</td>
+</tr>
+<tr>
+    <td>Using vmalloc() and releasing with kfree()</td>
+    <td>Incorrect allocator pairing.</td>
+    <td>Use vfree() for vmalloc() allocations.</td>
+</tr>
+<tr>
+    <td>Accessing hardware registers as ordinary RAM</td>
+    <td>Device I/O mappings require appropriate accessors and mapping rules.</td>
+    <td>Use ioremap() or managed mappings and I/O accessors.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>20. Lesson Summary</h2>
+
+<ul>
+    <li>Physical memory represents the system's physical RAM address space.</li>
+    <li>Virtual memory provides address-space abstraction and memory protection.</li>
+    <li>The MMU performs address translation using page tables.</li>
+    <li>Memory is commonly managed in page-sized units.</li>
+    <li>kmalloc() provides a virtually and physically contiguous allocation for the requested range.</li>
+    <li>vmalloc() provides virtual contiguity without requiring physical contiguity.</li>
+    <li>Kernel virtual addresses, physical addresses and DMA addresses are different concepts.</li>
+    <li>Device drivers should use the DMA API for DMA operations.</li>
+    <li>Hardware registers should be mapped and accessed using appropriate I/O interfaces.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>21. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>What is physical memory?</li>
+    <li>What is virtual memory?</li>
+    <li>What is the function of the MMU?</li>
+    <li>What is a page table?</li>
+    <li>What is a memory page?</li>
+    <li>What is a virtual address?</li>
+    <li>What is a physical address?</li>
+    <li>What is the difference between kmalloc() and vmalloc()?</li>
+    <li>What is a page fault?</li>
+    <li>Why is a DMA address different from a CPU virtual address?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain physical memory and virtual memory in Linux.</li>
+    <li>Describe the role of the MMU and page tables.</li>
+    <li>Explain virtual-to-physical address translation.</li>
+    <li>Compare physical contiguity and virtual contiguity.</li>
+    <li>Compare kmalloc() and vmalloc() in detail.</li>
+    <li>Explain why device drivers must use the DMA API.</li>
+    <li>Describe how Linux maps hardware registers into kernel virtual address space.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Build a module that allocates memory using kmalloc().</li>
+    <li>Modify the module to allocate memory using vmalloc().</li>
+    <li>Use the correct release function for each allocation.</li>
+    <li>Draw a virtual-to-physical address translation diagram.</li>
+    <li>Explain why a kernel virtual pointer should not be passed directly to a DMA device.</li>
+    <li>Identify the difference between a normal memory pointer and an I/O mapping pointer.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>22. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Differentiate physical and virtual memory.</li>
+    <li>Explain MMU operation and page-table translation.</li>
+    <li>Understand pages and virtual address spaces.</li>
+    <li>Compare physical and virtual memory contiguity.</li>
+    <li>Understand the memory properties of kmalloc() and vmalloc().</li>
+    <li>Distinguish CPU virtual, physical and DMA addresses.</li>
+    <li>Understand hardware register mapping in Linux drivers.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L07_Kernel_Stack_and_Heap.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 12 Index</a>
+    <a href="L09_DMA_Memory_Allocation_Fundamentals.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 12 – Kernel Memory Management</p>
+</footer>
+
+</body>
+</html>
