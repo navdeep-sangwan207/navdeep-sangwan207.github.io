@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Introduction to IOCTL | Linux Device Drivers</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+
+nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+
+h3 { color: #245b9e; margin-top: 22px; }
+
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+code { font-family: Consolas, monospace; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-weight: bold;
+    font-size: 20px;
+}
+
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+
+.lesson-nav a:hover { background: #2878d7; }
+
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Introduction to IOCTL</h1>
+    <p>Linux Device Drivers – Chapter 11, Lesson 1</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 11</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <strong>Lesson Information</strong>
+        <p><strong>Chapter:</strong> IOCTL and Device Control</p>
+        <p><strong>Lesson:</strong> 1 – Introduction to IOCTL</p>
+        <p><strong>Prerequisites:</strong> Character Device Drivers, file_operations, open(), read(), write(), and user-kernel data transfer.</p>
+        <p><strong>Objective:</strong> Understand IOCTL, why device drivers need control commands, and how user-space applications communicate with drivers through the ioctl() system call.</p>
+    </div>
+
+    <section class="section">
+        <h2>1. Introduction</h2>
+
+        <p>Linux device drivers provide interfaces that allow user-space applications to communicate with hardware devices or software-based devices.</p>
+
+        <p>Common file operations include:</p>
+
+        <ul>
+            <li><code>open()</code> – Opens a device file.</li>
+            <li><code>read()</code> – Requests data from a device.</li>
+            <li><code>write()</code> – Sends data to a device.</li>
+            <li><code>release()</code> – Handles the release of an open file description.</li>
+        </ul>
+
+        <p>However, some device operations are not naturally represented by reading or writing a stream of bytes.</p>
+
+        <p>For example:</p>
+
+        <ul>
+            <li>Changing a device operating mode.</li>
+            <li>Setting a communication speed.</li>
+            <li>Starting or stopping a device operation.</li>
+            <li>Resetting a device.</li>
+            <li>Retrieving device-specific status information.</li>
+        </ul>
+
+        <p>Linux provides the <strong>IOCTL</strong> mechanism for these device-specific control operations.</p>
+    </section>
+
+    <section class="section">
+        <h2>2. What Is IOCTL?</h2>
+
+        <p>IOCTL stands for <strong>Input/Output Control</strong>.</p>
+
+        <p>It is a system-call interface that allows a user-space application to send control commands to a device driver.</p>
+
+        <p>The general user-space function is:</p>
+
+        <pre><code>int ioctl(int fd, unsigned long request, ...);</code></pre>
+
+        <p>Where:</p>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><code>fd</code></td>
+                <td>File descriptor obtained by opening a device file.</td>
+            </tr>
+            <tr>
+                <td><code>request</code></td>
+                <td>Device-control command understood by the driver.</td>
+            </tr>
+            <tr>
+                <td><code>...</code></td>
+                <td>Optional third argument, commonly an integer value or pointer to user-space data, depending on the request.</td>
+            </tr>
+        </table>
+
+        <p>The driver receives the command through its ioctl handler, commonly implemented using <code>unlocked_ioctl</code> in a character driver's <code>file_operations</code> structure.</p>
+
+        <div class="important">
+            IOCTL is not a replacement for read() and write(). It complements them by providing a mechanism for device-specific control operations.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>3. Why Is IOCTL Required?</h2>
+
+        <p>Consider a character driver that controls a software-based device or a hardware peripheral.</p>
+
+        <p>The application may need to perform operations that do not represent ordinary data transfer.</p>
+
+        <table>
+            <tr>
+                <th>Requirement</th>
+                <th>Example Control Operation</th>
+            </tr>
+            <tr>
+                <td>Device configuration</td>
+                <td>Set operating mode.</td>
+            </tr>
+            <tr>
+                <td>Communication configuration</td>
+                <td>Configure baud rate or communication parameters.</td>
+            </tr>
+            <tr>
+                <td>Device management</td>
+                <td>Reset or initialize a device.</td>
+            </tr>
+            <tr>
+                <td>Operation control</td>
+                <td>Start or stop an operation.</td>
+            </tr>
+            <tr>
+                <td>Status information</td>
+                <td>Retrieve device status or configuration.</td>
+            </tr>
+        </table>
+
+        <p>These operations can be implemented using IOCTL commands instead of inventing an unrelated read/write data format for every control request.</p>
+    </section>
+
+    <section class="section">
+        <h2>4. IOCTL Communication Architecture</h2>
+
+        <p>The following diagram illustrates the basic communication path.</p>
+
+        <div class="diagram">
+            <div class="diagram-box">User-Space Application</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">ioctl(fd, command, argument)</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">System Call Interface</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Virtual File System (VFS)</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">unlocked_ioctl()</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Driver Command Handler</div>
+            <div class="arrow">↓</div>
+            <div class="diagram-box">Device Configuration / Control</div>
+        </div>
+
+        <p>The driver examines the command and performs the corresponding operation.</p>
+
+        <p>If the command requires data exchange, the driver may copy data between user space and kernel space using appropriate kernel APIs.</p>
+    </section>
+
+    <section class="section">
+        <h2>5. IOCTL vs read() and write()</h2>
+
+        <p>Both IOCTL and ordinary file operations allow user applications to interact with a device, but their purposes differ.</p>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>read()</th>
+                <th>write()</th>
+                <th>ioctl()</th>
+            </tr>
+            <tr>
+                <td>Main purpose</td>
+                <td>Receive data.</td>
+                <td>Send data.</td>
+                <td>Control or configure a device.</td>
+            </tr>
+            <tr>
+                <td>Typical operation</td>
+                <td>Read sensor data.</td>
+                <td>Send output data.</td>
+                <td>Change device mode.</td>
+            </tr>
+            <tr>
+                <td>Common arguments</td>
+                <td>Buffer and byte count.</td>
+                <td>Buffer and byte count.</td>
+                <td>Command and optional argument.</td>
+            </tr>
+            <tr>
+                <td>Driver callback</td>
+                <td><code>.read</code></td>
+                <td><code>.write</code></td>
+                <td><code>.unlocked_ioctl</code></td>
+            </tr>
+        </table>
+
+        <h3>Example</h3>
+
+        <p>Imagine a temperature sensor driver:</p>
+
+        <ul>
+            <li><code>read()</code> – Retrieve temperature data.</li>
+            <li><code>write()</code> – Send supported configuration data, if designed that way.</li>
+            <li><code>ioctl()</code> – Change measurement mode or request a sensor reset.</li>
+        </ul>
+
+        <p>The exact interface depends on the driver's design and the relevant subsystem API.</p>
+    </section>
+
+    <section class="section">
+        <h2>6. User-Space ioctl() Function</h2>
+
+        <p>To use IOCTL from a C application, include the appropriate header:</p>
+
+        <pre><code>#include &lt;sys/ioctl.h&gt;</code></pre>
+
+        <p>The application must first open the device file.</p>
+
+        <pre><code>int fd;
+
+fd = open("/dev/mydevice", O_RDWR);
+
+if (fd &lt; 0) {
+    perror("open");
+    return 1;
+}</code></pre>
+
+        <p>Then it can issue a device-control command:</p>
+
+        <pre><code>int ret;
+
+ret = ioctl(fd, command, argument);
+
+if (ret &lt; 0) {
+    perror("ioctl");
+}</code></pre>
+
+        <p>Finally, close the device:</p>
+
+        <pre><code>close(fd);</code></pre>
+
+        <div class="note">
+            The request code and argument format must match the interface implemented by the driver. An arbitrary command cannot be assumed to work with every device.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>7. Driver-Side IOCTL Handler</h2>
+
+        <p>For a character driver, IOCTL handling is commonly provided through the <code>unlocked_ioctl</code> member of <code>struct file_operations</code>.</p>
+
+        <p>Basic structure:</p>
+
+        <pre><code>static long my_ioctl(
+    struct file *file,
+    unsigned int cmd,
+    unsigned long arg
+)
+{
+    switch (cmd) {
+        case COMMAND_ONE:
+            /* Handle command one */
+            break;
+
+        case COMMAND_TWO:
+            /* Handle command two */
+            break;
+
+        default:
+            return -ENOTTY;
+    }
+
+    return 0;
+}</code></pre>
+
+        <p>Register the handler in the file operations structure:</p>
+
+        <pre><code>static const struct file_operations my_fops = {
+    .owner          = THIS_MODULE,
+    .unlocked_ioctl = my_ioctl,
+};</code></pre>
+
+        <p>The handler receives the command number and optional argument. It should validate the command and argument before performing any operation.</p>
+
+        <div class="note">
+            The third argument to the user-space ioctl() function is variadic. The driver handler receives it as an unsigned long value. If it represents a pointer, the driver must treat it as a user-space address and use appropriate access and copy mechanisms.
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>8. IOCTL Command Identification</h2>
+
+        <p>A driver may support multiple control operations. It therefore needs a way to distinguish one command from another.</p>
+
+        <p>For example:</p>
+
+        <pre><code>COMMAND_ONE
+COMMAND_TWO
+COMMAND_THREE</code></pre>
+
+        <p>Linux provides command-construction macros such as:</p>
+
+        <ul>
+            <li><code>_IO</code></li>
+            <li><code>_IOR</code></li>
+            <li><code>_IOW</code></li>
+            <li><code>_IOWR</code></li>
+        </ul>
+
+        <p>These macros encode command information such as command type, command number, data direction, and data size.</p>
+
+        <p>They are used to define structured IOCTL request codes. Their detailed design is covered in Lesson 4.</p>
+    </section>
+
+    <section class="section">
+        <h2>9. IOCTL Return Values and Error Handling</h2>
+
+        <p>The user-space <code>ioctl()</code> function generally returns:</p>
+
+        <table>
+            <tr>
+                <th>Return Value</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>Nonnegative value</td>
+                <td>Successful operation; the exact meaning depends on the request.</td>
+            </tr>
+            <tr>
+                <td><code>-1</code> in user space</td>
+                <td>System call failed. The C library sets <code>errno</code>.</td>
+            </tr>
+        </table>
+
+        <p>Inside a Linux kernel handler, errors are normally represented by negative error codes.</p>
+
+        <p>For example:</p>
+
+        <pre><code>return -ENOTTY;</code></pre>
+
+        <p><code>ENOTTY</code> commonly indicates that the requested ioctl operation is not appropriate for the device or is unsupported.</p>
+
+        <p>Other possible errors include:</p>
+
+        <ul>
+            <li><code>-EINVAL</code> – Invalid argument.</li>
+            <li><code>-EFAULT</code> – Invalid user-space memory access or copy failure.</li>
+            <li><code>-ENOTTY</code> – Unsupported or inappropriate IOCTL request.</li>
+            <li><code>-ENOMEM</code> – Memory allocation failure, where applicable.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>10. Advantages of IOCTL</h2>
+
+        <ul>
+            <li>Provides a standard system-call mechanism for device-specific control.</li>
+            <li>Separates control operations from ordinary data transfer.</li>
+            <li>Supports multiple commands through one interface.</li>
+            <li>Can exchange structured configuration and status data.</li>
+            <li>Allows user applications to control device behavior without directly accessing hardware registers.</li>
+        </ul>
+
+        <h3>Limitations and Design Considerations</h3>
+
+        <ul>
+            <li>Driver and application must agree on command definitions and data structures.</li>
+            <li>Incorrect pointer handling can cause kernel faults or security problems.</li>
+            <li>Command interfaces must remain compatible across software versions where required.</li>
+            <li>Drivers must validate user-provided values and check access permissions where necessary.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>11. Practical Applications</h2>
+
+        <table>
+            <tr>
+                <th>Device</th>
+                <th>Possible IOCTL Operation</th>
+            </tr>
+            <tr>
+                <td>Sensor driver</td>
+                <td>Configure measurement mode.</td>
+            </tr>
+            <tr>
+                <td>Communication driver</td>
+                <td>Configure communication parameters.</td>
+            </tr>
+            <tr>
+                <td>Display driver</td>
+                <td>Configure display-specific settings.</td>
+            </tr>
+            <tr>
+                <td>Industrial control driver</td>
+                <td>Start, stop or reset a supported operation.</td>
+            </tr>
+            <tr>
+                <td>Software character driver</td>
+                <td>Change a simulated device operating mode.</td>
+            </tr>
+        </table>
+
+        <p>These are illustrative examples. Modern Linux subsystems often provide dedicated interfaces for common hardware classes, and drivers should use those interfaces where appropriate rather than inventing private IOCTL commands unnecessarily.</p>
+    </section>
+
+    <section class="section">
+        <h2>12. Lesson Summary</h2>
+
+        <ul>
+            <li>IOCTL means Input/Output Control.</li>
+            <li>It provides a system-call interface for device-specific control operations.</li>
+            <li>User applications invoke it using <code>ioctl()</code>.</li>
+            <li>Character drivers commonly implement it through <code>unlocked_ioctl</code>.</li>
+            <li>IOCTL complements read() and write().</li>
+            <li>Command definitions must match between the application and driver.</li>
+            <li>Kernel handlers must validate commands, arguments and user-space pointers.</li>
+            <li>Unsupported commands should return an appropriate error.</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2>13. Practice Questions</h2>
+
+        <h3>Short Answer Questions</h3>
+        <ol>
+            <li>What is IOCTL?</li>
+            <li>What is the full form of IOCTL?</li>
+            <li>Which system call is used to invoke an IOCTL command?</li>
+            <li>What is the purpose of the file descriptor parameter?</li>
+            <li>Which file_operations member commonly handles IOCTL commands?</li>
+            <li>What is the difference between read() and IOCTL?</li>
+            <li>What does <code>-ENOTTY</code> indicate?</li>
+            <li>Why should an IOCTL handler validate its arguments?</li>
+        </ol>
+
+        <h3>Long Answer Questions</h3>
+        <ol>
+            <li>Explain the IOCTL mechanism and its communication architecture.</li>
+            <li>Why is IOCTL required in Linux device drivers?</li>
+            <li>Differentiate between read(), write() and ioctl().</li>
+            <li>Explain the role of <code>unlocked_ioctl</code>.</li>
+            <li>Discuss IOCTL return values and error handling.</li>
+        </ol>
+
+        <h3>Practical Exercises</h3>
+        <ol>
+            <li>Write a user-space C program that opens a device node.</li>
+            <li>Study the syntax of the ioctl() system call.</li>
+            <li>Write a basic driver-side IOCTL handler.</li>
+            <li>Register the handler in <code>file_operations</code>.</li>
+            <li>Design two separate device-control commands.</li>
+            <li>Test how the driver handles an unsupported command.</li>
+        </ol>
+    </section>
+
+    <section class="section">
+        <h2>14. Expected Learning Outcome</h2>
+
+        <p>After completing this lesson, you should be able to:</p>
+
+        <ul>
+            <li>Define IOCTL and explain its purpose.</li>
+            <li>Understand the user-space ioctl() system call.</li>
+            <li>Explain how a driver receives IOCTL commands.</li>
+            <li>Differentiate IOCTL from ordinary read/write operations.</li>
+            <li>Understand basic command validation and error handling.</li>
+            <li>Identify practical applications of IOCTL in device drivers.</li>
+        </ul>
+    </section>
+
+    <div class="lesson-nav">
+        <a href="../ch10_Device_Files_and_Device_Interfaces/index.html">← Previous Chapter</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L02_Need_for_IOCTL_Operations.html">Next Lesson →</a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 11 – IOCTL and Device Control</p>
+</footer>
+
+</body>
+</html>
