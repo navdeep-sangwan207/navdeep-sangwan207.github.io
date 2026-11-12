@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 9 - USB Driver Registration</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 28px;
+}
+
+header p {
+    margin: 8px 0 0;
+}
+
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    border-bottom: 1px solid #dce3ed;
+}
+
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+
+nav a:hover {
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 16px;
+}
+
+.lesson-info {
+    background: #e6f1ff;
+    border-left: 5px solid #2878d7;
+    padding: 15px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9e;
+}
+
+pre {
+    background: #172334;
+    color: #e8f0fa;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+.note {
+    background: #fff7df;
+    border-left: 5px solid #e5a000;
+    padding: 13px 16px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.example {
+    background: #eaf7ee;
+    border-left: 5px solid #269653;
+    padding: 13px 16px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5deea;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f0f5fc;
+    padding: 17px;
+    border-radius: 7px;
+    text-align: center;
+    font-family: Consolas, monospace;
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.8;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 600px) {
+    header h1 {
+        font-size: 22px;
+    }
+
+    nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+
+    section {
+        padding: 16px;
+    }
+
+    table {
+        font-size: 13px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Chapter 18: Block, Network and USB Device Drivers</h1>
+    <p>Lesson 9: USB Driver Registration</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter Index</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson:</strong> 09<br>
+    <strong>Topic:</strong> USB Driver Registration<br>
+    <strong>Chapter:</strong> Block, Network and USB Device Drivers<br>
+    <strong>Level:</strong> Intermediate to Advanced
+</div>
+
+<section>
+<h2>1. Introduction</h2>
+
+<p>
+Linux provides a USB driver framework that allows
+device drivers to communicate with USB peripherals.
+</p>
+
+<p>
+A USB driver registers itself with the Linux USB core.
+The USB core compares connected USB interfaces against
+the driver's supported device identification table.
+</p>
+
+<p>
+When a match is found, the USB core can bind the driver
+to the interface and invoke its probe function.
+</p>
+
+<p>Important concepts include:</p>
+
+<ul>
+    <li>USB driver model.</li>
+    <li><code>struct usb_driver</code>.</li>
+    <li><code>struct usb_device_id</code>.</li>
+    <li>Vendor ID and Product ID.</li>
+    <li>USB interface matching.</li>
+    <li><code>usb_register()</code>.</li>
+    <li><code>usb_deregister()</code>.</li>
+    <li>Module initialization and cleanup.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. USB Driver Architecture in Linux</h2>
+
+<p>
+The Linux USB subsystem contains the USB core,
+host controller drivers and USB device drivers.
+</p>
+
+<div class="diagram">
++--------------------------------------+
+|           USB Device Driver          |
++--------------------------------------+
+                  |
+                  v
++--------------------------------------+
+|               USB Core               |
+|                                      |
+|   Device Matching and Driver Binding |
++--------------------------------------+
+                  |
+                  v
++--------------------------------------+
+|        Host Controller Driver        |
++--------------------------------------+
+                  |
+                  v
++--------------------------------------+
+|          USB Host Controller         |
++--------------------------------------+
+                  |
+                  v
++--------------------------------------+
+|             USB Device               |
++--------------------------------------+
+</div>
+
+<h3>USB Core Responsibilities</h3>
+
+<ul>
+    <li>USB device enumeration.</li>
+    <li>Descriptor handling.</li>
+    <li>Device and interface management.</li>
+    <li>USB driver matching.</li>
+    <li>Driver binding and unbinding.</li>
+    <li>Transfer request management.</li>
+</ul>
+
+<h3>USB Device Driver Responsibilities</h3>
+
+<ul>
+    <li>Declare supported USB devices or interfaces.</li>
+    <li>Register with the USB core.</li>
+    <li>Initialize a matched interface in probe.</li>
+    <li>Perform communication with the peripheral.</li>
+    <li>Release resources during disconnect.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. USB Driver Data Structure</h2>
+
+<p>
+The Linux kernel represents a USB device driver using
+<code>struct usb_driver</code>.
+</p>
+
+<p>
+It contains callback functions, a matching table and
+other driver information.
+</p>
+
+<h3>Important Members</h3>
+
+<table>
+<tr>
+    <th>Member</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>name</td>
+    <td>Driver name.</td>
+</tr>
+<tr>
+    <td>probe</td>
+    <td>Called when a supported interface is bound.</td>
+</tr>
+<tr>
+    <td>disconnect</td>
+    <td>Called when the interface is disconnected or unbound.</td>
+</tr>
+<tr>
+    <td>id_table</td>
+    <td>Table describing supported USB devices or interfaces.</td>
+</tr>
+<tr>
+    <td>suspend</td>
+    <td>Optional power-management callback.</td>
+</tr>
+<tr>
+    <td>resume</td>
+    <td>Optional power-management callback.</td>
+</tr>
+<tr>
+    <td>reset_resume</td>
+    <td>Optional callback used after certain reset-resume events.</td>
+</tr>
+</table>
+
+<h3>Structure Example</h3>
+
+<pre><code>static struct usb_driver my_usb_driver = {
+    .name       = "my_usb_driver",
+    .probe      = my_usb_probe,
+    .disconnect = my_usb_disconnect,
+    .id_table   = my_usb_id_table,
+};</code></pre>
+
+<p>
+The example assumes that the callback functions and
+device ID table have been declared.
+</p>
+</section>
+
+<section>
+<h2>4. USB Vendor ID and Product ID</h2>
+
+<p>
+USB devices commonly identify their manufacturer and
+product using two 16-bit values.
+</p>
+
+<ul>
+    <li><strong>VID:</strong> Vendor ID.</li>
+    <li><strong>PID:</strong> Product ID.</li>
+</ul>
+
+<p>
+The VID identifies the vendor, while the PID identifies
+a product or product family assigned by that vendor.
+</p>
+
+<h3>Example</h3>
+
+<pre><code>idVendor  = 0x1234
+idProduct = 0x5678</code></pre>
+
+<p>
+These values are illustrative. A real driver must use
+the actual IDs assigned to the target device.
+</p>
+
+<h3>Find VID and PID in Ubuntu</h3>
+
+<pre><code>lsusb</code></pre>
+
+<p>Example output:</p>
+
+<pre><code>Bus 001 Device 004: ID 1234:5678 Example USB Device</code></pre>
+
+<p>
+The first hexadecimal value is the VID and the second
+is the PID.
+</p>
+</section>
+
+<section>
+<h2>5. USB Device ID Table</h2>
+
+<p>
+The USB ID table specifies which devices or interfaces
+a driver supports.
+</p>
+
+<p>
+Linux defines <code>struct usb_device_id</code> for
+this purpose.
+</p>
+
+<h3>Matching by Vendor and Product</h3>
+
+<pre><code>static const struct usb_device_id my_usb_id_table[] = {
+    { USB_DEVICE(0x1234, 0x5678) },
+    { }
+};
+
+MODULE_DEVICE_TABLE(usb, my_usb_id_table);</code></pre>
+
+<p>
+The <code>USB_DEVICE()</code> macro creates an entry
+that matches the specified vendor and product IDs.
+</p>
+
+<p>
+The final empty entry marks the end of the table.
+</p>
+
+<h3>Matching by Interface Class</h3>
+
+<pre><code>static const struct usb_device_id my_usb_id_table[] = {
+    {
+        .match_flags = USB_DEVICE_ID_MATCH_INT_CLASS,
+        .bInterfaceClass = 0x03,
+    },
+    { }
+};
+
+MODULE_DEVICE_TABLE(usb, my_usb_id_table);</code></pre>
+
+<p>
+This example matches interfaces belonging to USB
+class 0x03, commonly associated with Human Interface
+Devices.
+</p>
+
+<div class="note">
+A class-based match can apply to multiple products.
+A production driver should match sufficiently specific
+device or interface characteristics to avoid binding
+to unsupported hardware.
+</div>
+</section>
+
+<section>
+<h2>6. USB Matching Macros</h2>
+
+<p>
+The kernel provides macros that simplify USB ID table
+creation.
+</p>
+
+<table>
+<tr>
+    <th>Macro</th>
+    <th>Matching Purpose</th>
+</tr>
+<tr>
+    <td>USB_DEVICE(vendor, product)</td>
+    <td>Matches a vendor and product ID.</td>
+</tr>
+<tr>
+    <td>USB_DEVICE_VER(vendor, product, lo, hi)</td>
+    <td>Matches a device and a specified device-version range.</td>
+</tr>
+<tr>
+    <td>USB_DEVICE_INTERFACE_CLASS(v, p, cls)</td>
+    <td>Matches device IDs and an interface class.</td>
+</tr>
+<tr>
+    <td>USB_INTERFACE_INFO(cls, sub, proto)</td>
+    <td>Matches interface class, subclass and protocol.</td>
+</tr>
+</table>
+
+<p>
+The precise matching rules and available macros should
+be checked in the target kernel's USB headers.
+</p>
+</section>
+
+<section>
+<h2>7. Registering a USB Driver</h2>
+
+<p>
+After defining the USB driver structure, the driver
+must register it with the USB core.
+</p>
+
+<p>
+Linux provides the registration function:
+</p>
+
+<pre><code>usb_register()</code></pre>
+
+<p>
+A commonly used convenience macro is:
+</p>
+
+<pre><code>module_usb_driver(my_usb_driver);</code></pre>
+
+<p>
+This macro arranges the module initialization and cleanup
+operations for registering and deregistering the USB
+driver.
+</p>
+
+<h3>Manual Registration</h3>
+
+<pre><code>static int __init my_usb_init(void)
+{
+    return usb_register(&amp;my_usb_driver);
+}
+
+static void __exit my_usb_exit(void)
+{
+    usb_deregister(&amp;my_usb_driver);
+}
+
+module_init(my_usb_init);
+module_exit(my_usb_exit);</code></pre>
+
+<p>
+Use either the convenience macro or explicit module
+initialization and cleanup functions for the same driver,
+not both.
+</p>
+</section>
+
+<section>
+<h2>8. Deregistering a USB Driver</h2>
+
+<p>
+When the driver module is unloaded, it must unregister
+from the USB core.
+</p>
+
+<p>
+Linux provides:
+</p>
+
+<pre><code>usb_deregister()</code></pre>
+
+<p>
+Deregistration removes the driver from the USB driver
+model and causes its bound interfaces to be detached.
+The USB core invokes the appropriate disconnect callback
+for interfaces being unbound.
+</p>
+
+<p>
+The driver must ensure that its disconnect callback
+releases all interface-specific resources safely.
+</p>
+</section>
+
+<section>
+<h2>9. USB Driver Registration Flow</h2>
+
+<div class="diagram">
+Load USB Driver Module
+          |
+          v
+Module Initialization
+          |
+          v
+usb_register()
+          |
+          v
+USB Core Registers Driver
+          |
+          v
+Compare Supported Device IDs
+          |
+          v
+     Device Match?
+       /      \
+     No        Yes
+     |          |
+     v          v
+ Wait for    Bind Driver
+ Future          |
+ Device          v
+             probe()
+                |
+                v
+          Driver Active
+                |
+                v
+       Device Disconnected
+                |
+                v
+           disconnect()
+                |
+                v
+        Release Resources
+</div>
+
+<p>
+The matching process can occur when a device is already
+connected or when a matching device is connected later.
+</p>
+</section>
+
+<section>
+<h2>10. Complete USB Driver Registration Example</h2>
+
+<p>
+The following example demonstrates a minimal USB driver
+registration skeleton.
+</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/usb.h&gt;
+
+#define MY_VENDOR_ID   0x1234
+#define MY_PRODUCT_ID  0x5678
+
+static int my_usb_probe(struct usb_interface *interface,
+                        const struct usb_device_id *id)
+{
+    struct usb_device *udev;
+
+    udev = interface_to_usbdev(interface);
+
+    dev_info(&amp;interface-&gt;dev,
+             "USB device connected: VID=%04X PID=%04X\n",
+             udev-&gt;descriptor.idVendor,
+             udev-&gt;descriptor.idProduct);
+
+    return 0;
+}
+
+static void my_usb_disconnect(struct usb_interface *interface)
+{
+    dev_info(&amp;interface-&gt;dev,
+             "USB device disconnected\n");
+}
+
+static const struct usb_device_id my_usb_id_table[] = {
+    { USB_DEVICE(MY_VENDOR_ID, MY_PRODUCT_ID) },
+    { }
+};
+
+MODULE_DEVICE_TABLE(usb, my_usb_id_table);
+
+static struct usb_driver my_usb_driver = {
+    .name       = "my_usb_driver",
+    .probe      = my_usb_probe,
+    .disconnect = my_usb_disconnect,
+    .id_table   = my_usb_id_table,
+};
+
+module_usb_driver(my_usb_driver);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Basic USB Driver Registration Example");</code></pre>
+
+<h3>Program Explanation</h3>
+
+<ol>
+    <li><code>linux/usb.h</code> provides USB subsystem definitions.</li>
+    <li>The VID and PID identify the target device.</li>
+    <li><code>my_usb_probe()</code> runs when a matching interface is bound.</li>
+    <li><code>interface_to_usbdev()</code> obtains the associated USB device.</li>
+    <li><code>my_usb_disconnect()</code> handles interface removal.</li>
+    <li>The ID table defines the supported device.</li>
+    <li><code>MODULE_DEVICE_TABLE()</code> exposes matching information for module alias generation.</li>
+    <li><code>module_usb_driver()</code> handles registration and deregistration.</li>
+</ol>
+
+<div class="note">
+This is a registration demonstration, not a complete
+data-transfer driver. It does not submit URBs or perform
+device-specific communication. Replace the example IDs
+with real IDs before testing with hardware.
+</div>
+</section>
+
+<section>
+<h2>11. USB Probe Function</h2>
+
+<p>
+The USB core invokes the probe callback when a driver
+matches a USB interface.
+</p>
+
+<p>
+The probe callback receives:
+</p>
+
+<pre><code>struct usb_interface *interface
+
+const struct usb_device_id *id</code></pre>
+
+<p>
+The interface represents the function being bound.
+The ID pointer identifies the matching entry in the
+driver's ID table.
+</p>
+
+<p>
+Typical probe operations include:
+</p>
+
+<ul>
+    <li>Identify the associated USB device.</li>
+    <li>Inspect the current alternate setting.</li>
+    <li>Find suitable endpoints.</li>
+    <li>Allocate driver-private data.</li>
+    <li>Initialize transfer buffers and URBs.</li>
+    <li>Store private data using interface driver data.</li>
+</ul>
+
+<p>
+Detailed probe and disconnect implementation is covered
+in the next lesson.
+</p>
+</section>
+
+<section>
+<h2>12. USB Driver and Interface Binding</h2>
+
+<p>
+USB drivers normally bind to USB interfaces rather than
+owning the entire physical USB device.
+</p>
+
+<p>
+This supports composite devices, where different
+interfaces may be controlled by different drivers.
+</p>
+
+<div class="diagram">
+             USB Device
+                  |
+       +----------+----------+
+       |                     |
+       v                     v
+   Interface 0           Interface 1
+       |                     |
+       v                     v
+   Driver A               Driver B
+</div>
+
+<p>
+The USB core manages the binding relationship between
+interfaces and drivers.
+</p>
+</section>
+
+<section>
+<h2>13. USB Driver Module Compilation</h2>
+
+<p>
+A USB driver is normally compiled as a Linux kernel
+module during development.
+</p>
+
+<h3>Example Makefile</h3>
+
+<pre><code>obj-m += my_usb_driver.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD  := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<h3>Build Commands</h3>
+
+<pre><code># Compile the module
+make
+
+# Check generated module
+ls -l my_usb_driver.ko
+
+# Inspect module metadata
+modinfo my_usb_driver.ko
+
+# Load the module
+sudo insmod my_usb_driver.ko
+
+# Check kernel messages
+sudo dmesg | tail -30
+
+# Remove the module
+sudo rmmod my_usb_driver
+
+# Clean generated files
+make clean</code></pre>
+
+<div class="note">
+The build requires kernel headers or a matching kernel
+build tree for the running kernel. Kernel API details
+can vary across versions.
+</div>
+</section>
+
+<section>
+<h2>14. USB Driver Inspection Commands</h2>
+
+<h3>List USB Devices</h3>
+<pre><code>lsusb</code></pre>
+
+<h3>Show USB Topology</h3>
+<pre><code>lsusb -t</code></pre>
+
+<h3>Show Detailed Descriptors</h3>
+<pre><code>sudo lsusb -v</code></pre>
+
+<h3>Inspect USB Device Entries</h3>
+<pre><code>ls /sys/bus/usb/devices/</code></pre>
+
+<h3>Inspect USB Drivers</h3>
+<pre><code>ls /sys/bus/usb/drivers/</code></pre>
+
+<h3>Inspect USB Kernel Messages</h3>
+<pre><code>dmesg | grep -i usb</code></pre>
+</section>
+
+<section>
+<h2>15. USB Driver Registration Errors</h2>
+
+<table>
+<tr>
+    <th>Problem</th>
+    <th>Possible Cause</th>
+</tr>
+<tr>
+    <td>Driver does not bind</td>
+    <td>Incorrect VID/PID or interface matching.</td>
+</tr>
+<tr>
+    <td>Probe is not called</td>
+    <td>No matching interface or another driver is bound.</td>
+</tr>
+<tr>
+    <td>Module compilation fails</td>
+    <td>Missing headers or incompatible kernel APIs.</td>
+</tr>
+<tr>
+    <td>Device not visible</td>
+    <td>USB connection, host controller or VM passthrough issue.</td>
+</tr>
+<tr>
+    <td>Module cannot be loaded</td>
+    <td>Kernel version mismatch, unresolved symbols or module-signing restrictions.</td>
+</tr>
+<tr>
+    <td>Module cannot be removed</td>
+    <td>Module is in use or removal is otherwise restricted.</td>
+</tr>
+</table>
+
+<h3>Useful Debugging Commands</h3>
+
+<pre><code>uname -r
+lsusb
+lsusb -t
+modinfo my_usb_driver.ko
+lsmod
+dmesg | tail -50</code></pre>
+</section>
+
+<section>
+<h2>16. USB Driver Power Management</h2>
+
+<p>
+USB drivers may provide optional suspend and resume
+callbacks for power-management events.
+</p>
+
+<p>
+These callbacks help the driver handle device power
+state transitions.
+</p>
+
+<ul>
+    <li><strong>suspend:</strong> Prepare the interface for a low-power state.</li>
+    <li><strong>resume:</strong> Restore normal operation.</li>
+    <li><strong>reset_resume:</strong> Handle certain resume events that involve device reset.</li>
+</ul>
+
+<p>
+A driver must account for outstanding transfers and
+device-specific state when implementing power management.
+</p>
+</section>
+
+<section>
+<h2>17. USB Passthrough in VirtualBox</h2>
+
+<p>
+When testing a USB driver inside Ubuntu running in
+VirtualBox, the physical USB device must be made
+available to the guest operating system.
+</p>
+
+<h3>General Procedure</h3>
+
+<ol>
+    <li>Shut down the Ubuntu virtual machine if required.</li>
+    <li>Open the VirtualBox virtual machine settings.</li>
+    <li>Configure the USB controller supported by the installation.</li>
+    <li>Start Ubuntu.</li>
+    <li>Attach the physical USB device to the guest through the VirtualBox device menu.</li>
+    <li>Run <code>lsusb</code> inside Ubuntu.</li>
+    <li>Verify that the device appears in the guest.</li>
+</ol>
+
+<div class="note">
+USB passthrough depends on VirtualBox configuration,
+host permissions and available USB support. Without
+passthrough, Ubuntu may see only virtual USB devices
+rather than the physical peripheral.
+</div>
+</section>
+
+<section>
+<h2>18. Practical Exercise</h2>
+
+<h3>Objective</h3>
+
+<p>
+Create and compile a basic USB driver registration module
+and observe how the Linux USB core handles matching.
+</p>
+
+<h3>Tasks</h3>
+
+<ol>
+    <li>Create <code>my_usb_driver.c</code>.</li>
+    <li>Define a USB device ID table.</li>
+    <li>Define probe and disconnect callbacks.</li>
+    <li>Define a <code>struct usb_driver</code>.</li>
+    <li>Register it using <code>module_usb_driver()</code>.</li>
+    <li>Create the Makefile.</li>
+    <li>Compile the module.</li>
+    <li>Inspect the module using <code>modinfo</code>.</li>
+    <li>Load the module.</li>
+    <li>Connect a matching USB device, if available.</li>
+    <li>Observe the probe message.</li>
+    <li>Disconnect the device and observe the disconnect message.</li>
+    <li>Remove the module.</li>
+</ol>
+
+<h3>Expected Result</h3>
+
+<p>
+The module should load successfully. When a supported
+USB interface is detected and bound, the probe callback
+should execute. On disconnection or driver unbinding,
+the disconnect callback should execute.
+</p>
+
+<p>
+If no matching physical USB device is available, module
+registration can still be tested, but probe execution
+cannot be demonstrated without a matching interface.
+</p>
+</section>
+
+<section>
+<h2>19. Important Points to Remember</h2>
+
+<ul>
+    <li>USB drivers register with the Linux USB core.</li>
+    <li><code>struct usb_driver</code> describes a USB driver.</li>
+    <li><code>struct usb_device_id</code> describes supported devices or interfaces.</li>
+    <li>VID and PID are common device matching fields.</li>
+    <li>USB drivers normally bind to interfaces.</li>
+    <li><code>USB_DEVICE()</code> is used for VID/PID matching.</li>
+    <li><code>MODULE_DEVICE_TABLE()</code> exports module matching information.</li>
+    <li><code>usb_register()</code> registers a USB driver.</li>
+    <li><code>usb_deregister()</code> unregisters a USB driver.</li>
+    <li><code>module_usb_driver()</code> simplifies module registration.</li>
+    <li>The USB core invokes probe and disconnect callbacks.</li>
+    <li>Device-specific transfers are implemented separately using USB transfer APIs.</li>
+</ul>
+</section>
+
+<section>
+<h2>20. Review Questions</h2>
+
+<ol>
+    <li>Explain the Linux USB driver architecture.</li>
+    <li>What is struct usb_driver?</li>
+    <li>What is the purpose of the probe callback?</li>
+    <li>What is the purpose of the disconnect callback?</li>
+    <li>What are VID and PID?</li>
+    <li>What is struct usb_device_id?</li>
+    <li>Explain the USB_DEVICE() macro.</li>
+    <li>What is the purpose of MODULE_DEVICE_TABLE()?</li>
+    <li>How does USB interface matching work?</li>
+    <li>Explain usb_register().</li>
+    <li>Explain usb_deregister().</li>
+    <li>What does module_usb_driver() do?</li>
+    <li>Why do USB drivers normally bind to interfaces?</li>
+    <li>What happens when a matching USB device is connected?</li>
+    <li>How can USB devices be inspected in Ubuntu?</li>
+    <li>What is the role of USB power-management callbacks?</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Lesson Summary</h2>
+
+<p>
+USB driver registration connects a Linux USB driver
+to the USB core. The driver declares its supported
+devices through a USB ID table and provides callbacks
+for interface binding and removal.
+</p>
+
+<p>
+The USB core performs matching and invokes the driver's
+probe and disconnect callbacks. Registration can be
+handled through <code>usb_register()</code> and
+<code>usb_deregister()</code>, or through the convenient
+<code>module_usb_driver()</code> macro.
+</p>
+
+<p>
+This registration process is the foundation for
+implementing a complete USB device driver.
+</p>
+</section>
+
+<section>
+<h2>Navigation</h2>
+
+<p>
+<strong>Previous Lesson:</strong>
+<a href="L08_USB_Device_Architecture.html">
+Lesson 8 - USB Device Architecture
+</a>
+</p>
+
+<p>
+<strong>Next Lesson:</strong>
+<a href="L10_USB_Probe_and_Disconnect_Functions.html">
+Lesson 10 - USB Probe and Disconnect Functions
+</a>
+</p>
+
+<p>
+<a href="index.html">Back to Chapter 18 Index</a>
+</p>
+</section>
+
+</div>
+
+<footer>
+    <p>Linux Device Drivers | NS Learning Hub</p>
+    <p>Chapter 18 - Lesson 9</p>
+</footer>
+
+</body>
+</html>
