@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kernel Concurrency Debugging | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+}
+header h1 { margin: 0; font-size: 27px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: #082b5c;
+    padding: 12px;
+    text-align: center;
+}
+nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3f2fd;
+    border-left: 5px solid #1976d2;
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.07);
+}
+h2 { color: #174ea6; }
+h3 { color: #1769aa; }
+pre {
+    background: #17212b;
+    color: #e8f1f8;
+    padding: 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+}
+code { font-family: Consolas, monospace; }
+.note {
+    background: #fff8e1;
+    border-left: 5px solid #f9a825;
+    padding: 12px;
+    margin: 15px 0;
+}
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 12px;
+    margin: 15px 0;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 10px;
+    text-align: left;
+}
+th { background: #eaf1fb; }
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 5px;
+    text-decoration: none;
+}
+footer {
+    text-align: center;
+    padding: 20px;
+    background: #082b5c;
+    color: white;
+    margin-top: 30px;
+}
+@media(max-width:600px) {
+    header h1 { font-size: 22px; }
+    nav a { display: inline-block; margin: 5px; }
+    section { padding: 16px; }
+    table { font-size: 14px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Kernel Concurrency Debugging</h1>
+    <p>Linux Device Drivers – Chapter 19, Lesson 8</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter 19</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> Driver Debugging, Testing and Performance<br>
+    <strong>Lesson:</strong> 8 – Kernel Concurrency Debugging<br>
+    <strong>Level:</strong> Intermediate to Advanced
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+    <li>Understand concurrency problems in Linux device drivers.</li>
+    <li>Identify race conditions and deadlocks.</li>
+    <li>Understand lockdep and lock dependency checking.</li>
+    <li>Use kernel lock debugging configuration options.</li>
+    <li>Understand lock ordering and circular dependencies.</li>
+    <li>Identify common synchronization mistakes.</li>
+    <li>Apply debugging techniques to driver concurrency problems.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Kernel Concurrency</h2>
+<p>Concurrency occurs when multiple execution contexts access shared resources during overlapping periods.</p>
+
+<p>Linux kernel code may execute concurrently through:</p>
+<ul>
+    <li>Multiple processes or kernel threads.</li>
+    <li>Multiple CPU cores.</li>
+    <li>Interrupt handlers.</li>
+    <li>Softirqs and tasklets.</li>
+    <li>Workqueues.</li>
+    <li>Timer callbacks.</li>
+</ul>
+
+<p>When multiple execution contexts access shared data without suitable synchronization, the system may produce incorrect results or unstable behavior.</p>
+</section>
+
+<section>
+<h2>3. What Is a Race Condition?</h2>
+<p>A <strong>race condition</strong> occurs when the result of an operation depends on the timing or ordering of concurrent execution.</p>
+
+<h3>Example</h3>
+<p>Assume two kernel threads increment the same shared counter.</p>
+
+<pre><code>int counter = 0;
+
+/* Thread A */
+counter = counter + 1;
+
+/* Thread B */
+counter = counter + 1;</code></pre>
+
+<p>Both threads may read the same initial value before either writes its updated value.</p>
+
+<h3>Possible execution sequence</h3>
+<table>
+<tr><th>Step</th><th>Thread A</th><th>Thread B</th><th>Counter</th></tr>
+<tr><td>1</td><td>Read 0</td><td>-</td><td>0</td></tr>
+<tr><td>2</td><td>-</td><td>Read 0</td><td>0</td></tr>
+<tr><td>3</td><td>Calculate 1</td><td>-</td><td>0</td></tr>
+<tr><td>4</td><td>-</td><td>Calculate 1</td><td>0</td></tr>
+<tr><td>5</td><td>Write 1</td><td>-</td><td>1</td></tr>
+<tr><td>6</td><td>-</td><td>Write 1</td><td>1</td></tr>
+</table>
+
+<p>The expected result is 2, but the final result is 1. This is a lost-update race.</p>
+</section>
+
+<section>
+<h2>4. What Is a Deadlock?</h2>
+<p>A <strong>deadlock</strong> occurs when two or more execution contexts wait indefinitely for resources held by one another.</p>
+
+<h3>Example</h3>
+<ul>
+    <li>Thread A holds Lock 1 and waits for Lock 2.</li>
+    <li>Thread B holds Lock 2 and waits for Lock 1.</li>
+    <li>Neither thread can continue.</li>
+</ul>
+
+<pre><code>Thread A                 Thread B
+--------                 --------
+Acquire Lock 1           Acquire Lock 2
+       |                        |
+       v                        v
+Wait for Lock 2          Wait for Lock 1
+       |                        |
+       +------ DEADLOCK --------+</code></pre>
+
+<h3>Four necessary deadlock conditions</h3>
+<ol>
+    <li><strong>Mutual exclusion:</strong> A resource cannot be used simultaneously by conflicting operations.</li>
+    <li><strong>Hold and wait:</strong> A thread holds one resource while waiting for another.</li>
+    <li><strong>No preemption:</strong> A resource cannot simply be taken away.</li>
+    <li><strong>Circular wait:</strong> Threads form a circular chain of resource dependencies.</li>
+</ol>
+</section>
+
+<section>
+<h2>5. Introduction to Lockdep</h2>
+<p><strong>Lockdep</strong> is the Linux kernel lock dependency validator.</p>
+
+<p>It tracks lock usage and dependencies to detect potential deadlocks and incorrect locking patterns.</p>
+
+<h3>Lockdep helps detect</h3>
+<ul>
+    <li>Potential circular lock dependencies.</li>
+    <li>Inconsistent lock acquisition order.</li>
+    <li>Some recursive locking errors.</li>
+    <li>Incorrect use of locking classes.</li>
+    <li>Potential interrupt-context locking problems.</li>
+</ul>
+
+<p>Lockdep is particularly useful during kernel and device-driver development because it can report suspicious locking relationships before they cause an actual deadlock.</p>
+</section>
+
+<section>
+<h2>6. How Lockdep Works</h2>
+<p>Lockdep observes locking operations and builds a dependency graph.</p>
+
+<h3>Example dependency graph</h3>
+<pre><code>Thread A:
+Lock A -> Lock B
+
+Thread B:
+Lock B -> Lock A
+
+Dependency Graph:
+Lock A -> Lock B
+   ^         |
+   |         v
+   +---------+
+
+Circular Dependency Detected</code></pre>
+
+<p>When lock acquisition creates a circular dependency, lockdep can report a potential deadlock.</p>
+
+<h3>Important concepts</h3>
+<ul>
+    <li><strong>Lock class:</strong> A category of locks sharing a dependency identity.</li>
+    <li><strong>Lock dependency:</strong> A relationship created when one lock is acquired while another is held.</li>
+    <li><strong>Lock ordering:</strong> The sequence in which locks are acquired.</li>
+    <li><strong>Lock validator:</strong> The mechanism that checks dependencies for potential problems.</li>
+</ul>
+</section>
+
+<section>
+<h2>7. Lockdep Kernel Configuration</h2>
+<p>Lockdep is generally enabled through kernel debugging configuration options.</p>
+
+<h3>Common configuration options</h3>
+<pre><code>CONFIG_LOCKDEP=y
+CONFIG_PROVE_LOCKING=y
+CONFIG_DEBUG_LOCK_ALLOC=y
+CONFIG_DEBUG_MUTEXES=y
+CONFIG_DEBUG_SPINLOCK=y
+CONFIG_LOCK_STAT=y</code></pre>
+
+<p>These options are related but serve different purposes. Exact dependencies and availability vary by kernel version and configuration.</p>
+
+<h3>Check the running kernel configuration</h3>
+<pre><code>grep -E 'CONFIG_(LOCKDEP|PROVE_LOCKING|DEBUG_LOCK_ALLOC|LOCK_STAT)=' \
+/boot/config-$(uname -r)</code></pre>
+
+<p>If the configuration file is unavailable, the kernel may expose its configuration through <code>/proc/config.gz</code>, if enabled.</p>
+<pre><code>zcat /proc/config.gz | grep CONFIG_LOCKDEP</code></pre>
+</section>
+
+<section>
+<h2>8. Understanding Lock Ordering</h2>
+<p>Consistent lock ordering is one of the most important techniques for avoiding deadlocks.</p>
+
+<h3>Incorrect lock ordering</h3>
+<pre><code>/* Thread A */
+mutex_lock(&amp;lock_a);
+mutex_lock(&amp;lock_b);
+
+/* Thread B */
+mutex_lock(&amp;lock_b);
+mutex_lock(&amp;lock_a);</code></pre>
+
+<p>Each thread acquires the locks in a different order, creating a potential circular dependency.</p>
+
+<h3>Consistent lock ordering</h3>
+<pre><code>/* Thread A */
+mutex_lock(&amp;lock_a);
+mutex_lock(&amp;lock_b);
+
+/* Thread B */
+mutex_lock(&amp;lock_a);
+mutex_lock(&amp;lock_b);</code></pre>
+
+<p>Both threads follow the same lock order. This removes the particular circular-wait pattern shown above, although other synchronization errors may still exist.</p>
+</section>
+
+<section>
+<h2>9. Lockdep Reports</h2>
+<p>When lockdep identifies a suspicious locking pattern, it may print a warning in the kernel log.</p>
+
+<h3>Example illustrative report</h3>
+<pre><code>WARNING: possible circular locking dependency detected
+
+CPU: 1 PID: 1234 Comm: test_driver
+
+Possible unsafe locking scenario:
+Thread A:
+  lock_acquire
+  mutex_lock
+
+Thread B:
+  lock_acquire
+  mutex_lock
+
+Call Trace:
+  dump_stack
+  lock_acquire
+  mutex_lock</code></pre>
+
+<p>This is an illustrative example, not a complete real kernel report.</p>
+
+<h3>Investigation procedure</h3>
+<ol>
+    <li>Read the warning and identify the involved locks.</li>
+    <li>Inspect the lock acquisition sequence.</li>
+    <li>Identify the relevant driver functions.</li>
+    <li>Check whether the locks are acquired in different orders.</li>
+    <li>Correct the locking design.</li>
+    <li>Repeat testing and inspect the kernel log.</li>
+</ol>
+</section>
+
+<section>
+<h2>10. Mutex Debugging</h2>
+<p>A mutex protects shared data by allowing only one task at a time to hold it.</p>
+
+<h3>Example</h3>
+<pre><code>static DEFINE_MUTEX(my_mutex);
+
+static void update_device_state(void)
+{
+    mutex_lock(&amp;my_mutex);
+
+    /* Protected operation */
+
+    mutex_unlock(&amp;my_mutex);
+}</code></pre>
+
+<h3>Common mutex mistakes</h3>
+<ul>
+    <li>Forgetting to unlock a mutex.</li>
+    <li>Unlocking a mutex that is not held by the current task.</li>
+    <li>Attempting recursive locking of a non-recursive mutex.</li>
+    <li>Using a mutex in interrupt context.</li>
+    <li>Holding a mutex for an unnecessarily long period.</li>
+</ul>
+
+<div class="note">
+    Mutexes are sleeping locks. They are suitable for task context, not for ordinary hard interrupt handlers.
+</div>
+</section>
+
+<section>
+<h2>11. Spinlock Debugging</h2>
+<p>A spinlock protects shared data by making a competing CPU wait until the lock becomes available.</p>
+
+<h3>Example</h3>
+<pre><code>static DEFINE_SPINLOCK(my_lock);
+
+static int shared_value;
+
+static void update_value(void)
+{
+    unsigned long flags;
+
+    spin_lock_irqsave(&amp;my_lock, flags);
+
+    shared_value++;
+
+    spin_unlock_irqrestore(&amp;my_lock, flags);
+}</code></pre>
+
+<h3>Common spinlock mistakes</h3>
+<ul>
+    <li>Forgetting to release the spinlock.</li>
+    <li>Holding a spinlock while performing a sleeping operation.</li>
+    <li>Using inconsistent lock ordering.</li>
+    <li>Incorrect interrupt-state handling.</li>
+    <li>Holding the lock for too long.</li>
+</ul>
+
+<div class="warning">
+    Never call a potentially sleeping function while holding a spinlock. Doing so can cause serious kernel problems.
+</div>
+</section>
+
+<section>
+<h2>12. Interrupt Context and Locking</h2>
+<p>Device drivers must consider whether shared data is accessed from process context, interrupt context or both.</p>
+
+<p>If an interrupt handler and a process-context function use the same lock, interrupt-safe locking may be necessary to avoid deadlock.</p>
+
+<h3>Example process-context protection</h3>
+<pre><code>unsigned long flags;
+
+spin_lock_irqsave(&amp;my_lock, flags);
+
+/* Access shared data */
+
+spin_unlock_irqrestore(&amp;my_lock, flags);</code></pre>
+
+<p><code>spin_lock_irqsave()</code> saves the local interrupt state and disables local interrupts while acquiring the lock. The corresponding unlock restores the saved state.</p>
+
+<p>This is useful when the same lock is also acquired by an interrupt handler on that CPU.</p>
+</section>
+
+<section>
+<h2>13. Understanding Lock Classes</h2>
+<p>Lockdep groups locks into lock classes so that it can reason about dependencies between different lock instances.</p>
+
+<p>For example, a driver may create multiple device objects, each containing a mutex. Depending on the locking design, these mutexes may be treated as instances of the same lock class.</p>
+
+<h3>Why lock classes matter</h3>
+<ul>
+    <li>They help lockdep identify dependency relationships.</li>
+    <li>They allow lock ordering to be checked across code paths.</li>
+    <li>They help distinguish independent locking patterns.</li>
+</ul>
+
+<p>Advanced kernel code can use lockdep class-management APIs when multiple lock instances require distinct dependency treatment. Such annotations must reflect the real locking design rather than suppress warnings arbitrarily.</p>
+</section>
+
+<section>
+<h2>14. Other Concurrency Debugging Tools</h2>
+<table>
+<tr><th>Tool</th><th>Purpose</th></tr>
+<tr><td>lockdep</td><td>Detect potential locking errors and dependency cycles.</td></tr>
+<tr><td>KCSAN</td><td>Detect data races using sampling-based instrumentation.</td></tr>
+<tr><td>CONFIG_DEBUG_MUTEXES</td><td>Enable additional mutex debugging checks.</td></tr>
+<tr><td>CONFIG_DEBUG_SPINLOCK</td><td>Enable additional spinlock debugging checks.</td></tr>
+<tr><td>CONFIG_PROVE_LOCKING</td><td>Enable lock correctness validation.</td></tr>
+<tr><td>ftrace</td><td>Trace kernel function execution and selected events.</td></tr>
+<tr><td>perf</td><td>Analyze performance and selected synchronization behavior.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>15. KCSAN – Kernel Concurrency Sanitizer</h2>
+<p><strong>KCSAN</strong> is a dynamic data-race detector for the Linux kernel.</p>
+
+<p>It uses sampling-based instrumentation to detect conflicting accesses to shared memory that are not properly synchronized.</p>
+
+<h3>Example configuration</h3>
+<pre><code>CONFIG_KCSAN=y</code></pre>
+
+<h3>Example race</h3>
+<pre><code>int shared_counter;
+
+/* CPU 0 */
+shared_counter++;
+
+/* CPU 1 */
+shared_counter++;</code></pre>
+
+<p>If the accesses are concurrent and lack appropriate synchronization, KCSAN may report a data race.</p>
+
+<h3>Lockdep vs KCSAN</h3>
+<table>
+<tr><th>Feature</th><th>Lockdep</th><th>KCSAN</th></tr>
+<tr><td>Main purpose</td><td>Locking correctness</td><td>Data-race detection</td></tr>
+<tr><td>Focus</td><td>Lock dependencies and usage</td><td>Conflicting memory accesses</td></tr>
+<tr><td>Method</td><td>Tracks locking relationships</td><td>Sampling-based access monitoring</td></tr>
+<tr><td>Typical finding</td><td>Potential circular lock dependency</td><td>Unsynchronized shared-data access</td></tr>
+</table>
+</section>
+
+<section>
+<h2>16. Practical Exercise – Inspecting Lockdep Messages</h2>
+<p><strong>Objective:</strong> Learn how to inspect lock-related kernel warnings.</p>
+
+<h3>Step 1: Check kernel configuration</h3>
+<pre><code>grep -E 'CONFIG_(LOCKDEP|PROVE_LOCKING)=' \
+/boot/config-$(uname -r)</code></pre>
+
+<h3>Step 2: Inspect kernel logs</h3>
+<pre><code>dmesg | grep -i lockdep
+dmesg | grep -i "circular locking"
+dmesg | grep -i "possible deadlock"</code></pre>
+
+<h3>Step 3: Follow kernel messages</h3>
+<pre><code>sudo dmesg -w</code></pre>
+
+<h3>Step 4: Review a warning</h3>
+<p>If a lockdep warning is present, identify the lock names, dependency chain and function call traces.</p>
+
+<p><strong>Expected Result:</strong> You should be able to determine whether the running kernel exposes lockdep support and inspect available locking warnings. A system without lockdep support or without a detected problem may produce no matching output.</p>
+</section>
+
+<section>
+<h2>17. Practical Exercise – Designing Safe Lock Ordering</h2>
+<p><strong>Objective:</strong> Understand how consistent locking order prevents a circular dependency.</p>
+
+<h3>Unsafe design</h3>
+<pre><code>Thread A:
+    mutex_lock(&amp;lock_a);
+    mutex_lock(&amp;lock_b);
+
+Thread B:
+    mutex_lock(&amp;lock_b);
+    mutex_lock(&amp;lock_a);</code></pre>
+
+<h3>Safer design</h3>
+<pre><code>Thread A:
+    mutex_lock(&amp;lock_a);
+    mutex_lock(&amp;lock_b);
+
+    /* Critical section */
+
+    mutex_unlock(&amp;lock_b);
+    mutex_unlock(&amp;lock_a);
+
+
+Thread B:
+    mutex_lock(&amp;lock_a);
+    mutex_lock(&amp;lock_b);
+
+    /* Critical section */
+
+    mutex_unlock(&amp;lock_b);
+    mutex_unlock(&amp;lock_a);</code></pre>
+
+<h3>Analysis</h3>
+<ol>
+    <li>Both threads acquire Lock A first.</li>
+    <li>Both threads acquire Lock B second.</li>
+    <li>Both release locks in reverse order.</li>
+    <li>The circular dependency in the original example is removed.</li>
+</ol>
+
+<p><strong>Expected Result:</strong> Understand how a consistent global lock-ordering rule reduces deadlock risk. This is a design exercise; it does not itself execute or test kernel locking.</p>
+</section>
+
+<section>
+<h2>18. Best Practices for Concurrency Debugging</h2>
+<ul>
+    <li>Identify every execution context that accesses shared data.</li>
+    <li>Choose a suitable synchronization mechanism.</li>
+    <li>Document lock ordering.</li>
+    <li>Keep critical sections short.</li>
+    <li>Never sleep while holding a spinlock.</li>
+    <li>Use lockdep during kernel development where supported.</li>
+    <li>Use KCSAN to investigate possible data races.</li>
+    <li>Inspect kernel logs after stress testing.</li>
+    <li>Test driver removal and error paths for synchronization defects.</li>
+    <li>Do not ignore locking warnings without understanding their cause.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Knowledge Check</h2>
+<ol>
+    <li>What is a race condition?</li>
+    <li>What is a deadlock?</li>
+    <li>What are the four necessary conditions for deadlock?</li>
+    <li>What is lockdep?</li>
+    <li>How does lockdep identify potential circular dependencies?</li>
+    <li>Why is consistent lock ordering important?</li>
+    <li>What is the difference between a mutex and a spinlock?</li>
+    <li>Why should a driver avoid sleeping while holding a spinlock?</li>
+    <li>What is the purpose of spin_lock_irqsave()?</li>
+    <li>What is KCSAN?</li>
+    <li>How does KCSAN differ from lockdep?</li>
+    <li>Why should concurrency bugs be tested under multiple execution contexts?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Lesson Summary</h2>
+<ul>
+    <li>Concurrency occurs when multiple execution contexts operate at overlapping times.</li>
+    <li>Race conditions can corrupt shared data.</li>
+    <li>Deadlocks occur when execution contexts wait indefinitely for resources.</li>
+    <li>Lockdep validates locking relationships and detects potential deadlocks.</li>
+    <li>Consistent lock ordering reduces circular-wait problems.</li>
+    <li>Mutexes and spinlocks require correct usage.</li>
+    <li>Interrupt context introduces additional synchronization requirements.</li>
+    <li>KCSAN helps detect data races.</li>
+    <li>Concurrency debugging is essential for reliable Linux device drivers.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L07_Kernel_Memory_Debugging_Tools.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L09_Kernel_Performance_Profiling.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+</footer>
+
+</body>
+</html>
