@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Introduction to Kernel Memory Management | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Introduction to Kernel Memory Management</h1>
+    <p>Linux Device Drivers – Chapter 12, Lesson 1</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 12</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> Kernel Memory Management</p>
+    <p><strong>Lesson:</strong> 1 – Introduction to Kernel Memory Management</p>
+    <p><strong>Prerequisites:</strong> C programming, pointers, structures, Linux kernel architecture and kernel programming fundamentals.</p>
+    <p><strong>Objective:</strong> Understand how Linux manages memory in kernel space and why memory allocation, protection, mapping and deallocation are essential in device-driver development.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction</h2>
+
+<p>Memory management is one of the most important responsibilities of an operating system. Linux must manage memory resources for user applications, kernel subsystems and device drivers.</p>
+
+<p>A Linux device driver frequently needs memory to:</p>
+
+<ul>
+    <li>Store device configuration and status information.</li>
+    <li>Maintain buffers for data transfer.</li>
+    <li>Store structures representing devices.</li>
+    <li>Manage incoming and outgoing data.</li>
+    <li>Maintain queues and internal driver objects.</li>
+    <li>Prepare memory for hardware communication.</li>
+</ul>
+
+<p>Kernel memory management provides interfaces that allow drivers to request, use and release memory safely.</p>
+
+<div class="important">
+    Kernel memory allocation is different from ordinary user-space allocation. Kernel code cannot simply use the C library's malloc() and free() functions.
+</div>
+</section>
+
+<section class="section">
+<h2>2. What Is Memory Management?</h2>
+
+<p>Memory management is the process of controlling how memory is allocated, accessed, protected and released during program execution.</p>
+
+<p>The Linux kernel manages several memory-related responsibilities:</p>
+
+<ul>
+    <li>Allocating memory to kernel components.</li>
+    <li>Managing physical memory pages.</li>
+    <li>Maintaining virtual memory mappings.</li>
+    <li>Providing memory protection.</li>
+    <li>Managing memory shared with hardware devices.</li>
+    <li>Reclaiming memory when it is no longer required.</li>
+</ul>
+
+<h3>Basic Memory Management Operations</h3>
+
+<table>
+<tr>
+    <th>Operation</th>
+    <th>Description</th>
+</tr>
+<tr>
+    <td>Allocation</td>
+    <td>Obtaining memory for a required purpose.</td>
+</tr>
+<tr>
+    <td>Access</td>
+    <td>Reading or writing allocated memory.</td>
+</tr>
+<tr>
+    <td>Mapping</td>
+    <td>Establishing an address translation between memory spaces.</td>
+</tr>
+<tr>
+    <td>Protection</td>
+    <td>Controlling which code can access particular memory regions.</td>
+</tr>
+<tr>
+    <td>Deallocation</td>
+    <td>Releasing memory when it is no longer needed.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>3. User-Space and Kernel-Space Memory</h2>
+
+<p>Linux provides separate virtual address spaces for user applications and kernel execution.</p>
+
+<div class="diagram">
+    <div class="diagram-box">User Space</div>
+    <p>Application memory, stack, heap and shared mappings</p>
+    <div class="arrow">System Call Interface ↓</div>
+    <div class="diagram-box">Kernel Space</div>
+    <p>Kernel code, kernel data, driver memory and kernel-managed objects</p>
+</div>
+
+<h3>User-Space Memory</h3>
+
+<p>User-space memory is used by ordinary applications. A process normally cannot directly access arbitrary kernel memory.</p>
+
+<p>Common user-space allocation functions include:</p>
+
+<pre><code>malloc()
+calloc()
+realloc()
+free()</code></pre>
+
+<h3>Kernel-Space Memory</h3>
+
+<p>Kernel-space memory is used by the operating system and kernel modules.</p>
+
+<p>Common kernel memory functions include:</p>
+
+<pre><code>kmalloc()
+kfree()
+kzalloc()
+kcalloc()
+vmalloc()
+vfree()</code></pre>
+
+<div class="note">
+    Kernel pointers and user pointers belong to different address-space contexts. A driver must use appropriate user-memory access functions such as copy_to_user() and copy_from_user() when transferring data.
+</div>
+</section>
+
+<section class="section">
+<h2>4. Why Do Device Drivers Need Memory?</h2>
+
+<p>Device drivers interact with hardware or software-defined devices. They often need memory for temporary and persistent data.</p>
+
+<h3>Example: Character Device Driver</h3>
+
+<p>A character driver may maintain a buffer that stores data written by an application.</p>
+
+<div class="diagram">
+    <div class="diagram-box">User Application</div>
+    <div class="arrow">write() ↓</div>
+    <div class="diagram-box">Character Driver</div>
+    <div class="arrow">copy_from_user() ↓</div>
+    <div class="diagram-box">Kernel Buffer</div>
+</div>
+
+<p>The kernel buffer stores data independently of the application's user-space buffer.</p>
+
+<h3>Other Examples</h3>
+
+<table>
+<tr>
+    <th>Driver Type</th>
+    <th>Memory Requirement</th>
+</tr>
+<tr>
+    <td>Character driver</td>
+    <td>Read/write buffers and device state.</td>
+</tr>
+<tr>
+    <td>Network driver</td>
+    <td>Packet buffers and transmission queues.</td>
+</tr>
+<tr>
+    <td>Block driver</td>
+    <td>Request and block I/O structures.</td>
+</tr>
+<tr>
+    <td>USB driver</td>
+    <td>Transfer buffers and USB request structures.</td>
+</tr>
+<tr>
+    <td>I2C/SPI driver</td>
+    <td>Communication buffers and device configuration.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>5. Physical Memory and Virtual Memory</h2>
+
+<h3>Physical Memory</h3>
+
+<p>Physical memory is the actual RAM installed in a computer or virtual machine.</p>
+
+<h3>Virtual Memory</h3>
+
+<p>Virtual memory provides an address space that is translated into physical memory by the processor's memory-management hardware and operating-system page tables.</p>
+
+<div class="diagram">
+    <div class="diagram-box">Virtual Address</div>
+    <div class="arrow">↓ Address Translation</div>
+    <div class="diagram-box">Page Tables / MMU</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Physical Memory</div>
+</div>
+
+<p>The Memory Management Unit (MMU) performs address translation using page-table information configured by the operating system.</p>
+
+<p>Virtual memory allows processes and kernel components to use virtual addresses without needing to know the physical location of every memory page.</p>
+</section>
+
+<section class="section">
+<h2>6. Kernel Memory Allocation</h2>
+
+<p>Kernel memory allocation means requesting memory from kernel-managed memory resources.</p>
+
+<p>Linux provides different allocation interfaces depending on the size, layout and purpose of the memory.</p>
+
+<table>
+<tr>
+    <th>Function</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>kmalloc()</code></td>
+    <td>Allocates physically contiguous memory for the requested size.</td>
+</tr>
+<tr>
+    <td><code>kfree()</code></td>
+    <td>Releases memory allocated by compatible kmalloc-family allocators.</td>
+</tr>
+<tr>
+    <td><code>kzalloc()</code></td>
+    <td>Allocates memory and initializes it to zero.</td>
+</tr>
+<tr>
+    <td><code>kcalloc()</code></td>
+    <td>Allocates an array and initializes the allocated memory to zero.</td>
+</tr>
+<tr>
+    <td><code>vmalloc()</code></td>
+    <td>Allocates virtually contiguous memory that need not be physically contiguous.</td>
+</tr>
+<tr>
+    <td><code>vfree()</code></td>
+    <td>Releases memory allocated by vmalloc().</td>
+</tr>
+</table>
+
+<p>These functions are explored in detail in the following lessons.</p>
+</section>
+
+<section class="section">
+<h2>7. Kernel Memory Allocation Lifecycle</h2>
+
+<div class="diagram">
+    <div class="diagram-box">Request Memory</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Check Allocation Result</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Initialize Memory</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Use Memory</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Release Memory</div>
+</div>
+
+<p>A driver should follow this lifecycle:</p>
+
+<ol>
+    <li>Request the required memory.</li>
+    <li>Check whether allocation succeeded.</li>
+    <li>Initialize the memory if necessary.</li>
+    <li>Use the allocated memory safely.</li>
+    <li>Release it when it is no longer required.</li>
+</ol>
+
+<p>Forgetting to release memory can cause a kernel memory leak.</p>
+</section>
+
+<section class="section">
+<h2>8. Static and Dynamic Memory Allocation</h2>
+
+<h3>Static Allocation</h3>
+
+<p>Static memory allocation reserves storage as part of a variable's fixed storage duration.</p>
+
+<pre><code>static int device_status;
+static char device_buffer[256];</code></pre>
+
+<p>The storage exists for the lifetime of the module or program containing the variable.</p>
+
+<h3>Dynamic Allocation</h3>
+
+<p>Dynamic allocation requests memory while the code is executing.</p>
+
+<pre><code>char *buffer;
+
+buffer = kmalloc(256, GFP_KERNEL);
+
+if (!buffer) {
+    return -ENOMEM;
+}
+
+/* Use buffer */
+
+kfree(buffer);</code></pre>
+
+<p>Dynamic allocation is useful when the required size is known only at runtime.</p>
+
+<table>
+<tr>
+    <th>Static Allocation</th>
+    <th>Dynamic Allocation</th>
+</tr>
+<tr>
+    <td>Storage size is fixed at declaration.</td>
+    <td>Size can be selected at runtime.</td>
+</tr>
+<tr>
+    <td>No explicit allocation call is required.</td>
+    <td>Requires an allocation function.</td>
+</tr>
+<tr>
+    <td>Lifetime is determined by storage duration.</td>
+    <td>Lifetime is managed by allocation and release.</td>
+</tr>
+<tr>
+    <td>Suitable for fixed-size data.</td>
+    <td>Suitable for variable-size requirements.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>9. Memory Allocation in Different Execution Contexts</h2>
+
+<p>Kernel memory allocation must consider the execution context in which the request occurs.</p>
+
+<h3>Process Context</h3>
+
+<p>Process context is associated with a task executing in the kernel on behalf of a process or thread.</p>
+
+<p>Some allocation requests using <code>GFP_KERNEL</code> may sleep while the kernel obtains memory.</p>
+
+<h3>Interrupt Context</h3>
+
+<p>Interrupt context executes in response to an interrupt. It cannot perform operations that sleep.</p>
+
+<p>Allocation in interrupt context must use an appropriate non-sleeping allocation strategy, such as a suitable GFP_ATOMIC request when necessary. Preallocation is often preferable.</p>
+
+<div class="important">
+    Never use a potentially sleeping allocation request such as GFP_KERNEL in interrupt context or while holding a spinlock.
+</div>
+</section>
+
+<section class="section">
+<h2>10. Memory Management and DMA</h2>
+
+<p>Some device drivers transfer data directly between hardware and memory using Direct Memory Access (DMA).</p>
+
+<p>DMA allows a device to transfer data without requiring the CPU to copy every byte individually.</p>
+
+<div class="diagram">
+    <div class="diagram-box">CPU / Driver</div>
+    <div class="arrow">↓ Configure DMA</div>
+    <div class="diagram-box">DMA Controller / Device</div>
+    <div class="arrow">↔</div>
+    <div class="diagram-box">Memory Buffer</div>
+</div>
+
+<p>DMA memory management has additional requirements:</p>
+
+<ul>
+    <li>Device-accessible memory addresses.</li>
+    <li>DMA address mapping.</li>
+    <li>Cache-coherency considerations.</li>
+    <li>Appropriate buffer alignment and size.</li>
+    <li>Correct synchronization between CPU and device.</li>
+</ul>
+
+<p>Linux provides DMA APIs for these requirements. Ordinary <code>kmalloc()</code> or <code>vmalloc()</code> allocation alone does not guarantee that a buffer is suitable for DMA.</p>
+</section>
+
+<section class="section">
+<h2>11. Common Kernel Memory Management Problems</h2>
+
+<table>
+<tr>
+    <th>Problem</th>
+    <th>Description</th>
+    <th>Prevention</th>
+</tr>
+<tr>
+    <td>Memory leak</td>
+    <td>Allocated memory is never released.</td>
+    <td>Release memory on every appropriate exit path.</td>
+</tr>
+<tr>
+    <td>Null pointer dereference</td>
+    <td>Code accesses an unsuccessful allocation result.</td>
+    <td>Check allocation results before use.</td>
+</tr>
+<tr>
+    <td>Use-after-free</td>
+    <td>Code accesses memory after it has been released.</td>
+    <td>Manage object lifetime and references.</td>
+</tr>
+<tr>
+    <td>Double free</td>
+    <td>The same allocation is released more than once.</td>
+    <td>Use clear ownership rules.</td>
+</tr>
+<tr>
+    <td>Buffer overflow</td>
+    <td>Code accesses beyond allocated memory.</td>
+    <td>Validate all sizes and offsets.</td>
+</tr>
+<tr>
+    <td>Fragmentation</td>
+    <td>Free memory is divided into smaller blocks.</td>
+    <td>Choose appropriate allocation interfaces and sizes.</td>
+</tr>
+<tr>
+    <td>Race condition</td>
+    <td>Concurrent execution accesses shared memory unsafely.</td>
+    <td>Use suitable synchronization.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>12. Kernel Memory Management in Device Drivers</h2>
+
+<p>A device driver must select the correct allocation mechanism based on its requirements.</p>
+
+<h3>Example: Memory-Backed Device Buffer</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/slab.h&gt;
+
+#define BUFFER_SIZE 256
+
+static char *device_buffer;
+
+static int __init memory_driver_init(void)
+{
+    device_buffer = kmalloc(
+        BUFFER_SIZE,
+        GFP_KERNEL
+    );
+
+    if (!device_buffer) {
+        pr_err("Memory allocation failed\n");
+        return -ENOMEM;
+    }
+
+    pr_info("Memory allocated successfully\n");
+
+    return 0;
+}
+
+static void __exit memory_driver_exit(void)
+{
+    kfree(device_buffer);
+
+    pr_info("Memory released\n");
+}
+
+module_init(memory_driver_init);
+module_exit(memory_driver_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Kernel Memory Allocation Example");</code></pre>
+
+<p>This simple module demonstrates the allocation lifecycle:</p>
+
+<ul>
+    <li><code>kmalloc()</code> requests memory.</li>
+    <li><code>GFP_KERNEL</code> permits a sleepable allocation context.</li>
+    <li>The result is checked before use.</li>
+    <li><code>kfree()</code> releases the allocated memory during cleanup.</li>
+</ul>
+
+<div class="note">
+    This example is intended for process-context module initialization and cleanup. Do not copy the same allocation strategy into interrupt context without considering its sleeping behavior.
+</div>
+</section>
+
+<section class="section">
+<h2>13. Important Linux Memory Management Terms</h2>
+
+<table>
+<tr>
+    <th>Term</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td>MMU</td>
+    <td>Memory Management Unit; hardware that performs address translation and memory protection.</td>
+</tr>
+<tr>
+    <td>Page</td>
+    <td>A basic unit of memory management in Linux.</td>
+</tr>
+<tr>
+    <td>Page Table</td>
+    <td>Data structure used for virtual-to-physical address translation.</td>
+</tr>
+<tr>
+    <td>Slab Allocator</td>
+    <td>Kernel allocation infrastructure optimized for frequently used objects.</td>
+</tr>
+<tr>
+    <td>GFP Flags</td>
+    <td>Flags describing the allocation behavior and constraints.</td>
+</tr>
+<tr>
+    <td>DMA</td>
+    <td>Direct Memory Access; device data transfer without CPU copying every byte.</td>
+</tr>
+<tr>
+    <td>Fragmentation</td>
+    <td>Division of available memory into separate free regions.</td>
+</tr>
+<tr>
+    <td>Memory Leak</td>
+    <td>Memory that remains allocated after it is no longer needed.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>14. Lesson Summary</h2>
+
+<ul>
+    <li>Kernel memory management controls allocation, access, mapping and release of memory.</li>
+    <li>User space and kernel space have separate memory-access rules.</li>
+    <li>Device drivers need memory for buffers, state and internal structures.</li>
+    <li>kmalloc() and vmalloc() provide different memory allocation behavior.</li>
+    <li>Allocated memory must be checked, initialized and released correctly.</li>
+    <li>Allocation flags determine whether an allocation may sleep.</li>
+    <li>Interrupt context cannot perform sleeping operations.</li>
+    <li>DMA requires appropriate Linux DMA APIs.</li>
+    <li>Memory leaks, use-after-free and buffer overflows must be prevented.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>15. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>What is kernel memory management?</li>
+    <li>Why do Linux device drivers need memory?</li>
+    <li>What is the difference between user-space and kernel-space memory?</li>
+    <li>What is virtual memory?</li>
+    <li>What is the purpose of the MMU?</li>
+    <li>What is dynamic memory allocation?</li>
+    <li>What is a kernel memory leak?</li>
+    <li>Why must allocation results be checked?</li>
+    <li>What is DMA?</li>
+    <li>Why can GFP_KERNEL not be used in interrupt context?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain the role of memory management in Linux device drivers.</li>
+    <li>Differentiate between physical memory and virtual memory.</li>
+    <li>Explain the kernel memory allocation lifecycle.</li>
+    <li>Discuss common memory management problems in kernel programming.</li>
+    <li>Explain why DMA requires special memory-management APIs.</li>
+    <li>Compare static and dynamic memory allocation in kernel programming.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Write a kernel module that allocates memory using kmalloc().</li>
+    <li>Check allocation failure and return -ENOMEM.</li>
+    <li>Initialize a kernel buffer and release it during module cleanup.</li>
+    <li>Modify the example to use kzalloc().</li>
+    <li>Study the difference between kmalloc() and vmalloc().</li>
+    <li>Identify an example of a memory leak in a kernel module and correct it.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>16. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Explain the role of kernel memory management.</li>
+    <li>Differentiate user-space and kernel-space memory.</li>
+    <li>Understand physical and virtual memory concepts.</li>
+    <li>Identify common kernel memory allocation interfaces.</li>
+    <li>Explain memory allocation and deallocation.</li>
+    <li>Recognize common memory-management errors.</li>
+    <li>Understand why DMA needs specialized memory APIs.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="../../ldd.html">← Course Home</a>
+    <a href="index.html">Chapter 12 Index</a>
+    <a href="L02_Kernel_Memory_Allocation.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 12 – Kernel Memory Management</p>
+</footer>
+
+</body>
+</html>
