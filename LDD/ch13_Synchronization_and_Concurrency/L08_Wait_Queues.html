@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 8: Wait Queues | Linux Device Drivers</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 20px;
+}
+
+header h1 {
+    margin: 0 0 10px;
+    font-size: 30px;
+}
+
+header p {
+    margin: 0;
+}
+
+nav {
+    background: white;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+
+nav a {
+    display: inline-block;
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 5px 12px;
+}
+
+nav a:hover {
+    color: #007bff;
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e4efff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e2eaf5;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9c;
+    margin-top: 24px;
+}
+
+pre {
+    background: #17212e;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    line-height: 1.55;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+
+th, td {
+    border: 1px solid #d5dfeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #edf4ff;
+    border: 1px solid #bfd4f3;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+    font-weight: bold;
+}
+
+.diagram .arrow {
+    color: #174ea6;
+    font-size: 23px;
+    margin: 5px;
+}
+
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #fff0f0;
+    border-left: 5px solid #d9534f;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.navigation-buttons a:hover {
+    background: #2878d7;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 650px) {
+    header h1 {
+        font-size: 23px;
+    }
+
+    section {
+        padding: 17px;
+    }
+
+    table {
+        display: block;
+        overflow-x: auto;
+    }
+
+    .navigation-buttons {
+        flex-direction: column;
+    }
+
+    .navigation-buttons a {
+        text-align: center;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Lesson 8: Wait Queues</h1>
+    <p>Linux Device Drivers – Synchronization and Concurrency</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> 13 – Synchronization and Concurrency<br>
+    <strong>Lesson:</strong> 8 – Wait Queues<br>
+    <strong>Level:</strong> Intermediate<br>
+    <strong>Prerequisites:</strong> Race Conditions, Critical Sections, Spinlocks, Mutexes and Semaphores.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Define a Linux kernel wait queue.</li>
+    <li>Understand why wait queues are required.</li>
+    <li>Understand sleeping and waking of kernel tasks.</li>
+    <li>Initialize and declare wait queues.</li>
+    <li>Use <code>wait_event()</code> and related macros.</li>
+    <li>Use <code>wake_up()</code> and related wake-up functions.</li>
+    <li>Understand interruptible and uninterruptible waits.</li>
+    <li>Apply wait queues to character-device read operations.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Wait Queues</h2>
+
+<p>A <strong>wait queue</strong> is a Linux kernel mechanism that allows tasks to sleep until a specified condition becomes true or an event occurs.</p>
+
+<p>Instead of continuously checking whether data is available, a task can sleep and allow the CPU to execute other tasks.</p>
+
+<h3>Why Are Wait Queues Required?</h3>
+
+<p>Consider a character device that receives data from hardware.</p>
+
+<ul>
+    <li>A user application calls <code>read()</code>.</li>
+    <li>No data is currently available.</li>
+    <li>The driver must wait for new data.</li>
+    <li>Hardware or another kernel execution path supplies data.</li>
+    <li>The driver wakes the waiting task.</li>
+    <li>The application can continue reading.</li>
+</ul>
+
+<p>Wait queues provide an efficient mechanism for this type of event-driven synchronization.</p>
+
+<div class="diagram">
+    <div>User Application calls read()</div>
+    <div class="arrow">↓</div>
+    <div>Driver checks data availability</div>
+    <div class="arrow">↓</div>
+    <div>No data available</div>
+    <div class="arrow">↓</div>
+    <div>Task sleeps in wait queue</div>
+    <div class="arrow">↓</div>
+    <div>New data arrives</div>
+    <div class="arrow">↓</div>
+    <div>Driver wakes waiting task</div>
+    <div class="arrow">↓</div>
+    <div>Task resumes and reads data</div>
+</div>
+</section>
+
+<section>
+<h2>3. What Is a Wait Queue?</h2>
+
+<p>A wait queue maintains a collection of tasks waiting for a particular condition.</p>
+
+<p>For example, multiple applications may attempt to read from a device. If no data is available, their tasks can wait until the driver signals that data has arrived.</p>
+
+<h3>Main Components</h3>
+
+<table>
+    <tr>
+        <th>Component</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td>Wait queue head</td>
+        <td>Represents the queue on which tasks wait.</td>
+    </tr>
+    <tr>
+        <td>Waiting task</td>
+        <td>A task sleeping until a condition becomes true.</td>
+    </tr>
+    <tr>
+        <td>Condition</td>
+        <td>Determines whether the task can proceed.</td>
+    </tr>
+    <tr>
+        <td>Wake-up operation</td>
+        <td>Notifies waiting tasks that they should recheck the condition.</td>
+    </tr>
+</table>
+
+<h3>Important Data Type</h3>
+
+<p>The Linux kernel uses:</p>
+
+<pre><code>wait_queue_head_t</code></pre>
+
+<p>It represents the wait queue head used by wait-queue operations.</p>
+</section>
+
+<section>
+<h2>4. Declaring and Initializing Wait Queues</h2>
+
+<p>Include the wait-queue header:</p>
+
+<pre><code>#include &lt;linux/wait.h&gt;</code></pre>
+
+<h3>4.1 Static Initialization</h3>
+
+<pre><code>static DECLARE_WAIT_QUEUE_HEAD(my_wait_queue);</code></pre>
+
+<p>This declares and initializes a wait queue head.</p>
+
+<h3>4.2 Dynamic Initialization</h3>
+
+<pre><code>static wait_queue_head_t my_wait_queue;
+
+static int __init my_init(void)
+{
+    init_waitqueue_head(&amp;my_wait_queue);
+
+    return 0;
+}</code></pre>
+
+<p><code>init_waitqueue_head()</code> initializes a wait queue head before it is used.</p>
+
+<div class="note">
+    Use static initialization for a statically declared wait queue. Use <code>init_waitqueue_head()</code> when initializing a wait queue at runtime, and ensure initialization completes before concurrent access.
+</div>
+</section>
+
+<section>
+<h2>5. Wait Queue Operations</h2>
+
+<p>Linux provides several macros and functions for waiting and waking tasks.</p>
+
+<h3>5.1 wait_event()</h3>
+
+<p><code>wait_event()</code> puts the calling task into a wait state until the specified condition becomes true.</p>
+
+<pre><code>wait_event(my_wait_queue, data_available);</code></pre>
+
+<p>The task sleeps while <code>data_available</code> is false. It resumes when the condition becomes true and is appropriately woken.</p>
+
+<h3>5.2 wait_event_interruptible()</h3>
+
+<p>This operation allows a waiting task to be interrupted by a signal.</p>
+
+<pre><code>int ret;
+
+ret = wait_event_interruptible(
+    my_wait_queue,
+    data_available
+);
+
+if (ret)
+    return ret;</code></pre>
+
+<p>It returns 0 when the condition becomes true. If interrupted by a signal before the condition is satisfied, it returns a negative error value, commonly <code>-ERESTARTSYS</code>.</p>
+
+<h3>5.3 wait_event_timeout()</h3>
+
+<p>This macro waits until the condition becomes true or the timeout expires.</p>
+
+<pre><code>long ret;
+
+ret = wait_event_timeout(
+    my_wait_queue,
+    data_available,
+    5 * HZ
+);</code></pre>
+
+<p>The timeout is expressed in jiffies. A return value greater than zero indicates the condition became true before the timeout expired. A return value of zero indicates timeout. If the condition is already true, the macro can return a positive value immediately.</p>
+
+<h3>5.4 wait_event_interruptible_timeout()</h3>
+
+<p>This combines signal-interruptible waiting with a timeout.</p>
+
+<pre><code>long ret;
+
+ret = wait_event_interruptible_timeout(
+    my_wait_queue,
+    data_available,
+    5 * HZ
+);
+
+if (ret &lt; 0) {
+    pr_info("Wait interrupted\n");
+} else if (ret == 0) {
+    pr_info("Wait timed out\n");
+} else {
+    pr_info("Condition satisfied\n");
+}</code></pre>
+
+<h3>Wait Operation Summary</h3>
+
+<table>
+    <tr>
+        <th>Operation</th>
+        <th>Behavior</th>
+    </tr>
+    <tr>
+        <td><code>wait_event()</code></td>
+        <td>Waits until a condition becomes true.</td>
+    </tr>
+    <tr>
+        <td><code>wait_event_interruptible()</code></td>
+        <td>Waits until a condition becomes true or a signal interrupts the wait.</td>
+    </tr>
+    <tr>
+        <td><code>wait_event_timeout()</code></td>
+        <td>Waits until a condition is true or the timeout expires.</td>
+    </tr>
+    <tr>
+        <td><code>wait_event_interruptible_timeout()</code></td>
+        <td>Interruptible waiting with a timeout.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>6. Wake-Up Operations</h2>
+
+<p>After the condition becomes true, the driver must wake the tasks waiting on the relevant wait queue.</p>
+
+<h3>6.1 wake_up()</h3>
+
+<p>Wakes tasks waiting on a wait queue according to the wake-up rules.</p>
+
+<pre><code>wake_up(&amp;my_wait_queue);</code></pre>
+
+<h3>6.2 wake_up_interruptible()</h3>
+
+<p>Wakes tasks waiting in an interruptible state.</p>
+
+<pre><code>wake_up_interruptible(&amp;my_wait_queue);</code></pre>
+
+<h3>6.3 wake_up_all()</h3>
+
+<p>Wakes all eligible tasks waiting on the queue.</p>
+
+<pre><code>wake_up_all(&amp;my_wait_queue);</code></pre>
+
+<h3>6.4 wake_up_interruptible_all()</h3>
+
+<p>Wakes all tasks waiting in an interruptible state.</p>
+
+<pre><code>wake_up_interruptible_all(&amp;my_wait_queue);</code></pre>
+
+<table>
+    <tr>
+        <th>Function</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>wake_up()</code></td>
+        <td>Wakes eligible waiting tasks.</td>
+    </tr>
+    <tr>
+        <td><code>wake_up_interruptible()</code></td>
+        <td>Wakes interruptible waiters.</td>
+    </tr>
+    <tr>
+        <td><code>wake_up_all()</code></td>
+        <td>Wakes all eligible waiters.</td>
+    </tr>
+    <tr>
+        <td><code>wake_up_interruptible_all()</code></td>
+        <td>Wakes all interruptible waiters.</td>
+    </tr>
+</table>
+
+<div class="note">
+    A wake-up does not guarantee that the condition is still true when a task resumes. A task must recheck the condition. Wait-event macros handle the waiting and condition rechecking pattern.
+</div>
+</section>
+
+<section>
+<h2>7. How Wait Queues Work</h2>
+
+<p>Consider a driver with a Boolean condition called <code>data_available</code>.</p>
+
+<p>Initially, the condition is false. A reader waits until data becomes available.</p>
+
+<div class="diagram">
+    <div>Initial state: data_available = false</div>
+    <div class="arrow">↓</div>
+    <div>Reader calls wait_event_interruptible()</div>
+    <div class="arrow">↓</div>
+    <div>Reader task sleeps</div>
+    <div class="arrow">↓</div>
+    <div>Producer receives or prepares data</div>
+    <div class="arrow">↓</div>
+    <div>Producer sets data_available = true</div>
+    <div class="arrow">↓</div>
+    <div>Producer calls wake_up_interruptible()</div>
+    <div class="arrow">↓</div>
+    <div>Reader wakes and rechecks condition</div>
+    <div class="arrow">↓</div>
+    <div>Reader continues processing</div>
+</div>
+
+<p>This avoids continuous polling by the reader.</p>
+</section>
+
+<section>
+<h2>8. Process State During Waiting</h2>
+
+<p>When a task waits on a wait queue, the kernel changes its scheduling state according to the waiting operation.</p>
+
+<h3>Common Task States</h3>
+
+<table>
+    <tr>
+        <th>State</th>
+        <th>Meaning</th>
+    </tr>
+    <tr>
+        <td><code>TASK_RUNNING</code></td>
+        <td>The task is runnable or currently executing.</td>
+    </tr>
+    <tr>
+        <td><code>TASK_INTERRUPTIBLE</code></td>
+        <td>The task can be awakened by a suitable event or signal.</td>
+    </tr>
+    <tr>
+        <td><code>TASK_UNINTERRUPTIBLE</code></td>
+        <td>The task waits without ordinary signal interruption.</td>
+    </tr>
+</table>
+
+<p>Wait-event macros manage the necessary task-state transitions internally.</p>
+
+<div class="note">
+    Prefer the standard wait-event macros over manually changing task states. They handle important scheduling and race-prevention details.
+</div>
+</section>
+
+<section>
+<h2>9. Wait Queues in Character Device Drivers</h2>
+
+<p>Wait queues are especially useful in character drivers that receive data asynchronously.</p>
+
+<h3>Example Scenario</h3>
+
+<p>Imagine a serial device receiving characters from an external source.</p>
+
+<ul>
+    <li>The application calls <code>read()</code>.</li>
+    <li>The driver checks whether its data buffer contains data.</li>
+    <li>If the buffer is empty, the reader waits.</li>
+    <li>The interrupt handler or another appropriate producer path stores received data.</li>
+    <li>The producer wakes the reader.</li>
+    <li>The reader copies available data to user space.</li>
+</ul>
+
+<div class="diagram">
+    <div>UART Hardware Receives Data</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Handler / Producer Path</div>
+    <div class="arrow">↓</div>
+    <div>Store Data in Driver Buffer</div>
+    <div class="arrow">↓</div>
+    <div>Update data_available Condition</div>
+    <div class="arrow">↓</div>
+    <div>Wake Up Waiting Reader</div>
+    <div class="arrow">↓</div>
+    <div>Character Driver read() Returns Data</div>
+</div>
+
+<p>The interrupt handler must not perform operations that can sleep. It can update suitable shared state and use an appropriate wake-up operation, while more complex processing can be deferred to a workqueue or another sleepable context.</p>
+</section>
+
+<section>
+<h2>10. Practical Kernel Module: Basic Wait Queue</h2>
+
+<p>The following example demonstrates a wait queue with a condition that becomes true during module initialization.</p>
+
+<h3>Source Code: wait_queue_basic.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/wait.h&gt;
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Linux Device Drivers Course");
+MODULE_DESCRIPTION("Basic Wait Queue Demonstration");
+MODULE_VERSION("1.0");
+
+static DECLARE_WAIT_QUEUE_HEAD(my_wait_queue);
+
+static int data_available = 0;
+
+static int __init wait_queue_init(void)
+{
+    pr_info("Wait queue module loaded\n");
+
+    /*
+     * Set the condition to true before waiting.
+     */
+    WRITE_ONCE(data_available, 1);
+
+    /*
+     * Wake any eligible tasks waiting on the queue.
+     */
+    wake_up_interruptible(&amp;my_wait_queue);
+
+    /*
+     * The condition is already true,
+     * so this returns without sleeping.
+     */
+    wait_event_interruptible(
+        my_wait_queue,
+        READ_ONCE(data_available)
+    );
+
+    pr_info("Wait condition satisfied\n");
+
+    return 0;
+}
+
+static void __exit wait_queue_exit(void)
+{
+    pr_info("Wait queue module unloaded\n");
+}
+
+module_init(wait_queue_init);
+module_exit(wait_queue_exit);</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li>The wait queue is declared using <code>DECLARE_WAIT_QUEUE_HEAD()</code>.</li>
+    <li>The condition initially equals zero.</li>
+    <li>The module sets the condition to one.</li>
+    <li><code>wake_up_interruptible()</code> notifies eligible waiting tasks.</li>
+    <li><code>wait_event_interruptible()</code> checks the condition.</li>
+    <li>Because the condition is already true, the task does not sleep.</li>
+</ol>
+
+<div class="note">
+    This is an initialization demonstration, not a true concurrent producer-consumer test. The next practical example shows a reader waiting for a producer thread.
+</div>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += wait_queue_basic.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<h3>Compile and Test</h3>
+
+<pre><code>make
+
+sudo insmod wait_queue_basic.ko
+
+sudo dmesg | tail -20
+
+sudo rmmod wait_queue_basic
+
+make clean</code></pre>
+
+<h3>Expected Output</h3>
+
+<pre><code>Wait queue module loaded
+Wait condition satisfied
+Wait queue module unloaded</code></pre>
+</section>
+
+<section>
+<h2>11. Practical Kernel Module: Producer and Consumer</h2>
+
+<p>This example creates a kernel thread that acts as a producer. The module initialization function acts as a consumer and waits for the producer to make data available.</p>
+
+<h3>Source Code: wait_queue_producer_consumer.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/wait.h&gt;
+#include &lt;linux/kthread.h&gt;
+#include &lt;linux/delay.h&gt;
+#include &lt;linux/sched.h&gt;
+#include &lt;linux/atomic.h&gt;
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Linux Device Drivers Course");
+MODULE_DESCRIPTION("Wait Queue Producer Consumer Example");
+MODULE_VERSION("1.0");
+
+static DECLARE_WAIT_QUEUE_HEAD(data_wait_queue);
+
+static atomic_t data_ready = ATOMIC_INIT(0);
+
+static struct task_struct *producer_task;
+
+static int producer_function(void *data)
+{
+    pr_info("Producer thread started\n");
+
+    /*
+     * Simulate a delay before data becomes available.
+     */
+    msleep(2000);
+
+    if (kthread_should_stop())
+        return 0;
+
+    /*
+     * Publish the condition before waking readers.
+     */
+    atomic_set(&amp;data_ready, 1);
+
+    pr_info("Producer: Data is available\n");
+
+    wake_up_interruptible(&amp;data_wait_queue);
+
+    return 0;
+}
+
+static int __init producer_consumer_init(void)
+{
+    int ret;
+
+    pr_info("Producer-consumer module loaded\n");
+
+    producer_task = kthread_run(
+        producer_function,
+        NULL,
+        "waitqueue_producer"
+    );
+
+    if (IS_ERR(producer_task)) {
+        ret = PTR_ERR(producer_task);
+        producer_task = NULL;
+        return ret;
+    }
+
+    pr_info("Consumer: Waiting for data\n");
+
+    ret = wait_event_interruptible(
+        data_wait_queue,
+        atomic_read(&amp;data_ready) != 0
+    );
+
+    if (ret) {
+        pr_info("Consumer wait interrupted\n");
+
+        kthread_stop(producer_task);
+        producer_task = NULL;
+
+        return ret;
+    }
+
+    pr_info("Consumer: Data received successfully\n");
+
+    return 0;
+}
+
+static void __exit producer_consumer_exit(void)
+{
+    if (producer_task) {
+        kthread_stop(producer_task);
+        producer_task = NULL;
+    }
+
+    pr_info("Producer-consumer module unloaded\n");
+}
+
+module_init(producer_consumer_init);
+module_exit(producer_consumer_exit);</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li>The module declares a wait queue.</li>
+    <li>An atomic variable represents whether data is ready.</li>
+    <li>A kernel thread is started using <code>kthread_run()</code>.</li>
+    <li>The producer waits for approximately two seconds.</li>
+    <li>The producer sets the data-ready condition.</li>
+    <li>The producer calls <code>wake_up_interruptible()</code>.</li>
+    <li>The consumer resumes after its wait condition becomes true.</li>
+    <li>The module stops the producer thread during cleanup if it is still present.</li>
+</ol>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += wait_queue_producer_consumer.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<h3>Compile and Test</h3>
+
+<pre><code>make
+
+sudo insmod wait_queue_producer_consumer.ko
+
+sudo dmesg | tail -30
+
+sudo rmmod wait_queue_producer_consumer
+
+make clean</code></pre>
+
+<h3>Expected Output</h3>
+
+<pre><code>Producer-consumer module loaded
+Producer thread started
+Consumer: Waiting for data
+Producer: Data is available
+Consumer: Data received successfully
+Producer-consumer module unloaded</code></pre>
+
+<div class="note">
+    The exact log ordering can vary because the producer and consumer execute concurrently. The producer's delay is illustrative, not a precise real-time timing guarantee.
+</div>
+</section>
+
+<section>
+<h2>12. Wait Queues and Race Conditions</h2>
+
+<p>Wait queues must be used with correctly synchronized conditions.</p>
+
+<p>Consider the following unsafe conceptual sequence:</p>
+
+<ol>
+    <li>A reader checks that data is unavailable.</li>
+    <li>A producer makes data available and sends a wake-up.</li>
+    <li>The reader starts waiting after the wake-up has already happened.</li>
+</ol>
+
+<p>If the reader simply waits for a future wake-up without checking the current condition correctly, it may sleep even though data is available.</p>
+
+<h3>Correct Approach</h3>
+
+<p>Use the standard wait-event macros with a condition that is safely published and checked.</p>
+
+<pre><code>wait_event_interruptible(
+    my_wait_queue,
+    data_available
+);</code></pre>
+
+<p>Update the condition before issuing the wake-up:</p>
+
+<pre><code>data_available = true;
+
+wake_up_interruptible(&amp;my_wait_queue);</code></pre>
+
+<p>For real shared data, use appropriate synchronization and memory-ordering mechanisms. A plain variable accessed concurrently without proper synchronization can cause data races.</p>
+
+<p>Possible mechanisms include:</p>
+
+<ul>
+    <li>Atomic variables for simple shared state.</li>
+    <li>Spinlocks for short shared-state updates.</li>
+    <li>Mutexes for protected operations in process context.</li>
+    <li>Appropriate memory-ordering primitives when lockless communication is required.</li>
+</ul>
+
+<div class="warning">
+    A wake-up operation is not a substitute for protecting shared data. The condition and the data associated with it must be synchronized correctly.
+</div>
+</section>
+
+<section>
+<h2>13. Wait Queues vs Semaphores</h2>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Wait Queue</th>
+        <th>Semaphore</th>
+    </tr>
+    <tr>
+        <td>Primary purpose</td>
+        <td>Wait for a condition or event</td>
+        <td>Manage permits and resource availability</td>
+    </tr>
+    <tr>
+        <td>Waiting mechanism</td>
+        <td>Task sleeps until condition is satisfied and it is woken</td>
+        <td>Task sleeps when no permit is available</td>
+    </tr>
+    <tr>
+        <td>Condition</td>
+        <td>Explicit condition supplied by the driver</td>
+        <td>Internal semaphore permit count</td>
+    </tr>
+    <tr>
+        <td>Wake-up</td>
+        <td>Explicit wake-up operation</td>
+        <td><code>up()</code> releases a permit and may wake a waiter</td>
+    </tr>
+    <tr>
+        <td>Typical application</td>
+        <td>Waiting for incoming device data</td>
+        <td>Limiting access to a resource pool</td>
+    </tr>
+</table>
+
+<h3>Wait Queues vs Mutexes</h3>
+
+<p>A mutex protects a critical section through ownership. A wait queue lets tasks sleep until a condition is satisfied. A driver may use both: a wait queue for data availability and a mutex for protecting a shared buffer.</p>
+</section>
+
+<section>
+<h2>14. Important Rules for Wait Queues</h2>
+
+<ol>
+    <li>Initialize a wait queue before using it.</li>
+    <li>Always define a meaningful waiting condition.</li>
+    <li>Use standard wait-event macros where possible.</li>
+    <li>Make the condition visible safely to all relevant execution contexts.</li>
+    <li>Update the condition before issuing the wake-up.</li>
+    <li>Do not assume a wake-up means the condition remains true.</li>
+    <li>Recheck the condition after waking.</li>
+    <li>Use interruptible waits when signal cancellation is appropriate.</li>
+    <li>Use timeouts when the operation must not wait indefinitely.</li>
+    <li>Do not call sleepable wait operations from interrupt context.</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Common Wait Queue Mistakes</h2>
+
+<table>
+    <tr>
+        <th>Mistake</th>
+        <th>Why It Is Wrong</th>
+    </tr>
+    <tr>
+        <td>Forgetting to initialize the wait queue.</td>
+        <td>The queue is not ready for use.</td>
+    </tr>
+    <tr>
+        <td>Waiting without a valid condition.</td>
+        <td>The task may remain asleep indefinitely.</td>
+    </tr>
+    <tr>
+        <td>Updating the condition without proper synchronization.</td>
+        <td>Concurrent accesses can produce incorrect behavior.</td>
+    </tr>
+    <tr>
+        <td>Calling a blocking wait in interrupt context.</td>
+        <td>Interrupt context cannot sleep.</td>
+    </tr>
+    <tr>
+        <td>Assuming every wake-up means the condition is true.</td>
+        <td>Wake-ups can be spurious or another task may consume the resource first.</td>
+    </tr>
+    <tr>
+        <td>Ignoring the return value of interruptible waits.</td>
+        <td>The wait may have been interrupted by a signal.</td>
+    </tr>
+    <tr>
+        <td>Using a wake-up instead of proper data locking.</td>
+        <td>Wake-up operations do not automatically protect shared data.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>16. Debugging Wait Queue Problems</h2>
+
+<p>Useful commands for examining kernel messages:</p>
+
+<pre><code>sudo dmesg | tail -50
+
+sudo journalctl -k -n 50
+
+lsmod | grep wait_queue</code></pre>
+
+<p>When debugging a driver that uses wait queues, investigate:</p>
+
+<ul>
+    <li>Whether the wait queue was initialized.</li>
+    <li>Whether the condition can actually become true.</li>
+    <li>Whether the producer sends the wake-up after publishing the condition.</li>
+    <li>Whether the consumer handles signals and timeouts.</li>
+    <li>Whether shared state is protected correctly.</li>
+    <li>Whether module cleanup stops producer threads and prevents further access to released resources.</li>
+</ul>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+
+<ul>
+    <li>A wait queue allows tasks to sleep until a condition becomes true.</li>
+    <li>Wait queues are useful for asynchronous device events.</li>
+    <li><code>wait_queue_head_t</code> represents a wait queue head.</li>
+    <li><code>DECLARE_WAIT_QUEUE_HEAD()</code> performs static initialization.</li>
+    <li><code>init_waitqueue_head()</code> performs runtime initialization.</li>
+    <li><code>wait_event()</code> waits for a condition.</li>
+    <li><code>wait_event_interruptible()</code> supports signal-interruptible waiting.</li>
+    <li><code>wait_event_timeout()</code> supports timed waiting.</li>
+    <li><code>wake_up()</code> and related functions wake eligible waiting tasks.</li>
+    <li>Wait queues are commonly used in character-driver read operations.</li>
+    <li>Shared conditions require proper synchronization.</li>
+    <li>Blocking waits must not be called from interrupt context.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Short Answer Questions</h2>
+
+<ol>
+    <li>What is a Linux wait queue?</li>
+    <li>Why are wait queues required in device drivers?</li>
+    <li>What is <code>wait_queue_head_t</code>?</li>
+    <li>What is the purpose of <code>DECLARE_WAIT_QUEUE_HEAD()</code>?</li>
+    <li>What does <code>init_waitqueue_head()</code> do?</li>
+    <li>What is the purpose of <code>wait_event()</code>?</li>
+    <li>What is the difference between <code>wait_event()</code> and <code>wait_event_interruptible()</code>?</li>
+    <li>What is the purpose of <code>wake_up()</code>?</li>
+    <li>What does <code>wake_up_all()</code> do?</li>
+    <li>What is a wait condition?</li>
+    <li>Can a task sleep in interrupt context?</li>
+    <li>How are wait queues used in character drivers?</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Long Answer Questions</h2>
+
+<ol>
+    <li>Explain the working of Linux wait queues with a diagram.</li>
+    <li>Explain static and dynamic wait-queue initialization.</li>
+    <li>Discuss the different wait-event macros.</li>
+    <li>Explain the different wake-up operations.</li>
+    <li>Describe the use of wait queues in character-device read operations.</li>
+    <li>Explain producer-consumer synchronization using wait queues.</li>
+    <li>Compare wait queues, semaphores and mutexes.</li>
+    <li>Discuss race conditions in wait-queue implementations.</li>
+    <li>Explain interruptible and timeout-based waiting.</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Practical Exercises</h2>
+
+<ol>
+    <li>Write a kernel module that declares a wait queue.</li>
+    <li>Initialize a wait queue using <code>init_waitqueue_head()</code>.</li>
+    <li>Use <code>wait_event_interruptible()</code> with a condition variable.</li>
+    <li>Wake a waiting task using <code>wake_up_interruptible()</code>.</li>
+    <li>Implement a producer kernel thread and a waiting consumer.</li>
+    <li>Modify the program to use <code>wait_event_timeout()</code>.</li>
+    <li>Explain how a character driver can wait for incoming data.</li>
+    <li>Draw a producer-consumer wait-queue architecture.</li>
+    <li>Explain how to prevent missed wake-ups and shared-data races.</li>
+</ol>
+
+<h3>Expected Learning Outcome</h3>
+
+<p>You should be able to implement wait queues, put kernel tasks to sleep until a condition is satisfied, wake waiting tasks safely, and understand how wait queues support asynchronous data handling in Linux device drivers.</p>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L07_Semaphores.html">← Previous: Semaphores</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L09_Completions.html">Next: Completions →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 13 – Synchronization and Concurrency</p>
+</footer>
+
+</body>
+</html>
