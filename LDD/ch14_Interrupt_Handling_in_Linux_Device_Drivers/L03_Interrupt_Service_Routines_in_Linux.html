@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 3: Interrupt Service Routines in Linux | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 20px;
+}
+header h1 { margin: 0 0 10px; font-size: 29px; }
+header p { margin: 0; }
+nav {
+    background: white;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+nav a {
+    display: inline-block;
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 5px 12px;
+}
+nav a:hover { color: #007bff; text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e4efff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e2eaf5;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9c; margin-top: 24px; }
+pre {
+    background: #17212e;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    line-height: 1.55;
+    font-size: 14px;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+th, td {
+    border: 1px solid #d5dfeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #edf4ff;
+    border: 1px solid #bfd4f3;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+    font-weight: bold;
+}
+.diagram .arrow {
+    color: #174ea6;
+    font-size: 23px;
+    margin: 5px;
+}
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.warning {
+    background: #fff0f0;
+    border-left: 5px solid #d9534f;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+.navigation-buttons a:hover { background: #2878d7; }
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .navigation-buttons { flex-direction: column; }
+    .navigation-buttons a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Lesson 3: Interrupt Service Routines in Linux</h1>
+    <p>Linux Device Drivers – Interrupt Handling</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 14</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> 14 – Interrupt Handling in Linux Device Drivers<br>
+    <strong>Lesson:</strong> 3 – Interrupt Service Routines in Linux<br>
+    <strong>Level:</strong> Intermediate<br>
+    <strong>Prerequisites:</strong> Hardware Interrupts, Interrupt Handling Architecture, Linux Kernel Modules and C Programming.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+    <li>Define an Interrupt Service Routine (ISR).</li>
+    <li>Understand the purpose of an ISR in Linux device drivers.</li>
+    <li>Understand the Linux interrupt handler function signature.</li>
+    <li>Explain the return values of an interrupt handler.</li>
+    <li>Understand how an ISR identifies its device.</li>
+    <li>Understand device interrupt acknowledgement.</li>
+    <li>Identify operations permitted and prohibited in hard IRQ context.</li>
+    <li>Implement a basic conceptual Linux interrupt handler.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Interrupt Service Routines</h2>
+
+<p>An Interrupt Service Routine (ISR), also called an interrupt handler, is a function executed by the operating system when a particular interrupt is delivered.</p>
+
+<p>In Linux, a device driver registers its interrupt handler with the kernel. When the associated interrupt occurs, the Linux IRQ subsystem dispatches the registered handler.</p>
+
+<p>The ISR typically performs urgent operations such as:</p>
+<ul>
+    <li>Identifying the source of an interrupt.</li>
+    <li>Reading device status registers.</li>
+    <li>Acknowledging or clearing the device interrupt condition.</li>
+    <li>Recording the event.</li>
+    <li>Scheduling deferred processing when necessary.</li>
+</ul>
+
+<div class="diagram">
+    <div>Hardware Device Generates Interrupt</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Controller</div>
+    <div class="arrow">↓</div>
+    <div>Linux IRQ Subsystem</div>
+    <div class="arrow">↓</div>
+    <div>Registered Interrupt Handler (ISR)</div>
+    <div class="arrow">↓</div>
+    <div>Service Event / Schedule Deferred Work</div>
+</div>
+</section>
+
+<section>
+<h2>3. Need for an ISR</h2>
+
+<p>When a device generates an interrupt, the processor must execute suitable software to respond to that event.</p>
+
+<p>The ISR provides the device-specific response.</p>
+
+<h3>Example: UART Receive Interrupt</h3>
+
+<p>Consider a UART peripheral receiving a character from a serial connection.</p>
+
+<ol>
+    <li>The UART receives a character.</li>
+    <li>The UART updates its receive status.</li>
+    <li>The UART generates an interrupt request.</li>
+    <li>The Linux kernel dispatches the registered handler.</li>
+    <li>The handler checks the UART interrupt status.</li>
+    <li>The driver reads available data or schedules further processing.</li>
+    <li>The device-specific interrupt condition is serviced as required.</li>
+</ol>
+
+<p>Without an appropriate interrupt handler, the device event may not be serviced correctly.</p>
+</section>
+
+<section>
+<h2>4. Linux Interrupt Handler Function Signature</h2>
+
+<p>Linux provides a standard function type for a conventional hard interrupt handler.</p>
+
+<pre><code>irqreturn_t handler(
+    int irq,
+    void *dev_id
+);</code></pre>
+
+<p>The function returns an <code>irqreturn_t</code> value.</p>
+
+<h3>Header File</h3>
+
+<pre><code>#include &lt;linux/interrupt.h&gt;</code></pre>
+
+<h3>Function Parameters</h3>
+
+<table>
+    <tr>
+        <th>Parameter</th>
+        <th>Description</th>
+    </tr>
+    <tr>
+        <td><code>int irq</code></td>
+        <td>The Linux IRQ number associated with the interrupt.</td>
+    </tr>
+    <tr>
+        <td><code>void *dev_id</code></td>
+        <td>The device-specific pointer supplied when registering the handler.</td>
+    </tr>
+</table>
+
+<h3>Why Is dev_id Important?</h3>
+
+<p>The <code>dev_id</code> parameter allows the handler to access the driver's private device data.</p>
+
+<p>It may point to a structure containing:</p>
+<ul>
+    <li>Device register information.</li>
+    <li>Memory-mapped I/O addresses.</li>
+    <li>Device status information.</li>
+    <li>Synchronization objects.</li>
+    <li>Buffers and counters.</li>
+</ul>
+
+<p>For a shared interrupt, the device-specific pointer is particularly important because each handler must determine whether its own device generated the interrupt.</p>
+</section>
+
+<section>
+<h2>5. Return Values of an ISR</h2>
+
+<p>A Linux interrupt handler returns one of the standard IRQ result values.</p>
+
+<table>
+    <tr>
+        <th>Return Value</th>
+        <th>Meaning</th>
+    </tr>
+    <tr>
+        <td><code>IRQ_HANDLED</code></td>
+        <td>The interrupt was recognized and handled by this handler.</td>
+    </tr>
+    <tr>
+        <td><code>IRQ_NONE</code></td>
+        <td>The interrupt was not generated by this device or was not handled by this handler.</td>
+    </tr>
+    <tr>
+        <td><code>IRQ_WAKE_THREAD</code></td>
+        <td>Requests execution of the threaded handler when a threaded IRQ has been registered.</td>
+    </tr>
+</table>
+
+<h3>Example</h3>
+
+<pre><code>static irqreturn_t my_isr(int irq, void *dev_id)
+{
+    return IRQ_HANDLED;
+}</code></pre>
+
+<p>This is a minimal illustration of the return type. A real driver must perform appropriate device-specific interrupt handling before reporting the interrupt as handled.</p>
+
+<div class="note">
+    For a shared interrupt, returning <code>IRQ_NONE</code> when the device did not generate the interrupt allows the IRQ subsystem to distinguish which registered handler recognized the event.
+</div>
+</section>
+
+<section>
+<h2>6. ISR Execution Flow</h2>
+
+<p>The following diagram illustrates a simplified execution sequence for a conventional hard interrupt handler.</p>
+
+<div class="diagram">
+    <div>Interrupt Request Arrives</div>
+    <div class="arrow">↓</div>
+    <div>CPU Enters Kernel Interrupt Path</div>
+    <div class="arrow">↓</div>
+    <div>Linux IRQ Subsystem Dispatches Handler</div>
+    <div class="arrow">↓</div>
+    <div>ISR Checks Device Status</div>
+    <div class="arrow">↓</div>
+    <div>Device Interrupt Condition Serviced</div>
+    <div class="arrow">↓</div>
+    <div>ISR Returns IRQ_HANDLED / IRQ_NONE</div>
+    <div class="arrow">↓</div>
+    <div>Kernel Completes Interrupt Flow</div>
+</div>
+
+<p>The exact controller acknowledgement, masking and completion sequence is architecture- and controller-dependent. The device driver is responsible for the device-specific operations required by its hardware.</p>
+</section>
+
+<section>
+<h2>7. Identifying the Interrupt Source</h2>
+
+<p>An interrupt handler must determine whether the interrupt belongs to its device.</p>
+
+<p>This is particularly important when interrupts are shared or when a controller can report multiple interrupt causes.</p>
+
+<h3>Example: Checking a Device Status Register</h3>
+
+<pre><code>/*
+ * Conceptual pseudocode only.
+ * Not a compilable hardware driver.
+ */
+
+static irqreturn_t my_isr(int irq, void *dev_id)
+{
+    struct my_device *dev = dev_id;
+    unsigned int status;
+
+    status = read_device_status(dev);
+
+    if (!(status &amp; DEVICE_INTERRUPT_PENDING))
+        return IRQ_NONE;
+
+    service_device_interrupt(dev, status);
+
+    clear_device_interrupt(dev, status);
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<p>Explanation:</p>
+<ol>
+    <li>The handler receives the device pointer.</li>
+    <li>It reads the device status register.</li>
+    <li>It checks whether its interrupt condition is pending.</li>
+    <li>If not, it returns <code>IRQ_NONE</code>.</li>
+    <li>If pending, it services and acknowledges the device condition.</li>
+    <li>It returns <code>IRQ_HANDLED</code>.</li>
+</ol>
+
+<div class="warning">
+    The register-access functions in this example are conceptual placeholders. A real driver must use the correct register definitions, I/O accessors and acknowledgement sequence specified by the hardware documentation.
+</div>
+</section>
+
+<section>
+<h2>8. Accessing Hardware Registers from an ISR</h2>
+
+<p>Device drivers frequently access memory-mapped hardware registers to identify and service interrupts.</p>
+
+<p>Linux provides I/O access functions such as:</p>
+
+<pre><code>readl()
+writel()
+readb()
+writeb()
+ioread32()
+iowrite32()</code></pre>
+
+<p>These functions are used according to the device's register width, access requirements and platform conventions.</p>
+
+<h3>Example: Register Access</h3>
+
+<pre><code>/*
+ * Conceptual example.
+ * Assumes dev-&gt;regs is a valid mapped I/O address.
+ */
+
+u32 status;
+
+status = readl(dev-&gt;regs + STATUS_REG);
+
+/* Process the device status. */
+
+writel(status, dev-&gt;regs + STATUS_CLEAR_REG);</code></pre>
+
+<p>In this example:</p>
+<ul>
+    <li><code>dev-&gt;regs</code> represents a previously mapped device I/O region.</li>
+    <li><code>STATUS_REG</code> identifies a device status register.</li>
+    <li><code>STATUS_CLEAR_REG</code> represents a conceptual interrupt-clear register.</li>
+    <li>The actual register behavior depends on the hardware specification.</li>
+</ul>
+
+<div class="note">
+    Not every device clears an interrupt by writing the status value back. Some use write-one-to-clear bits, separate acknowledgement registers, read-to-clear behavior or another device-specific mechanism.
+</div>
+</section>
+
+<section>
+<h2>9. Hard IRQ Context</h2>
+
+<p>A conventional interrupt handler registered using <code>request_irq()</code> executes in hard interrupt context.</p>
+
+<p>Hard IRQ context is a special execution context used for handling hardware interrupts.</p>
+
+<h3>Characteristics</h3>
+<ul>
+    <li>It is entered as a result of interrupt delivery.</li>
+    <li>It is not an ordinary process execution context.</li>
+    <li>It must complete quickly.</li>
+    <li>It must not perform operations that may sleep.</li>
+    <li>It can interrupt normal kernel or user-process execution.</li>
+</ul>
+
+<h3>Hard IRQ Context vs Process Context</h3>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Hard IRQ Context</th>
+        <th>Process Context</th>
+    </tr>
+    <tr>
+        <td>Execution trigger</td>
+        <td>Hardware interrupt delivery</td>
+        <td>Process or kernel-thread execution</td>
+    </tr>
+    <tr>
+        <td>Can sleep?</td>
+        <td>No</td>
+        <td>Usually yes, when the operation permits it</td>
+    </tr>
+    <tr>
+        <td>Mutex usage</td>
+        <td>Not permitted</td>
+        <td>Permitted when appropriate</td>
+    </tr>
+    <tr>
+        <td>Blocking operations</td>
+        <td>Not permitted</td>
+        <td>Can be used when appropriate</td>
+    </tr>
+    <tr>
+        <td>Execution duration</td>
+        <td>Keep very short</td>
+        <td>Can perform longer operations</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>10. Operations That Must Not Be Performed in Hard IRQ Context</h2>
+
+<p>An ISR must avoid operations that can block or sleep.</p>
+
+<h3>Examples of Prohibited Operations</h3>
+
+<table>
+    <tr>
+        <th>Operation</th>
+        <th>Reason</th>
+    </tr>
+    <tr>
+        <td><code>mutex_lock()</code></td>
+        <td>May block while waiting for a mutex.</td>
+    </tr>
+    <tr>
+        <td><code>down()</code> on a blocking semaphore</td>
+        <td>May put the caller to sleep.</td>
+    </tr>
+    <tr>
+        <td><code>wait_event()</code></td>
+        <td>Waits for a condition and may sleep.</td>
+    </tr>
+    <tr>
+        <td><code>msleep()</code></td>
+        <td>Explicitly sleeps for a period.</td>
+    </tr>
+    <tr>
+        <td><code>copy_to_user()</code></td>
+        <td>User-memory access may fault or sleep.</td>
+    </tr>
+    <tr>
+        <td><code>copy_from_user()</code></td>
+        <td>User-memory access may fault or sleep.</td>
+    </tr>
+    <tr>
+        <td>Blocking I/O operations</td>
+        <td>May wait for hardware or another process.</td>
+    </tr>
+</table>
+
+<div class="warning">
+    Calling a sleeping function from hard IRQ context can cause serious kernel problems, including warnings, deadlocks and kernel failures.
+</div>
+</section>
+
+<section>
+<h2>11. Operations Suitable for a Short ISR</h2>
+
+<p>A hard interrupt handler should perform only the urgent work necessary to service the interrupt.</p>
+
+<p>Typical activities include:</p>
+<ul>
+    <li>Read a device status register.</li>
+    <li>Identify the interrupt source.</li>
+    <li>Acknowledge or clear the device interrupt condition when required.</li>
+    <li>Capture a small amount of data.</li>
+    <li>Update an appropriate counter or atomic state.</li>
+    <li>Protect shared state using suitable non-sleeping synchronization.</li>
+    <li>Schedule deferred work.</li>
+</ul>
+
+<p>Long-running work should normally be moved to an appropriate deferred-processing mechanism.</p>
+
+<h3>Important Synchronization Rule</h3>
+
+<p>If a data structure is shared between process context and a hard interrupt handler, a suitable spinlock may be required.</p>
+
+<p>When process context and hard IRQ context share a lock, the process-context side may need an IRQ-safe locking variant such as:</p>
+
+<pre><code>spin_lock_irqsave(&amp;lock, flags);
+
+/* Critical section */
+
+spin_unlock_irqrestore(&amp;lock, flags);</code></pre>
+
+<p>The correct locking strategy depends on every context that accesses the shared data. A spinlock must never be held across a sleeping operation.</p>
+</section>
+
+<section>
+<h2>12. ISR and Deferred Interrupt Processing</h2>
+
+<p>Sometimes the interrupt handler cannot complete all required work immediately.</p>
+
+<p>For example, a network interface may receive a large amount of data. Processing every packet directly inside the hard interrupt handler would increase interrupt latency.</p>
+
+<p>Linux provides deferred-processing mechanisms, including:</p>
+<ul>
+    <li>Softirqs.</li>
+    <li>Tasklets (legacy mechanism).</li>
+    <li>Workqueues.</li>
+    <li>Threaded interrupts.</li>
+    <li>Subsystem-specific mechanisms such as NAPI.</li>
+</ul>
+
+<div class="diagram">
+    <div>Hardware Interrupt</div>
+    <div class="arrow">↓</div>
+    <div>Primary Interrupt Handler</div>
+    <div class="arrow">↓</div>
+    <div>Identify and Acknowledge Event</div>
+    <div class="arrow">↓</div>
+    <div>Schedule Deferred Processing</div>
+    <div class="arrow">↓</div>
+    <div>Deferred Handler / Worker / IRQ Thread</div>
+    <div class="arrow">↓</div>
+    <div>Complete Longer Processing</div>
+</div>
+
+<p>Deferred processing is discussed in detail in later lessons.</p>
+</section>
+
+<section>
+<h2>13. Primary Handler and Threaded Interrupt Handler</h2>
+
+<p>Linux supports threaded interrupt handling through APIs such as <code>request_threaded_irq()</code>.</p>
+
+<p>A threaded IRQ can use two handler functions:</p>
+
+<h3>Primary Handler</h3>
+<ul>
+    <li>Runs in hard interrupt context.</li>
+    <li>Performs urgent interrupt identification and hardware operations.</li>
+    <li>Can return <code>IRQ_WAKE_THREAD</code> to request execution of the threaded handler.</li>
+</ul>
+
+<h3>Thread Function</h3>
+<ul>
+    <li>Runs in the context of a kernel thread.</li>
+    <li>Can sleep when otherwise permitted.</li>
+    <li>Can perform longer processing operations.</li>
+</ul>
+
+<p>The <code>IRQF_ONESHOT</code> flag can be used with threaded interrupts to keep the IRQ line masked while the thread function is executing, according to the IRQ subsystem's handling rules.</p>
+
+<h3>Conceptual Example</h3>
+
+<pre><code>static irqreturn_t my_primary_handler(
+    int irq,
+    void *dev_id)
+{
+    struct my_device *dev = dev_id;
+
+    if (!device_interrupt_pending(dev))
+        return IRQ_NONE;
+
+    acknowledge_or_mask_device_irq(dev);
+
+    return IRQ_WAKE_THREAD;
+}
+
+static irqreturn_t my_thread_fn(
+    int irq,
+    void *dev_id)
+{
+    struct my_device *dev = dev_id;
+
+    process_device_data(dev);
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<p>This is conceptual pseudocode: the device-specific functions must be implemented using the real hardware interface. Registration and flag configuration are covered in Lesson 4.</p>
+</section>
+
+<section>
+<h2>14. Complete Conceptual ISR Flow</h2>
+
+<p>The following pseudocode illustrates the structure of a simple interrupt handler.</p>
+
+<pre><code>/*
+ * Conceptual pseudocode only.
+ * Not a complete compilable Linux driver.
+ */
+
+static irqreturn_t device_isr(int irq, void *dev_id)
+{
+    struct my_device *dev = dev_id;
+    unsigned int status;
+
+    /* Read device interrupt status */
+    status = read_device_status(dev);
+
+    /* Check whether this device generated the interrupt */
+    if (!(status &amp; DEVICE_IRQ_PENDING))
+        return IRQ_NONE;
+
+    /* Service urgent device event */
+    capture_device_event(dev, status);
+
+    /* Clear or acknowledge the device interrupt */
+    clear_device_interrupt(dev, status);
+
+    /* Schedule longer work if required */
+    schedule_deferred_processing(dev);
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<h3>Explanation</h3>
+<ol>
+    <li>The handler receives the Linux IRQ number and device pointer.</li>
+    <li>It reads the device interrupt status.</li>
+    <li>It checks whether its device generated the interrupt.</li>
+    <li>It captures the necessary event information.</li>
+    <li>It services the device interrupt condition.</li>
+    <li>It schedules deferred processing when necessary.</li>
+    <li>It reports that the interrupt was handled.</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Common ISR Programming Mistakes</h2>
+
+<table>
+    <tr>
+        <th>Mistake</th>
+        <th>Correct Approach</th>
+    </tr>
+    <tr>
+        <td>Performing lengthy processing in the ISR</td>
+        <td>Move longer operations to deferred processing.</td>
+    </tr>
+    <tr>
+        <td>Using a mutex in hard IRQ context</td>
+        <td>Use appropriate non-sleeping synchronization.</td>
+    </tr>
+    <tr>
+        <td>Ignoring the device interrupt status</td>
+        <td>Check the device-specific status before claiming the interrupt.</td>
+    </tr>
+    <tr>
+        <td>Failing to clear the device interrupt condition</td>
+        <td>Follow the hardware documentation's acknowledgement procedure.</td>
+    </tr>
+    <tr>
+        <td>Returning IRQ_HANDLED for an unrelated shared interrupt</td>
+        <td>Return IRQ_NONE when the device did not generate the interrupt.</td>
+    </tr>
+    <tr>
+        <td>Using invalid device data</td>
+        <td>Ensure the dev_id pointer remains valid while the handler is registered.</td>
+    </tr>
+    <tr>
+        <td>Using user-memory access in the ISR</td>
+        <td>Transfer data through a suitable process-context path.</td>
+    </tr>
+    <tr>
+        <td>Holding a spinlock while sleeping</td>
+        <td>Keep spinlock-protected sections short and non-blocking.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>16. Monitoring Interrupt Activity</h2>
+
+<p>Linux provides useful commands to observe interrupt activity.</p>
+
+<h3>Display Interrupt Statistics</h3>
+<pre><code>cat /proc/interrupts</code></pre>
+
+<h3>Monitor Interrupt Counts Continuously</h3>
+<pre><code>watch -n 1 cat /proc/interrupts</code></pre>
+
+<h3>Display Software Interrupt Statistics</h3>
+<pre><code>cat /proc/softirqs</code></pre>
+
+<h3>Display Recent Kernel Messages</h3>
+<pre><code>sudo dmesg | tail -30</code></pre>
+
+<p>Observe whether the interrupt counters change when a suitable device generates activity.</p>
+
+<div class="note">
+    In Ubuntu running inside VirtualBox, the guest operating system generally sees virtual devices and virtualized interrupt delivery. Physical peripheral interrupt testing requires suitable hardware access or an appropriate emulation environment.
+</div>
+</section>
+
+<section>
+<h2>17. Linux ISR vs LPC2129 ISR</h2>
+
+<p>In your embedded ARM7 learning track, interrupt service routines are implemented using the LPC2129 interrupt architecture and its VIC (Vectored Interrupt Controller).</p>
+
+<p>Linux device drivers use the Linux IRQ subsystem, which provides a higher-level interrupt-management framework.</p>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>LPC2129 Bare-Metal</th>
+        <th>Linux Device Driver</th>
+    </tr>
+    <tr>
+        <td>Interrupt controller</td>
+        <td>VIC</td>
+        <td>Platform-specific controller and Linux IRQ subsystem</td>
+    </tr>
+    <tr>
+        <td>Handler registration</td>
+        <td>Vector and interrupt configuration</td>
+        <td>Linux IRQ registration APIs</td>
+    </tr>
+    <tr>
+        <td>Handler declaration</td>
+        <td>Compiler- and architecture-specific ISR declaration</td>
+        <td><code>irqreturn_t</code> handler function</td>
+    </tr>
+    <tr>
+        <td>Interrupt number</td>
+        <td>VIC interrupt source number</td>
+        <td>Linux IRQ number, mapped from hardware as needed</td>
+    </tr>
+    <tr>
+        <td>Deferred processing</td>
+        <td>Application-designed approach</td>
+        <td>Softirqs, workqueues, threaded IRQs and other kernel mechanisms</td>
+    </tr>
+</table>
+
+<p>The underlying interrupt concepts are related, but Linux drivers should use the kernel's interrupt APIs rather than directly programming the LPC2129 VIC registers.</p>
+</section>
+
+<section>
+<h2>18. Lesson Summary</h2>
+
+<ul>
+    <li>An ISR is a function executed to service an interrupt.</li>
+    <li>Linux device drivers register interrupt handlers with the kernel.</li>
+    <li>The conventional hard IRQ handler uses the <code>irqreturn_t</code> return type.</li>
+    <li>The handler receives an IRQ number and a device-specific pointer.</li>
+    <li><code>IRQ_HANDLED</code> indicates that the handler recognized the interrupt.</li>
+    <li><code>IRQ_NONE</code> indicates that the interrupt was not handled by that device.</li>
+    <li><code>IRQ_WAKE_THREAD</code> requests execution of a registered threaded handler.</li>
+    <li>Hard IRQ handlers must not sleep.</li>
+    <li>Mutexes and blocking operations must not be used in hard IRQ context.</li>
+    <li>Device-specific interrupt conditions must be serviced correctly.</li>
+    <li>Longer processing should be deferred when appropriate.</li>
+    <li>Threaded IRQs provide a kernel-thread execution path for suitable interrupt work.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Short Answer Questions</h2>
+<ol>
+    <li>What is an Interrupt Service Routine?</li>
+    <li>Why is an ISR required in a Linux device driver?</li>
+    <li>Which header file provides the Linux interrupt-handler definitions?</li>
+    <li>What is the return type of a conventional Linux hard IRQ handler?</li>
+    <li>What is the purpose of the IRQ parameter?</li>
+    <li>What is the purpose of the dev_id parameter?</li>
+    <li>What is the meaning of IRQ_HANDLED?</li>
+    <li>When should an ISR return IRQ_NONE?</li>
+    <li>What is hard IRQ context?</li>
+    <li>Why must an ISR not sleep?</li>
+    <li>Why should interrupt handlers be short?</li>
+    <li>What is deferred interrupt processing?</li>
+    <li>What is a threaded interrupt handler?</li>
+    <li>What is the purpose of IRQ_WAKE_THREAD?</li>
+    <li>What is the purpose of IRQF_ONESHOT?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Long Answer Questions</h2>
+<ol>
+    <li>Explain the complete execution flow of an ISR in Linux.</li>
+    <li>Explain the Linux interrupt-handler function signature and its parameters.</li>
+    <li>Discuss the different return values of a Linux interrupt handler.</li>
+    <li>Explain how an ISR identifies the interrupt source.</li>
+    <li>Discuss hardware-register access from an interrupt handler.</li>
+    <li>Explain the restrictions associated with hard IRQ context.</li>
+    <li>Differentiate hard IRQ context and process context.</li>
+    <li>Explain why deferred interrupt processing is required.</li>
+    <li>Compare a primary interrupt handler and a threaded handler.</li>
+    <li>Compare interrupt handling in LPC2129 and Linux.</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Practical Exercises</h2>
+<ol>
+    <li>Study the declaration of <code>irqreturn_t</code> in Linux kernel headers.</li>
+    <li>Identify the parameters of a Linux interrupt handler.</li>
+    <li>Write conceptual pseudocode for a UART receive ISR.</li>
+    <li>Write conceptual pseudocode that checks a device status register.</li>
+    <li>Explain when an ISR should return IRQ_NONE.</li>
+    <li>Identify five operations that must not be performed in hard IRQ context.</li>
+    <li>Draw a diagram showing the primary handler and deferred processing.</li>
+    <li>Inspect <code>/proc/interrupts</code> in Ubuntu.</li>
+    <li>Compare the Linux ISR architecture with LPC2129 VIC-based interrupt handling.</li>
+</ol>
+
+<h3>Expected Practical Outcome</h3>
+<p>You should be able to explain the structure and responsibilities of a Linux interrupt handler and identify which operations must remain outside hard IRQ context.</p>
+</section>
+
+<section>
+<h2>22. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should understand how Linux invokes device-driver interrupt handlers, how handlers identify and service hardware events, and why hard interrupt processing must remain short and non-blocking.</p>
+
+<p>You are now ready to study the Linux <code>request_irq()</code> function and its practical use in device-driver development.</p>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L02_Interrupt_Handling_Architecture.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L04_request_irq_Function.html">Next: request_irq() →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 14 – Interrupt Handling in Linux Device Drivers</p>
+</footer>
+
+</body>
+</html>
