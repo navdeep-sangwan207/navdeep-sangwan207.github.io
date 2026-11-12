@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 4: I2C Bus Architecture | Linux Device Drivers</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            line-height: 1.7;
+            background: #f4f7fb;
+            color: #263238;
+        }
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 35px 20px;
+        }
+        header h1 { font-size: 30px; margin-bottom: 8px; }
+        nav {
+            background: #092b61;
+            text-align: center;
+            padding: 12px;
+        }
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 13px;
+            font-weight: bold;
+        }
+        nav a:hover { color: #b9dcff; text-decoration: underline; }
+        .container {
+            max-width: 1100px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+        .lesson-info {
+            background: #e4f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 18px 22px;
+            margin-bottom: 25px;
+            border-radius: 6px;
+        }
+        .lesson-info p { margin: 5px 0; }
+        section {
+            background: white;
+            padding: 25px;
+            margin-bottom: 22px;
+            border-radius: 8px;
+            box-shadow: 0 2px 9px rgba(0,0,0,0.06);
+        }
+        h2 {
+            color: #174ea6;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #e3ecf8;
+            padding-bottom: 8px;
+        }
+        h3 { color: #174ea6; margin: 18px 0 9px; }
+        p { margin-bottom: 12px; }
+        ul, ol { margin: 10px 0 15px 25px; }
+        li { margin-bottom: 7px; }
+        code {
+            background: #edf2f8;
+            color: #b42318;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-family: Consolas, monospace;
+        }
+        pre {
+            background: #172438;
+            color: #e7f0ff;
+            padding: 17px;
+            border-radius: 7px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-family: Consolas, monospace;
+            line-height: 1.5;
+        }
+        pre code { background: transparent; color: inherit; padding: 0; }
+        .diagram {
+            background: #f1f7ff;
+            border: 1px solid #b8d4f5;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 18px 0;
+            text-align: center;
+        }
+        .diagram-box {
+            display: block;
+            max-width: 760px;
+            margin: 9px auto;
+            padding: 12px;
+            border: 2px solid #2878d7;
+            border-radius: 6px;
+            background: white;
+            font-weight: bold;
+            color: #174ea6;
+        }
+        .diagram-arrow {
+            color: #174ea6;
+            font-size: 22px;
+            font-weight: bold;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d4deea;
+            padding: 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th { background: #174ea6; color: white; }
+        tr:nth-child(even) { background: #f4f8fd; }
+        .note {
+            background: #fff8e6;
+            border-left: 4px solid #e0a000;
+            padding: 13px 16px;
+            margin: 15px 0;
+        }
+        .important {
+            background: #eaf7ef;
+            border-left: 4px solid #239653;
+            padding: 13px 16px;
+            margin: 15px 0;
+        }
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+        .navigation-buttons a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 19px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .navigation-buttons a:hover { background: #2878d7; }
+        footer {
+            background: #092b61;
+            color: white;
+            text-align: center;
+            padding: 20px;
+            margin-top: 30px;
+        }
+        @media (max-width: 650px) {
+            header h1 { font-size: 23px; }
+            nav a { display: inline-block; margin: 5px 8px; }
+            section { padding: 17px; }
+            table { display: block; overflow-x: auto; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 17 – I2C, SPI and GPIO Device Drivers</p>
+    <p>Lesson 4: I2C Bus Architecture</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter Index</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <p><strong>Chapter:</strong> 17 – I2C, SPI and GPIO Device Drivers</p>
+        <p><strong>Lesson:</strong> 4 – I2C Bus Architecture</p>
+        <p><strong>Level:</strong> Intermediate</p>
+        <p><strong>Prerequisites:</strong> GPIO, Linux device model, kernel modules and Device Tree fundamentals.</p>
+        <p><strong>Estimated Study Time:</strong> 90–120 minutes</p>
+    </div>
+
+    <section>
+        <h2>1. Learning Objectives</h2>
+        <p>After completing this lesson, you will be able to:</p>
+        <ul>
+            <li>Understand the purpose of the I2C communication protocol.</li>
+            <li>Identify the main components of an I2C bus.</li>
+            <li>Explain the functions of SDA and SCL signals.</li>
+            <li>Understand I2C addressing and data transfer.</li>
+            <li>Explain START, STOP, ACK and NACK conditions.</li>
+            <li>Understand master-controller and target-device roles.</li>
+            <li>Describe I2C read and write transactions.</li>
+            <li>Understand the Linux I2C subsystem architecture.</li>
+            <li>Identify adapters, clients and drivers.</li>
+            <li>Inspect I2C buses and devices in Linux.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>2. Introduction to I2C</h2>
+        <p>I2C stands for <strong>Inter-Integrated Circuit</strong>. It is a synchronous serial communication protocol used to connect integrated circuits and peripheral devices.</p>
+
+        <p>I2C is commonly used to connect:</p>
+        <ul>
+            <li>Temperature sensors.</li>
+            <li>EEPROM memory devices.</li>
+            <li>Real-time clocks (RTC).</li>
+            <li>Display controllers.</li>
+            <li>GPIO expanders.</li>
+            <li>Battery monitoring devices.</li>
+            <li>Power management ICs.</li>
+        </ul>
+
+        <p>I2C allows multiple devices to share the same two communication wires.</p>
+
+        <div class="diagram">
+            <div class="diagram-box">I2C Controller</div>
+            <div class="diagram-arrow">↕ SDA and SCL</div>
+            <div class="diagram-box">Temperature Sensor</div>
+            <div class="diagram-box">EEPROM</div>
+            <div class="diagram-box">RTC Device</div>
+            <div class="diagram-box">GPIO Expander</div>
+            <p>Multiple I2C devices share one bus.</p>
+        </div>
+    </section>
+
+    <section>
+        <h2>3. Main Characteristics of I2C</h2>
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td>Communication</td>
+                <td>Synchronous serial communication.</td>
+            </tr>
+            <tr>
+                <td>Signal Lines</td>
+                <td>Two: SDA and SCL.</td>
+            </tr>
+            <tr>
+                <td>Addressing</td>
+                <td>Typically 7-bit or 10-bit device addressing.</td>
+            </tr>
+            <tr>
+                <td>Duplex Mode</td>
+                <td>Half-duplex communication.</td>
+            </tr>
+            <tr>
+                <td>Clock</td>
+                <td>Clock signal is generated by the controller during transfers.</td>
+            </tr>
+            <tr>
+                <td>Bus Sharing</td>
+                <td>Multiple target devices can share the same bus.</td>
+            </tr>
+            <tr>
+                <td>Electrical Interface</td>
+                <td>Open-drain or open-collector signaling with pull-up resistors.</td>
+            </tr>
+            <tr>
+                <td>Acknowledgment</td>
+                <td>ACK and NACK bits are used during transfers.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section>
+        <h2>4. I2C Bus Signals</h2>
+        <p>I2C uses two main signal lines.</p>
+
+        <h3>4.1 SDA – Serial Data Line</h3>
+        <p>SDA carries address and data bits between the controller and target devices.</p>
+
+        <h3>4.2 SCL – Serial Clock Line</h3>
+        <p>SCL carries the clock signal used to synchronize communication.</p>
+
+        <table>
+            <tr>
+                <th>Signal</th>
+                <th>Full Form</th>
+                <th>Function</th>
+            </tr>
+            <tr>
+                <td>SDA</td>
+                <td>Serial Data</td>
+                <td>Transfers address and data bits.</td>
+            </tr>
+            <tr>
+                <td>SCL</td>
+                <td>Serial Clock</td>
+                <td>Synchronizes data transfer.</td>
+            </tr>
+        </table>
+
+        <div class="important">
+            Both SDA and SCL are normally open-drain or open-collector signals. Pull-up resistors are required to establish the HIGH state.
+        </div>
+    </section>
+
+    <section>
+        <h2>5. I2C Electrical Architecture</h2>
+        <p>I2C devices generally use open-drain outputs. A device actively pulls a line LOW or releases it. The pull-up resistor brings the released line HIGH.</p>
+
+        <div class="diagram">
+            <div class="diagram-box">VCC</div>
+            <div class="diagram-arrow">↓ Pull-up resistors</div>
+            <div class="diagram-box">SDA ───────── Shared Data Line</div>
+            <div class="diagram-box">SCL ───────── Shared Clock Line</div>
+            <div class="diagram-box">Controller and Target Devices</div>
+        </div>
+
+        <h3>Why Pull-up Resistors Are Needed</h3>
+        <ul>
+            <li>Open-drain outputs cannot actively drive the bus HIGH.</li>
+            <li>Pull-up resistors establish the idle HIGH state.</li>
+            <li>Multiple devices can safely pull a shared line LOW.</li>
+            <li>The arrangement supports wired-AND bus behavior.</li>
+        </ul>
+
+        <h3>Important Electrical Considerations</h3>
+        <ul>
+            <li>Pull-up resistance must suit bus capacitance and speed.</li>
+            <li>All devices must use compatible logic voltage levels.</li>
+            <li>Excessively strong pull-ups increase sink current.</li>
+            <li>Weak pull-ups can cause slow rising edges.</li>
+            <li>Bus wiring and capacitance affect reliable communication.</li>
+        </ul>
+
+        <div class="note">
+            Never assume that a 5 V I2C bus can be connected directly to a 3.3 V controller. Check device electrical specifications and use level shifting when required.
+        </div>
+    </section>
+
+    <section>
+        <h2>6. I2C Controller and Target Devices</h2>
+        <p>I2C communication uses controller and target roles. Older documentation often uses the terms master and slave.</p>
+
+        <h3>I2C Controller</h3>
+        <ul>
+            <li>Initiates communication.</li>
+            <li>Generates the clock during a transfer.</li>
+            <li>Sends the target address.</li>
+            <li>Controls read and write transactions.</li>
+            <li>Generates START and STOP conditions.</li>
+        </ul>
+
+        <h3>I2C Target Device</h3>
+        <ul>
+            <li>Responds to its address.</li>
+            <li>Receives data during write transactions.</li>
+            <li>Transmits data during read transactions.</li>
+            <li>Provides ACK or NACK responses.</li>
+        </ul>
+
+        <div class="diagram">
+            <div class="diagram-box">I2C Controller</div>
+            <div class="diagram-arrow">START + Address + Data</div>
+            <div class="diagram-box">I2C Target Device</div>
+            <div class="diagram-arrow">ACK / Data Response</div>
+            <div class="diagram-box">Controller Completes Transaction with STOP</div>
+        </div>
+
+        <p>A bus may support multiple controllers. Arbitration and clock synchronization are used when multiple controllers attempt to control the bus.</p>
+    </section>
+
+    <section>
+        <h2>7. I2C Device Addressing</h2>
+        <p>Each target device has an address used by the controller to select it.</p>
+
+        <h3>7-Bit Addressing</h3>
+        <p>Most common I2C devices use 7-bit addresses.</p>
+
+        <p>A 7-bit address can represent 128 possible address values, although some address ranges are reserved by the I2C specification.</p>
+
+        <h3>10-Bit Addressing</h3>
+        <p>I2C also supports 10-bit addressing for a larger address space.</p>
+
+        <table>
+            <tr>
+                <th>Address Type</th>
+                <th>Address Width</th>
+                <th>Number of Encoded Values</th>
+            </tr>
+            <tr>
+                <td>7-bit</td>
+                <td>7 bits</td>
+                <td>128</td>
+            </tr>
+            <tr>
+                <td>10-bit</td>
+                <td>10 bits</td>
+                <td>1024</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            A device's 7-bit address is not the same as the complete address byte transmitted on the bus. The address byte also includes the read/write bit.
+        </div>
+    </section>
+
+    <section>
+        <h2>8. I2C START and STOP Conditions</h2>
+
+        <h3>START Condition</h3>
+        <p>A START condition occurs when SDA transitions from HIGH to LOW while SCL is HIGH.</p>
+
+        <h3>STOP Condition</h3>
+        <p>A STOP condition occurs when SDA transitions from LOW to HIGH while SCL is HIGH.</p>
+
+        <div class="diagram">
+            <div class="diagram-box">START: SDA HIGH → LOW while SCL HIGH</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">Address and Data Transfer</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">STOP: SDA LOW → HIGH while SCL HIGH</div>
+        </div>
+
+        <p>A repeated START condition allows a controller to begin another transaction without first releasing the bus with a STOP condition.</p>
+    </section>
+
+    <section>
+        <h2>9. ACK and NACK Conditions</h2>
+        <p>After each transferred byte, an acknowledgment bit is used.</p>
+
+        <h3>ACK – Acknowledge</h3>
+        <p>The receiver pulls SDA LOW during the acknowledgment clock pulse to indicate that it accepted the byte.</p>
+
+        <h3>NACK – Not Acknowledge</h3>
+        <p>The receiver leaves SDA HIGH during the acknowledgment clock pulse.</p>
+
+        <table>
+            <tr>
+                <th>Signal</th>
+                <th>SDA During ACK Clock</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>ACK</td>
+                <td>LOW</td>
+                <td>Byte acknowledged.</td>
+            </tr>
+            <tr>
+                <td>NACK</td>
+                <td>HIGH</td>
+                <td>Byte not acknowledged.</td>
+            </tr>
+        </table>
+
+        <p>During a read transaction, the controller commonly sends ACK after receiving bytes it wants to continue reading. It sends NACK for the final byte before ending the transfer.</p>
+    </section>
+
+    <section>
+        <h2>10. I2C Write Transaction</h2>
+        <p>In a write transaction, the controller sends data to a target device.</p>
+
+        <div class="diagram">
+            <div class="diagram-box">START</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">7-bit Target Address + Write Bit (0)</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">Target ACK</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">Register Address or Command</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">Target ACK</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">Data Byte(s) + ACK</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">STOP</div>
+        </div>
+
+        <p>Example: writing a configuration value to a sensor register.</p>
+    </section>
+
+    <section>
+        <h2>11. I2C Read Transaction</h2>
+        <p>In a read transaction, the controller receives data from a target device.</p>
+
+        <p>Many devices require the controller to first select an internal register using a write phase, followed by a repeated START and a read phase.</p>
+
+        <div class="diagram">
+            <div class="diagram-box">START</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">Target Address + Write Bit</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">ACK</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">Register Address</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">Repeated START</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">Target Address + Read Bit</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">Target Sends Data</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">Controller ACK / Final NACK</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">STOP</div>
+        </div>
+
+        <div class="important">
+            The exact transaction sequence depends on the peripheral's datasheet. Not every I2C device uses internal register addressing.
+        </div>
+    </section>
+
+    <section>
+        <h2>12. I2C Clock Speeds</h2>
+        <p>I2C supports several standardized speed modes.</p>
+
+        <table>
+            <tr>
+                <th>Mode</th>
+                <th>Typical Maximum Clock Frequency</th>
+            </tr>
+            <tr>
+                <td>Standard Mode</td>
+                <td>100 kHz</td>
+            </tr>
+            <tr>
+                <td>Fast Mode</td>
+                <td>400 kHz</td>
+            </tr>
+            <tr>
+                <td>Fast Mode Plus</td>
+                <td>1 MHz</td>
+            </tr>
+            <tr>
+                <td>High-Speed Mode</td>
+                <td>3.4 MHz</td>
+            </tr>
+            <tr>
+                <td>Ultra Fast-mode</td>
+                <td>5 MHz (unidirectional)</td>
+            </tr>
+        </table>
+
+        <p>The controller, target devices, bus wiring and electrical characteristics must support the selected speed.</p>
+    </section>
+
+    <section>
+        <h2>13. I2C Bus Arbitration and Clock Stretching</h2>
+
+        <h3>Bus Arbitration</h3>
+        <p>When multiple controllers attempt to transmit simultaneously, arbitration determines which controller retains control of the bus.</p>
+
+        <p>Because the bus is wired-AND, a controller that releases SDA but observes LOW can detect that another controller is asserting LOW. It then loses arbitration and stops transmitting.</p>
+
+        <h3>Clock Stretching</h3>
+        <p>A target device may hold SCL LOW to delay the controller when it needs more time to process data.</p>
+
+        <p>The controller must support clock stretching if it communicates with devices that use this feature.</p>
+    </section>
+
+    <section>
+        <h2>14. Linux I2C Subsystem Architecture</h2>
+        <p>Linux provides an I2C subsystem that separates controller hardware from peripheral device drivers.</p>
+
+        <div class="diagram">
+            <div class="diagram-box">I2C Peripheral Driver</div>
+            <div class="diagram-arrow">↕ I2C Core APIs</div>
+            <div class="diagram-box">I2C Core</div>
+            <div class="diagram-arrow">↕ Adapter Interface</div>
+            <div class="diagram-box">I2C Adapter / Controller Driver</div>
+            <div class="diagram-arrow">↕ Hardware Bus</div>
+            <div class="diagram-box">I2C Sensor / EEPROM / RTC</div>
+        </div>
+
+        <h3>Main Components</h3>
+        <ul>
+            <li><strong>I2C Core:</strong> Provides common infrastructure and APIs.</li>
+            <li><strong>I2C Adapter:</strong> Represents an I2C controller and its bus interface.</li>
+            <li><strong>I2C Client:</strong> Represents a peripheral device connected to an adapter.</li>
+            <li><strong>I2C Driver:</strong> Implements device-specific behavior.</li>
+            <li><strong>Adapter Driver:</strong> Controls the physical I2C controller hardware.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>15. I2C Adapter and I2C Client</h2>
+
+        <h3>I2C Adapter</h3>
+        <p>An adapter represents an I2C bus controller in the Linux device model.</p>
+        <p>Examples include an SoC's built-in I2C controller or an external USB-to-I2C adapter.</p>
+
+        <h3>I2C Client</h3>
+        <p>An I2C client represents a peripheral device connected to an I2C adapter at a particular bus address.</p>
+
+        <p>For example, an RTC connected at address <code>0x68</code> on adapter 1 may be represented as an I2C client.</p>
+
+        <div class="note">
+            The I2C adapter is not the peripheral device. The adapter provides the bus controller; the client represents a device attached to that bus.
+        </div>
+    </section>
+
+    <section>
+        <h2>16. Linux I2C Device Naming</h2>
+        <p>Linux commonly exposes I2C adapters through device nodes such as:</p>
+
+        <pre><code>/dev/i2c-0
+/dev/i2c-1
+/dev/i2c-2</code></pre>
+
+        <p>The number identifies an I2C adapter instance. It is not the target device address.</p>
+
+        <p>For example:</p>
+        <pre><code>/dev/i2c-1</code></pre>
+
+        <p>represents adapter 1. A target device connected to that adapter may have address <code>0x48</code>.</p>
+
+        <p>When the relevant kernel support is enabled, registered I2C devices can also appear in sysfs under:</p>
+
+        <pre><code>/sys/bus/i2c/devices/</code></pre>
+    </section>
+
+    <section>
+        <h2>17. Inspecting I2C Devices in Ubuntu</h2>
+
+        <h3>List I2C Device Nodes</h3>
+        <pre><code>ls -l /dev/i2c-*</code></pre>
+
+        <h3>List I2C Sysfs Devices</h3>
+        <pre><code>ls /sys/bus/i2c/devices/</code></pre>
+
+        <h3>Inspect I2C-Related Kernel Modules</h3>
+        <pre><code>lsmod | grep i2c</code></pre>
+
+        <h3>Inspect Kernel Messages</h3>
+        <pre><code>dmesg | grep -i i2c</code></pre>
+
+        <h3>Install I2C Tools</h3>
+        <pre><code>sudo apt update
+sudo apt install i2c-tools</code></pre>
+
+        <h3>List Available Adapters</h3>
+        <pre><code>i2cdetect -l</code></pre>
+
+        <h3>Scan an Adapter</h3>
+        <pre><code>sudo i2cdetect -y 1</code></pre>
+
+        <div class="note">
+            Only scan a bus when you understand the connected hardware and its behavior. Some devices may react unexpectedly to probing. A virtual machine may not expose a usable I2C adapter.
+        </div>
+    </section>
+
+    <section>
+        <h2>18. I2C Device Tree Example</h2>
+        <p>Embedded Linux systems commonly describe I2C controllers and their connected peripheral devices through Device Tree.</p>
+
+        <pre><code>&amp;i2c1 {
+    status = "okay";
+
+    temperature_sensor@48 {
+        compatible = "demo,temp-sensor";
+        reg = &lt;0x48&gt;;
+    };
+
+    rtc@68 {
+        compatible = "demo,rtc";
+        reg = &lt;0x68&gt;;
+    };
+};</code></pre>
+
+        <p>Explanation:</p>
+        <ul>
+            <li><code>&amp;i2c1</code> refers to an I2C controller node.</li>
+            <li><code>status = "okay"</code> enables the controller node.</li>
+            <li><code>temperature_sensor@48</code> describes a peripheral at address 0x48.</li>
+            <li><code>rtc@68</code> describes a peripheral at address 0x68.</li>
+            <li><code>compatible</code> identifies the device type for driver matching.</li>
+            <li><code>reg</code> contains the I2C target address.</li>
+        </ul>
+
+        <div class="important">
+            These compatible strings are illustrative. A real Device Tree must use the compatible string and binding documented for the actual peripheral and controller.
+        </div>
+    </section>
+
+    <section>
+        <h2>19. I2C vs SPI vs UART</h2>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>I2C</th>
+                <th>SPI</th>
+                <th>UART</th>
+            </tr>
+            <tr>
+                <td>Clock</td>
+                <td>Shared clock line</td>
+                <td>Shared clock line</td>
+                <td>No separate clock line</td>
+            </tr>
+            <tr>
+                <td>Main Signals</td>
+                <td>SDA, SCL</td>
+                <td>MOSI, MISO, SCLK, CS</td>
+                <td>TX, RX</td>
+            </tr>
+            <tr>
+                <td>Addressing</td>
+                <td>Device addresses</td>
+                <td>Usually chip-select lines</td>
+                <td>Usually point-to-point</td>
+            </tr>
+            <tr>
+                <td>Duplex</td>
+                <td>Half-duplex</td>
+                <td>Full-duplex capable</td>
+                <td>Full-duplex capable</td>
+            </tr>
+            <tr>
+                <td>Typical Use</td>
+                <td>Sensors, RTC, EEPROM</td>
+                <td>Displays, flash, fast peripherals</td>
+                <td>Serial consoles, modules</td>
+            </tr>
+        </table>
+    </section>
+
+    <section>
+        <h2>20. Common I2C Problems</h2>
+        <table>
+            <tr>
+                <th>Problem</th>
+                <th>Possible Cause</th>
+                <th>Debugging Approach</th>
+            </tr>
+            <tr>
+                <td>No device acknowledgment</td>
+                <td>Incorrect address or disconnected device</td>
+                <td>Check address, power and wiring.</td>
+            </tr>
+            <tr>
+                <td>Bus stuck LOW</td>
+                <td>Device holding SDA or SCL LOW</td>
+                <td>Inspect the bus and reset affected hardware.</td>
+            </tr>
+            <tr>
+                <td>Unreliable communication</td>
+                <td>Incorrect pull-ups or excessive capacitance</td>
+                <td>Check electrical design and signal rise times.</td>
+            </tr>
+            <tr>
+                <td>Wrong register data</td>
+                <td>Incorrect transaction sequence</td>
+                <td>Read the peripheral datasheet.</td>
+            </tr>
+            <tr>
+                <td>Device not detected</td>
+                <td>Controller disabled or missing driver</td>
+                <td>Inspect Device Tree and kernel logs.</td>
+            </tr>
+            <tr>
+                <td>Transfer timeout</td>
+                <td>Bus fault or unsupported timing</td>
+                <td>Check controller configuration and hardware.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section>
+        <h2>21. Practical Exercise: Understanding an I2C Bus</h2>
+
+        <p><strong>Objective:</strong> Inspect the I2C subsystem and understand how Linux represents I2C controllers and peripheral devices.</p>
+
+        <h3>Exercise 1: Inspect Available I2C Adapters</h3>
+        <pre><code>i2cdetect -l</code></pre>
+
+        <h3>Exercise 2: Inspect I2C Sysfs Entries</h3>
+        <pre><code>ls -l /sys/bus/i2c/devices/</code></pre>
+
+        <h3>Exercise 3: Inspect Kernel Messages</h3>
+        <pre><code>dmesg | grep -i i2c</code></pre>
+
+        <h3>Exercise 4: Identify Device Addressing</h3>
+        <p>Study a peripheral datasheet and identify its 7-bit I2C address, register map and supported bus speed.</p>
+
+        <h3>Exercise 5: Draw an I2C Transaction</h3>
+        <p>Draw a write transaction and a register-read transaction, showing START, address, R/W bit, ACK, data, repeated START and STOP.</p>
+
+        <h3>Expected Outcome</h3>
+        <p>You should be able to identify the I2C bus signals, understand basic bus transactions and explain how Linux represents an I2C adapter and its clients.</p>
+    </section>
+
+    <section>
+        <h2>22. Important Points to Remember</h2>
+        <ul>
+            <li>I2C is a synchronous serial communication protocol.</li>
+            <li>SDA carries data and SCL carries the clock.</li>
+            <li>Both lines normally use pull-up resistors.</li>
+            <li>Multiple target devices can share one I2C bus.</li>
+            <li>7-bit addressing is commonly used.</li>
+            <li>START and STOP conditions define transaction boundaries.</li>
+            <li>ACK and NACK indicate acknowledgment status.</li>
+            <li>Linux I2C Core provides common subsystem functionality.</li>
+            <li>An adapter represents the bus controller.</li>
+            <li>A client represents a peripheral attached to an adapter.</li>
+            <li>Device Tree can describe I2C peripheral devices.</li>
+            <li>Electrical compatibility and pull-up selection are essential.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>23. Review Questions</h2>
+
+        <h3>A. Short Answer Questions</h3>
+        <ol>
+            <li>What is I2C?</li>
+            <li>What are SDA and SCL?</li>
+            <li>Why are pull-up resistors required?</li>
+            <li>What is a 7-bit I2C address?</li>
+            <li>What is an I2C START condition?</li>
+            <li>What is an I2C STOP condition?</li>
+            <li>What are ACK and NACK?</li>
+            <li>What is clock stretching?</li>
+            <li>What is bus arbitration?</li>
+            <li>What is an I2C adapter in Linux?</li>
+            <li>What is an I2C client?</li>
+            <li>What is the purpose of the Linux I2C Core?</li>
+        </ol>
+
+        <h3>B. Long Answer Questions</h3>
+        <ol>
+            <li>Explain I2C bus architecture with a diagram.</li>
+            <li>Describe I2C electrical signaling and pull-up resistors.</li>
+            <li>Explain I2C addressing and transaction formats.</li>
+            <li>Describe I2C read and write operations.</li>
+            <li>Explain the Linux I2C subsystem architecture.</li>
+            <li>Differentiate between I2C adapter, client and driver.</li>
+            <li>Explain I2C clock speeds, arbitration and clock stretching.</li>
+        </ol>
+
+        <h3>C. Practical Questions</h3>
+        <ol>
+            <li>How do you list I2C adapters in Linux?</li>
+            <li>How do you inspect I2C devices through sysfs?</li>
+            <li>How do you identify an I2C peripheral address from its datasheet?</li>
+            <li>Draw a register-read transaction using repeated START.</li>
+            <li>Write a Device Tree node for an I2C peripheral.</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>24. Expected Learning Outcome</h2>
+        <p>After completing this lesson, you should understand the electrical and protocol-level architecture of I2C and the basic organization of the Linux I2C subsystem.</p>
+
+        <p>You should be able to distinguish an I2C controller from a peripheral device, explain how transactions work and inspect I2C devices in Linux.</p>
+
+        <p><strong>Next Lesson:</strong> Lesson 5 – I2C Client and Adapter.</p>
+    </section>
+
+    <div class="navigation-buttons">
+        <a href="L03_GPIO_Descriptor_API.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L05_I2C_Client_and_Adapter.html">Next Lesson →</a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 17 – I2C, SPI and GPIO Device Drivers</p>
+</footer>
+
+</body>
+</html>
