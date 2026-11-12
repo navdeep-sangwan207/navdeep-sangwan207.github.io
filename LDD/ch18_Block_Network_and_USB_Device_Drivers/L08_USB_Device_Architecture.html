@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 8 - USB Device Architecture</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 28px;
+}
+
+header p {
+    margin: 8px 0 0;
+}
+
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    border-bottom: 1px solid #dce3ed;
+}
+
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+
+nav a:hover {
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 16px;
+}
+
+.lesson-info {
+    background: #e6f1ff;
+    border-left: 5px solid #2878d7;
+    padding: 15px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9e;
+}
+
+pre {
+    background: #172334;
+    color: #e8f0fa;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+.note {
+    background: #fff7df;
+    border-left: 5px solid #e5a000;
+    padding: 13px 16px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.example {
+    background: #eaf7ee;
+    border-left: 5px solid #269653;
+    padding: 13px 16px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5deea;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f0f5fc;
+    padding: 17px;
+    border-radius: 7px;
+    text-align: center;
+    font-family: Consolas, monospace;
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.8;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 600px) {
+    header h1 {
+        font-size: 22px;
+    }
+
+    nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+
+    section {
+        padding: 16px;
+    }
+
+    table {
+        font-size: 13px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Chapter 18: Block, Network and USB Device Drivers</h1>
+    <p>Lesson 8: USB Device Architecture</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter Index</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson:</strong> 08<br>
+    <strong>Topic:</strong> USB Device Architecture<br>
+    <strong>Chapter:</strong> Block, Network and USB Device Drivers<br>
+    <strong>Level:</strong> Intermediate to Advanced
+</div>
+
+<section>
+<h2>1. Introduction</h2>
+
+<p>
+USB device architecture defines how a USB device is organized
+and how communication takes place between the host and
+the peripheral.
+</p>
+
+<p>
+A USB device is not simply a single communication channel.
+It may contain multiple configurations, interfaces and
+endpoints.
+</p>
+
+<p>
+The Linux USB subsystem uses these architectural elements
+to identify devices, bind drivers and manage data transfers.
+</p>
+
+<p>Important USB architectural components include:</p>
+
+<ul>
+    <li>USB device.</li>
+    <li>USB configuration.</li>
+    <li>USB interface.</li>
+    <li>USB alternate setting.</li>
+    <li>USB endpoint.</li>
+    <li>USB descriptor.</li>
+    <li>USB pipe.</li>
+    <li>USB transfer.</li>
+    <li>USB Request Block (URB).</li>
+</ul>
+</section>
+
+<section>
+<h2>2. USB Device Hierarchy</h2>
+
+<p>
+A USB device follows a hierarchical structure.
+The device contains configurations, configurations
+contain interfaces, and interfaces contain endpoints.
+</p>
+
+<div class="diagram">
++--------------------------------------+
+|             USB Device               |
++--------------------------------------+
+                  |
+                  v
++--------------------------------------+
+|          Configuration               |
++--------------------------------------+
+                  |
+          +-------+-------+
+          |               |
+          v               v
++----------------+ +----------------+
+|  Interface 0   | |  Interface 1   |
++----------------+ +----------------+
+        |                  |
+        v                  v
++----------------+ +----------------+
+|   Endpoints    | |   Endpoints    |
++----------------+ +----------------+
+</div>
+
+<h3>Hierarchy Explanation</h3>
+
+<table>
+<tr>
+    <th>Component</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>Device</td>
+    <td>Represents the complete USB peripheral.</td>
+</tr>
+<tr>
+    <td>Configuration</td>
+    <td>Defines a selectable operating configuration.</td>
+</tr>
+<tr>
+    <td>Interface</td>
+    <td>Represents a functional part of the device.</td>
+</tr>
+<tr>
+    <td>Alternate Setting</td>
+    <td>Provides an alternative arrangement for an interface.</td>
+</tr>
+<tr>
+    <td>Endpoint</td>
+    <td>Provides a communication endpoint for data transfer.</td>
+</tr>
+</table>
+</section>
+
+<section>
+<h2>3. USB Device</h2>
+
+<p>
+A USB device is a peripheral connected to a USB host.
+It is identified through information contained in its
+device descriptor.
+</p>
+
+<p>Examples include:</p>
+
+<ul>
+    <li>USB flash drive.</li>
+    <li>USB keyboard.</li>
+    <li>USB mouse.</li>
+    <li>USB webcam.</li>
+    <li>USB serial converter.</li>
+    <li>USB audio device.</li>
+</ul>
+
+<p>
+A USB device has an address assigned by the host during
+enumeration.
+</p>
+
+<p>
+The device also exposes one or more configurations
+and associated interfaces.
+</p>
+</section>
+
+<section>
+<h2>4. USB Configuration</h2>
+
+<p>
+A configuration describes an operating arrangement
+of a USB device.
+</p>
+
+<p>
+A device may provide multiple configurations, although
+many commonly used USB devices expose only one.
+</p>
+
+<p>
+The host selects a configuration during enumeration.
+</p>
+
+<h3>Configuration Descriptor Information</h3>
+
+<ul>
+    <li>Configuration value.</li>
+    <li>Number of interfaces.</li>
+    <li>Configuration attributes.</li>
+    <li>Maximum power requirement information.</li>
+    <li>Total descriptor length.</li>
+</ul>
+
+<h3>Configuration Descriptor Structure</h3>
+
+<pre><code>struct usb_config_descriptor
+{
+    __u8 bLength;
+    __u8 bDescriptorType;
+    __le16 wTotalLength;
+    __u8 bNumInterfaces;
+    __u8 bConfigurationValue;
+    __u8 iConfiguration;
+    __u8 bmAttributes;
+    __u8 bMaxPower;
+};</code></pre>
+
+<p>
+This is a simplified view of the descriptor fields.
+The Linux kernel definition includes the complete
+structure and associated type information.
+</p>
+
+<div class="note">
+The bConfigurationValue field identifies the configuration
+value used when selecting a configuration. It is not
+necessarily the configuration's position in a list.
+</div>
+</section>
+
+<section>
+<h2>5. USB Interface</h2>
+
+<p>
+A USB interface represents one functional part of a
+USB device.
+</p>
+
+<p>
+A single USB device can contain multiple interfaces.
+Each interface may have its own driver.
+</p>
+
+<h3>Example: Composite USB Device</h3>
+
+<p>
+A composite USB device may provide multiple functions
+through separate interfaces.
+</p>
+
+<div class="diagram">
++--------------------------------------+
+|          Composite USB Device        |
++--------------------------------------+
+                  |
+       +----------+----------+
+       |          |          |
+       v          v          v
++------------+ +----------+ +----------+
+| Interface 0| |Interface 1| |Interface 2|
+|            | |          | |          |
+| Keyboard   | | Mouse    | | Audio    |
++------------+ +----------+ +----------+
+</div>
+
+<p>
+The Linux USB core can bind appropriate drivers to
+individual interfaces.
+</p>
+
+<h3>Interface Descriptor</h3>
+
+<pre><code>struct usb_interface_descriptor
+{
+    __u8 bLength;
+    __u8 bDescriptorType;
+    __u8 bInterfaceNumber;
+    __u8 bAlternateSetting;
+    __u8 bNumEndpoints;
+    __u8 bInterfaceClass;
+    __u8 bInterfaceSubClass;
+    __u8 bInterfaceProtocol;
+    __u8 iInterface;
+};</code></pre>
+</section>
+
+<section>
+<h2>6. USB Alternate Settings</h2>
+
+<p>
+An interface may provide multiple alternate settings.
+These allow the host to select different interface
+operating characteristics.
+</p>
+
+<p>
+Different alternate settings can provide different
+endpoint arrangements or transfer requirements.
+</p>
+
+<div class="example">
+<strong>Example:</strong> A USB audio interface may provide
+an alternate setting with no active streaming endpoints
+and another setting with endpoints configured for audio
+streaming.
+</div>
+
+<p>
+Linux provides an interface for selecting an alternate
+setting, including:
+</p>
+
+<pre><code>usb_set_interface()</code></pre>
+
+<p>
+The driver must select an alternate setting supported
+by the device.
+</p>
+</section>
+
+<section>
+<h2>7. USB Endpoints</h2>
+
+<p>
+An endpoint is a source or destination for communication
+between the USB host and device.
+</p>
+
+<p>
+Each endpoint is identified by an endpoint address.
+Endpoint zero is reserved for control communication
+and is present as the default control endpoint.
+</p>
+
+<h3>Endpoint Direction</h3>
+
+<table>
+<tr>
+    <th>Direction</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td>IN</td>
+    <td>Data travels from the USB device to the host.</td>
+</tr>
+<tr>
+    <td>OUT</td>
+    <td>Data travels from the USB host to the device.</td>
+</tr>
+</table>
+
+<h3>Endpoint Address</h3>
+
+<p>
+An endpoint address contains an endpoint number and
+a direction bit.
+</p>
+
+<p>Example:</p>
+
+<pre><code>0x81</code></pre>
+
+<p>
+This represents endpoint number 1 in the IN direction.
+</p>
+
+<pre><code>0x02</code></pre>
+
+<p>
+This represents endpoint number 2 in the OUT direction.
+</p>
+
+<div class="note">
+Endpoint zero is used for control transfers. Other
+endpoints are described by endpoint descriptors and
+belong to particular interfaces and alternate settings.
+</div>
+</section>
+
+<section>
+<h2>8. USB Endpoint Types</h2>
+
+<p>
+USB endpoints support different transfer types.
+The endpoint descriptor identifies the transfer type.
+</p>
+
+<table>
+<tr>
+    <th>Transfer Type</th>
+    <th>Characteristics</th>
+    <th>Typical Application</th>
+</tr>
+<tr>
+    <td>Control</td>
+    <td>Configuration and command communication.</td>
+    <td>Device setup.</td>
+</tr>
+<tr>
+    <td>Bulk</td>
+    <td>Reliable transfer without reserved latency.</td>
+    <td>Storage devices.</td>
+</tr>
+<tr>
+    <td>Interrupt</td>
+    <td>Periodic service with bounded latency.</td>
+    <td>Human interface devices.</td>
+</tr>
+<tr>
+    <td>Isochronous</td>
+    <td>Time-sensitive data with reserved bandwidth.</td>
+    <td>Audio streaming.</td>
+</tr>
+</table>
+
+<p>
+Control endpoints are bidirectional at the protocol
+level. Bulk, interrupt and isochronous endpoints have
+a defined direction.
+</p>
+</section>
+
+<section>
+<h2>9. USB Descriptors</h2>
+
+<p>
+Descriptors are data structures that describe USB
+device capabilities and organization.
+</p>
+
+<h3>Main Descriptor Types</h3>
+
+<table>
+<tr>
+    <th>Descriptor</th>
+    <th>Information</th>
+</tr>
+<tr>
+    <td>Device</td>
+    <td>VID, PID, USB version and device-level information.</td>
+</tr>
+<tr>
+    <td>Configuration</td>
+    <td>Configuration properties and interface count.</td>
+</tr>
+<tr>
+    <td>Interface</td>
+    <td>Interface number, class and endpoint count.</td>
+</tr>
+<tr>
+    <td>Endpoint</td>
+    <td>Endpoint address, transfer type and packet size.</td>
+</tr>
+<tr>
+    <td>String</td>
+    <td>Human-readable manufacturer, product and serial information.</td>
+</tr>
+<tr>
+    <td>Interface Association</td>
+    <td>Groups related interfaces for composite functions.</td>
+</tr>
+</table>
+
+<h3>Device Descriptor Structure</h3>
+
+<pre><code>struct usb_device_descriptor
+{
+    __u8 bLength;
+    __u8 bDescriptorType;
+    __le16 bcdUSB;
+    __u8 bDeviceClass;
+    __u8 bDeviceSubClass;
+    __u8 bDeviceProtocol;
+    __u8 bMaxPacketSize0;
+    __le16 idVendor;
+    __le16 idProduct;
+    __le16 bcdDevice;
+    __u8 iManufacturer;
+    __u8 iProduct;
+    __u8 iSerialNumber;
+    __u8 bNumConfigurations;
+};</code></pre>
+
+<p>
+The Linux USB core reads and interprets descriptors
+during device enumeration.
+</p>
+</section>
+
+<section>
+<h2>10. USB Pipe</h2>
+
+<p>
+A USB pipe is a logical communication channel between
+the USB host and a particular endpoint on a device.
+</p>
+
+<p>
+In Linux, pipe values are used by USB transfer APIs
+to identify the target device, endpoint and transfer type.
+</p>
+
+<p>Important pipe-related helper functions include:</p>
+
+<pre><code>usb_sndctrlpipe()
+usb_rcvctrlpipe()
+
+usb_sndbulkpipe()
+usb_rcvbulkpipe()
+
+usb_sndintpipe()
+usb_rcvintpipe()
+
+usb_sndisocpipe()
+usb_rcvisocpipe()</code></pre>
+
+<p>
+The helper used depends on the transfer type and
+communication direction.
+</p>
+
+<div class="note">
+A pipe is a software representation of a communication
+path. It is not a separate physical wire.
+</div>
+</section>
+
+<section>
+<h2>11. USB Transfer Architecture</h2>
+
+<p>
+USB communication involves the host submitting transfer
+requests and the USB subsystem arranging their execution.
+</p>
+
+<div class="diagram">
++--------------------------------------+
+|            USB Device Driver         |
++--------------------------------------+
+                  |
+                  v
++--------------------------------------+
+|        Transfer Request (URB)        |
++--------------------------------------+
+                  |
+                  v
++--------------------------------------+
+|               USB Core               |
++--------------------------------------+
+                  |
+                  v
++--------------------------------------+
+|        Host Controller Driver        |
++--------------------------------------+
+                  |
+                  v
++--------------------------------------+
+|          USB Host Controller         |
++--------------------------------------+
+                  |
+                  v
++--------------------------------------+
+|             USB Device               |
++--------------------------------------+
+</div>
+
+<p>
+After the transfer completes, the USB subsystem reports
+the result through the completion mechanism.
+</p>
+</section>
+
+<section>
+<h2>12. USB Request Block (URB)</h2>
+
+<p>
+A USB Request Block represents a USB transfer request
+in the Linux kernel.
+</p>
+
+<p>
+The USB driver allocates and initializes an URB, submits
+it and handles its completion.
+</p>
+
+<h3>Important URB Fields</h3>
+
+<ul>
+    <li>Target USB device.</li>
+    <li>Endpoint pipe.</li>
+    <li>Transfer buffer.</li>
+    <li>Transfer buffer length.</li>
+    <li>Transfer flags.</li>
+    <li>Completion callback.</li>
+    <li>Transfer status.</li>
+    <li>Actual transferred length.</li>
+</ul>
+
+<h3>URB Lifecycle</h3>
+
+<div class="diagram">
+Allocate URB
+     |
+     v
+Initialize URB
+     |
+     v
+Prepare Transfer Buffer
+     |
+     v
+Submit URB
+     |
+     v
+USB Core Processes Request
+     |
+     v
+Host Controller Performs Transfer
+     |
+     v
+Completion Callback
+     |
+     v
+Process Result
+     |
+     v
+Reuse or Free URB
+</div>
+</section>
+
+<section>
+<h2>13. USB Control Transfer Architecture</h2>
+
+<p>
+A control transfer is used for device configuration
+and control communication.
+</p>
+
+<p>
+It normally contains three stages:
+</p>
+
+<ol>
+    <li><strong>Setup stage:</strong> Sends the request information.</li>
+    <li><strong>Data stage:</strong> Transfers optional data.</li>
+    <li><strong>Status stage:</strong> Completes the control request.</li>
+</ol>
+
+<div class="diagram">
++----------------------------+
+|       Setup Stage          |
+| Request and Parameters     |
++----------------------------+
+              |
+              v
++----------------------------+
+|       Data Stage           |
+| Optional Data Transfer     |
++----------------------------+
+              |
+              v
++----------------------------+
+|       Status Stage         |
+| Transfer Completion        |
++----------------------------+
+</div>
+
+<p>
+A control transfer may have no data stage, depending
+on the request.
+</p>
+
+<p>
+Linux provides helper functions such as:
+</p>
+
+<pre><code>usb_control_msg()</code></pre>
+
+<p>
+This helper performs a synchronous control request.
+Its exact parameters and behavior should be checked
+against the target kernel headers.
+</p>
+</section>
+
+<section>
+<h2>14. Bulk Transfer Architecture</h2>
+
+<p>
+Bulk transfers are designed for reliable data transfer
+where a guaranteed delivery time is not required.
+</p>
+
+<p>
+They are commonly used for:
+</p>
+
+<ul>
+    <li>USB mass storage.</li>
+    <li>USB serial communication.</li>
+    <li>Large data transfers.</li>
+    <li>Device firmware communication.</li>
+</ul>
+
+<p>
+Bulk transfers use error detection and retry mechanisms
+provided by the USB protocol.
+</p>
+
+<h3>Linux Helper Functions</h3>
+
+<pre><code>usb_bulk_msg()
+
+usb_sndbulkpipe()
+usb_rcvbulkpipe()</code></pre>
+
+<p>
+The synchronous bulk helper can be convenient for simple
+operations. Asynchronous drivers commonly use URBs.
+</p>
+</section>
+
+<section>
+<h2>15. Interrupt Transfer Architecture</h2>
+
+<p>
+Interrupt transfers are suitable for devices that need
+periodic or bounded-latency communication.
+</p>
+
+<p>
+Examples include keyboards, mice and other input devices.
+</p>
+
+<p>
+The USB host schedules service according to the endpoint's
+polling interval and the bus scheduling rules.
+</p>
+
+<h3>Linux Helper Functions</h3>
+
+<pre><code>usb_fill_int_urb()
+
+usb_sndintpipe()
+usb_rcvintpipe()</code></pre>
+
+<p>
+A driver commonly submits an interrupt URB and processes
+incoming data in its completion callback.
+</p>
+</section>
+
+<section>
+<h2>16. Isochronous Transfer Architecture</h2>
+
+<p>
+Isochronous transfers support time-sensitive data streams
+where consistent timing is important.
+</p>
+
+<p>Typical applications include:</p>
+
+<ul>
+    <li>USB audio streaming.</li>
+    <li>Video streaming.</li>
+    <li>Real-time data acquisition.</li>
+</ul>
+
+<p>
+Isochronous transfers reserve bus bandwidth, but do not
+use the same retry mechanism as bulk transfers.
+</p>
+
+<p>
+An isochronous URB contains information about individual
+isochronous packets, including packet lengths and statuses.
+</p>
+
+<div class="note">
+A failed isochronous packet is generally not retransmitted
+through the normal USB bulk-style retry mechanism. The
+application or driver must handle missing or corrupted
+stream data appropriately.
+</div>
+</section>
+
+<section>
+<h2>17. Linux USB Kernel Data Structures</h2>
+
+<p>
+Linux provides several important structures to represent
+USB devices and their components.
+</p>
+
+<table>
+<tr>
+    <th>Structure</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>struct usb_device</td>
+    <td>Represents a USB device.</td>
+</tr>
+<tr>
+    <td>struct usb_interface</td>
+    <td>Represents a USB interface.</td>
+</tr>
+<tr>
+    <td>struct usb_driver</td>
+    <td>Represents a registered USB driver.</td>
+</tr>
+<tr>
+    <td>struct usb_device_id</td>
+    <td>Defines USB device matching information.</td>
+</tr>
+<tr>
+    <td>struct usb_host_interface</td>
+    <td>Represents an interface alternate setting.</td>
+</tr>
+<tr>
+    <td>struct usb_host_endpoint</td>
+    <td>Represents an endpoint in the host-side model.</td>
+</tr>
+<tr>
+    <td>struct urb</td>
+    <td>Represents a USB transfer request.</td>
+</tr>
+<tr>
+    <td>struct usb_device_descriptor</td>
+    <td>Represents device descriptor information.</td>
+</tr>
+<tr>
+    <td>struct usb_interface_descriptor</td>
+    <td>Represents interface descriptor information.</td>
+</tr>
+</table>
+
+<div class="note">
+The structures listed here are kernel implementation
+structures. Their exact fields and relationships should
+be studied using the headers for the kernel version
+being targeted.
+</div>
+</section>
+
+<section>
+<h2>18. USB Device Matching</h2>
+
+<p>
+The Linux USB core uses device identification information
+to determine whether a registered driver supports a
+particular USB interface.
+</p>
+
+<p>
+A driver can match using fields such as:
+</p>
+
+<ul>
+    <li>Vendor ID.</li>
+    <li>Product ID.</li>
+    <li>Device class.</li>
+    <li>Interface class.</li>
+    <li>Interface subclass.</li>
+    <li>Interface protocol.</li>
+</ul>
+
+<p>
+The matching information is commonly stored in a
+<code>struct usb_device_id</code> table.
+</p>
+
+<p>
+The USB core uses the driver's matching table during
+driver binding.
+</p>
+</section>
+
+<section>
+<h2>19. USB Device Removal</h2>
+
+<p>
+When a USB device is disconnected, the USB subsystem
+notifies its bound driver.
+</p>
+
+<p>The driver must:</p>
+
+<ul>
+    <li>Stop new operations.</li>
+    <li>Terminate or cancel outstanding URBs.</li>
+    <li>Prevent completion handlers from accessing released data.</li>
+    <li>Release transfer buffers.</li>
+    <li>Release device-specific resources.</li>
+    <li>Clear interface driver data.</li>
+</ul>
+
+<p>
+Functions such as <code>usb_kill_urb()</code> are used
+to stop an active URB synchronously.
+</p>
+
+<div class="note">
+Disconnect handling must be carefully synchronized.
+An asynchronous completion callback must never access
+memory after the driver has released it.
+</div>
+</section>
+
+<section>
+<h2>20. Practical USB Architecture Inspection</h2>
+
+<h3>Objective</h3>
+
+<p>
+Inspect the USB device hierarchy and identify descriptors,
+interfaces and endpoints in Ubuntu.
+</p>
+
+<h3>Commands</h3>
+
+<pre><code># List connected USB devices
+lsusb
+
+# Display detailed descriptors
+sudo lsusb -v
+
+# Display USB topology
+lsusb -t
+
+# Inspect USB device directory
+ls /sys/bus/usb/devices/
+
+# Display USB kernel messages
+dmesg | grep -i usb</code></pre>
+
+<h3>Procedure</h3>
+
+<ol>
+    <li>Connect a USB device to the computer.</li>
+    <li>Run <code>lsusb</code>.</li>
+    <li>Identify the device's VID and PID.</li>
+    <li>Run <code>lsusb -t</code>.</li>
+    <li>Inspect the detailed descriptors.</li>
+    <li>Identify its configurations and interfaces.</li>
+    <li>Find endpoint addresses and transfer types.</li>
+    <li>Observe kernel messages after connecting and disconnecting.</li>
+</ol>
+
+<h3>Expected Result</h3>
+
+<p>
+You should understand how a USB device is represented
+in Linux and how its interfaces and endpoints are
+organized.
+</p>
+</section>
+
+<section>
+<h2>21. Important Points to Remember</h2>
+
+<ul>
+    <li>A USB device can contain multiple configurations.</li>
+    <li>A configuration contains interfaces.</li>
+    <li>An interface can contain alternate settings.</li>
+    <li>Alternate settings define alternative endpoint arrangements.</li>
+    <li>Endpoints provide communication channels.</li>
+    <li>Endpoint zero is the default control endpoint.</li>
+    <li>USB defines four main transfer types.</li>
+    <li>Descriptors describe device capabilities and organization.</li>
+    <li>A pipe is a logical communication channel.</li>
+    <li>URBs represent USB transfer requests in Linux.</li>
+    <li>USB drivers commonly bind to interfaces.</li>
+    <li>Disconnect handling must release resources safely.</li>
+</ul>
+</section>
+
+<section>
+<h2>22. Review Questions</h2>
+
+<ol>
+    <li>Explain the USB device hierarchy.</li>
+    <li>What is a USB configuration?</li>
+    <li>What is a USB interface?</li>
+    <li>What are alternate settings?</li>
+    <li>What is a USB endpoint?</li>
+    <li>Differentiate IN and OUT endpoints.</li>
+    <li>What is endpoint zero?</li>
+    <li>Explain the main USB descriptors.</li>
+    <li>What is a USB pipe?</li>
+    <li>Explain USB transfer architecture.</li>
+    <li>What is a USB Request Block?</li>
+    <li>Explain the three stages of a control transfer.</li>
+    <li>What is a bulk transfer?</li>
+    <li>What is an interrupt transfer?</li>
+    <li>What is an isochronous transfer?</li>
+    <li>What is struct usb_device?</li>
+    <li>What is struct usb_interface?</li>
+    <li>How does USB driver matching work?</li>
+    <li>What happens during USB device disconnection?</li>
+</ol>
+</section>
+
+<section>
+<h2>23. Lesson Summary</h2>
+
+<p>
+USB device architecture organizes a peripheral into
+configurations, interfaces, alternate settings and
+endpoints.
+</p>
+
+<p>
+Descriptors describe these components, while pipes
+and transfer requests provide the logical communication
+mechanisms used by the USB subsystem.
+</p>
+
+<p>
+Linux represents USB devices and their components using
+kernel data structures such as <code>usb_device</code>,
+<code>usb_interface</code>, <code>usb_driver</code>
+and <code>urb</code>.
+</p>
+
+<p>
+Understanding this architecture is essential before
+implementing USB driver registration, probe and
+disconnect functions.
+</p>
+</section>
+
+<section>
+<h2>Navigation</h2>
+
+<p>
+<strong>Previous Lesson:</strong>
+<a href="L07_Introduction_to_USB_Device_Drivers.html">
+Lesson 7 - Introduction to USB Device Drivers
+</a>
+</p>
+
+<p>
+<strong>Next Lesson:</strong>
+<a href="L09_USB_Driver_Registration.html">
+Lesson 9 - USB Driver Registration
+</a>
+</p>
+
+<p>
+<a href="index.html">Back to Chapter 18 Index</a>
+</p>
+</section>
+
+</div>
+
+<footer>
+    <p>Linux Device Drivers | NS Learning Hub</p>
+    <p>Chapter 18 - Lesson 8</p>
+</footer>
+
+</body>
+</html>
