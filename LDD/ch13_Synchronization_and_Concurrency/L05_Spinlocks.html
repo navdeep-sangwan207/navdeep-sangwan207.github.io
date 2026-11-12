@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 5: Spinlocks | Linux Device Drivers</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 20px;
+}
+
+header h1 {
+    margin: 0 0 10px;
+    font-size: 30px;
+}
+
+header p {
+    margin: 0;
+    font-size: 16px;
+}
+
+nav {
+    background: white;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+
+nav a {
+    display: inline-block;
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 5px 12px;
+}
+
+nav a:hover {
+    color: #007bff;
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e4efff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e2eaf5;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9c;
+    margin-top: 24px;
+}
+
+p {
+    margin: 12px 0;
+}
+
+ul, ol {
+    padding-left: 25px;
+}
+
+pre {
+    background: #17212e;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    line-height: 1.55;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+
+th, td {
+    border: 1px solid #d5dfeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #edf4ff;
+    border: 1px solid #bfd4f3;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+    font-weight: bold;
+}
+
+.diagram .arrow {
+    color: #174ea6;
+    font-size: 23px;
+    margin: 5px;
+}
+
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #fff0f0;
+    border-left: 5px solid #d9534f;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.navigation-buttons a:hover {
+    background: #2878d7;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 650px) {
+    header h1 {
+        font-size: 23px;
+    }
+
+    section {
+        padding: 17px;
+    }
+
+    table {
+        display: block;
+        overflow-x: auto;
+    }
+
+    .navigation-buttons {
+        flex-direction: column;
+    }
+
+    .navigation-buttons a {
+        text-align: center;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Lesson 5: Spinlocks</h1>
+    <p>Linux Device Drivers – Synchronization and Concurrency</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> 13 – Synchronization and Concurrency<br>
+    <strong>Lesson:</strong> 5 – Spinlocks<br>
+    <strong>Level:</strong> Intermediate<br>
+    <strong>Prerequisites:</strong> Race Conditions, Critical Sections and Atomic Operations.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Define a spinlock and explain why it is required.</li>
+    <li>Understand busy waiting in kernel synchronization.</li>
+    <li>Use <code>spinlock_t</code> in Linux kernel modules.</li>
+    <li>Understand <code>spin_lock()</code> and <code>spin_unlock()</code>.</li>
+    <li>Understand SMP synchronization.</li>
+    <li>Distinguish spinlocks from mutexes and atomic operations.</li>
+    <li>Understand interrupt-safe spinlock variants.</li>
+    <li>Apply spinlocks to short critical sections in device drivers.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Spinlocks</h2>
+
+<p>A <strong>spinlock</strong> is a synchronization mechanism used to protect shared data from concurrent access.</p>
+
+<p>When a CPU attempts to acquire a spinlock that is already held by another execution context, it repeatedly checks the lock until it becomes available.</p>
+
+<p>This repeated checking is called <strong>busy waiting</strong> or spinning.</p>
+
+<p>Unlike a mutex, a spinlock does not put the waiting task to sleep while waiting for the lock.</p>
+
+<h3>Why Is a Spinlock Required?</h3>
+
+<p>Consider a driver with a shared variable accessed by two CPUs.</p>
+
+<ul>
+    <li>CPU 0 is updating the shared data.</li>
+    <li>CPU 1 also wants to update the same data.</li>
+    <li>Without synchronization, both CPUs may modify the data concurrently.</li>
+    <li>A spinlock ensures that only one CPU enters the protected critical section at a time.</li>
+</ul>
+
+<div class="diagram">
+    <div>CPU 0 requests spinlock</div>
+    <div class="arrow">↓</div>
+    <div>Lock acquired</div>
+    <div class="arrow">↓</div>
+    <div>CPU 0 executes critical section</div>
+    <div class="arrow">↓</div>
+    <div>CPU 0 releases spinlock</div>
+    <div class="arrow">↓</div>
+    <div>CPU 1 can acquire the lock</div>
+</div>
+</section>
+
+<section>
+<h2>3. Understanding Busy Waiting</h2>
+
+<p>Busy waiting means that a CPU continuously checks whether a synchronization resource is available.</p>
+
+<p>Suppose CPU 0 holds a spinlock and CPU 1 attempts to acquire the same lock.</p>
+
+<div class="diagram">
+    <div>CPU 0</div>
+    <div>Holds the lock</div>
+    <div class="arrow">↓</div>
+    <div>Executes protected code</div>
+    <hr>
+    <div>CPU 1</div>
+    <div>Attempts to acquire the lock</div>
+    <div class="arrow">↓</div>
+    <div>Lock unavailable</div>
+    <div class="arrow">↓</div>
+    <div>Continues spinning and checking</div>
+    <div class="arrow">↓</div>
+    <div>Acquires lock after CPU 0 releases it</div>
+</div>
+
+<h3>Characteristics of Busy Waiting</h3>
+
+<ul>
+    <li>The waiting CPU does not sleep.</li>
+    <li>The waiting CPU repeatedly checks the lock.</li>
+    <li>CPU time is consumed while waiting.</li>
+    <li>It is suitable only when the expected waiting period is short.</li>
+</ul>
+
+<div class="note">
+    Spinlocks are particularly useful for short critical sections in kernel code where sleeping is not allowed, such as certain interrupt-related paths.
+</div>
+</section>
+
+<section>
+<h2>4. Spinlock Data Type</h2>
+
+<p>Linux provides the <code>spinlock_t</code> type to represent a spinlock.</p>
+
+<p>Include the appropriate header:</p>
+
+<pre><code>#include &lt;linux/spinlock.h&gt;</code></pre>
+
+<h3>Static Initialization</h3>
+
+<pre><code>static DEFINE_SPINLOCK(my_lock);</code></pre>
+
+<p><code>DEFINE_SPINLOCK()</code> declares and statically initializes a spinlock.</p>
+
+<h3>Dynamic Initialization</h3>
+
+<pre><code>static spinlock_t my_lock;
+
+static int __init my_init(void)
+{
+    spin_lock_init(&amp;my_lock);
+
+    return 0;
+}</code></pre>
+
+<p><code>spin_lock_init()</code> initializes a spinlock object before it is used.</p>
+
+<div class="warning">
+    A spinlock must be initialized correctly before use. Do not repeatedly initialize a lock while another execution context may be using it.
+</div>
+</section>
+
+<section>
+<h2>5. Basic Spinlock Operations</h2>
+
+<h3>5.1 spin_lock()</h3>
+
+<p>Acquires a spinlock. If another context holds it, the caller spins until the lock becomes available.</p>
+
+<pre><code>spin_lock(&amp;my_lock);
+
+/* Critical section */
+
+spin_unlock(&amp;my_lock);</code></pre>
+
+<h3>5.2 spin_unlock()</h3>
+
+<p>Releases a previously acquired spinlock so another context can acquire it.</p>
+
+<h3>5.3 spin_trylock()</h3>
+
+<p>Attempts to acquire a spinlock without waiting indefinitely.</p>
+
+<pre><code>if (spin_trylock(&amp;my_lock)) {
+
+    /* Lock acquired */
+
+    spin_unlock(&amp;my_lock);
+
+} else {
+
+    /* Lock was not available */
+}</code></pre>
+
+<p>It returns a non-zero value when the lock is successfully acquired and zero when it cannot be acquired immediately.</p>
+
+<h3>5.4 spin_is_locked()</h3>
+
+<p>Checks whether a spinlock appears to be locked.</p>
+
+<pre><code>if (spin_is_locked(&amp;my_lock)) {
+    pr_info("Lock appears to be held\n");
+}</code></pre>
+
+<p>This is primarily a diagnostic check. It is not a safe substitute for acquiring the lock because the lock state can change immediately after the check.</p>
+</section>
+
+<section>
+<h2>6. Structure of a Spinlock-Protected Critical Section</h2>
+
+<p>A typical spinlock-protected operation follows this sequence:</p>
+
+<div class="diagram">
+    <div>Shared data</div>
+    <div class="arrow">↓</div>
+    <div>Acquire spinlock</div>
+    <div class="arrow">↓</div>
+    <div>Enter critical section</div>
+    <div class="arrow">↓</div>
+    <div>Access or update shared data</div>
+    <div class="arrow">↓</div>
+    <div>Release spinlock</div>
+    <div class="arrow">↓</div>
+    <div>Continue normal execution</div>
+</div>
+
+<h3>Example</h3>
+
+<pre><code>static spinlock_t my_lock;
+static int shared_count;
+
+static void update_count(void)
+{
+    spin_lock(&amp;my_lock);
+
+    shared_count++;
+
+    spin_unlock(&amp;my_lock);
+}</code></pre>
+
+<p>The increment is protected by the lock. Other execution contexts that use the same lock cannot enter their protected sections simultaneously.</p>
+
+<div class="note">
+    All accesses that need mutual exclusion must follow the same locking protocol. Protecting only some accesses does not eliminate the race condition.
+</div>
+</section>
+
+<section>
+<h2>7. Spinlocks and Multiprocessor Systems (SMP)</h2>
+
+<p>SMP stands for <strong>Symmetric Multiprocessing</strong>. In an SMP system, multiple CPUs can execute kernel code concurrently and access shared memory.</p>
+
+<p>For example:</p>
+
+<ul>
+    <li>CPU 0 executes a device driver's interrupt handler.</li>
+    <li>CPU 1 executes a system call associated with the same device.</li>
+    <li>Both access a shared device data structure.</li>
+</ul>
+
+<p>A spinlock provides mutual exclusion between the contexts that acquire that same lock.</p>
+
+<div class="diagram">
+    <div>CPU 0</div>
+    <div>Process context</div>
+    <div class="arrow">↘</div>
+    <div>Shared Spinlock</div>
+    <div class="arrow">↗</div>
+    <div>CPU 1</div>
+    <div>Interrupt context</div>
+    <div class="arrow">↓</div>
+    <div>Protected shared data</div>
+</div>
+
+<p>On an SMP system, the lock coordinates access across CPUs, not merely between different tasks on one CPU.</p>
+</section>
+
+<section>
+<h2>8. Spinlocks in Interrupt Context</h2>
+
+<p>Interrupt handlers cannot sleep. This makes spinlocks useful for protecting shared data that is accessed from interrupt context and process context.</p>
+
+<p>However, using only <code>spin_lock()</code> in process context can cause a deadlock if the same lock is also acquired by an interrupt handler on the same CPU.</p>
+
+<h3>Example of the Deadlock Situation</h3>
+
+<ol>
+    <li>Process context acquires a spinlock.</li>
+    <li>A hardware interrupt occurs on the same CPU.</li>
+    <li>The interrupt handler attempts to acquire the same spinlock.</li>
+    <li>The interrupt handler spins because the process context holds the lock.</li>
+    <li>The process context cannot resume and release the lock until the interrupt handler finishes.</li>
+</ol>
+
+<div class="diagram">
+    <div>Process context acquires lock</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt occurs on same CPU</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt handler requests same lock</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt handler spins</div>
+    <div class="arrow">↓</div>
+    <div>Process cannot resume to release lock</div>
+    <div class="arrow">↓</div>
+    <div>Deadlock</div>
+</div>
+
+<h3>Solution: Disable Local Interrupts While Holding the Lock</h3>
+
+<p>When process context shares a lock with a local hardware interrupt handler, use the appropriate IRQ-safe locking variant.</p>
+
+<pre><code>unsigned long flags;
+
+spin_lock_irqsave(&amp;my_lock, flags);
+
+/* Critical section */
+
+spin_unlock_irqrestore(&amp;my_lock, flags);</code></pre>
+
+<p><code>spin_lock_irqsave()</code> saves the current local interrupt state and disables local interrupts before acquiring the lock.</p>
+
+<p><code>spin_unlock_irqrestore()</code> releases the lock and restores the saved local interrupt state.</p>
+
+<div class="note">
+    This pattern prevents the relevant local interrupt handler from interrupting the process context while it holds the lock. It does not disable interrupts on every CPU.
+</div>
+</section>
+
+<section>
+<h2>9. Important Spinlock Variants</h2>
+
+<table>
+    <tr>
+        <th>Function</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td><code>spin_lock()</code></td>
+        <td>Acquires a spinlock.</td>
+    </tr>
+    <tr>
+        <td><code>spin_unlock()</code></td>
+        <td>Releases a spinlock.</td>
+    </tr>
+    <tr>
+        <td><code>spin_trylock()</code></td>
+        <td>Attempts to acquire a spinlock without waiting.</td>
+    </tr>
+    <tr>
+        <td><code>spin_lock_irq()</code></td>
+        <td>Disables local hardware interrupts and acquires the lock.</td>
+    </tr>
+    <tr>
+        <td><code>spin_unlock_irq()</code></td>
+        <td>Releases the lock and enables local interrupts.</td>
+    </tr>
+    <tr>
+        <td><code>spin_lock_irqsave()</code></td>
+        <td>Saves local interrupt state, disables local interrupts and acquires the lock.</td>
+    </tr>
+    <tr>
+        <td><code>spin_unlock_irqrestore()</code></td>
+        <td>Releases the lock and restores the saved interrupt state.</td>
+    </tr>
+    <tr>
+        <td><code>spin_lock_bh()</code></td>
+        <td>Disables local bottom-half processing and acquires the lock.</td>
+    </tr>
+    <tr>
+        <td><code>spin_unlock_bh()</code></td>
+        <td>Releases the lock and re-enables local bottom-half processing as appropriate.</td>
+    </tr>
+</table>
+
+<p>The exact locking variant depends on which execution contexts share the protected data.</p>
+</section>
+
+<section>
+<h2>10. Spinlocks and Bottom Halves</h2>
+
+<p>Linux drivers may use deferred execution mechanisms such as tasklets and softirq processing. These mechanisms can access shared data alongside process context.</p>
+
+<p>If process context and bottom-half context share a spinlock, the process-context side commonly uses:</p>
+
+<pre><code>spin_lock_bh(&amp;my_lock);
+
+/* Shared data access */
+
+spin_unlock_bh(&amp;my_lock);</code></pre>
+
+<p>This prevents the relevant bottom-half processing on the local CPU from running while the process context holds the lock.</p>
+
+<p>For hard interrupt handlers, use the appropriate IRQ-safe design instead. Do not assume that disabling bottom halves also disables hardware interrupts.</p>
+</section>
+
+<section>
+<h2>11. Spinlock vs Mutex vs Atomic Operations</h2>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Spinlock</th>
+        <th>Mutex</th>
+        <th>Atomic Operation</th>
+    </tr>
+    <tr>
+        <td>Purpose</td>
+        <td>Protects short critical sections</td>
+        <td>Protects critical sections that may sleep</td>
+        <td>Performs supported atomic updates</td>
+    </tr>
+    <tr>
+        <td>Waiting mechanism</td>
+        <td>Busy waiting</td>
+        <td>Task may sleep</td>
+        <td>Depends on the operation; no general lock ownership</td>
+    </tr>
+    <tr>
+        <td>Can sleep while held?</td>
+        <td>No</td>
+        <td>Yes, while holding the mutex in an appropriate sleepable context</td>
+        <td>Not applicable to a lock held across a code section</td>
+    </tr>
+    <tr>
+        <td>Interrupt context</td>
+        <td>Possible with correct IRQ-safe design</td>
+        <td>Not allowed</td>
+        <td>Many atomic operations are suitable</td>
+    </tr>
+    <tr>
+        <td>Complex data protection</td>
+        <td>Yes</td>
+        <td>Yes</td>
+        <td>Not by itself</td>
+    </tr>
+    <tr>
+        <td>Typical application</td>
+        <td>Short shared-state updates</td>
+        <td>Shared buffers and longer operations</td>
+        <td>Event counters and simple state updates</td>
+    </tr>
+</table>
+
+<h3>Selection Guidelines</h3>
+
+<ul>
+    <li>Use atomic operations for simple independent counters and flags.</li>
+    <li>Use spinlocks for short critical sections that must not sleep.</li>
+    <li>Use mutexes for longer critical sections in sleepable process context.</li>
+</ul>
+</section>
+
+<section>
+<h2>12. Rules for Using Spinlocks</h2>
+
+<ol>
+    <li>Keep the critical section as short as possible.</li>
+    <li>Never call a function that may sleep while holding a spinlock.</li>
+    <li>Never use <code>copy_to_user()</code> or <code>copy_from_user()</code> while holding a spinlock because these operations may sleep.</li>
+    <li>Do not perform blocking I/O while holding a spinlock.</li>
+    <li>Do not acquire the same non-recursive spinlock again from the same execution path.</li>
+    <li>Use the same lock consistently for shared data that requires mutual exclusion.</li>
+    <li>Use IRQ-safe variants when process context shares the lock with a local hard interrupt handler.</li>
+    <li>Maintain a consistent lock acquisition order when multiple locks are used.</li>
+    <li>Release every successfully acquired lock on every applicable control-flow path.</li>
+</ol>
+
+<div class="warning">
+    A spinlock must not be held across a sleeping operation. Doing so can cause kernel warnings, deadlocks or other serious problems.
+</div>
+</section>
+
+<section>
+<h2>13. Practical Kernel Module: Spinlock-Protected Counter</h2>
+
+<p>Let us implement a simple module that protects a shared counter using a spinlock.</p>
+
+<h3>Source Code: spinlock_counter.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/spinlock.h&gt;
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Linux Device Drivers Course");
+MODULE_DESCRIPTION("Spinlock Counter Demonstration");
+MODULE_VERSION("1.0");
+
+static DEFINE_SPINLOCK(counter_lock);
+static int shared_counter = 0;
+
+static void update_counter(void)
+{
+    spin_lock(&amp;counter_lock);
+
+    shared_counter++;
+
+    spin_unlock(&amp;counter_lock);
+}
+
+static int __init spinlock_counter_init(void)
+{
+    unsigned long flags;
+    int i;
+
+    pr_info("Spinlock counter module loaded\n");
+
+    for (i = 0; i &lt; 5; i++) {
+        update_counter();
+    }
+
+    spin_lock_irqsave(&amp;counter_lock, flags);
+
+    pr_info("Counter value = %d\n", shared_counter);
+
+    spin_unlock_irqrestore(&amp;counter_lock, flags);
+
+    return 0;
+}
+
+static void __exit spinlock_counter_exit(void)
+{
+    pr_info("Spinlock counter module unloaded\n");
+}
+
+module_init(spinlock_counter_init);
+module_exit(spinlock_counter_exit);</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li><code>linux/spinlock.h</code> provides spinlock definitions.</li>
+    <li><code>DEFINE_SPINLOCK()</code> initializes the lock.</li>
+    <li><code>shared_counter</code> stores the shared counter value.</li>
+    <li><code>update_counter()</code> acquires the lock before incrementing the counter.</li>
+    <li>The lock is released immediately after the update.</li>
+    <li>The final read is also protected by the same lock.</li>
+</ol>
+
+<p>The module initialization function executes five updates. The counter is therefore expected to reach 5.</p>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += spinlock_counter.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>Ensure that the recipe commands begin with actual tab characters.</p>
+
+<h3>Compile and Test in Ubuntu</h3>
+
+<pre><code>make
+
+sudo insmod spinlock_counter.ko
+
+lsmod | grep spinlock_counter
+
+sudo dmesg | tail -20
+
+sudo rmmod spinlock_counter
+
+sudo dmesg | tail -20
+
+make clean</code></pre>
+
+<h3>Expected Output</h3>
+
+<pre><code>Spinlock counter module loaded
+Counter value = 5
+Spinlock counter module unloaded</code></pre>
+
+<div class="note">
+    This module demonstrates correct lock initialization, acquisition and release. Its initialization loop is sequential, so it does not demonstrate real CPU contention. A separate concurrent test would be needed to evaluate contention behavior.
+</div>
+</section>
+
+<section>
+<h2>14. Practical Example: Process and Interrupt Shared Data</h2>
+
+<p>Consider a device driver where a process-context operation and a hardware interrupt handler both update the same event counter.</p>
+
+<p>A simplified locking pattern is:</p>
+
+<pre><code>#include &lt;linux/spinlock.h&gt;
+
+static DEFINE_SPINLOCK(event_lock);
+static unsigned int event_count;
+
+/* Process context */
+static void process_event(void)
+{
+    unsigned long flags;
+
+    spin_lock_irqsave(&amp;event_lock, flags);
+
+    event_count++;
+
+    spin_unlock_irqrestore(&amp;event_lock, flags);
+}
+
+/* Hard interrupt handler */
+static irqreturn_t my_interrupt_handler(
+    int irq,
+    void *dev_id)
+{
+    spin_lock(&amp;event_lock);
+
+    event_count++;
+
+    spin_unlock(&amp;event_lock);
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<p>In this pattern:</p>
+
+<ul>
+    <li>Process context uses <code>spin_lock_irqsave()</code> because the lock is also used by a local hard interrupt handler.</li>
+    <li>The interrupt handler uses <code>spin_lock()</code> because it already runs in hard interrupt context.</li>
+    <li>Both contexts protect the same shared counter with the same lock.</li>
+</ul>
+
+<div class="warning">
+    This is a synchronization pattern, not a complete loadable driver. A real interrupt handler must match the registered IRQ and device state, and all shared accesses must follow the same locking rules.
+</div>
+</section>
+
+<section>
+<h2>15. Common Spinlock Mistakes</h2>
+
+<table>
+    <tr>
+        <th>Mistake</th>
+        <th>Why It Is Wrong</th>
+    </tr>
+    <tr>
+        <td>Calling <code>msleep()</code> while holding a spinlock.</td>
+        <td>Sleeping is not allowed while holding a spinlock.</td>
+    </tr>
+    <tr>
+        <td>Using <code>copy_to_user()</code> inside a spinlocked section.</td>
+        <td>User-memory access may sleep.</td>
+    </tr>
+    <tr>
+        <td>Keeping a spinlock held for a long time.</td>
+        <td>Other CPUs may waste time spinning.</td>
+    </tr>
+    <tr>
+        <td>Using <code>spin_lock()</code> in process context without considering a shared hard IRQ handler.</td>
+        <td>A same-CPU interrupt can cause deadlock.</td>
+    </tr>
+    <tr>
+        <td>Using different locks for the same shared data without a valid protocol.</td>
+        <td>Mutual exclusion is not guaranteed.</td>
+    </tr>
+    <tr>
+        <td>Forgetting <code>spin_unlock()</code>.</td>
+        <td>The lock remains held and other contexts may spin indefinitely.</td>
+    </tr>
+    <tr>
+        <td>Assuming a spinlock protects code that does not acquire it.</td>
+        <td>All relevant concurrent accesses must follow the locking protocol.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>16. Spinlock Debugging and Testing</h2>
+
+<p>Linux provides debugging facilities that can help identify synchronization problems.</p>
+
+<h3>Check Kernel Messages</h3>
+
+<pre><code>sudo dmesg | tail -50
+
+sudo journalctl -k -n 50</code></pre>
+
+<h3>Inspect Kernel Configuration</h3>
+
+<pre><code>grep -E 'CONFIG_PROVE_LOCKING|CONFIG_DEBUG_SPINLOCK|CONFIG_LOCKDEP' \
+/boot/config-$(uname -r)</code></pre>
+
+<p>Depending on the kernel configuration, facilities such as lockdep and spinlock debugging can help identify lock-order problems, incorrect locking usage and related errors.</p>
+
+<p>These debugging facilities are not enabled in every Ubuntu kernel configuration.</p>
+
+<div class="note">
+    Use your Ubuntu VirtualBox environment for basic module compilation and testing. A VM can demonstrate kernel synchronization code, but it may not reproduce all hardware interrupt timing and physical-device behavior.
+</div>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+
+<ul>
+    <li>A spinlock is a kernel synchronization mechanism.</li>
+    <li>It uses busy waiting when a lock is unavailable.</li>
+    <li><code>spinlock_t</code> represents a spinlock.</li>
+    <li><code>DEFINE_SPINLOCK()</code> provides static initialization.</li>
+    <li><code>spin_lock_init()</code> initializes a dynamically declared spinlock.</li>
+    <li><code>spin_lock()</code> acquires the lock.</li>
+    <li><code>spin_unlock()</code> releases the lock.</li>
+    <li><code>spin_trylock()</code> attempts acquisition without waiting.</li>
+    <li>Spinlocks protect short critical sections.</li>
+    <li>Spinlocks must not be held while sleeping.</li>
+    <li>IRQ-safe variants are important when process context shares a lock with a hard interrupt handler.</li>
+    <li>Mutexes are generally more appropriate for longer sleepable operations.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Short Answer Questions</h2>
+
+<ol>
+    <li>What is a spinlock?</li>
+    <li>What is busy waiting?</li>
+    <li>What is the purpose of <code>spinlock_t</code>?</li>
+    <li>What is the difference between <code>spin_lock()</code> and <code>spin_unlock()</code>?</li>
+    <li>What does <code>spin_trylock()</code> do?</li>
+    <li>What is SMP?</li>
+    <li>Why must a spinlock critical section be short?</li>
+    <li>Can a process sleep while holding a spinlock?</li>
+    <li>What is the purpose of <code>spin_lock_irqsave()</code>?</li>
+    <li>What is the purpose of <code>spin_lock_bh()</code>?</li>
+    <li>Why can a spinlock cause a same-CPU interrupt deadlock?</li>
+    <li>What is the difference between a spinlock and a mutex?</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Long Answer Questions</h2>
+
+<ol>
+    <li>Explain spinlocks and their role in Linux device driver synchronization.</li>
+    <li>Explain busy waiting with a suitable CPU-level example.</li>
+    <li>Describe static and dynamic spinlock initialization.</li>
+    <li>Explain the working of <code>spin_lock()</code> and <code>spin_unlock()</code>.</li>
+    <li>Explain why spinlocks are important in SMP systems.</li>
+    <li>Discuss the deadlock problem when a process and a hard interrupt handler share a spinlock.</li>
+    <li>Explain <code>spin_lock_irqsave()</code> and <code>spin_unlock_irqrestore()</code>.</li>
+    <li>Compare spinlocks, mutexes and atomic operations.</li>
+    <li>Explain the rules and common mistakes associated with spinlock usage.</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Practical Exercises</h2>
+
+<ol>
+    <li>Write a kernel module that declares a spinlock using <code>DEFINE_SPINLOCK()</code>.</li>
+    <li>Protect a shared integer counter using <code>spin_lock()</code> and <code>spin_unlock()</code>.</li>
+    <li>Modify the counter five times and print the final value.</li>
+    <li>Use <code>spin_trylock()</code> and display whether the lock was acquired.</li>
+    <li>Use <code>spin_lock_irqsave()</code> and <code>spin_unlock_irqrestore()</code> in a process-context example.</li>
+    <li>Explain how an interrupt handler can safely access the same shared counter.</li>
+    <li>Draw a diagram illustrating the same-CPU interrupt deadlock scenario.</li>
+    <li>Compare an atomic counter with a spinlock-protected counter.</li>
+</ol>
+
+<h3>Expected Learning Outcome</h3>
+
+<p>You should be able to implement spinlock-based synchronization, protect shared kernel data, recognize interrupt-related deadlock risks and select an appropriate locking variant for different execution contexts.</p>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L04_Atomic_Operations.html">← Previous: Atomic Operations</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L06_Mutexes.html">Next: Mutexes →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 13 – Synchronization and Concurrency</p>
+</footer>
+
+</body>
+</html>
