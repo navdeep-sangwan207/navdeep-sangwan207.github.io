@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 10 - Deferred Interrupt Processing | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    line-height: 1.7;
+    background: #f4f7fb;
+    color: #263238;
+}
+
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    padding: 35px 20px;
+    text-align: center;
+}
+
+.lesson-banner h1 {
+    margin: 0;
+    font-size: 30px;
+}
+
+.lesson-banner p { margin-top: 10px; }
+
+.top-nav {
+    background: #102f60;
+    padding: 12px;
+    text-align: center;
+}
+
+.top-nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+
+.top-nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3f0ff;
+    border-left: 5px solid #2878d7;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8f8;
+    padding-bottom: 7px;
+}
+
+h3 { color: #245a9c; }
+
+pre {
+    background: #17212b;
+    color: #e8f0f8;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+}
+
+code { font-family: Consolas, monospace; }
+
+.note {
+    background: #fff8df;
+    border-left: 5px solid #e0a800;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.success {
+    background: #e8f5e9;
+    border-left: 5px solid #388e3c;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fe;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #b8cbea;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px;
+    margin: 5px;
+    min-width: 190px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 12px 18px;
+    border-radius: 6px;
+}
+
+.lesson-nav a:hover { background: #0d3475; }
+
+footer {
+    text-align: center;
+    background: #102f60;
+    color: white;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    .lesson-banner h1 { font-size: 23px; }
+    .top-nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    .section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="lesson-banner">
+    <h1>Chapter 14: Interrupt Handling in Linux Device Drivers</h1>
+    <p>Lesson 10: Deferred Interrupt Processing</p>
+</header>
+
+<nav class="top-nav">
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 14</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p>
+        Topic: Deferred Interrupt Processing<br>
+        Chapter: Interrupt Handling in Linux Device Drivers<br>
+        Prerequisites: Interrupt Context, Top Half and Bottom Half,
+        Tasklets and Workqueues<br>
+        Difficulty: Intermediate to Advanced
+    </p>
+</div>
+
+<section class="section">
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Explain deferred interrupt processing.</li>
+    <li>Understand why lengthy operations should not execute in hard IRQ context.</li>
+    <li>Differentiate immediate and deferred interrupt processing.</li>
+    <li>Understand softirqs, tasklets and workqueues.</li>
+    <li>Understand threaded interrupt handlers.</li>
+    <li>Implement a basic threaded IRQ registration pattern.</li>
+    <li>Understand synchronization and interrupt cleanup.</li>
+    <li>Select an appropriate deferred-processing mechanism.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. Introduction to Deferred Interrupt Processing</h2>
+
+<p>
+When a hardware device generates an interrupt, the processor
+temporarily changes its execution flow so that the Linux
+kernel can handle the event.
+</p>
+
+<p>
+The interrupt handler must respond quickly. However, a device
+driver may need to perform additional operations such as:
+</p>
+
+<ul>
+    <li>Reading a large amount of received data.</li>
+    <li>Processing a completed hardware operation.</li>
+    <li>Updating device buffers.</li>
+    <li>Communicating with other kernel subsystems.</li>
+    <li>Waiting for resources or performing sleepable operations.</li>
+</ul>
+
+<p>
+Some of these operations cannot safely execute in hard
+interrupt context. Linux therefore supports deferred
+interrupt processing.
+</p>
+
+<h3>Definition</h3>
+
+<p>
+<strong>Deferred interrupt processing</strong> is the technique
+of postponing non-urgent interrupt-related work until a more
+suitable execution context becomes available.
+</p>
+</section>
+
+<section class="section">
+<h2>3. Why Is Deferred Processing Required?</h2>
+
+<p>
+Hard interrupt handlers execute under strict timing and
+execution-context constraints.
+</p>
+
+<h3>Problems with lengthy interrupt handlers</h3>
+
+<ol>
+    <li>They increase interrupt latency.</li>
+    <li>They delay the handling of other interrupts.</li>
+    <li>They can reduce overall system responsiveness.</li>
+    <li>They cannot perform operations that may sleep.</li>
+    <li>They make interrupt handling more complex.</li>
+</ol>
+
+<div class="diagram">
+    <div class="diagram-box">Device Generates Interrupt</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Short Hard IRQ Handler</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Schedule Deferred Work</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Return from Interrupt</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Perform Additional Processing</div>
+</div>
+
+<div class="note">
+    Deferred processing does not mean that the device interrupt
+    is ignored. The driver still needs to acknowledge or manage
+    the interrupt source correctly before deferring additional
+    processing.
+</div>
+</section>
+
+<section class="section">
+<h2>4. Immediate Processing vs Deferred Processing</h2>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>Immediate Processing</th>
+    <th>Deferred Processing</th>
+</tr>
+<tr>
+    <td>Execution</td>
+    <td>Inside hard IRQ handler</td>
+    <td>After the immediate handler schedules work</td>
+</tr>
+<tr>
+    <td>Purpose</td>
+    <td>Urgent interrupt operations</td>
+    <td>Additional interrupt-related work</td>
+</tr>
+<tr>
+    <td>Execution time</td>
+    <td>Should be short</td>
+    <td>Depends on the selected mechanism</td>
+</tr>
+<tr>
+    <td>Can sleep?</td>
+    <td>No</td>
+    <td>Depends on mechanism; workqueues and threaded IRQs can sleep</td>
+</tr>
+<tr>
+    <td>Typical operations</td>
+    <td>Acknowledge device, identify event</td>
+    <td>Data processing, sleepable operations</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>5. Architecture of Deferred Interrupt Processing</h2>
+
+<p>
+The interrupt handler performs essential operations and
+schedules the remaining work.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">Hardware Device</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Interrupt Controller</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Hard IRQ Handler</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Acknowledge / Identify Interrupt</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Schedule Deferred Processing</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Deferred Execution Mechanism</div>
+</div>
+
+<p>
+The deferred execution mechanism can be a softirq, tasklet,
+workqueue or threaded IRQ, depending on the requirements.
+</p>
+</section>
+
+<section class="section">
+<h2>6. Types of Deferred Processing Mechanisms</h2>
+
+<p>Important Linux mechanisms include:</p>
+
+<table>
+<tr>
+    <th>Mechanism</th>
+    <th>Execution Context</th>
+    <th>Can Sleep?</th>
+</tr>
+<tr>
+    <td>Softirq</td>
+    <td>Softirq context</td>
+    <td>No</td>
+</tr>
+<tr>
+    <td>Tasklet</td>
+    <td>Softirq context</td>
+    <td>No</td>
+</tr>
+<tr>
+    <td>Workqueue</td>
+    <td>Worker-thread process context</td>
+    <td>Yes, when permitted</td>
+</tr>
+<tr>
+    <td>Threaded IRQ</td>
+    <td>IRQ kernel thread</td>
+    <td>Yes, when permitted</td>
+</tr>
+</table>
+
+<div class="warning">
+    The term bottom half describes deferred work conceptually.
+    It does not identify one specific API. Different bottom-half
+    mechanisms have different execution contexts and constraints.
+</div>
+</section>
+
+<section class="section">
+<h2>7. Softirq-Based Deferred Processing</h2>
+
+<p>
+A softirq is a kernel mechanism for executing deferred work
+in a software interrupt context.
+</p>
+
+<p>
+Softirqs are designed for high-performance kernel activities
+that need atomic execution.
+</p>
+
+<h3>Characteristics</h3>
+
+<ul>
+    <li>Execute outside the original hard IRQ handler.</li>
+    <li>Run in softirq context.</li>
+    <li>Cannot sleep.</li>
+    <li>Can execute concurrently on multiple CPUs.</li>
+    <li>Require suitable synchronization for shared data.</li>
+</ul>
+
+<p>
+The networking subsystem uses softirqs for important
+network packet processing activities.
+</p>
+
+<div class="note">
+    Drivers normally use established kernel interfaces rather
+    than registering their own softirq actions. Direct softirq
+    registration is primarily intended for core kernel code.
+</div>
+</section>
+
+<section class="section">
+<h2>8. Tasklet-Based Deferred Processing</h2>
+
+<p>
+Tasklets provide a higher-level interface built on softirqs.
+They were historically used by drivers for short deferred
+operations.
+</p>
+
+<h3>Execution flow</h3>
+
+<pre><code>Hardware Interrupt
+        |
+        v
+Hard IRQ Handler
+        |
+        v
+tasklet_schedule()
+        |
+        v
+Softirq Processing
+        |
+        v
+Tasklet Callback</code></pre>
+
+<p>
+A tasklet executes in atomic context and cannot perform
+blocking operations.
+</p>
+
+<div class="warning">
+    Tasklets are a legacy mechanism and are deprecated for
+    new driver development. Workqueues or threaded IRQs are
+    generally better choices for new implementations.
+</div>
+</section>
+
+<section class="section">
+<h2>9. Workqueue-Based Deferred Processing</h2>
+
+<p>
+A workqueue schedules a callback for execution by a kernel
+worker thread.
+</p>
+
+<h3>Execution flow</h3>
+
+<pre><code>Hardware Interrupt
+        |
+        v
+Hard IRQ Handler
+        |
+        v
+schedule_work()
+        |
+        v
+Work Item Queued
+        |
+        v
+Kernel Worker Thread
+        |
+        v
+Workqueue Callback</code></pre>
+
+<p>
+Workqueue callbacks execute in process context. They can
+sleep when the surrounding conditions allow it.
+</p>
+
+<h3>Example callback</h3>
+
+<pre><code>#include &lt;linux/workqueue.h&gt;
+
+static struct work_struct device_work;
+
+static void device_work_handler(struct work_struct *work)
+{
+    pr_info("Deferred device processing started\n");
+
+    /*
+     * Perform additional processing here.
+     * Sleepable operations may be used when permitted.
+     */
+
+    pr_info("Deferred processing completed\n");
+}
+
+static void initialize_device_work(void)
+{
+    INIT_WORK(&amp;device_work, device_work_handler);
+}</code></pre>
+
+<h3>Scheduling from an interrupt handler</h3>
+
+<pre><code>static irqreturn_t device_irq_handler(int irq,
+                                      void *dev_id)
+{
+    /*
+     * Identify and acknowledge the interrupt
+     * using the device-specific procedure.
+     */
+
+    schedule_work(&amp;device_work);
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<p>
+The callback is not executed directly by
+<code>schedule_work()</code>. The function queues the work
+for later execution.
+</p>
+</section>
+
+<section class="section">
+<h2>10. Threaded Interrupt Handling</h2>
+
+<p>
+Linux supports threaded interrupt handlers. This mechanism
+allows a driver to separate a short primary interrupt handler
+from a sleepable threaded handler.
+</p>
+
+<p>
+The primary handler executes in hard IRQ context. The
+threaded handler executes in an IRQ kernel thread.
+</p>
+
+<h3>request_threaded_irq()</h3>
+
+<p>
+The general function signature is:
+</p>
+
+<pre><code>int request_threaded_irq(
+    unsigned int irq,
+    irq_handler_t handler,
+    irq_handler_t thread_fn,
+    unsigned long flags,
+    const char *name,
+    void *dev
+);</code></pre>
+
+<table>
+<tr>
+    <th>Parameter</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>irq</code></td>
+    <td>Interrupt number.</td>
+</tr>
+<tr>
+    <td><code>handler</code></td>
+    <td>Primary hard IRQ handler.</td>
+</tr>
+<tr>
+    <td><code>thread_fn</code></td>
+    <td>Threaded interrupt handler.</td>
+</tr>
+<tr>
+    <td><code>flags</code></td>
+    <td>Interrupt configuration flags.</td>
+</tr>
+<tr>
+    <td><code>name</code></td>
+    <td>Interrupt name.</td>
+</tr>
+<tr>
+    <td><code>dev</code></td>
+    <td>Device-specific identifier.</td>
+</tr>
+</table>
+
+<h3>Primary handler return values</h3>
+
+<ul>
+    <li><code>IRQ_HANDLED</code>: The interrupt was handled.</li>
+    <li><code>IRQ_WAKE_THREAD</code>: Wake the threaded handler.</li>
+    <li><code>IRQ_NONE</code>: The interrupt was not handled by this device.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>11. Example: Threaded IRQ Handler</h2>
+
+<p>
+The following is an illustrative driver pattern. It assumes
+that the device-specific interrupt source has been identified
+and acknowledged correctly.
+</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/interrupt.h&gt;
+
+static int irq_number = 1;
+
+static irqreturn_t my_primary_handler(int irq,
+                                      void *dev_id)
+{
+    /*
+     * Check whether this device generated
+     * the interrupt.
+     *
+     * Perform essential non-sleeping operations.
+     */
+
+    return IRQ_WAKE_THREAD;
+}
+
+static irqreturn_t my_thread_handler(int irq,
+                                     void *dev_id)
+{
+    pr_info("Threaded IRQ handler executing\n");
+
+    /*
+     * Additional sleepable processing can be
+     * performed here when permitted.
+     */
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<h3>Registering the threaded interrupt</h3>
+
+<pre><code>ret = request_threaded_irq(
+    irq_number,
+    my_primary_handler,
+    my_thread_handler,
+    IRQF_ONESHOT,
+    "my_device",
+    my_device
+);
+
+if (ret)
+    return ret;</code></pre>
+
+<p>
+The example shows the registration pattern, not a complete
+hardware driver. A real driver must use its actual interrupt
+resource and device state.
+</p>
+
+<h3>Meaning of IRQF_ONESHOT</h3>
+
+<p>
+For a threaded interrupt, <code>IRQF_ONESHOT</code> keeps
+the interrupt line masked while the threaded handler is
+running, where supported by the interrupt controller and
+IRQ configuration.
+</p>
+
+<p>
+This is useful when the device or its interrupt handling
+requires the threaded handler to complete before another
+interrupt is processed.
+</p>
+
+<div class="note">
+    A primary handler may be NULL in certain configurations,
+    including ones using IRQF_ONESHOT, where the kernel can
+    use a default primary handler. The exact registration
+    requirements depend on the selected flags and IRQ type.
+</div>
+</section>
+
+<section class="section">
+<h2>12. Comparison of Deferred Processing Mechanisms</h2>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>Softirq</th>
+    <th>Tasklet</th>
+    <th>Workqueue</th>
+    <th>Threaded IRQ</th>
+</tr>
+<tr>
+    <td>Execution context</td>
+    <td>Softirq</td>
+    <td>Softirq</td>
+    <td>Worker thread</td>
+    <td>IRQ thread</td>
+</tr>
+<tr>
+    <td>Can sleep?</td>
+    <td>No</td>
+    <td>No</td>
+    <td>Yes</td>
+    <td>Yes</td>
+</tr>
+<tr>
+    <td>Typical purpose</td>
+    <td>Core kernel processing</td>
+    <td>Legacy short deferred work</td>
+    <td>General deferred work</td>
+    <td>Sleepable interrupt handling</td>
+</tr>
+<tr>
+    <td>Driver usage</td>
+    <td>Usually indirect</td>
+    <td>Legacy drivers</td>
+    <td>Common</td>
+    <td>Common when appropriate</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>13. Synchronization in Deferred Processing</h2>
+
+<p>
+A hard IRQ handler and a deferred callback may access the
+same driver data. This can create race conditions.
+</p>
+
+<h3>Example shared data</h3>
+
+<pre><code>struct my_device {
+    spinlock_t lock;
+    unsigned int event_count;
+};</code></pre>
+
+<p>
+If the hard IRQ handler and a worker thread both modify
+<code>event_count</code>, the driver must protect the shared
+data using a suitable synchronization mechanism.
+</p>
+
+<h3>Example: spinlock protection</h3>
+
+<pre><code>unsigned long flags;
+
+spin_lock_irqsave(&amp;dev-&gt;lock, flags);
+dev-&gt;event_count++;
+spin_unlock_irqrestore(&amp;dev-&gt;lock, flags);</code></pre>
+
+<p>
+The IRQ-save variant is appropriate when the same lock is
+shared between process context and a hard IRQ handler on
+the same CPU.
+</p>
+
+<h3>Important rules</h3>
+
+<ul>
+    <li>Do not hold a spinlock while performing sleepable operations.</li>
+    <li>Use a mutex only in contexts where sleeping is allowed.</li>
+    <li>Protect shared data accessed by multiple CPUs.</li>
+    <li>Keep critical sections short.</li>
+    <li>Choose synchronization based on all execution contexts that access the data.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>14. Interrupt and Deferred Work Cleanup</h2>
+
+<p>
+A driver must prevent deferred callbacks from accessing
+released memory.
+</p>
+
+<h3>Typical workqueue teardown sequence</h3>
+
+<pre><code>static void my_driver_cleanup(void)
+{
+    /* Stop or mask device interrupt generation. */
+
+    free_irq(irq_number, my_device);
+
+    /* No IRQ handler should now queue new work. */
+    cancel_work_sync(&amp;device_work);
+
+    /* Release device resources and private memory. */
+}</code></pre>
+
+<p>
+For a driver-created workqueue, destroy it after ensuring
+that no further work can be queued:
+</p>
+
+<pre><code>cancel_work_sync(&amp;device_work);
+destroy_workqueue(my_wq);</code></pre>
+
+<h3>Threaded IRQ cleanup</h3>
+
+<pre><code>free_irq(irq_number, my_device);</code></pre>
+
+<p>
+Unregistering the IRQ synchronizes with the associated
+interrupt handling, including its threaded handler, before
+the device data used by those handlers is freed.
+</p>
+
+<div class="warning">
+    The complete teardown sequence must also prevent new
+    hardware events and new software scheduling. Never free
+    driver data while an IRQ handler, worker thread or other
+    callback can still access it.
+</div>
+</section>
+
+<section class="section">
+<h2>15. Practical Application: UART Receive Interrupt</h2>
+
+<p>
+Consider a UART device receiving serial data.
+</p>
+
+<p>
+When a character arrives, the UART generates an interrupt.
+The driver may need to read the received data quickly and
+then perform additional processing.
+</p>
+
+<h3>Conceptual sequence</h3>
+
+<div class="diagram">
+    <div class="diagram-box">UART Receives Data</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">UART Interrupt Generated</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Hard IRQ Handler</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Read / Acknowledge Hardware</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Schedule Appropriate Processing</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Process Buffered Data</div>
+</div>
+
+<p>
+The exact implementation depends on the UART driver and
+subsystem. Linux serial drivers commonly use established
+serial-core and interrupt-handling interfaces rather than
+implementing an independent generic UART pipeline.
+</p>
+
+<h3>Why defer processing?</h3>
+
+<ul>
+    <li>To minimize time spent in hard IRQ context.</li>
+    <li>To process buffered data efficiently.</li>
+    <li>To perform sleepable operations when necessary.</li>
+    <li>To maintain system responsiveness.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>16. Important Design Considerations</h2>
+
+<ol>
+    <li>Identify which operations must happen immediately.</li>
+    <li>Keep the primary interrupt handler short.</li>
+    <li>Choose a deferred mechanism based on execution-context requirements.</li>
+    <li>Protect data shared between interrupt and deferred contexts.</li>
+    <li>Handle repeated interrupts and event buffering correctly.</li>
+    <li>Prevent work from being scheduled after teardown begins.</li>
+    <li>Verify API availability against the target kernel version.</li>
+</ol>
+
+<div class="success">
+    General selection rule: use a workqueue or threaded IRQ
+    when processing needs to sleep. Use atomic deferred
+    mechanisms only when the processing can safely execute
+    without sleeping and the mechanism is appropriate for
+    the subsystem.
+</div>
+</section>
+
+<section class="section">
+<h2>17. Practical Linux Commands</h2>
+
+<h3>Check the running kernel version</h3>
+
+<pre><code>uname -r</code></pre>
+
+<h3>Inspect kernel interrupt counters</h3>
+
+<pre><code>cat /proc/interrupts</code></pre>
+
+<p>
+This file displays interrupt statistics by CPU and interrupt
+source. It is useful for observing interrupt activity when
+the relevant device and driver are available.
+</p>
+
+<h3>View kernel messages</h3>
+
+<pre><code>sudo dmesg | tail -n 40</code></pre>
+
+<h3>Inspect interrupt-related kernel configuration</h3>
+
+<pre><code>grep CONFIG_GENERIC_IRQ /boot/config-$(uname -r)</code></pre>
+
+<p>
+The availability of configuration entries depends on the
+kernel build.
+</p>
+</section>
+
+<section class="section">
+<h2>18. Common Mistakes</h2>
+
+<ol>
+    <li>Performing lengthy operations inside hard IRQ context.</li>
+    <li>Calling sleepable functions from tasklets or softirqs.</li>
+    <li>Using mutexes inside hard interrupt handlers.</li>
+    <li>Assuming all deferred mechanisms execute in process context.</li>
+    <li>Ignoring race conditions between interrupt handlers and worker threads.</li>
+    <li>Freeing driver memory before deferred work has finished.</li>
+    <li>Failing to acknowledge or mask the device interrupt source correctly.</li>
+    <li>Assuming IRQF_ONESHOT replaces device-specific interrupt management.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>19. Lesson Summary</h2>
+
+<ul>
+    <li>Deferred interrupt processing moves non-urgent work out of hard IRQ context.</li>
+    <li>Hard IRQ handlers should perform essential operations quickly.</li>
+    <li>Softirqs and tasklets execute in atomic context.</li>
+    <li>Tasklets are a legacy mechanism for new driver development.</li>
+    <li>Workqueues execute callbacks in worker-thread process context.</li>
+    <li>Threaded IRQs allow sleepable interrupt processing.</li>
+    <li><code>request_threaded_irq()</code> registers primary and threaded handlers.</li>
+    <li><code>IRQ_WAKE_THREAD</code> requests execution of the threaded handler.</li>
+    <li><code>IRQF_ONESHOT</code> keeps the interrupt masked while the threaded handler runs, subject to IRQ configuration.</li>
+    <li>Synchronization and cleanup are essential for driver reliability.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>20. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+    <li>What is deferred interrupt processing?</li>
+    <li>Why should hard IRQ handlers be short?</li>
+    <li>What is a softirq?</li>
+    <li>What is the purpose of a workqueue?</li>
+    <li>What is a threaded IRQ?</li>
+    <li>What does IRQ_WAKE_THREAD indicate?</li>
+    <li>What is the purpose of IRQF_ONESHOT?</li>
+    <li>Why is synchronization required in deferred processing?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+    <li>Explain the architecture of deferred interrupt processing.</li>
+    <li>Compare immediate and deferred interrupt processing.</li>
+    <li>Explain softirqs, tasklets and workqueues.</li>
+    <li>Explain the working of threaded interrupt handlers.</li>
+    <li>Compare workqueues and threaded IRQs.</li>
+    <li>Explain synchronization and cleanup in interrupt-driven drivers.</li>
+</ol>
+
+<h3>C. Practical Exercises</h3>
+<ol>
+    <li>Write a workqueue callback and explain how it is scheduled.</li>
+    <li>Write a conceptual primary and threaded IRQ handler.</li>
+    <li>Explain the use of IRQ_WAKE_THREAD.</li>
+    <li>Design a UART receive interrupt processing sequence.</li>
+    <li>Prepare a safe interrupt and workqueue cleanup procedure.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>21. Expected Learning Outcome</h2>
+
+<div class="success">
+    You should now understand the purpose and architecture
+    of deferred interrupt processing, distinguish the
+    execution contexts of different mechanisms, understand
+    threaded IRQ registration, and select suitable deferred
+    processing techniques for Linux device drivers.
+</div>
+</section>
+
+<div class="lesson-nav">
+    <a href="L09_Tasklets_and_Workqueues.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L11_Interrupt_Handling_in_Character_Drivers.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 14 - Interrupt Handling in Linux Device Drivers</p>
+</footer>
+
+</body>
+</html>
