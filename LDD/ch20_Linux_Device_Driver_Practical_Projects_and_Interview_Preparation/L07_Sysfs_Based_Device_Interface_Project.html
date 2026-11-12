@@ -1,1 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 7: Sysfs-Based Device Interface Project</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 18px}
+header h1{margin:0;font-size:27px}
+nav{background:white;text-align:center;padding:14px;box-shadow:0 2px 6px #00000012}
+nav a{display:inline-block;margin:5px 12px;color:#174ea6;text-decoration:none;font-weight:bold}
+.container{max-width:1050px;margin:25px auto;padding:0 16px}
+.info{background:#e8f1ff;border-left:5px solid #2878d7;padding:15px 20px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:22px 25px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 8px #0000000b}
+h2{color:#174ea6;border-bottom:2px solid #e5edf8;padding-bottom:8px}
+h3{color:#245b9e}
+pre{background:#172334;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note{background:#fff6df;border-left:4px solid #e0a000;padding:12px 15px;margin:15px 0}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #dce3ed;padding:10px;text-align:left}
+th{background:#eaf1fb}
+footer{text-align:center;padding:22px;color:#64748b}
+@media(max-width:600px){header h1{font-size:22px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 20: Linux Device Driver Practical Projects and Interview Preparation</h1>
+<p>Lesson 7: Sysfs-Based Device Interface Project</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">Linux Device Drivers</a>
+<a href="index.html">Chapter 20</a>
+<a href="L06_Procfs_Based_Device_Interface_Project.html">Previous Lesson</a>
+</nav>
+
+<div class="container">
+
+<div class="info">
+<strong>Lesson:</strong> L07 – Sysfs-Based Device Interface Project<br>
+<strong>Level:</strong> Intermediate<br>
+<strong>Environment:</strong> Ubuntu Linux in VirtualBox
+</div>
+
+<section>
+<h2>1. Introduction to Sysfs</h2>
+<p>Sysfs is a virtual filesystem in Linux, normally mounted at <code>/sys</code>. It provides a structured view of kernel objects, devices, buses, classes and their attributes.</p>
+
+<p>Sysfs allows user-space applications to inspect and, where supported, configure kernel objects through attribute files.</p>
+
+<p>Examples of sysfs locations include:</p>
+<ul>
+<li><code>/sys/class/net/</code> – Network interfaces.</li>
+<li><code>/sys/class/block/</code> – Block devices.</li>
+<li><code>/sys/bus/</code> – Device buses and drivers.</li>
+<li><code>/sys/devices/</code> – Device hierarchy.</li>
+<li><code>/sys/module/</code> – Loaded kernel modules.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Project Objectives</h2>
+<ul>
+<li>Understand the purpose of sysfs.</li>
+<li>Understand kernel objects and attributes.</li>
+<li>Create a custom kernel object.</li>
+<li>Create sysfs attributes using <code>struct kobj_attribute</code>.</li>
+<li>Implement show() and store() callbacks.</li>
+<li>Read and modify driver data from user space.</li>
+<li>Remove sysfs entries safely during module cleanup.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. Sysfs Communication Architecture</h2>
+<pre><code>         User-Space Application
+                   |
+                   v
+       cat /sys/kernel/my_device/value
+       echo 100 &gt; /sys/kernel/my_device/value
+                   |
+                   v
+               Sysfs VFS
+                   |
+                   v
+             Kernel Object
+                   |
+                   v
+             Attribute File
+                   |
+             +-----+-----+
+             |           |
+             v           v
+           show()      store()
+             |           |
+             +-----+-----+
+                   |
+                   v
+              Kernel Data</code></pre>
+</section>
+
+<section>
+<h2>4. Important Sysfs Concepts</h2>
+
+<h3>4.1 Kernel Object (kobject)</h3>
+<p>A kobject is a fundamental kernel object used to represent objects in the kernel object model. It supports object hierarchy, reference counting and sysfs representation.</p>
+
+<h3>4.2 Sysfs Attribute</h3>
+<p>An attribute represents a property of a kernel object. It appears as a file in sysfs.</p>
+
+<h3>4.3 show() Callback</h3>
+<p>The show callback formats kernel data and returns it to user space when the attribute is read.</p>
+
+<h3>4.4 store() Callback</h3>
+<p>The store callback receives data written by a user-space application and updates kernel state.</p>
+</section>
+
+<section>
+<h2>5. Important Sysfs Functions and Structures</h2>
+<table>
+<tr><th>API / Structure</th><th>Purpose</th></tr>
+<tr><td>kobject_create_and_add()</td><td>Creates and registers a kobject.</td></tr>
+<tr><td>sysfs_create_file()</td><td>Creates an attribute file.</td></tr>
+<tr><td>sysfs_remove_file()</td><td>Removes an attribute file.</td></tr>
+<tr><td>kobject_put()</td><td>Releases a kobject reference.</td></tr>
+<tr><td>struct kobj_attribute</td><td>Defines a simple kobject attribute.</td></tr>
+<tr><td>sysfs_emit()</td><td>Formats output for a sysfs attribute.</td></tr>
+<tr><td>kstrtoint()</td><td>Converts a string into an integer.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>6. Project Directory Structure</h2>
+<pre><code>sysfs_project/
+|
+|-- sysfs_driver.c
+|-- Makefile</code></pre>
+
+<pre><code>mkdir -p ~/Linux_Driver_Projects/sysfs_project
+cd ~/Linux_Driver_Projects/sysfs_project</code></pre>
+</section>
+
+<section>
+<h2>7. Complete Sysfs Driver Source Code</h2>
+<p>Create the source file:</p>
+<pre><code>nano sysfs_driver.c</code></pre>
+
+<h3>File: sysfs_driver.c</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/kobject.h&gt;
+#include &lt;linux/sysfs.h&gt;
+#include &lt;linux/mutex.h&gt;
+#include &lt;linux/errno.h&gt;
+#include &lt;linux/kstrtox.h&gt;
+
+static struct kobject *my_kobj;
+
+static int device_value = 0;
+static DEFINE_MUTEX(value_mutex);
+
+/* Show callback: read attribute */
+static ssize_t value_show(
+    struct kobject *kobj,
+    struct kobj_attribute *attr,
+    char *buf)
+{
+    int value;
+
+    if (mutex_lock_interruptible(&amp;value_mutex))
+        return -ERESTARTSYS;
+
+    value = device_value;
+
+    mutex_unlock(&amp;value_mutex);
+
+    return sysfs_emit(buf, "%d\n", value);
+}
+
+/* Store callback: write attribute */
+static ssize_t value_store(
+    struct kobject *kobj,
+    struct kobj_attribute *attr,
+    const char *buf,
+    size_t count)
+{
+    int new_value;
+    int ret;
+
+    ret = kstrtoint(buf, 10, &amp;new_value);
+
+    if (ret)
+        return ret;
+
+    if (new_value &lt; 0 || new_value &gt; 1000)
+        return -ERANGE;
+
+    if (mutex_lock_interruptible(&amp;value_mutex))
+        return -ERESTARTSYS;
+
+    device_value = new_value;
+
+    mutex_unlock(&amp;value_mutex);
+
+    pr_info("sysfs_driver: Value updated to %d\n",
+            new_value);
+
+    return count;
+}
+
+/* Define read/write attribute */
+static struct kobj_attribute value_attribute =
+    __ATTR(value, 0664, value_show, value_store);
+
+/* Module initialization */
+static int __init sysfs_driver_init(void)
+{
+    int ret;
+
+    my_kobj = kobject_create_and_add(
+        "my_device",
+        kernel_kobj
+    );
+
+    if (!my_kobj) {
+        pr_err("sysfs_driver: Failed to create kobject\n");
+        return -ENOMEM;
+    }
+
+    ret = sysfs_create_file(
+        my_kobj,
+        &amp;value_attribute.attr
+    );
+
+    if (ret) {
+        pr_err("sysfs_driver: Failed to create attribute\n");
+        kobject_put(my_kobj);
+        my_kobj = NULL;
+        return ret;
+    }
+
+    pr_info("sysfs_driver: /sys/kernel/my_device/value created\n");
+
+    return 0;
+}
+
+/* Module cleanup */
+static void __exit sysfs_driver_exit(void)
+{
+    if (my_kobj) {
+        sysfs_remove_file(
+            my_kobj,
+            &amp;value_attribute.attr
+        );
+
+        kobject_put(my_kobj);
+        my_kobj = NULL;
+    }
+
+    pr_info("sysfs_driver: Sysfs interface removed\n");
+}
+
+module_init(sysfs_driver_init);
+module_exit(sysfs_driver_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Sysfs Based Device Interface Driver");
+MODULE_VERSION("1.0");</code></pre>
+</section>
+
+<section>
+<h2>8. Understanding the Driver Code</h2>
+
+<h3>8.1 Creating a Kernel Object</h3>
+<pre><code>my_kobj = kobject_create_and_add(
+    "my_device",
+    kernel_kobj
+);</code></pre>
+<p>This creates a kernel object under <code>/sys/kernel/</code>.</p>
+
+<h3>8.2 Defining an Attribute</h3>
+<pre><code>static struct kobj_attribute value_attribute =
+    __ATTR(value, 0664, value_show, value_store);</code></pre>
+<p>The attribute is named <code>value</code>. The mode requests read and write access for the owner and group, and read access for others.</p>
+
+<h3>8.3 Reading with show()</h3>
+<pre><code>return sysfs_emit(buf, "%d\n", value);</code></pre>
+<p>The callback returns the current integer value as text.</p>
+
+<h3>8.4 Writing with store()</h3>
+<pre><code>ret = kstrtoint(buf, 10, &amp;new_value);</code></pre>
+<p>This converts the input string into an integer. The example accepts values from 0 to 1000.</p>
+
+<h3>8.5 Cleanup</h3>
+<p>The attribute is removed first, then the kobject reference is released. This prevents the module from leaving its sysfs interface behind after unloading.</p>
+</section>
+
+<section>
+<h2>9. Create the Makefile</h2>
+<pre><code>nano Makefile</code></pre>
+
+<h3>File: Makefile</h3>
+<pre><code>obj-m += sysfs_driver.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+<p>Use a real tab character before each command under the targets.</p>
+</section>
+
+<section>
+<h2>10. Compile the Kernel Module</h2>
+<pre><code>make
+
+modinfo sysfs_driver.ko</code></pre>
+
+<p>Successful compilation generates <code>sysfs_driver.ko</code>.</p>
+</section>
+
+<section>
+<h2>11. Load the Driver</h2>
+<pre><code>sudo insmod sysfs_driver.ko
+
+ls -l /sys/kernel/my_device/
+
+sudo dmesg | tail -20</code></pre>
+
+<p>Expected sysfs entry:</p>
+<pre><code>/sys/kernel/my_device/value</code></pre>
+</section>
+
+<section>
+<h2>12. Read the Attribute</h2>
+<p>Use <code>cat</code> to read the current value:</p>
+<pre><code>cat /sys/kernel/my_device/value</code></pre>
+
+<p>Expected output:</p>
+<pre><code>0</code></pre>
+</section>
+
+<section>
+<h2>13. Write a New Value</h2>
+<p>Write an integer value:</p>
+<pre><code>echo 250 | sudo tee /sys/kernel/my_device/value</code></pre>
+
+<p>Read it again:</p>
+<pre><code>cat /sys/kernel/my_device/value</code></pre>
+
+<p>Expected output:</p>
+<pre><code>250</code></pre>
+
+<p>Check kernel messages:</p>
+<pre><code>sudo dmesg | tail -20</code></pre>
+</section>
+
+<section>
+<h2>14. Test Input Validation</h2>
+<p>Try a value outside the accepted range:</p>
+<pre><code>echo 1500 | sudo tee /sys/kernel/my_device/value</code></pre>
+
+<p>The driver returns <code>-ERANGE</code>, so the write fails.</p>
+
+<p>Try invalid text:</p>
+<pre><code>echo hello | sudo tee /sys/kernel/my_device/value</code></pre>
+
+<p>The conversion function <code>kstrtoint()</code> rejects invalid numeric input.</p>
+
+<p>Try a negative value:</p>
+<pre><code>echo -10 | sudo tee /sys/kernel/my_device/value</code></pre>
+
+<p>The driver rejects it because the allowed range is 0 to 1000.</p>
+</section>
+
+<section>
+<h2>15. Remove the Driver</h2>
+<pre><code>sudo rmmod sysfs_driver
+
+ls /sys/kernel/my_device</code></pre>
+
+<p>Expected result: the custom sysfs directory and its attribute are no longer present.</p>
+
+<p>Clean the project:</p>
+<pre><code>make clean</code></pre>
+</section>
+
+<section>
+<h2>16. Procfs vs Sysfs</h2>
+<table>
+<tr><th>Feature</th><th>Procfs</th><th>Sysfs</th></tr>
+<tr><td>Mount point</td><td>/proc</td><td>/sys</td></tr>
+<tr><td>Primary role</td><td>Process and kernel information</td><td>Kernel object and device model</td></tr>
+<tr><td>Structure</td><td>Flexible virtual entries</td><td>Structured object hierarchy</td></tr>
+<tr><td>Driver interface</td><td>Custom proc entries</td><td>Attributes associated with kernel objects</td></tr>
+<tr><td>Common callbacks</td><td>proc_read, proc_write</td><td>show, store</td></tr>
+</table>
+</section>
+
+<section>
+<h2>17. Common Errors and Troubleshooting</h2>
+<table>
+<tr><th>Error</th><th>Possible Cause</th><th>Solution</th></tr>
+<tr><td>Failed to create kobject</td><td>Object creation failed</td><td>Inspect kernel logs and allocation conditions.</td></tr>
+<tr><td>Failed to create attribute</td><td>Attribute registration failed</td><td>Check the attribute definition and cleanup path.</td></tr>
+<tr><td>Permission denied</td><td>Insufficient write permission</td><td>Use sudo tee and inspect attribute permissions.</td></tr>
+<tr><td>Invalid argument</td><td>Input is not a valid integer</td><td>Provide a valid numeric value.</td></tr>
+<tr><td>Numerical result out of range</td><td>Value is outside the allowed range</td><td>Use an integer between 0 and 1000.</td></tr>
+<tr><td>Invalid module format</td><td>Kernel/header mismatch</td><td>Rebuild against the running kernel headers.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>18. Practical Exercises</h2>
+<ol>
+<li>Create a second attribute named <code>status</code>.</li>
+<li>Make the status attribute read-only.</li>
+<li>Add a reset attribute that resets the value to zero.</li>
+<li>Change the allowed value range to 0–500.</li>
+<li>Use a different kernel object name.</li>
+<li>Explore existing entries under <code>/sys/class/</code>.</li>
+<li>Investigate device attributes associated with a real Linux device.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Interview Questions</h2>
+<ol>
+<li>What is sysfs in Linux?</li>
+<li>What is the purpose of the Linux kernel object model?</li>
+<li>What is a kobject?</li>
+<li>What is a sysfs attribute?</li>
+<li>What is the purpose of show() and store()?</li>
+<li>What does kobject_create_and_add() do?</li>
+<li>What is the purpose of sysfs_create_file()?</li>
+<li>What is the difference between sysfs_remove_file() and kobject_put()?</li>
+<li>Why is kstrtoint() preferred for converting user input?</li>
+<li>What is the difference between procfs and sysfs?</li>
+<li>Why should sysfs attributes generally expose simple values?</li>
+<li>How should a driver clean up its sysfs objects?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Lesson Summary</h2>
+<ul>
+<li>Sysfs is a virtual filesystem mounted at <code>/sys</code>.</li>
+<li>It represents kernel objects and their attributes.</li>
+<li>kobject_create_and_add() creates a kernel object.</li>
+<li>sysfs_create_file() registers an attribute.</li>
+<li>show() reads an attribute and store() updates it.</li>
+<li>sysfs_emit() formats output for sysfs.</li>
+<li>kstrtoint() validates and converts integer input.</li>
+<li>sysfs_remove_file() and kobject_put() support proper cleanup.</li>
+</ul>
+</section>
+
+<div class="info">
+<strong>Next Lesson:</strong> Lesson 8 – GPIO Device Driver Project
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | Linux Device Drivers Course</p>
+</footer>
+
+</body>
+</html>
