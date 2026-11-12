@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 9 - Tasklets and Workqueues | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    line-height: 1.7;
+    background: #f4f7fb;
+    color: #263238;
+}
+
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    padding: 35px 20px;
+    text-align: center;
+}
+
+.lesson-banner h1 {
+    margin: 0;
+    font-size: 30px;
+}
+
+.lesson-banner p { margin: 10px 0 0; }
+
+.top-nav {
+    background: #102f60;
+    padding: 12px;
+    text-align: center;
+}
+
+.top-nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+
+.top-nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3f0ff;
+    border-left: 5px solid #2878d7;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8f8;
+    padding-bottom: 7px;
+}
+
+h3 { color: #245a9c; }
+
+pre {
+    background: #17212b;
+    color: #e8f0f8;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+code { font-family: Consolas, monospace; }
+
+.note {
+    background: #fff8df;
+    border-left: 5px solid #e0a800;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.success {
+    background: #e8f5e9;
+    border-left: 5px solid #388e3c;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fe;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #b8cbea;
+    padding: 17px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px;
+    margin: 5px;
+    min-width: 190px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+    margin: 4px;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 12px 18px;
+    border-radius: 6px;
+}
+
+.lesson-nav a:hover { background: #0d3475; }
+
+footer {
+    text-align: center;
+    background: #102f60;
+    color: white;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    .lesson-banner h1 { font-size: 23px; }
+    .top-nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    .section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="lesson-banner">
+    <h1>Chapter 14: Interrupt Handling in Linux Device Drivers</h1>
+    <p>Lesson 9: Tasklets and Workqueues</p>
+</header>
+
+<nav class="top-nav">
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 14</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p>
+        Topic: Deferred Interrupt Processing Mechanisms<br>
+        Chapter: Interrupt Handling in Linux Device Drivers<br>
+        Prerequisite: Top Half and Bottom Half<br>
+        Difficulty: Intermediate
+    </p>
+</div>
+
+<section class="section">
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Explain the purpose of deferred interrupt processing.</li>
+    <li>Understand tasklets and their execution model.</li>
+    <li>Understand workqueues and worker threads.</li>
+    <li>Initialize and schedule work items.</li>
+    <li>Understand tasklet-related kernel APIs used in legacy drivers.</li>
+    <li>Compare tasklets and workqueues.</li>
+    <li>Understand workqueue synchronization and cleanup.</li>
+    <li>Select an appropriate deferred-processing mechanism.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. Introduction to Deferred Interrupt Processing</h2>
+
+<p>
+When a hardware device generates an interrupt, the Linux kernel
+invokes the registered interrupt handler.
+</p>
+
+<p>
+The interrupt handler should perform only essential operations
+because it executes in hard interrupt context. Lengthy processing
+can increase interrupt latency and delay other system activities.
+</p>
+
+<p>
+Linux therefore provides mechanisms to defer additional work.
+Two historically important mechanisms are:
+</p>
+
+<ul>
+    <li><strong>Tasklets:</strong> Deferred execution based on softirqs.</li>
+    <li><strong>Workqueues:</strong> Deferred execution using kernel worker threads.</li>
+</ul>
+
+<div class="diagram">
+    <div class="diagram-box">Hardware Interrupt</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Hard IRQ Handler</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Schedule Deferred Processing</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Tasklet or Workqueue</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Deferred Work Execution</div>
+</div>
+
+<p>
+The choice between tasklets and workqueues depends primarily
+on whether the deferred function needs to sleep, along with
+the driver's latency, ordering and concurrency requirements.
+</p>
+</section>
+
+<section class="section">
+<h2>3. What Is a Tasklet?</h2>
+
+<p>
+A tasklet is a Linux kernel mechanism used to defer processing
+from a hard interrupt handler.
+</p>
+
+<p>
+Tasklets are implemented using the softirq mechanism and
+execute in softirq context.
+</p>
+
+<h3>Characteristics of tasklets</h3>
+
+<ul>
+    <li>Used for deferred interrupt processing.</li>
+    <li>Execute in atomic context.</li>
+    <li>Cannot sleep.</li>
+    <li>Cannot use mutexes or blocking operations.</li>
+    <li>A particular tasklet instance is not executed concurrently with itself.</li>
+    <li>Different tasklet instances can execute concurrently on different CPUs.</li>
+</ul>
+
+<div class="warning">
+    Tasklets are a legacy mechanism. They are important for
+    understanding older Linux drivers, but new driver development
+    should generally consider workqueues or threaded IRQs where
+    appropriate.
+</div>
+</section>
+
+<section class="section">
+<h2>4. Tasklet Data Structure and APIs</h2>
+
+<p>
+Historically, tasklets were represented using the
+<code>struct tasklet_struct</code> data structure.
+</p>
+
+<h3>Important tasklet APIs</h3>
+
+<table>
+<tr>
+    <th>API</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>tasklet_setup()</code></td>
+    <td>Initializes a tasklet with its callback.</td>
+</tr>
+<tr>
+    <td><code>tasklet_schedule()</code></td>
+    <td>Schedules a tasklet for execution.</td>
+</tr>
+<tr>
+    <td><code>tasklet_hi_schedule()</code></td>
+    <td>Schedules a tasklet on the high-priority tasklet path.</td>
+</tr>
+<tr>
+    <td><code>tasklet_disable()</code></td>
+    <td>Disables execution of a tasklet and waits for an active execution to finish.</td>
+</tr>
+<tr>
+    <td><code>tasklet_enable()</code></td>
+    <td>Re-enables a disabled tasklet.</td>
+</tr>
+<tr>
+    <td><code>tasklet_kill()</code></td>
+    <td>Waits for the tasklet to finish and prevents it from remaining scheduled.</td>
+</tr>
+</table>
+
+<p>
+Exact availability and lifecycle details should be checked
+against the target kernel version. Tasklet APIs are being
+phased out of new driver designs.
+</p>
+</section>
+
+<section class="section">
+<h2>5. Tasklet Callback Function</h2>
+
+<p>
+A tasklet callback is invoked when the scheduled tasklet
+executes.
+</p>
+
+<h3>Modern tasklet_setup() callback form</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/interrupt.h&gt;
+
+static struct tasklet_struct my_tasklet;
+
+static void my_tasklet_function(struct tasklet_struct *task)
+{
+    pr_info("Tasklet callback executed\n");
+
+    /* Non-sleeping deferred processing */
+}
+
+static int __init my_init(void)
+{
+    tasklet_setup(&amp;my_tasklet, my_tasklet_function);
+
+    pr_info("Tasklet initialized\n");
+
+    return 0;
+}
+
+static void __exit my_exit(void)
+{
+    tasklet_kill(&amp;my_tasklet);
+
+    pr_info("Tasklet cleanup completed\n");
+}
+
+module_init(my_init);
+module_exit(my_exit);
+
+MODULE_LICENSE("GPL");</code></pre>
+
+<p>
+This example demonstrates initialization and cleanup.
+It does not schedule the tasklet because no real hardware
+interrupt is registered.
+</p>
+
+<h3>Scheduling a tasklet</h3>
+
+<pre><code>static irqreturn_t my_interrupt_handler(int irq,
+                                        void *dev_id)
+{
+    /* Acknowledge and identify device interrupt here. */
+
+    tasklet_schedule(&amp;my_tasklet);
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<p>
+The tasklet callback executes later through the softirq
+mechanism, not directly inside the hard IRQ handler.
+</p>
+
+<div class="warning">
+    Do not call tasklet_schedule() after the tasklet has been
+    destroyed. During driver removal, first prevent further
+    interrupt scheduling, unregister and synchronize the IRQ,
+    and then call tasklet_kill() before freeing the tasklet's
+    containing data.
+</div>
+</section>
+
+<section class="section">
+<h2>6. Tasklet Execution Flow</h2>
+
+<div class="diagram">
+    <div class="diagram-box">Hardware Interrupt</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Hard IRQ Handler</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">tasklet_schedule()</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Tasklet Marked Pending</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Softirq Processing</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Tasklet Callback Executes</div>
+</div>
+
+<p>
+The tasklet callback executes in atomic context. It must
+not block or sleep.
+</p>
+</section>
+
+<section class="section">
+<h2>7. What Is a Workqueue?</h2>
+
+<p>
+A workqueue is a Linux kernel mechanism that allows a driver
+to defer work to kernel worker threads.
+</p>
+
+<p>
+Unlike tasklets, workqueue callbacks execute in process
+context. Therefore, they can perform sleepable operations
+when the surrounding execution path and locking rules permit.
+</p>
+
+<h3>Characteristics of workqueues</h3>
+
+<ul>
+    <li>Deferred execution using kernel worker threads.</li>
+    <li>Callbacks execute in process context.</li>
+    <li>Can perform operations that may sleep.</li>
+    <li>Suitable for longer processing tasks.</li>
+    <li>Can be scheduled from a hard IRQ handler.</li>
+    <li>Support system-provided and driver-created workqueues.</li>
+</ul>
+
+<p>
+Workqueues are widely used in modern Linux driver development.
+</p>
+</section>
+
+<section class="section">
+<h2>8. Workqueue Data Structures</h2>
+
+<p>
+The main workqueue data structure used for ordinary work
+items is <code>struct work_struct</code>.
+</p>
+
+<p>
+A work item represents a function that should execute later
+in a worker thread.
+</p>
+
+<h3>Important workqueue APIs</h3>
+
+<table>
+<tr>
+    <th>API</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>INIT_WORK()</code></td>
+    <td>Initializes a work structure.</td>
+</tr>
+<tr>
+    <td><code>DECLARE_WORK()</code></td>
+    <td>Declares and statically initializes a work item.</td>
+</tr>
+<tr>
+    <td><code>schedule_work()</code></td>
+    <td>Schedules work on the system workqueue.</td>
+</tr>
+<tr>
+    <td><code>queue_work()</code></td>
+    <td>Queues work on a specified workqueue.</td>
+</tr>
+<tr>
+    <td><code>alloc_workqueue()</code></td>
+    <td>Creates a dedicated workqueue.</td>
+</tr>
+<tr>
+    <td><code>destroy_workqueue()</code></td>
+    <td>Destroys a workqueue after its work is handled.</td>
+</tr>
+<tr>
+    <td><code>flush_work()</code></td>
+    <td>Waits for a particular work item to finish its pending execution.</td>
+</tr>
+<tr>
+    <td><code>cancel_work_sync()</code></td>
+    <td>Cancels pending work and waits for any executing instance to finish.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>9. Workqueue Initialization</h2>
+
+<p>
+A work item must be initialized before it is scheduled.
+The <code>INIT_WORK()</code> macro associates a callback
+function with the work structure.
+</p>
+
+<h3>Basic initialization</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/workqueue.h&gt;
+
+static struct work_struct my_work;
+
+static void my_work_function(struct work_struct *work)
+{
+    pr_info("Workqueue callback executed\n");
+}
+
+static int __init my_init(void)
+{
+    INIT_WORK(&amp;my_work, my_work_function);
+
+    pr_info("Work item initialized\n");
+
+    return 0;
+}
+
+static void __exit my_exit(void)
+{
+    cancel_work_sync(&amp;my_work);
+
+    pr_info("Work item cleanup completed\n");
+}
+
+module_init(my_init);
+module_exit(my_exit);
+
+MODULE_LICENSE("GPL");</code></pre>
+
+<p>
+This example initializes a work item but does not queue it.
+A real driver would schedule it after an interrupt or another
+event.
+</p>
+</section>
+
+<section class="section">
+<h2>10. Scheduling Work</h2>
+
+<p>
+After initialization, the driver can schedule the work item
+using <code>schedule_work()</code>.
+</p>
+
+<pre><code>static void my_work_function(struct work_struct *work)
+{
+    pr_info("Deferred work is running\n");
+}
+
+static irqreturn_t my_interrupt_handler(int irq,
+                                        void *dev_id)
+{
+    pr_info("Interrupt received\n");
+
+    schedule_work(&amp;my_work);
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<p>
+The interrupt handler schedules the work item and returns.
+The worker thread executes the callback later.
+</p>
+
+<h3>Return value of schedule_work()</h3>
+
+<ul>
+    <li>Returns true when the work was successfully queued.</li>
+    <li>Returns false when the work was already pending and was not queued again.</li>
+</ul>
+
+<div class="note">
+    Repeated scheduling of the same work item does not create
+    an unlimited queue of separate executions. A work item
+    represents pending work, not an individual event counter.
+    If every event must be preserved, the driver needs a
+    suitable event queue or counter protected by synchronization.
+</div>
+</section>
+
+<section class="section">
+<h2>11. Creating a Dedicated Workqueue</h2>
+
+<p>
+Linux also allows drivers to create their own workqueues
+instead of using the system workqueue.
+</p>
+
+<p>
+A dedicated workqueue can be useful when a driver needs
+specific execution properties or isolation from unrelated
+work items.
+</p>
+
+<h3>Important functions</h3>
+
+<pre><code>my_wq = alloc_workqueue("my_driver_wq",
+                        WQ_UNBOUND,
+                        1);
+
+if (!my_wq)
+    return -ENOMEM;
+
+queue_work(my_wq, &amp;my_work);
+
+/* During cleanup */
+destroy_workqueue(my_wq);</code></pre>
+
+<p>
+The example shows the allocation and queueing pattern.
+The work item must be initialized before it is queued.
+</p>
+
+<h3>Important workqueue flags</h3>
+
+<table>
+<tr>
+    <th>Flag</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td><code>WQ_UNBOUND</code></td>
+    <td>Uses unbound worker-pool execution rather than binding work to a specific CPU.</td>
+</tr>
+<tr>
+    <td><code>WQ_MEM_RECLAIM</code></td>
+    <td>Provides a rescue execution context for workqueues needed during memory reclaim.</td>
+</tr>
+<tr>
+    <td><code>WQ_FREEZABLE</code></td>
+    <td>Allows the workqueue to participate in system freezing.</td>
+</tr>
+</table>
+
+<div class="warning">
+    Workqueue flags and attributes affect scheduling behavior.
+    They should be selected according to the driver's actual
+    requirements, not added without understanding their effect.
+</div>
+</section>
+
+<section class="section">
+<h2>12. Tasklets vs Workqueues</h2>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>Tasklet</th>
+    <th>Workqueue</th>
+</tr>
+<tr>
+    <td>Execution mechanism</td>
+    <td>Softirq-based</td>
+    <td>Kernel worker threads</td>
+</tr>
+<tr>
+    <td>Execution context</td>
+    <td>Atomic context</td>
+    <td>Process context</td>
+</tr>
+<tr>
+    <td>Can sleep?</td>
+    <td>No</td>
+    <td>Yes, when permitted</td>
+</tr>
+<tr>
+    <td>Mutex support</td>
+    <td>No</td>
+    <td>Yes, when appropriate</td>
+</tr>
+<tr>
+    <td>Typical workload</td>
+    <td>Short deferred operations</td>
+    <td>Longer or sleepable operations</td>
+</tr>
+<tr>
+    <td>Scheduling</td>
+    <td>tasklet_schedule()</td>
+    <td>schedule_work()</td>
+</tr>
+<tr>
+    <td>Modern development</td>
+    <td>Legacy mechanism</td>
+    <td>Commonly preferred</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>13. Workqueue Cleanup and Synchronization</h2>
+
+<p>
+A driver must ensure that pending or executing work does
+not access memory after that memory has been released.
+</p>
+
+<h3>System workqueue cleanup</h3>
+
+<pre><code>cancel_work_sync(&amp;my_work);</code></pre>
+
+<p>
+This cancels pending work and waits for an executing callback
+to finish. It is useful during driver teardown.
+</p>
+
+<h3>Dedicated workqueue cleanup</h3>
+
+<pre><code>destroy_workqueue(my_wq);</code></pre>
+
+<p>
+Destroying a workqueue waits for its queued work to be
+handled before the workqueue is destroyed.
+</p>
+
+<h3>Typical driver cleanup order</h3>
+
+<ol>
+    <li>Prevent the device from generating new interrupts.</li>
+    <li>Mask or disable the device interrupt source as required.</li>
+    <li>Call <code>free_irq()</code> to unregister and synchronize the IRQ handler.</li>
+    <li>Cancel or flush deferred work as appropriate.</li>
+    <li>Destroy a dedicated workqueue if one was created.</li>
+    <li>Release device resources and free private data.</li>
+</ol>
+
+<div class="warning">
+    Cleanup order must prevent new work from being scheduled
+    after cancellation or destruction. A handler must not be
+    able to queue work using a work structure that has already
+    been freed.
+</div>
+</section>
+
+<section class="section">
+<h2>14. Choosing Tasklets or Workqueues</h2>
+
+<h3>Use workqueues when:</h3>
+<ul>
+    <li>The deferred function may sleep.</li>
+    <li>The driver needs mutex protection.</li>
+    <li>The processing is relatively long.</li>
+    <li>The driver needs to wait for a resource or event.</li>
+    <li>The driver requires a worker-thread execution model.</li>
+</ul>
+
+<h3>Understand tasklets when:</h3>
+<ul>
+    <li>Studying older Linux drivers.</li>
+    <li>Maintaining existing tasklet-based code.</li>
+    <li>Understanding legacy softirq-based deferred processing.</li>
+</ul>
+
+<h3>Other alternatives</h3>
+
+<ul>
+    <li><strong>Threaded IRQ:</strong> Useful when the interrupt handling itself needs sleepable thread execution.</li>
+    <li><strong>NAPI:</strong> Used by Linux networking drivers for efficient packet processing.</li>
+    <li><strong>Softirq:</strong> Primarily used by kernel subsystems for atomic deferred processing.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>15. Practical Linux Commands</h2>
+
+<p>
+The following commands can help inspect kernel messages and
+workqueue-related activity in an Ubuntu environment.
+</p>
+
+<h3>View kernel messages</h3>
+
+<pre><code>sudo dmesg | tail -n 30</code></pre>
+
+<h3>View workqueue-related kernel information</h3>
+
+<pre><code>grep -i workqueue /proc/kallsyms</code></pre>
+
+<p>
+The availability and visibility of symbols depend on kernel
+configuration and permissions. This command is not a complete
+workqueue monitoring tool.
+</p>
+
+<h3>Check kernel version</h3>
+
+<pre><code>uname -r</code></pre>
+
+<p>
+Knowing the running kernel version is important because
+kernel APIs and legacy tasklet interfaces can change.
+</p>
+
+<div class="note">
+    Ubuntu running inside VirtualBox is suitable for learning
+    workqueue concepts and testing simple kernel modules.
+    Actual peripheral interrupt testing requires suitable
+    hardware access or an appropriate emulator.
+</div>
+</section>
+
+<section class="section">
+<h2>16. Common Mistakes</h2>
+
+<ol>
+    <li><strong>Sleeping inside a tasklet:</strong> tasklets execute in atomic context.</li>
+    <li><strong>Using a mutex inside a tasklet:</strong> mutex acquisition may block.</li>
+    <li><strong>Scheduling an uninitialized work item:</strong> initialize it before queueing.</li>
+    <li><strong>Freeing work data too early:</strong> pending callbacks may still access it.</li>
+    <li><strong>Assuming every interrupt event creates a separate work execution:</strong> repeated queueing of the same pending work item may be coalesced.</li>
+    <li><strong>Destroying a workqueue while the IRQ can still queue work:</strong> prevent new scheduling before teardown.</li>
+    <li><strong>Using tasklets for every new driver:</strong> consider modern alternatives.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>17. Lesson Summary</h2>
+
+<ul>
+    <li>Tasklets and workqueues are deferred-processing mechanisms.</li>
+    <li>Tasklets use the softirq mechanism.</li>
+    <li>Tasklets execute in atomic context and cannot sleep.</li>
+    <li>Workqueues execute callbacks in worker-thread process context.</li>
+    <li>Workqueue callbacks can sleep when otherwise permitted.</li>
+    <li><code>tasklet_schedule()</code> schedules a tasklet.</li>
+    <li><code>schedule_work()</code> schedules work on the system workqueue.</li>
+    <li><code>alloc_workqueue()</code> creates a dedicated workqueue.</li>
+    <li><code>cancel_work_sync()</code> synchronizes cancellation of a work item.</li>
+    <li>Workqueue and interrupt cleanup must be carefully ordered.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>18. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+    <li>What is a tasklet?</li>
+    <li>What is a workqueue?</li>
+    <li>In which execution context does a tasklet run?</li>
+    <li>In which execution context does a workqueue callback run?</li>
+    <li>Can a tasklet sleep?</li>
+    <li>What is the purpose of tasklet_schedule()?</li>
+    <li>What is the purpose of schedule_work()?</li>
+    <li>What does cancel_work_sync() do?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+    <li>Explain tasklet architecture and execution flow.</li>
+    <li>Explain workqueue architecture and worker threads.</li>
+    <li>Differentiate tasklets and workqueues.</li>
+    <li>Explain workqueue initialization, scheduling and cleanup.</li>
+    <li>Why are tasklets considered a legacy mechanism?</li>
+    <li>Explain how interrupt-driven work can be deferred safely.</li>
+</ol>
+
+<h3>C. Practical Exercises</h3>
+<ol>
+    <li>Write a conceptual tasklet initialization and cleanup module.</li>
+    <li>Write a module that initializes and schedules a work item.</li>
+    <li>Explain the difference between schedule_work() and queue_work().</li>
+    <li>Design an interrupt handler that schedules a workqueue callback.</li>
+    <li>Prepare a safe cleanup sequence for an interrupt-driven workqueue.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>19. Expected Learning Outcome</h2>
+
+<div class="success">
+    After completing this lesson, you should understand the
+    architecture and operation of tasklets and workqueues,
+    distinguish their execution contexts, initialize and
+    schedule deferred work, and manage workqueue cleanup
+    safely in Linux device drivers.
+</div>
+</section>
+
+<div class="lesson-nav">
+    <a href="L08_Top_Half_and_Bottom_Half.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L10_Deferred_Interrupt_Processing.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 14 - Interrupt Handling in Linux Device Drivers</p>
+</footer>
+
+</body>
+</html>
