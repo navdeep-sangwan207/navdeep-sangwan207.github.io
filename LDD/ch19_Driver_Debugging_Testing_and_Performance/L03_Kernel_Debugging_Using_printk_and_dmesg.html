@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 3 - Kernel Debugging Using printk and dmesg</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:30px 15px}
+header h1{margin:0;font-size:27px}
+nav{background:white;padding:13px;text-align:center;border-bottom:1px solid #dce3ed}
+nav a{color:#174ea6;text-decoration:none;font-weight:bold;margin:0 12px}
+nav a:hover{text-decoration:underline}
+.container{max-width:1050px;margin:25px auto;padding:0 16px}
+.lesson-info{background:#e6f1ff;border-left:5px solid #2878d7;padding:15px 20px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:22px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 7px rgba(0,0,0,.06)}
+h2{color:#174ea6;margin-top:0;border-bottom:2px solid #e5edf8;padding-bottom:8px}
+h3{color:#245b9e}
+pre{background:#172334;color:#e8f0fa;padding:16px;border-radius:7px;overflow-x:auto;font-size:14px}
+code{font-family:Consolas,monospace}
+.note{background:#fff7df;border-left:5px solid #e5a000;padding:13px 16px;margin:15px 0;border-radius:5px}
+.example{background:#eaf7ee;border-left:5px solid #269653;padding:13px 16px;margin:15px 0;border-radius:5px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #d5deea;padding:11px;text-align:left;vertical-align:top}
+th{background:#e8f0fc;color:#174ea6}
+.diagram{background:#f0f5fc;padding:17px;border-radius:7px;text-align:center;font-family:Consolas,monospace;overflow-x:auto;white-space:pre;line-height:1.8}
+footer{text-align:center;padding:22px;background:#123b80;color:white;margin-top:30px}
+@media(max-width:600px){header h1{font-size:22px}nav a{display:inline-block;margin:5px 8px}section{padding:16px}table{font-size:13px}}
+</style>
+</head>
+<body>
+
+<header>
+<h1>Chapter 19: Driver Debugging, Testing and Performance</h1>
+<p>Lesson 3: Kernel Debugging Using printk() and dmesg</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">LDD Course</a>
+<a href="index.html">Chapter Index</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+<strong>Lesson:</strong> 3<br>
+<strong>Topic:</strong> Kernel Debugging Using printk() and dmesg<br>
+<strong>Chapter:</strong> Driver Debugging, Testing and Performance<br>
+<strong>Level:</strong> Intermediate
+</div>
+
+<section>
+<h2>1. Introduction</h2>
+<p>Kernel logging is one of the most important debugging methods used in Linux device-driver development.</p>
+<p>When a kernel module is loaded, a device is detected, an interrupt occurs or a driver operation fails, developers need a way to record what happened.</p>
+<p>Linux provides two important facilities:</p>
+<ul>
+<li><strong>printk():</strong> Writes messages into the kernel log buffer.</li>
+<li><strong>dmesg:</strong> Displays messages stored in the kernel ring buffer.</li>
+</ul>
+<div class="example">
+<strong>Example:</strong> If a USB driver fails to detect a device, the developer can insert logging statements into the probe() function and inspect the resulting messages using dmesg.
+</div>
+</section>
+
+<section>
+<h2>2. What Is printk()?</h2>
+<p><code>printk()</code> is a kernel logging function used to print messages from kernel code.</p>
+<p>It is similar in purpose to printf() in user-space C programming, but it operates within the kernel environment.</p>
+<h3>Syntax</h3>
+<pre><code>printk("Message\n");</code></pre>
+<h3>Example</h3>
+<pre><code>printk("Linux driver initialized\n");</code></pre>
+<p>The message is stored in the kernel log buffer and can be viewed using kernel logging tools.</p>
+<div class="note">
+printk() is a kernel function. It must not be used in ordinary user-space applications. Use printf() or another user-space logging facility there.
+</div>
+</section>
+
+<section>
+<h2>3. printk() Log-Level Format</h2>
+<p>Kernel messages can include a severity level. The level helps control how messages are classified and displayed.</p>
+<h3>Syntax</h3>
+<pre><code>printk(KERN_INFO "Driver initialized\n");</code></pre>
+<p>The KERN_INFO prefix identifies the message as informational.</p>
+<h3>Common Log Levels</h3>
+<table>
+<tr><th>Macro</th><th>Severity</th><th>Purpose</th></tr>
+<tr><td>KERN_EMERG</td><td>0</td><td>System is unusable.</td></tr>
+<tr><td>KERN_ALERT</td><td>1</td><td>Immediate action required.</td></tr>
+<tr><td>KERN_CRIT</td><td>2</td><td>Critical condition.</td></tr>
+<tr><td>KERN_ERR</td><td>3</td><td>Error condition.</td></tr>
+<tr><td>KERN_WARNING</td><td>4</td><td>Warning condition.</td></tr>
+<tr><td>KERN_NOTICE</td><td>5</td><td>Normal but significant condition.</td></tr>
+<tr><td>KERN_INFO</td><td>6</td><td>Informational message.</td></tr>
+<tr><td>KERN_DEBUG</td><td>7</td><td>Debugging message.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. printk() Examples Using Different Log Levels</h2>
+<pre><code>printk(KERN_EMERG "Emergency message\n");
+
+printk(KERN_ALERT "Alert message\n");
+
+printk(KERN_CRIT "Critical message\n");
+
+printk(KERN_ERR "Driver error\n");
+
+printk(KERN_WARNING "Driver warning\n");
+
+printk(KERN_NOTICE "Driver notice\n");
+
+printk(KERN_INFO "Driver initialized\n");
+
+printk(KERN_DEBUG "Debug information\n");</code></pre>
+<p>Each message has a severity level. The kernel console log level determines which messages are printed to the console; it does not mean that all lower-priority messages are discarded from the log buffer.</p>
+</section>
+
+<section>
+<h2>5. Modern Kernel Logging Macros</h2>
+<p>Modern Linux kernel code commonly uses convenience macros instead of writing the full printk() prefix each time.</p>
+<table>
+<tr><th>Macro</th><th>Equivalent Level</th><th>Purpose</th></tr>
+<tr><td>pr_emerg()</td><td>Emergency</td><td>Emergency messages.</td></tr>
+<tr><td>pr_alert()</td><td>Alert</td><td>Immediate attention.</td></tr>
+<tr><td>pr_crit()</td><td>Critical</td><td>Critical failures.</td></tr>
+<tr><td>pr_err()</td><td>Error</td><td>Error reporting.</td></tr>
+<tr><td>pr_warn()</td><td>Warning</td><td>Warning messages.</td></tr>
+<tr><td>pr_notice()</td><td>Notice</td><td>Significant events.</td></tr>
+<tr><td>pr_info()</td><td>Information</td><td>Normal information.</td></tr>
+<tr><td>pr_debug()</td><td>Debug</td><td>Debugging information.</td></tr>
+</table>
+<h3>Example</h3>
+<pre><code>pr_info("my_driver: initialized\n");
+
+pr_err("my_driver: device registration failed\n");
+
+pr_warn("my_driver: unexpected device state\n");
+
+pr_debug("my_driver: entering probe function\n");</code></pre>
+<p>These macros make driver code more readable and consistent.</p>
+</section>
+
+<section>
+<h2>6. What Is dmesg?</h2>
+<p><code>dmesg</code> is a Linux command used to display messages from the kernel ring buffer.</p>
+<p>It helps developers inspect messages generated during:</p>
+<ul>
+<li>Kernel boot.</li>
+<li>Kernel module loading and removal.</li>
+<li>Device detection.</li>
+<li>Driver initialization.</li>
+<li>Hardware communication.</li>
+<li>Interrupt handling.</li>
+<li>Kernel warnings and errors.</li>
+</ul>
+<h3>Basic Command</h3>
+<pre><code>dmesg</code></pre>
+<p>This displays the available kernel log messages in the terminal.</p>
+</section>
+
+<section>
+<h2>7. Common dmesg Commands</h2>
+<h3>7.1 Display All Available Messages</h3>
+<pre><code>dmesg</code></pre>
+<h3>7.2 Display the Last 20 Messages</h3>
+<pre><code>dmesg | tail -20</code></pre>
+<h3>7.3 Display the First 20 Messages</h3>
+<pre><code>dmesg | head -20</code></pre>
+<h3>7.4 Follow New Messages</h3>
+<pre><code>sudo dmesg -w</code></pre>
+<p>This displays new kernel messages as they arrive.</p>
+<h3>7.5 Display Human-Readable Timestamps</h3>
+<pre><code>dmesg -T</code></pre>
+<p>This attempts to convert kernel timestamps into human-readable time values. The converted time may not be perfectly accurate for every event, especially across changes in system time.</p>
+<h3>7.6 Display Messages with Severity Information</h3>
+<pre><code>dmesg -x</code></pre>
+<h3>7.7 Display Only Error Messages</h3>
+<pre><code>dmesg --level=err</code></pre>
+<h3>7.8 Display Warning and Error Messages</h3>
+<pre><code>dmesg --level=warn,err</code></pre>
+<h3>7.9 Search for USB Messages</h3>
+<pre><code>dmesg | grep -i usb</code></pre>
+<h3>7.10 Search for Driver Messages</h3>
+<pre><code>dmesg | grep -i my_driver</code></pre>
+</section>
+
+<section>
+<h2>8. Kernel Ring Buffer</h2>
+<p>The kernel ring buffer is an in-memory buffer that stores kernel log messages.</p>
+<p>It is called a ring buffer because new messages are written into a circular storage area. When the buffer becomes full, older entries may be overwritten by newer entries.</p>
+<div class="diagram">
+        Kernel Components
+               |
+               v
+          printk()
+               |
+               v
+       Kernel Ring Buffer
+               |
+        +------+------+
+        |             |
+        v             v
+      dmesg       journalctl
+        |             |
+        +------+------+
+               |
+               v
+        Developer Reads Logs
+</div>
+<h3>Important Characteristics</h3>
+<ul>
+<li>Stores kernel-generated messages.</li>
+<li>Supports kernel diagnostics.</li>
+<li>Has a limited buffer capacity.</li>
+<li>Older messages may disappear as new messages arrive.</li>
+<li>Can be inspected using dmesg.</li>
+</ul>
+</section>
+
+<section>
+<h2>9. printk() vs printf()</h2>
+<table>
+<tr><th>Feature</th><th>printk()</th><th>printf()</th></tr>
+<tr><td>Environment</td><td>Kernel space</td><td>User space</td></tr>
+<tr><td>Purpose</td><td>Kernel logging</td><td>Formatted output</td></tr>
+<tr><td>Header</td><td>linux/kernel.h</td><td>stdio.h</td></tr>
+<tr><td>Output destination</td><td>Kernel log buffer</td><td>Standard output or configured stream</td></tr>
+<tr><td>Common usage</td><td>Device drivers and kernel code</td><td>Applications</td></tr>
+<tr><td>Severity levels</td><td>Supported through kernel log prefixes</td><td>Not built into printf()</td></tr>
+</table>
+<h3>User-Space Example</h3>
+<pre><code>#include &lt;stdio.h&gt;
+
+int main(void)
+{
+    printf("Hello from user space\n");
+
+    return 0;
+}</code></pre>
+<h3>Kernel-Space Example</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+
+static int __init demo_init(void)
+{
+    pr_info("Hello from kernel space\n");
+    return 0;
+}
+
+static void __exit demo_exit(void)
+{
+    pr_info("Kernel module removed\n");
+}
+
+module_init(demo_init);
+module_exit(demo_exit);
+
+MODULE_LICENSE("GPL");</code></pre>
+</section>
+
+<section>
+<h2>10. Controlling Kernel Console Log Level</h2>
+<p>Linux maintains a console log level that controls which kernel messages are printed to the console.</p>
+<h3>View Current Console Log Level</h3>
+<pre><code>cat /proc/sys/kernel/printk</code></pre>
+<p>The output contains four numeric values. They represent the current console log level, the default message level, the minimum console level and the default console level.</p>
+<h3>Temporarily Change Console Log Level</h3>
+<pre><code>sudo dmesg -n 7</code></pre>
+<p>This changes the console log level to allow more messages to be printed to the console.</p>
+<h3>Restore a More Restrictive Level</h3>
+<pre><code>sudo dmesg -n 4</code></pre>
+<div class="note">
+Changing the console log level affects console output. It does not necessarily remove messages from the kernel ring buffer.
+</div>
+</section>
+
+<section>
+<h2>11. printk() in Device Driver Functions</h2>
+<p>Logging can be added to different callbacks to understand driver execution.</p>
+<h3>Module Initialization</h3>
+<pre><code>static int __init my_init(void)
+{
+    pr_info("Driver initialization started\n");
+
+    pr_info("Driver initialization completed\n");
+
+    return 0;
+}</code></pre>
+<h3>Module Exit</h3>
+<pre><code>static void __exit my_exit(void)
+{
+    pr_info("Driver cleanup started\n");
+
+    pr_info("Driver removed\n");
+}</code></pre>
+<h3>Open Callback</h3>
+<pre><code>static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    pr_info("Device file opened\n");
+
+    return 0;
+}</code></pre>
+<h3>Read Callback</h3>
+<pre><code>static ssize_t my_read(struct file *file,
+                       char __user *buffer,
+                       size_t count,
+                       loff_t *offset)
+{
+    pr_info("Read operation called\n");
+
+    return 0;
+}</code></pre>
+<h3>Write Callback</h3>
+<pre><code>static ssize_t my_write(struct file *file,
+                        const char __user *buffer,
+                        size_t count,
+                        loff_t *offset)
+{
+    pr_info("Write operation called\n");
+
+    return count;
+}</code></pre>
+<p>These examples demonstrate logging placement. A complete read/write implementation must also handle data transfer, offsets, return values and user-space memory safely.</p>
+</section>
+
+<section>
+<h2>12. Device-Specific Logging with pr_fmt()</h2>
+<p>The <code>pr_fmt()</code> macro can add a common prefix to messages in a source file.</p>
+<h3>Example</h3>
+<pre><code>#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
+#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+
+static int __init demo_init(void)
+{
+    pr_info("Driver initialized\n");
+
+    pr_err("Example error message\n");
+
+    return 0;
+}
+
+static void __exit demo_exit(void)
+{
+    pr_info("Driver removed\n");
+}
+
+module_init(demo_init);
+module_exit(demo_exit);
+
+MODULE_LICENSE("GPL");</code></pre>
+<p>The output messages include the module name as a prefix, making it easier to identify which driver generated them.</p>
+</section>
+
+<section>
+<h2>13. Logging Best Practices</h2>
+<ol>
+<li>Use pr_info() for important informational messages.</li>
+<li>Use pr_err() for actual error conditions.</li>
+<li>Use pr_warn() for unexpected but recoverable conditions.</li>
+<li>Use pr_debug() for detailed debugging information.</li>
+<li>Include the device or driver name in messages when useful.</li>
+<li>Avoid logging repeatedly inside high-frequency interrupt or data-transfer paths.</li>
+<li>Do not print sensitive information.</li>
+<li>Remove unnecessary temporary logs before production release.</li>
+<li>Use meaningful error messages.</li>
+<li>Check kernel logs after loading and unloading modules.</li>
+</ol>
+</section>
+
+<section>
+<h2>14. Practical Exercise: Kernel Logging Module</h2>
+<h3>Objective</h3>
+<p>Create a kernel module that uses different log levels and inspect its messages through dmesg.</p>
+<h3>Source Code: logging_demo.c</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+
+static int __init logging_demo_init(void)
+{
+    pr_info("logging_demo: initialization started\n");
+
+    pr_warn("logging_demo: warning example\n");
+
+    pr_err("logging_demo: error message example\n");
+
+    pr_info("logging_demo: initialization completed\n");
+
+    return 0;
+}
+
+static void __exit logging_demo_exit(void)
+{
+    pr_info("logging_demo: module removed\n");
+}
+
+module_init(logging_demo_init);
+module_exit(logging_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Kernel Logging Demonstration");
+</code></pre>
+
+<h3>Makefile</h3>
+<pre><code>obj-m += logging_demo.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<h3>Compile the Module</h3>
+<pre><code>make</code></pre>
+
+<h3>Load the Module</h3>
+<pre><code>sudo insmod logging_demo.ko</code></pre>
+
+<h3>View Kernel Messages</h3>
+<pre><code>sudo dmesg | tail -20</code></pre>
+
+<h3>Filter Module Messages</h3>
+<pre><code>sudo dmesg | grep logging_demo</code></pre>
+
+<h3>Remove the Module</h3>
+<pre><code>sudo rmmod logging_demo</code></pre>
+
+<h3>Verify Removal</h3>
+<pre><code>sudo dmesg | tail -20</code></pre>
+
+<h3>Expected Result</h3>
+<pre><code>logging_demo: initialization started
+logging_demo: warning example
+logging_demo: error message example
+logging_demo: initialization completed
+logging_demo: module removed</code></pre>
+<p>The exact timestamps, prefixes and ordering in the complete log output may vary.</p>
+</section>
+
+<section>
+<h2>15. Troubleshooting Common Logging Problems</h2>
+<table>
+<tr><th>Problem</th><th>Possible Reason</th><th>Action</th></tr>
+<tr><td>No messages visible</td><td>Wrong module, no log generated or messages not in displayed range.</td><td>Check module status and dmesg output.</td></tr>
+<tr><td>Debug messages missing</td><td>pr_debug() is not enabled or compiled as expected.</td><td>Check dynamic debug and kernel configuration.</td></tr>
+<tr><td>Permission denied</td><td>Insufficient privileges.</td><td>Use sudo where appropriate.</td></tr>
+<tr><td>Old messages missing</td><td>Ring buffer has overwritten earlier entries.</td><td>Collect logs promptly or use persistent logging.</td></tr>
+<tr><td>Too many messages</td><td>Excessive logging in frequently executed code.</td><td>Reduce logging or use targeted debugging.</td></tr>
+<tr><td>Messages not on console</td><td>Console log level filters them.</td><td>Inspect /proc/sys/kernel/printk.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>16. Important Points to Remember</h2>
+<ul>
+<li>printk() is a kernel logging function.</li>
+<li>printf() is generally used in user-space applications.</li>
+<li>KERN_INFO and KERN_ERR are kernel log-level prefixes.</li>
+<li>pr_info(), pr_err() and pr_debug() are convenient logging macros.</li>
+<li>dmesg displays kernel ring-buffer messages.</li>
+<li>The ring buffer has limited capacity.</li>
+<li>dmesg -w follows new kernel messages.</li>
+<li>pr_fmt() can add a common source-file message prefix.</li>
+<li>Console log level controls console visibility.</li>
+<li>Excessive logging can affect performance.</li>
+</ul>
+</section>
+
+<section>
+<h2>17. Review Questions</h2>
+<ol>
+<li>What is printk()?</li>
+<li>How is printk() different from printf()?</li>
+<li>What is the purpose of kernel log levels?</li>
+<li>List the common printk() severity levels.</li>
+<li>What are pr_info() and pr_err()?</li>
+<li>What is the purpose of pr_debug()?</li>
+<li>What is dmesg?</li>
+<li>Explain the kernel ring buffer.</li>
+<li>How do you follow new kernel messages?</li>
+<li>How can you filter USB-related messages?</li>
+<li>What does dmesg -T do?</li>
+<li>What is the console log level?</li>
+<li>How can you inspect the current console log level?</li>
+<li>What is the purpose of pr_fmt()?</li>
+<li>Why should excessive logging be avoided?</li>
+<li>How can you debug a driver initialization failure using printk() and dmesg?</li>
+</ol>
+</section>
+
+<section>
+<h2>18. Lesson Summary</h2>
+<p>printk() and its convenience macros provide a simple and effective way to record messages from Linux kernel code. These messages help developers understand driver initialization, device operations, hardware communication and error conditions.</p>
+<p>The dmesg command displays kernel ring-buffer messages and provides useful filtering and monitoring options.</p>
+<p>Correct log levels, meaningful messages and controlled logging make kernel debugging more effective and help developers diagnose device-driver problems.</p>
+</section>
+
+<section>
+<h2>Navigation</h2>
+<p><strong>Previous Lesson:</strong>
+<a href="L02_Kernel_Debugging_Techniques.html">Lesson 2 - Kernel Debugging Techniques</a></p>
+<p><strong>Next Lesson:</strong>
+<a href="L04_Kernel_Debugging_Using_ftrace.html">Lesson 4 - Kernel Debugging Using ftrace</a></p>
+<p><a href="index.html">Back to Chapter 19 Index</a></p>
+<p><a href="../../ldd.html">Back to Linux Device Drivers Course</a></p>
+</section>
+
+</div>
+
+<footer>
+<p>Linux Device Drivers | NS Learning Hub</p>
+<p>Chapter 19 - Lesson 3</p>
+</footer>
+
+</body>
+</html>
