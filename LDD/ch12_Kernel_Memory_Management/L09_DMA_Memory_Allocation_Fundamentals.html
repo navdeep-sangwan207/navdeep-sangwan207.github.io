@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DMA Memory Allocation Fundamentals | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>DMA Memory Allocation Fundamentals</h1>
+    <p>Linux Device Drivers – Chapter 12, Lesson 9</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 12</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> Kernel Memory Management</p>
+    <p><strong>Lesson:</strong> 9 – DMA Memory Allocation Fundamentals</p>
+    <p><strong>Prerequisites:</strong> Physical and virtual memory, kmalloc(), vmalloc(), GFP flags and device driver architecture.</p>
+    <p><strong>Objective:</strong> Understand Direct Memory Access, DMA-capable memory, DMA addresses, coherent and streaming mappings, and Linux DMA APIs.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction to DMA</h2>
+
+<p>DMA stands for <strong>Direct Memory Access</strong>.</p>
+
+<p>It is a hardware mechanism that allows a device to transfer data to or from system memory without requiring the CPU to copy every byte individually.</p>
+
+<p>DMA is commonly used by:</p>
+
+<ul>
+    <li>Network interface controllers.</li>
+    <li>Storage controllers.</li>
+    <li>Audio devices.</li>
+    <li>Graphics hardware.</li>
+    <li>High-speed communication peripherals.</li>
+    <li>Embedded-system peripherals.</li>
+</ul>
+
+<p>DMA can reduce CPU overhead and improve data-transfer efficiency.</p>
+
+<div class="diagram">
+    <div class="diagram-box">CPU</div>
+    <div class="diagram-box">DMA-Capable Device</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">System Memory</div>
+    <p>The device transfers data through the system's DMA and memory-access mechanisms.</p>
+</div>
+</section>
+
+<section class="section">
+<h2>2. Why Is DMA Required?</h2>
+
+<p>Consider a network device receiving a large amount of data.</p>
+
+<p>Without DMA, the CPU may need to perform substantial data-copying work between device-related buffers and system memory.</p>
+
+<p>With DMA, the device can transfer data directly into or out of an appropriately prepared memory buffer.</p>
+
+<h3>Advantages</h3>
+
+<ul>
+    <li>Reduces CPU involvement in bulk data movement.</li>
+    <li>Can improve transfer efficiency.</li>
+    <li>Supports high-throughput hardware.</li>
+    <li>Allows devices to access prepared system-memory buffers.</li>
+</ul>
+
+<div class="note">
+    DMA does not eliminate CPU involvement completely. The CPU still configures transfers, manages descriptors, handles completion events and performs synchronization.
+</div>
+</section>
+
+<section class="section">
+<h2>3. CPU-Based Data Transfer vs DMA Transfer</h2>
+
+<h3>CPU-Based Transfer</h3>
+
+<div class="diagram">
+    <div class="diagram-box">Device / Device Buffer</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">CPU Copies Data</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">System Memory</div>
+</div>
+
+<h3>DMA-Based Transfer</h3>
+
+<div class="diagram">
+    <div class="diagram-box">CPU Configures DMA</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">DMA Device Transfers Data</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">System Memory</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">CPU Handles Completion</div>
+</div>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>CPU Copy</th>
+    <th>DMA Transfer</th>
+</tr>
+<tr>
+    <td>Data movement</td>
+    <td>Performed by CPU instructions</td>
+    <td>Performed by a DMA-capable device or controller</td>
+</tr>
+<tr>
+    <td>CPU involvement</td>
+    <td>Higher during bulk copying</td>
+    <td>Lower during the transfer itself</td>
+</tr>
+<tr>
+    <td>Setup</td>
+    <td>Usually simpler</td>
+    <td>Requires device and DMA configuration</td>
+</tr>
+<tr>
+    <td>Synchronization</td>
+    <td>Normal software synchronization</td>
+    <td>Requires DMA ownership and cache-coherency handling where applicable</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>4. DMA Address</h2>
+
+<p>A DMA address is the address that a device uses to access a memory buffer through its DMA interface.</p>
+
+<p>It is represented in Linux using the <code>dma_addr_t</code> type.</p>
+
+<pre><code>dma_addr_t dma_handle;</code></pre>
+
+<p>Three address types must be distinguished:</p>
+
+<table>
+<tr>
+    <th>Address Type</th>
+    <th>Used By</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td>CPU Virtual Address</td>
+    <td>CPU and kernel code</td>
+    <td>Address used by the CPU to access mapped memory.</td>
+</tr>
+<tr>
+    <td>Physical Address</td>
+    <td>Memory system</td>
+    <td>Address in the system's physical address space.</td>
+</tr>
+<tr>
+    <td>DMA Address</td>
+    <td>DMA-capable device</td>
+    <td>Address used by the device for DMA operations.</td>
+</tr>
+</table>
+
+<div class="important">
+    A DMA address is not necessarily equal to a physical address. An IOMMU or architecture-specific DMA translation mechanism may translate device-visible addresses.
+</div>
+</section>
+
+<section class="section">
+<h2>5. DMA Address Translation</h2>
+
+<p>Modern systems may use an IOMMU (Input-Output Memory Management Unit).</p>
+
+<p>The IOMMU can translate device-visible DMA addresses into physical addresses and enforce access restrictions.</p>
+
+<div class="diagram">
+    <div class="diagram-box">CPU Virtual Address</div>
+    <div class="arrow">↓ CPU MMU</div>
+    <div class="diagram-box">Physical Memory</div>
+    <hr>
+    <div class="diagram-box">Device DMA Address / IOVA</div>
+    <div class="arrow">↓ IOMMU (if present)</div>
+    <div class="diagram-box">Physical Memory</div>
+</div>
+
+<p>Without an IOMMU, DMA mapping may use architecture-specific direct mappings, bounce buffers or other mechanisms.</p>
+
+<p>The Linux DMA API hides many of these implementation details from device drivers.</p>
+</section>
+
+<section class="section">
+<h2>6. Types of DMA Memory</h2>
+
+<p>Linux DMA programming commonly distinguishes between two broad mapping styles.</p>
+
+<h3>1. Coherent DMA Memory</h3>
+
+<p>Coherent DMA memory is allocated through the DMA API so that CPU and device accesses observe a coherent view of the memory according to the platform's DMA-coherency model.</p>
+
+<p>It is often used for:</p>
+
+<ul>
+    <li>DMA descriptor rings.</li>
+    <li>Control structures shared between CPU and device.</li>
+    <li>Frequently updated device metadata.</li>
+</ul>
+
+<h3>2. Streaming DMA Mapping</h3>
+
+<p>Streaming DMA mapping is used when an existing memory buffer is temporarily mapped for a device transfer.</p>
+
+<p>It is commonly used for:</p>
+
+<ul>
+    <li>Network packet buffers.</li>
+    <li>Storage data buffers.</li>
+    <li>Large one-direction or bidirectional data transfers.</li>
+</ul>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>Coherent DMA</th>
+    <th>Streaming DMA</th>
+</tr>
+<tr>
+    <td>Typical use</td>
+    <td>Descriptors and shared control data</td>
+    <td>Transfer buffers</td>
+</tr>
+<tr>
+    <td>Allocation / mapping</td>
+    <td>dma_alloc_coherent()</td>
+    <td>dma_map_single() and related APIs</td>
+</tr>
+<tr>
+    <td>Release / unmapping</td>
+    <td>dma_free_coherent()</td>
+    <td>dma_unmap_single() and related APIs</td>
+</tr>
+<tr>
+    <td>Synchronization</td>
+    <td>Coherent visibility is provided, but ordering rules still matter</td>
+    <td>Ownership and cache synchronization must follow DMA API rules</td>
+</tr>
+</table>
+
+<div class="note">
+    Coherent does not mean that CPU and device operations can be performed without synchronization. Memory barriers and correct ownership ordering may still be required.
+</div>
+</section>
+
+<section class="section">
+<h2>7. Linux DMA API</h2>
+
+<p>Linux provides a DMA API that allows device drivers to allocate, map, synchronize and release DMA memory.</p>
+
+<p>Important functions include:</p>
+
+<table>
+<tr>
+    <th>API</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>dma_alloc_coherent()</code></td>
+    <td>Allocates coherent DMA memory.</td>
+</tr>
+<tr>
+    <td><code>dma_free_coherent()</code></td>
+    <td>Releases coherent DMA memory.</td>
+</tr>
+<tr>
+    <td><code>dma_map_single()</code></td>
+    <td>Maps a suitable single CPU-addressable buffer for DMA.</td>
+</tr>
+<tr>
+    <td><code>dma_unmap_single()</code></td>
+    <td>Unmaps a streaming DMA mapping.</td>
+</tr>
+<tr>
+    <td><code>dma_sync_single_for_cpu()</code></td>
+    <td>Synchronizes a streaming mapping for CPU access when required.</td>
+</tr>
+<tr>
+    <td><code>dma_sync_single_for_device()</code></td>
+    <td>Synchronizes a streaming mapping for device access when required.</td>
+</tr>
+<tr>
+    <td><code>dma_set_mask_and_coherent()</code></td>
+    <td>Sets the device's supported DMA addressing capabilities for streaming and coherent allocations.</td>
+</tr>
+</table>
+
+<p>These functions are declared through the Linux DMA mapping interfaces, commonly included using:</p>
+
+<pre><code>#include &lt;linux/dma-mapping.h&gt;</code></pre>
+</section>
+
+<section class="section">
+<h2>8. dma_alloc_coherent()</h2>
+
+<p><code>dma_alloc_coherent()</code> allocates a coherent DMA buffer.</p>
+
+<h3>Function Concept</h3>
+
+<pre><code>void *dma_alloc_coherent(
+    struct device *dev,
+    size_t size,
+    dma_addr_t *dma_handle,
+    gfp_t gfp
+);</code></pre>
+
+<h3>Parameters</h3>
+
+<table>
+<tr>
+    <th>Parameter</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td><code>dev</code></td>
+    <td>Device structure for which DMA memory is allocated.</td>
+</tr>
+<tr>
+    <td><code>size</code></td>
+    <td>Number of bytes to allocate.</td>
+</tr>
+<tr>
+    <td><code>dma_handle</code></td>
+    <td>Output location for the DMA address.</td>
+</tr>
+<tr>
+    <td><code>gfp</code></td>
+    <td>Allocation flags, subject to DMA API constraints.</td>
+</tr>
+</table>
+
+<h3>Return Values</h3>
+
+<ul>
+    <li>Returns a CPU-accessible virtual address on success.</li>
+    <li>Returns NULL if allocation fails.</li>
+    <li>Writes the corresponding device-visible DMA address to <code>dma_handle</code>.</li>
+</ul>
+
+<h3>Example</h3>
+
+<pre><code>void *cpu_addr;
+dma_addr_t dma_handle;
+
+cpu_addr = dma_alloc_coherent(
+    dev,
+    4096,
+    &amp;dma_handle,
+    GFP_KERNEL
+);
+
+if (!cpu_addr) {
+    dev_err(dev, "DMA allocation failed\n");
+    return -ENOMEM;
+}</code></pre>
+
+<p>The CPU uses <code>cpu_addr</code> to access the allocated memory. The device is programmed with <code>dma_handle</code>, subject to the device's DMA programming requirements.</p>
+</section>
+
+<section class="section">
+<h2>9. dma_free_coherent()</h2>
+
+<p>Memory allocated using <code>dma_alloc_coherent()</code> must be released using <code>dma_free_coherent()</code>.</p>
+
+<h3>Function Concept</h3>
+
+<pre><code>void dma_free_coherent(
+    struct device *dev,
+    size_t size,
+    void *cpu_addr,
+    dma_addr_t dma_handle
+);</code></pre>
+
+<h3>Example</h3>
+
+<pre><code>dma_free_coherent(
+    dev,
+    4096,
+    cpu_addr,
+    dma_handle
+);</code></pre>
+
+<p>The same device, size, CPU address and DMA handle used for the allocation must be supplied when releasing the allocation.</p>
+
+<div class="important">
+    Do not release coherent DMA memory using kfree() or vfree(). Use the matching DMA API release function.
+</div>
+</section>
+
+<section class="section">
+<h2>10. Streaming DMA Mapping</h2>
+
+<p>Streaming DMA mapping is useful when a driver already has a suitable CPU-accessible buffer and wants to make it available for a DMA transfer.</p>
+
+<p>For a single buffer, Linux provides <code>dma_map_single()</code>.</p>
+
+<h3>Function Concept</h3>
+
+<pre><code>dma_addr_t dma_map_single(
+    struct device *dev,
+    void *cpu_addr,
+    size_t size,
+    enum dma_data_direction direction
+);</code></pre>
+
+<h3>DMA Directions</h3>
+
+<table>
+<tr>
+    <th>Direction</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td><code>DMA_TO_DEVICE</code></td>
+    <td>Data moves from system memory to the device.</td>
+</tr>
+<tr>
+    <td><code>DMA_FROM_DEVICE</code></td>
+    <td>Data moves from the device to system memory.</td>
+</tr>
+<tr>
+    <td><code>DMA_BIDIRECTIONAL</code></td>
+    <td>Data may move in both directions.</td>
+</tr>
+</table>
+
+<h3>Example: Mapping a Transmit Buffer</h3>
+
+<pre><code>dma_addr_t dma_handle;
+
+dma_handle = dma_map_single(
+    dev,
+    buffer,
+    buffer_size,
+    DMA_TO_DEVICE
+);
+
+if (dma_mapping_error(dev, dma_handle)) {
+    dev_err(dev, "DMA mapping failed\n");
+    return -EIO;
+}
+
+/* Program the device using dma_handle. */
+
+/* After the device has finished with the mapping: */
+dma_unmap_single(
+    dev,
+    dma_handle,
+    buffer_size,
+    DMA_TO_DEVICE
+);</code></pre>
+
+<p>This is a conceptual example. A real driver must ensure that the buffer remains valid, is not accessed in an incompatible way while device-owned, and is unmapped only after the device has finished the transfer.</p>
+</section>
+
+<section class="section">
+<h2>11. DMA Mapping Error Checking</h2>
+
+<p>A successful call to <code>dma_map_single()</code> returns a DMA address. A failed mapping must be detected using <code>dma_mapping_error()</code>.</p>
+
+<pre><code>dma_addr_t dma_handle;
+
+dma_handle = dma_map_single(
+    dev,
+    buffer,
+    size,
+    DMA_TO_DEVICE
+);
+
+if (dma_mapping_error(dev, dma_handle)) {
+    dev_err(dev, "Unable to map DMA buffer\n");
+    return -EIO;
+}</code></pre>
+
+<p>Do not assume that a DMA mapping always succeeds.</p>
+</section>
+
+<section class="section">
+<h2>12. DMA Synchronization</h2>
+
+<p>Streaming DMA mappings may require explicit synchronization when ownership changes between the CPU and device.</p>
+
+<p>Linux provides synchronization functions for this purpose.</p>
+
+<h3>Synchronize for Device</h3>
+
+<pre><code>dma_sync_single_for_device(
+    dev,
+    dma_handle,
+    size,
+    DMA_TO_DEVICE
+);</code></pre>
+
+<p>This prepares the mapping for device access where the DMA API requires synchronization.</p>
+
+<h3>Synchronize for CPU</h3>
+
+<pre><code>dma_sync_single_for_cpu(
+    dev,
+    dma_handle,
+    size,
+    DMA_FROM_DEVICE
+);</code></pre>
+
+<p>This prepares the mapping for CPU access after device activity where required.</p>
+
+<div class="note">
+    Synchronization functions do not replace correct device-completion handling. The driver must know when the device has finished accessing the buffer.
+</div>
+</section>
+
+<section class="section">
+<h2>13. DMA Ownership Model</h2>
+
+<p>A streaming DMA buffer should have a clear ownership model.</p>
+
+<div class="diagram">
+    <div class="diagram-box">CPU Owns Buffer</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Prepare and Map for DMA</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Device Owns Buffer</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Transfer Completes</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Synchronize / Unmap</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">CPU Owns Buffer Again</div>
+</div>
+
+<p>The exact sequence depends on whether the mapping is one-shot or reused and whether the transfer is to or from the device.</p>
+
+<p>For a one-shot mapping, the driver normally unmaps after the device finishes. For a reused streaming mapping, the driver may use the synchronization APIs to switch ownership between CPU and device.</p>
+</section>
+
+<section class="section">
+<h2>14. DMA Addressing Limitations</h2>
+
+<p>Not every device can address the entire system physical address space.</p>
+
+<p>For example, a device may support only 32-bit DMA addresses even when the CPU and system RAM support wider addresses.</p>
+
+<p>The driver should declare the device's DMA addressing capability.</p>
+
+<h3>Example</h3>
+
+<pre><code>if (dma_set_mask_and_coherent(
+        dev,
+        DMA_BIT_MASK(32))) {
+    dev_err(dev, "32-bit DMA not supported\n");
+    return -EIO;
+}</code></pre>
+
+<p>This requests support for 32-bit DMA addressing for streaming and coherent DMA operations.</p>
+
+<p>If the device supports a wider address range, the driver should use the appropriate mask for that hardware.</p>
+</section>
+
+<section class="section">
+<h2>15. DMA and Cache Coherency</h2>
+
+<p>Some systems have hardware cache coherency between the CPU and DMA devices. Other systems require explicit cache maintenance through the DMA API.</p>
+
+<p>If the CPU modifies a buffer and the device reads it, the device must see the updated data.</p>
+
+<p>If the device writes into a buffer and the CPU reads it, the CPU must see the device's updated data.</p>
+
+<h3>Potential Problems</h3>
+
+<ul>
+    <li>CPU reads stale cached data.</li>
+    <li>Device reads data that has not been made visible to it.</li>
+    <li>CPU and device access the same buffer without correct ownership coordination.</li>
+    <li>Missing ordering or synchronization operations cause inconsistent results.</li>
+</ul>
+
+<p>The Linux DMA API handles architecture-specific cache maintenance and mapping requirements when used correctly.</p>
+</section>
+
+<section class="section">
+<h2>16. DMA and kmalloc()</h2>
+
+<p>A common misconception is that memory returned by <code>kmalloc()</code> can automatically be used by any DMA device.</p>
+
+<p>Although kmalloc memory is physically contiguous for the requested allocation, it still needs appropriate DMA mapping and address handling.</p>
+
+<p>Example of the mapping pattern:</p>
+
+<pre><code>buffer = kmalloc(size, GFP_KERNEL);
+
+if (!buffer)
+    return -ENOMEM;
+
+dma_handle = dma_map_single(
+    dev,
+    buffer,
+    size,
+    DMA_TO_DEVICE
+);
+
+if (dma_mapping_error(dev, dma_handle)) {
+    kfree(buffer);
+    return -EIO;
+}
+
+/* Perform device transfer. */
+
+/* After DMA has completed: */
+dma_unmap_single(
+    dev,
+    dma_handle,
+    size,
+    DMA_TO_DEVICE
+);
+
+kfree(buffer);</code></pre>
+
+<div class="important">
+    Physical contiguity does not replace DMA mapping. Use the DMA API even when the CPU buffer came from kmalloc().
+</div>
+</section>
+
+<section class="section">
+<h2>17. Practical DMA Allocation Example</h2>
+
+<p>The following is a basic coherent-DMA allocation pattern for a real device driver. It demonstrates the API lifecycle but does not operate a physical device by itself.</p>
+
+<p>Create <code>dma_demo.c</code>:</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/platform_device.h&gt;
+#include &lt;linux/dma-mapping.h&gt;
+
+#define DMA_BUFFER_SIZE 4096
+
+struct dma_demo_data {
+    void *cpu_addr;
+    dma_addr_t dma_handle;
+};
+
+static int dma_demo_probe(struct platform_device *pdev)
+{
+    struct dma_demo_data *data;
+
+    data = devm_kzalloc(
+        &amp;pdev-&gt;dev,
+        sizeof(*data),
+        GFP_KERNEL
+    );
+
+    if (!data)
+        return -ENOMEM;
+
+    if (dma_set_mask_and_coherent(
+            &amp;pdev-&gt;dev,
+            DMA_BIT_MASK(32))) {
+        dev_err(&amp;pdev-&gt;dev,
+                "DMA mask configuration failed\n");
+        return -EIO;
+    }
+
+    data-&gt;cpu_addr = dma_alloc_coherent(
+        &amp;pdev-&gt;dev,
+        DMA_BUFFER_SIZE,
+        &amp;data-&gt;dma_handle,
+        GFP_KERNEL
+    );
+
+    if (!data-&gt;cpu_addr)
+        return -ENOMEM;
+
+    memset(data-&gt;cpu_addr, 0, DMA_BUFFER_SIZE);
+
+    platform_set_drvdata(pdev, data);
+
+    dev_info(&amp;pdev-&gt;dev,
+             "Coherent DMA buffer allocated\n");
+
+    return 0;
+}
+
+static void dma_demo_remove(struct platform_device *pdev)
+{
+    struct dma_demo_data *data =
+        platform_get_drvdata(pdev);
+
+    if (data &amp;&amp; data-&gt;cpu_addr) {
+        dma_free_coherent(
+            &amp;pdev-&gt;dev,
+            DMA_BUFFER_SIZE,
+            data-&gt;cpu_addr,
+            data-&gt;dma_handle
+        );
+
+        data-&gt;cpu_addr = NULL;
+    }
+
+    dev_info(&amp;pdev-&gt;dev,
+             "Coherent DMA buffer released\n");
+}
+
+static struct platform_driver dma_demo_driver = {
+    .probe = dma_demo_probe,
+    .remove = dma_demo_remove,
+    .driver = {
+        .name = "dma_demo",
+    },
+};
+
+module_platform_driver(dma_demo_driver);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Coherent DMA allocation example");
+</code></pre>
+
+<div class="note">
+    This is a platform-driver code pattern, not a standalone load-and-test module. It requires a matching platform device to bind and execute probe(). The device must also have a valid DMA configuration. Kernel platform-driver callback signatures can vary across kernel versions; check the headers for the target kernel.
+</div>
+
+<h3>Code Explanation</h3>
+
+<ol>
+    <li><code>devm_kzalloc()</code> allocates and zero-initializes the driver's private data.</li>
+    <li><code>dma_set_mask_and_coherent()</code> declares a 32-bit DMA addressing capability.</li>
+    <li><code>dma_alloc_coherent()</code> allocates the DMA buffer.</li>
+    <li><code>cpu_addr</code> is used by the CPU.</li>
+    <li><code>dma_handle</code> is the device-visible DMA address.</li>
+    <li><code>dma_free_coherent()</code> releases the buffer when the device is removed.</li>
+</ol>
+
+<p>The example does not program DMA registers or initiate a transfer. Those steps require device-specific hardware documentation and driver logic.</p>
+</section>
+
+<section class="section">
+<h2>18. DMA Development in Ubuntu VirtualBox</h2>
+
+<p>You can study DMA APIs and compile suitable driver code in your Ubuntu VirtualBox environment, but a successful compile does not prove that a real DMA transfer works.</p>
+
+<p>Practical DMA testing requires an appropriate DMA-capable device and a correctly configured hardware or emulated environment.</p>
+
+<ul>
+    <li>Use kernel headers matching the running Ubuntu kernel.</li>
+    <li>Understand the device's DMA address width.</li>
+    <li>Use the DMA API rather than hardcoded physical addresses.</li>
+    <li>Check the device's DMA capabilities and IOMMU configuration.</li>
+    <li>Test hardware-dependent operations only with suitable hardware or supported emulation.</li>
+</ul>
+
+<p>For learning, focus first on the allocation, mapping, synchronization and release lifecycle.</p>
+</section>
+
+<section class="section">
+<h2>19. Common DMA Programming Mistakes</h2>
+
+<table>
+<tr>
+    <th>Mistake</th>
+    <th>Why It Is Incorrect</th>
+    <th>Correct Practice</th>
+</tr>
+<tr>
+    <td>Passing a CPU virtual address to the device</td>
+    <td>The device needs a DMA address.</td>
+    <td>Use the DMA API and program the returned DMA address.</td>
+</tr>
+<tr>
+    <td>Assuming physical address equals DMA address</td>
+    <td>An IOMMU or DMA translation mechanism may be involved.</td>
+    <td>Use the returned DMA handle.</td>
+</tr>
+<tr>
+    <td>Using kfree() for coherent DMA memory</td>
+    <td>It is the wrong allocator release function.</td>
+    <td>Use dma_free_coherent().</td>
+</tr>
+<tr>
+    <td>Forgetting dma_unmap_single()</td>
+    <td>Streaming mappings remain active.</td>
+    <td>Unmap after the device has finished using the mapping.</td>
+</tr>
+<tr>
+    <td>Ignoring mapping errors</td>
+    <td>DMA mapping may fail.</td>
+    <td>Check dma_mapping_error().</td>
+</tr>
+<tr>
+    <td>Using the wrong DMA direction</td>
+    <td>The mapping direction does not describe the transfer correctly.</td>
+    <td>Select DMA_TO_DEVICE, DMA_FROM_DEVICE or DMA_BIDIRECTIONAL appropriately.</td>
+</tr>
+<tr>
+    <td>CPU and device access without synchronization</td>
+    <td>Can produce stale or inconsistent data.</td>
+    <td>Follow DMA ownership and synchronization rules.</td>
+</tr>
+<tr>
+    <td>Assuming kmalloc() guarantees DMA suitability</td>
+    <td>Physical contiguity alone is insufficient.</td>
+    <td>Map the buffer using the DMA API.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>20. Lesson Summary</h2>
+
+<ul>
+    <li>DMA allows devices to transfer data directly to or from system memory.</li>
+    <li>DMA reduces CPU involvement in bulk data movement.</li>
+    <li>CPU virtual, physical and DMA addresses are distinct concepts.</li>
+    <li>The Linux DMA API manages device-specific mapping requirements.</li>
+    <li>Coherent DMA memory is commonly used for shared control structures.</li>
+    <li>Streaming DMA mappings are commonly used for transfer buffers.</li>
+    <li>dma_alloc_coherent() and dma_free_coherent() form a matching pair.</li>
+    <li>dma_map_single() and dma_unmap_single() form a matching pair.</li>
+    <li>DMA mapping errors and synchronization requirements must be handled.</li>
+    <li>DMA address masks must match device capabilities.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>21. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>What is DMA?</li>
+    <li>Why is DMA used in device drivers?</li>
+    <li>What is a DMA address?</li>
+    <li>What is the purpose of dma_addr_t?</li>
+    <li>What is coherent DMA memory?</li>
+    <li>What is streaming DMA mapping?</li>
+    <li>What is the purpose of dma_alloc_coherent()?</li>
+    <li>What is the purpose of dma_map_single()?</li>
+    <li>What is DMA_TO_DEVICE?</li>
+    <li>Why is dma_mapping_error() required?</li>
+    <li>What is an IOMMU?</li>
+    <li>Why is DMA synchronization important?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain Direct Memory Access and its advantages.</li>
+    <li>Compare CPU-based copying and DMA-based data transfer.</li>
+    <li>Differentiate CPU virtual, physical and DMA addresses.</li>
+    <li>Explain coherent and streaming DMA memory.</li>
+    <li>Describe dma_alloc_coherent() and dma_free_coherent().</li>
+    <li>Explain dma_map_single() and dma_unmap_single().</li>
+    <li>Discuss DMA synchronization and cache coherency.</li>
+    <li>Explain the importance of DMA address masks.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Write a driver probe function that allocates coherent DMA memory.</li>
+    <li>Store the CPU address and DMA handle in a driver structure.</li>
+    <li>Implement the corresponding cleanup operation.</li>
+    <li>Write a conceptual streaming DMA mapping example.</li>
+    <li>Identify the correct DMA direction for a transmit buffer.</li>
+    <li>Explain how an IOMMU changes device address translation.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>22. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Explain DMA operation and its role in device drivers.</li>
+    <li>Differentiate CPU virtual, physical and DMA addresses.</li>
+    <li>Understand coherent and streaming DMA memory.</li>
+    <li>Use the basic Linux DMA allocation and mapping APIs.</li>
+    <li>Understand DMA synchronization and ownership.</li>
+    <li>Recognize common DMA programming errors.</li>
+    <li>Understand why DMA hardware testing requires a suitable device or emulator.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L08_Physical_and_Virtual_Memory.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 12 Index</a>
+    <a href="L10_Memory_Management_in_Device_Drivers.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 12 – Kernel Memory Management</p>
+</footer>
+
+</body>
+</html>
