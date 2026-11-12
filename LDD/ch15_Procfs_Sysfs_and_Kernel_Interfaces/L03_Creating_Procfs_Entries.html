@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 3 - Creating Procfs Entries | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    line-height: 1.7;
+    background: #f4f7fb;
+    color: #263238;
+}
+
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    padding: 35px 20px;
+    text-align: center;
+}
+
+.lesson-banner h1 { margin: 0; font-size: 30px; }
+
+.top-nav {
+    background: #102f60;
+    padding: 12px;
+    text-align: center;
+}
+
+.top-nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+
+.top-nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3f0ff;
+    border-left: 5px solid #2878d7;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8f8;
+    padding-bottom: 7px;
+}
+
+h3 { color: #245a9c; }
+
+pre {
+    background: #17212b;
+    color: #e8f0f8;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+code { font-family: Consolas, monospace; }
+
+.note {
+    background: #fff8df;
+    border-left: 5px solid #e0a800;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.success {
+    background: #e8f5e9;
+    border-left: 5px solid #388e3c;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fe;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #b8cbea;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px;
+    margin: 5px;
+    min-width: 190px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 12px 18px;
+    border-radius: 6px;
+}
+
+.lesson-nav a:hover { background: #0d3475; }
+
+footer {
+    text-align: center;
+    background: #102f60;
+    color: white;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    .lesson-banner h1 { font-size: 23px; }
+    .top-nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    .section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="lesson-banner">
+    <h1>Chapter 15: Procfs, Sysfs and Kernel Interfaces</h1>
+    <p>Lesson 3: Creating Procfs Entries</p>
+</header>
+
+<nav class="top-nav">
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 15</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p>
+        Topic: Creating Procfs Entries in Linux Kernel Modules<br>
+        Chapter: Procfs, Sysfs and Kernel Interfaces<br>
+        Prerequisites: Kernel Modules, Procfs and Character Driver Fundamentals<br>
+        Difficulty: Intermediate
+    </p>
+</div>
+
+<section class="section">
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Understand why kernel modules create Procfs entries.</li>
+    <li>Understand the purpose of <code>proc_create()</code>.</li>
+    <li>Understand the purpose of <code>proc_remove()</code>.</li>
+    <li>Understand the <code>struct proc_ops</code> structure.</li>
+    <li>Create a simple Procfs entry from a kernel module.</li>
+    <li>Register and remove a Procfs entry safely.</li>
+    <li>Compile, load, test and unload a Procfs kernel module.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. Introduction to Creating Procfs Entries</h2>
+
+<p>
+Linux provides Procfs as a kernel-managed virtual filesystem.
+Kernel modules can use it to expose selected information
+to user-space applications.
+</p>
+
+<p>
+For example, a driver may want to provide information about:
+</p>
+
+<ul>
+    <li>Driver status.</li>
+    <li>Device statistics.</li>
+    <li>Interrupt counts.</li>
+    <li>Diagnostic information.</li>
+    <li>Selected configuration values.</li>
+</ul>
+
+<p>
+A kernel module can create a custom entry under /proc
+using the <code>proc_create()</code> function.
+</p>
+
+<h3>Example entry</h3>
+
+<pre><code>/proc/my_driver_status</code></pre>
+
+<p>
+A user-space application can access the entry using
+ordinary file operations such as open() and read().
+</p>
+</section>
+
+<section class="section">
+<h2>3. Architecture of a Custom Procfs Entry</h2>
+
+<div class="diagram">
+    <div class="diagram-box">Linux Kernel Module</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">proc_create()</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Procfs Entry</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">/proc/my_driver_status</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">User-Space Application</div>
+</div>
+
+<p>
+The module creates the entry and associates it with
+operations that define how the entry behaves.
+</p>
+
+<p>
+When a user-space program accesses the entry, the
+corresponding callbacks handle the requested operation.
+</p>
+</section>
+
+<section class="section">
+<h2>4. proc_create() Function</h2>
+
+<p>
+The <code>proc_create()</code> function creates a file-like
+entry in Procfs and associates it with a set of operations.
+</p>
+
+<h3>Function declaration</h3>
+
+<pre><code>struct proc_dir_entry *proc_create(
+    const char *name,
+    umode_t mode,
+    struct proc_dir_entry *parent,
+    const struct proc_ops *proc_ops
+);</code></pre>
+
+<h3>Parameters</h3>
+
+<table>
+<tr>
+    <th>Parameter</th>
+    <th>Description</th>
+</tr>
+<tr>
+    <td><code>name</code></td>
+    <td>Name of the Procfs entry.</td>
+</tr>
+<tr>
+    <td><code>mode</code></td>
+    <td>Permission bits for the entry.</td>
+</tr>
+<tr>
+    <td><code>parent</code></td>
+    <td>Parent Procfs directory.</td>
+</tr>
+<tr>
+    <td><code>proc_ops</code></td>
+    <td>Pointer to the Procfs operations structure.</td>
+</tr>
+</table>
+
+<h3>Return value</h3>
+
+<p>
+The function returns a pointer to a
+<code>struct proc_dir_entry</code> when creation succeeds.
+It returns NULL if creation fails.
+</p>
+
+<h3>Example</h3>
+
+<pre><code>proc_create(
+    "my_driver_status",
+    0444,
+    NULL,
+    &amp;my_proc_ops
+);</code></pre>
+
+<p>
+This creates a root-level entry:
+</p>
+
+<pre><code>/proc/my_driver_status</code></pre>
+
+<p>
+The mode <code>0444</code> gives read permission to the
+owner, group and others, with no write permission.
+</p>
+</section>
+
+<section class="section">
+<h2>5. Understanding the Parent Directory</h2>
+
+<p>
+The parent parameter determines where the new entry
+will be created.
+</p>
+
+<h3>Creating an entry directly under /proc</h3>
+
+<pre><code>proc_create(
+    "my_driver_status",
+    0444,
+    NULL,
+    &amp;my_proc_ops
+);</code></pre>
+
+<p>
+When the parent is NULL, the entry is created directly
+under the Procfs root directory.
+</p>
+
+<h3>Creating a directory and an entry inside it</h3>
+
+<p>
+A driver can create a directory using
+<code>proc_mkdir()</code>, then create an entry inside it.
+</p>
+
+<pre><code>struct proc_dir_entry *my_dir;
+
+my_dir = proc_mkdir("my_driver", NULL);
+
+if (!my_dir) {
+    pr_err("Unable to create Procfs directory\n");
+    return -ENOMEM;
+}
+
+proc_create("status", 0444, my_dir, &amp;my_proc_ops);</code></pre>
+
+<p>
+The resulting path is:
+</p>
+
+<pre><code>/proc/my_driver/status</code></pre>
+
+<div class="note">
+    The code above illustrates directory and file creation.
+    A complete module must also check the result of
+    proc_create() and remove any successfully created
+    entries during error handling and module cleanup.
+</div>
+</section>
+
+<section class="section">
+<h2>6. Understanding struct proc_ops</h2>
+
+<p>
+Modern Linux kernels use the
+<code>struct proc_ops</code> structure to define operations
+for Procfs entries.
+</p>
+
+<p>
+It contains callback function pointers for operations
+such as opening, reading, writing and releasing an entry.
+</p>
+
+<h3>Simplified structure</h3>
+
+<pre><code>struct proc_ops {
+    unsigned int proc_flags;
+
+    int (*proc_open)(struct inode *, struct file *);
+    ssize_t (*proc_read)(
+        struct file *,
+        char __user *,
+        size_t,
+        loff_t *
+    );
+    ssize_t (*proc_write)(
+        struct file *,
+        const char __user *,
+        size_t,
+        loff_t *
+    );
+    loff_t (*proc_lseek)(
+        struct file *,
+        loff_t,
+        int
+    );
+    int (*proc_release)(
+        struct inode *,
+        struct file *
+    );
+};</code></pre>
+
+<p>
+This is a simplified illustration of the interface.
+The exact structure definition is provided by the kernel
+headers for the target kernel version.
+</p>
+
+<table>
+<tr>
+    <th>Callback</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>proc_open</code></td>
+    <td>Called when the entry is opened.</td>
+</tr>
+<tr>
+    <td><code>proc_read</code></td>
+    <td>Handles reading data from the entry.</td>
+</tr>
+<tr>
+    <td><code>proc_write</code></td>
+    <td>Handles writing data to the entry.</td>
+</tr>
+<tr>
+    <td><code>proc_lseek</code></td>
+    <td>Handles file-position changes.</td>
+</tr>
+<tr>
+    <td><code>proc_release</code></td>
+    <td>Handles release of the open file description.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>7. Kernel Version Compatibility</h2>
+
+<p>
+The Procfs operation interface has changed across Linux
+kernel versions.
+</p>
+
+<table>
+<tr>
+    <th>Kernel interface</th>
+    <th>Usage</th>
+</tr>
+<tr>
+    <td><code>struct proc_ops</code></td>
+    <td>Modern interface introduced in Linux 5.6.</td>
+</tr>
+<tr>
+    <td><code>struct file_operations</code></td>
+    <td>Used by older kernel versions for Procfs operations.</td>
+</tr>
+</table>
+
+<div class="note">
+    The examples in this lesson use
+    <code>struct proc_ops</code>, targeting modern Linux
+    kernels. If your Ubuntu kernel is older than Linux 5.6,
+    the Procfs callbacks may need to be adapted to the
+    older interface.
+</div>
+</section>
+
+<section class="section">
+<h2>8. proc_remove() Function</h2>
+
+<p>
+When a kernel module is unloaded, its custom Procfs entries
+must be removed.
+</p>
+
+<p>
+The <code>proc_remove()</code> function removes a Procfs
+entry created by the module.
+</p>
+
+<h3>Function declaration</h3>
+
+<pre><code>void proc_remove(struct proc_dir_entry *de);</code></pre>
+
+<h3>Parameter</h3>
+
+<ul>
+    <li><code>de</code>: Pointer to the Procfs entry to remove.</li>
+</ul>
+
+<h3>Example</h3>
+
+<pre><code>proc_remove(proc_entry);</code></pre>
+
+<p>
+The pointer returned by <code>proc_create()</code> is
+typically stored and passed to <code>proc_remove()</code>
+during module cleanup.
+</p>
+
+<div class="warning">
+    A module must not be unloaded while its callbacks can
+    still execute. Procfs removal and module lifetime
+    management must be handled correctly. Do not manually
+    free a Procfs entry returned by proc_create().
+</div>
+</section>
+
+<section class="section">
+<h2>9. Complete Practical Example: Creating a Procfs Entry</h2>
+
+<p>
+The following module creates a read-only entry named
+<code>my_driver_status</code> under /proc.
+</p>
+
+<p>
+The example uses <code>proc_create()</code> to create
+the entry and a read callback to provide information.
+</p>
+
+<h3>Source file: proc_demo.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/proc_fs.h&gt;
+#include &lt;linux/seq_file.h&gt;
+
+#define PROC_NAME "my_driver_status"
+
+static struct proc_dir_entry *proc_entry;
+
+/* Display information through seq_file */
+static int proc_show(struct seq_file *m, void *v)
+{
+    seq_puts(m, "Linux Device Driver Procfs Demo\n");
+    seq_puts(m, "Driver Status: Active\n");
+    seq_puts(m, "Interface: Procfs\n");
+
+    return 0;
+}
+
+/* Open callback */
+static int proc_open(struct inode *inode,
+                     struct file *file)
+{
+    return single_open(file, proc_show, NULL);
+}
+
+/* Procfs operations */
+static const struct proc_ops my_proc_ops = {
+    .proc_open    = proc_open,
+    .proc_read    = seq_read,
+    .proc_lseek   = seq_lseek,
+    .proc_release = single_release,
+};
+
+/* Module initialization */
+static int __init proc_demo_init(void)
+{
+    proc_entry = proc_create(
+        PROC_NAME,
+        0444,
+        NULL,
+        &amp;my_proc_ops
+    );
+
+    if (!proc_entry) {
+        pr_err("Unable to create /proc/%s\n", PROC_NAME);
+        return -ENOMEM;
+    }
+
+    pr_info("Procfs entry created successfully\n");
+
+    return 0;
+}
+
+/* Module cleanup */
+static void __exit proc_demo_exit(void)
+{
+    proc_remove(proc_entry);
+
+    pr_info("Procfs entry removed\n");
+}
+
+module_init(proc_demo_init);
+module_exit(proc_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Simple Procfs Entry Example");
+</code></pre>
+
+<h3>Explanation of the program</h3>
+
+<ol>
+    <li><code>linux/proc_fs.h</code> provides Procfs functions and declarations.</li>
+    <li><code>linux/seq_file.h</code> provides the sequential file interface.</li>
+    <li><code>proc_entry</code> stores the pointer returned by proc_create().</li>
+    <li><code>proc_show()</code> generates the information displayed to the user.</li>
+    <li><code>proc_open()</code> initializes the single_open() interface.</li>
+    <li><code>my_proc_ops</code> connects Procfs operations to their callbacks.</li>
+    <li><code>proc_create()</code> creates the entry during module initialization.</li>
+    <li><code>proc_remove()</code> removes it during module cleanup.</li>
+</ol>
+
+<div class="success">
+    This example uses the seq_file interface to generate
+    output safely and conveniently. The next lesson will
+    examine how Procfs entries handle reading and writing
+    in greater detail.
+</div>
+</section>
+
+<section class="section">
+<h2>10. Understanding the seq_file Interface</h2>
+
+<p>
+The seq_file interface is a kernel facility for generating
+sequential output through virtual files.
+</p>
+
+<p>
+It is useful when a Procfs entry needs to display text
+or a sequence of records.
+</p>
+
+<h3>Important functions</h3>
+
+<table>
+<tr>
+    <th>Function</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>single_open()</code></td>
+    <td>Connects an open operation to a single show callback.</td>
+</tr>
+<tr>
+    <td><code>seq_read()</code></td>
+    <td>Provides reading through the seq_file interface.</td>
+</tr>
+<tr>
+    <td><code>seq_lseek()</code></td>
+    <td>Handles seeking in sequential output.</td>
+</tr>
+<tr>
+    <td><code>single_release()</code></td>
+    <td>Releases resources allocated by single_open().</td>
+</tr>
+<tr>
+    <td><code>seq_puts()</code></td>
+    <td>Writes a string into the seq_file output buffer.</td>
+</tr>
+</table>
+
+<p>
+Using seq_file avoids manually managing many details
+associated with generating sequential output.
+</p>
+</section>
+
+<section class="section">
+<h2>11. Makefile for the Procfs Module</h2>
+
+<p>
+Create a Makefile in the same directory as proc_demo.c.
+</p>
+
+<pre><code>obj-m += proc_demo.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD  := $(shell pwd)
+
+all:
+	make -C $(KDIR) M=$(PWD) modules
+
+clean:
+	make -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>
+The Makefile uses the running kernel's build directory
+to compile the external kernel module.
+</p>
+
+<div class="note">
+    The Makefile recipe lines beginning with make must
+    start with a TAB character, not spaces.
+</div>
+</section>
+
+<section class="section">
+<h2>12. Compiling and Testing the Module</h2>
+
+<h3>Step 1: Install build dependencies</h3>
+
+<pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+<h3>Step 2: Compile the module</h3>
+
+<pre><code>make</code></pre>
+
+<p>
+If compilation succeeds, a kernel module named
+<code>proc_demo.ko</code> should be generated.
+</p>
+
+<h3>Step 3: Load the module</h3>
+
+<pre><code>sudo insmod proc_demo.ko</code></pre>
+
+<h3>Step 4: Check the kernel log</h3>
+
+<pre><code>sudo dmesg | tail</code></pre>
+
+<h3>Step 5: Verify the Procfs entry</h3>
+
+<pre><code>ls -l /proc/my_driver_status</code></pre>
+
+<h3>Step 6: Read the entry</h3>
+
+<pre><code>cat /proc/my_driver_status</code></pre>
+
+<h3>Expected output</h3>
+
+<pre><code>Linux Device Driver Procfs Demo
+Driver Status: Active
+Interface: Procfs</code></pre>
+
+<h3>Step 7: Remove the module</h3>
+
+<pre><code>sudo rmmod proc_demo</code></pre>
+
+<h3>Step 8: Verify removal</h3>
+
+<pre><code>ls /proc/my_driver_status</code></pre>
+
+<p>
+The entry should no longer exist after successful module
+removal.
+</p>
+
+<div class="warning">
+    Kernel modules execute with kernel privileges. Test
+    only code you understand in your Ubuntu virtual machine.
+    Keep important data backed up and avoid experiments
+    intended to crash the kernel.
+</div>
+</section>
+
+<section class="section">
+<h2>13. Error Handling in Procfs Entry Creation</h2>
+
+<p>
+The return value of <code>proc_create()</code> must
+always be checked.
+</p>
+
+<h3>Incorrect approach</h3>
+
+<pre><code>proc_create(
+    "my_driver_status",
+    0444,
+    NULL,
+    &amp;my_proc_ops
+);
+
+/* Continuing without checking the result */</code></pre>
+
+<h3>Correct approach</h3>
+
+<pre><code>proc_entry = proc_create(
+    "my_driver_status",
+    0444,
+    NULL,
+    &amp;my_proc_ops
+);
+
+if (!proc_entry) {
+    pr_err("Procfs entry creation failed\n");
+    return -ENOMEM;
+}</code></pre>
+
+<p>
+If creation fails, the module initialization function
+must return an appropriate negative error code.
+</p>
+
+<h3>Cleanup principle</h3>
+
+<p>
+If a module creates multiple Procfs entries and a later
+creation fails, it must remove any entries that were
+successfully created before returning the error.
+</p>
+</section>
+
+<section class="section">
+<h2>14. Deprecated Procfs APIs</h2>
+
+<p>
+Older Linux kernel examples may contain APIs that are
+not appropriate for modern kernel development.
+</p>
+
+<table>
+<tr>
+    <th>API</th>
+    <th>Status</th>
+</tr>
+<tr>
+    <td><code>create_proc_entry()</code></td>
+    <td>Legacy API removed from modern Linux kernels.</td>
+</tr>
+<tr>
+    <td><code>proc_create()</code></td>
+    <td>Current approach for creating many Procfs entries.</td>
+</tr>
+<tr>
+    <td><code>proc_remove()</code></td>
+    <td>Used to remove Procfs entries.</td>
+</tr>
+<tr>
+    <td><code>struct proc_ops</code></td>
+    <td>Modern Procfs operations interface.</td>
+</tr>
+</table>
+
+<div class="note">
+    Always check the target kernel's headers and
+    documentation when developing out-of-tree modules.
+    Kernel APIs can change between releases.
+</div>
+</section>
+
+<section class="section">
+<h2>15. Best Practices</h2>
+
+<ul>
+    <li>Use meaningful Procfs entry names.</li>
+    <li>Check the return value of proc_create().</li>
+    <li>Remove created entries during module cleanup.</li>
+    <li>Use appropriate file permissions.</li>
+    <li>Validate all data received from user space.</li>
+    <li>Protect shared driver data using appropriate synchronization.</li>
+    <li>Use seq_file for suitable sequential text output.</li>
+    <li>Avoid exposing sensitive device or kernel information.</li>
+    <li>Prefer Sysfs or established subsystem interfaces for new device attributes.</li>
+    <li>Follow the API supported by the target kernel version.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>16. Lesson Summary</h2>
+
+<ul>
+    <li>Procfs entries can be created by Linux kernel modules.</li>
+    <li><code>proc_create()</code> creates a Procfs entry.</li>
+    <li><code>proc_remove()</code> removes a Procfs entry.</li>
+    <li><code>struct proc_ops</code> defines modern Procfs callbacks.</li>
+    <li>The parent parameter determines the entry's location.</li>
+    <li><code>proc_mkdir()</code> can create a directory under Procfs.</li>
+    <li>The seq_file interface simplifies sequential output.</li>
+    <li>Creation failures must be handled correctly.</li>
+    <li>Procfs entries must be removed as part of module cleanup.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>17. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+    <li>What is the purpose of proc_create()?</li>
+    <li>What is the return type of proc_create()?</li>
+    <li>What does the parent parameter specify?</li>
+    <li>What is struct proc_ops?</li>
+    <li>What is the purpose of proc_remove()?</li>
+    <li>Why should the return value of proc_create() be checked?</li>
+    <li>What is the purpose of proc_mkdir()?</li>
+    <li>What is the seq_file interface?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+    <li>Explain the architecture of a custom Procfs entry.</li>
+    <li>Explain the parameters and return value of proc_create().</li>
+    <li>Explain the important callbacks in struct proc_ops.</li>
+    <li>Describe how a kernel module creates and removes a Procfs entry.</li>
+    <li>Explain the role of the seq_file interface.</li>
+    <li>Discuss kernel-version compatibility for Procfs operations.</li>
+</ol>
+
+<h3>C. Practical Questions</h3>
+<ol>
+    <li>Write a kernel module that creates a read-only Procfs entry.</li>
+    <li>Display a driver status message through the entry.</li>
+    <li>Load the module and inspect its Procfs entry.</li>
+    <li>Remove the module and verify that the entry disappears.</li>
+    <li>Modify the example to create an entry inside a custom Procfs directory.</li>
+    <li>Handle the failure of Procfs entry creation.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>18. Expected Learning Outcome</h2>
+
+<div class="success">
+    After completing this lesson, you should be able to
+    create a custom Procfs entry using proc_create(),
+    associate it with Procfs operations, test it using
+    user-space commands, and remove it safely using
+    proc_remove() when the kernel module is unloaded.
+</div>
+</section>
+
+<div class="lesson-nav">
+    <a href="L02_proc_Filesystem.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L04_Reading_and_Writing_Procfs_Entries.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 15 - Procfs, Sysfs and Kernel Interfaces</p>
+</footer>
+
+</body>
+</html>
