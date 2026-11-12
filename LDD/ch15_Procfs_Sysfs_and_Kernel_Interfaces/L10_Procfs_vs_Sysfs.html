@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 10 - Procfs vs Sysfs | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    line-height: 1.7;
+    background: #f4f7fb;
+    color: #263238;
+}
+
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    padding: 35px 20px;
+    text-align: center;
+}
+
+.lesson-banner h1 { margin: 0; font-size: 30px; }
+
+.top-nav {
+    background: #102f60;
+    padding: 12px;
+    text-align: center;
+}
+
+.top-nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+
+.top-nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3f0ff;
+    border-left: 5px solid #2878d7;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8f8;
+    padding-bottom: 7px;
+}
+
+h3 { color: #245a9c; }
+
+pre {
+    background: #17212b;
+    color: #e8f0f8;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+code { font-family: Consolas, monospace; }
+
+.note {
+    background: #fff8df;
+    border-left: 5px solid #e0a800;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.success {
+    background: #e8f5e9;
+    border-left: 5px solid #388e3c;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fe;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #b8cbea;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px;
+    margin: 5px;
+    min-width: 190px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 12px 18px;
+    border-radius: 6px;
+}
+
+.lesson-nav a:hover { background: #0d3475; }
+
+footer {
+    text-align: center;
+    background: #102f60;
+    color: white;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    .lesson-banner h1 { font-size: 23px; }
+    .top-nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    .section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="lesson-banner">
+    <h1>Chapter 15: Procfs, Sysfs and Kernel Interfaces</h1>
+    <p>Lesson 10: Procfs vs Sysfs</p>
+</header>
+
+<nav class="top-nav">
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 15</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p>
+        Topic: Procfs vs Sysfs<br>
+        Chapter: Procfs, Sysfs and Kernel Interfaces<br>
+        Prerequisites: Procfs, Sysfs, Kobjects and Kernel Attributes<br>
+        Difficulty: Intermediate
+    </p>
+</div>
+
+<section class="section">
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Understand the purpose of Procfs and Sysfs.</li>
+    <li>Explain the differences between /proc and /sys.</li>
+    <li>Understand how kernel information is exposed to user space.</li>
+    <li>Identify suitable applications of Procfs and Sysfs.</li>
+    <li>Compare their directory structures and interfaces.</li>
+    <li>Understand when to use each filesystem in driver development.</li>
+    <li>Inspect Procfs and Sysfs entries in Ubuntu.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. Introduction</h2>
+
+<p>
+Linux provides several virtual filesystems that allow
+user-space applications to interact with kernel
+information and functionality.
+</p>
+
+<p>
+Two important virtual filesystems are:
+</p>
+
+<ol>
+    <li><strong>Procfs:</strong> Process and kernel information filesystem.</li>
+    <li><strong>Sysfs:</strong> Structured representation of kernel objects and the device model.</li>
+</ol>
+
+<p>
+Both provide file-based interfaces, but they have
+different design purposes and organizational models.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">User-Space Applications</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Virtual Filesystem Interface</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Procfs and Sysfs</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Linux Kernel</div>
+</div>
+</section>
+
+<section class="section">
+<h2>3. What Is Procfs?</h2>
+
+<p>
+Procfs is a virtual filesystem commonly mounted at:
+</p>
+
+<pre><code>/proc</code></pre>
+
+<p>
+It provides information about processes and various
+kernel subsystems.
+</p>
+
+<p>
+Procfs does not normally store ordinary files on a
+disk. Its entries are generated by kernel code when
+user space accesses them.
+</p>
+
+<h3>Examples of Procfs entries</h3>
+
+<table>
+<tr>
+    <th>File</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>/proc/cpuinfo</td>
+    <td>Processor information.</td>
+</tr>
+<tr>
+    <td>/proc/meminfo</td>
+    <td>Memory statistics.</td>
+</tr>
+<tr>
+    <td>/proc/uptime</td>
+    <td>System uptime information.</td>
+</tr>
+<tr>
+    <td>/proc/version</td>
+    <td>Kernel version information.</td>
+</tr>
+<tr>
+    <td>/proc/modules</td>
+    <td>Information about loaded modules.</td>
+</tr>
+<tr>
+    <td>/proc/interrupts</td>
+    <td>Interrupt statistics.</td>
+</tr>
+<tr>
+    <td>/proc/mounts</td>
+    <td>Mounted filesystem information.</td>
+</tr>
+</table>
+
+<h3>Process-specific information</h3>
+
+<p>
+Procfs also contains directories associated with
+process IDs.
+</p>
+
+<pre><code>/proc/1/
+/proc/1000/
+/proc/2500/</code></pre>
+
+<p>
+For example:
+</p>
+
+<pre><code>/proc/1/status
+/proc/1/cmdline
+/proc/1/maps</code></pre>
+
+<p>
+The actual process directories depend on which
+processes are running and the permissions of the
+user accessing them.
+</p>
+</section>
+
+<section class="section">
+<h2>4. What Is Sysfs?</h2>
+
+<p>
+Sysfs is a virtual filesystem commonly mounted at:
+</p>
+
+<pre><code>/sys</code></pre>
+
+<p>
+It exposes the kernel object hierarchy and provides
+a structured interface to devices, buses, drivers,
+classes and other kernel objects.
+</p>
+
+<p>
+Sysfs is closely integrated with the Linux device
+model and kobject infrastructure.
+</p>
+
+<h3>Important Sysfs directories</h3>
+
+<table>
+<tr>
+    <th>Directory</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>/sys/devices</td>
+    <td>Device hierarchy.</td>
+</tr>
+<tr>
+    <td>/sys/bus</td>
+    <td>Bus types, devices and drivers.</td>
+</tr>
+<tr>
+    <td>/sys/class</td>
+    <td>Device classes and their interfaces.</td>
+</tr>
+<tr>
+    <td>/sys/block</td>
+    <td>Block device information.</td>
+</tr>
+<tr>
+    <td>/sys/module</td>
+    <td>Information about kernel modules.</td>
+</tr>
+<tr>
+    <td>/sys/firmware</td>
+    <td>Firmware-related interfaces.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>5. Fundamental Difference Between Procfs and Sysfs</h2>
+
+<p>
+The most important difference is their organizational
+purpose.
+</p>
+
+<h3>Procfs</h3>
+
+<p>
+Procfs provides process-related and kernel-related
+information through virtual files.
+</p>
+
+<h3>Sysfs</h3>
+
+<p>
+Sysfs represents kernel objects in a structured
+hierarchy and exposes their attributes.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">
+        Procfs<br>
+        /proc
+        <p>Process and kernel information</p>
+    </div>
+    <div class="diagram-box">
+        Sysfs<br>
+        /sys
+        <p>Kernel objects and device model</p>
+    </div>
+</div>
+</section>
+
+<section class="section">
+<h2>6. Procfs vs Sysfs: Detailed Comparison</h2>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>Procfs</th>
+    <th>Sysfs</th>
+</tr>
+<tr>
+    <td>Mount point</td>
+    <td>/proc</td>
+    <td>/sys</td>
+</tr>
+<tr>
+    <td>Primary purpose</td>
+    <td>Process and kernel information</td>
+    <td>Kernel object and device model representation</td>
+</tr>
+<tr>
+    <td>Organization</td>
+    <td>Process and subsystem-oriented</td>
+    <td>Object hierarchy-oriented</td>
+</tr>
+<tr>
+    <td>Kernel integration</td>
+    <td>Procfs interfaces and subsystem-specific implementations</td>
+    <td>Kobjects and device model</td>
+</tr>
+<tr>
+    <td>Common use</td>
+    <td>System statistics and process information</td>
+    <td>Device properties and configuration</td>
+</tr>
+<tr>
+    <td>Process information</td>
+    <td>Extensive support</td>
+    <td>Not its primary purpose</td>
+</tr>
+<tr>
+    <td>Device representation</td>
+    <td>Some subsystem-specific interfaces</td>
+    <td>Structured device hierarchy</td>
+</tr>
+<tr>
+    <td>Attribute organization</td>
+    <td>Depends on the Procfs interface</td>
+    <td>Typically small attributes associated with objects</td>
+</tr>
+<tr>
+    <td>Typical example</td>
+    <td>/proc/meminfo</td>
+    <td>/sys/class/net/lo/mtu</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>7. Directory Structure Comparison</h2>
+
+<h3>Procfs directory structure</h3>
+
+<pre><code>/proc/
+├── cpuinfo
+├── meminfo
+├── uptime
+├── version
+├── modules
+├── interrupts
+├── mounts
+├── filesystems
+└── 1/
+    ├── status
+    ├── cmdline
+    └── maps</code></pre>
+
+<h3>Sysfs directory structure</h3>
+
+<pre><code>/sys/
+├── block/
+├── bus/
+│   ├── platform/
+│   ├── pci/
+│   └── usb/
+├── class/
+│   ├── net/
+│   └── block/
+├── devices/
+├── firmware/
+└── module/</code></pre>
+
+<p>
+These structures are illustrative. The exact entries
+depend on the running kernel, hardware, loaded modules
+and kernel configuration.
+</p>
+</section>
+
+<section class="section">
+<h2>8. How Procfs Works</h2>
+
+<p>
+When a user-space application reads a Procfs entry,
+the kernel handles the access through the corresponding
+Procfs implementation.
+</p>
+
+<h3>Example</h3>
+
+<pre><code>cat /proc/meminfo</code></pre>
+
+<p>
+The shell starts the cat program. The program opens
+the file and reads its contents. The kernel provides
+the memory information through the Procfs interface.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">cat /proc/meminfo</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">VFS and Procfs</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Memory Information</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Text Returned to User Space</div>
+</div>
+</section>
+
+<section class="section">
+<h2>9. How Sysfs Works</h2>
+
+<p>
+Sysfs exposes attributes associated with kernel
+objects. These attributes are commonly represented
+as files containing textual information.
+</p>
+
+<h3>Example</h3>
+
+<pre><code>cat /sys/class/net/lo/mtu</code></pre>
+
+<p>
+The kernel provides the MTU value associated with
+the loopback network device.
+</p>
+
+<p>
+When a user-space process reads the attribute, the
+corresponding Sysfs and driver-model callback
+mechanisms provide the value.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">User reads Sysfs attribute</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">VFS and Sysfs</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Device or Kernel Object</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Attribute Callback</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Text Returned to User Space</div>
+</div>
+</section>
+
+<section class="section">
+<h2>10. Reading Procfs Information</h2>
+
+<p>
+Procfs is commonly used to inspect kernel and
+process information.
+</p>
+
+<h3>CPU information</h3>
+
+<pre><code>cat /proc/cpuinfo</code></pre>
+
+<p>Displays processor information available to the kernel.</p>
+
+<h3>Memory information</h3>
+
+<pre><code>cat /proc/meminfo</code></pre>
+
+<p>Displays memory statistics.</p>
+
+<h3>Kernel version</h3>
+
+<pre><code>cat /proc/version</code></pre>
+
+<p>Displays kernel version and build information.</p>
+
+<h3>Loaded modules</h3>
+
+<pre><code>cat /proc/modules</code></pre>
+
+<p>Displays information about currently loaded modules.</p>
+
+<h3>Interrupt statistics</h3>
+
+<pre><code>cat /proc/interrupts</code></pre>
+
+<p>Displays interrupt statistics maintained by the kernel.</p>
+</section>
+
+<section class="section">
+<h2>11. Reading Sysfs Information</h2>
+
+<p>
+Sysfs is commonly used to inspect devices and their
+properties.
+</p>
+
+<h3>Network interfaces</h3>
+
+<pre><code>ls /sys/class/net</code></pre>
+
+<p>Lists network interfaces.</p>
+
+<h3>Loopback MTU</h3>
+
+<pre><code>cat /sys/class/net/lo/mtu</code></pre>
+
+<h3>Loopback operational state</h3>
+
+<pre><code>cat /sys/class/net/lo/operstate</code></pre>
+
+<h3>Inspect device path</h3>
+
+<pre><code>readlink -f /sys/class/net/lo</code></pre>
+
+<h3>Inspect available bus types</h3>
+
+<pre><code>ls /sys/bus</code></pre>
+
+<h3>Inspect available drivers</h3>
+
+<pre><code>find /sys/bus -maxdepth 4 -type d -path '*/drivers/*'</code></pre>
+</section>
+
+<section class="section">
+<h2>12. Writing to Procfs and Sysfs</h2>
+
+<p>
+Some Procfs and Sysfs interfaces support write
+operations. However, not every entry is writable.
+</p>
+
+<h3>Procfs write example</h3>
+
+<p>
+Some kernel interfaces accept configuration values
+through Procfs. Their accepted format and permissions
+depend on the specific interface.
+</p>
+
+<h3>Sysfs write example</h3>
+
+<p>
+Some Sysfs attributes allow configuration of device
+properties.
+</p>
+
+<pre><code>echo 1500 | sudo tee /sys/class/net/lo/mtu</code></pre>
+
+<p>
+This command requests an MTU change for the loopback
+interface. Whether a particular operation is accepted
+depends on kernel support and permissions.
+</p>
+
+<div class="warning">
+    Do not write arbitrary values to kernel interfaces.
+    A write operation can change system configuration
+    or device behavior. Always understand the attribute
+    and its accepted values before modifying it.
+</div>
+</section>
+
+<section class="section">
+<h2>13. When Should a Device Driver Use Procfs?</h2>
+
+<p>
+Procfs may be appropriate for certain process-oriented
+or subsystem-oriented information interfaces.
+</p>
+
+<p>
+However, for newly developed device-driver interfaces,
+Sysfs is generally preferred when the information
+represents a device-model object or one of its attributes.
+</p>
+
+<h3>Possible Procfs applications</h3>
+
+<ul>
+    <li>Subsystem-specific diagnostic information.</li>
+    <li>Kernel information interfaces.</li>
+    <li>Existing process-related interfaces.</li>
+    <li>Interfaces maintained by established kernel subsystems.</li>
+</ul>
+
+<div class="note">
+    Procfs is not a general-purpose replacement for
+    device attributes. Follow the conventions of the
+    subsystem being developed.
+</div>
+</section>
+
+<section class="section">
+<h2>14. When Should a Device Driver Use Sysfs?</h2>
+
+<p>
+Sysfs is generally appropriate for exposing simple
+properties of kernel objects and devices.
+</p>
+
+<h3>Typical applications</h3>
+
+<ul>
+    <li>Reading device status.</li>
+    <li>Reading sensor measurements.</li>
+    <li>Reading device configuration.</li>
+    <li>Changing supported device operating modes.</li>
+    <li>Exposing driver or device attributes.</li>
+</ul>
+
+<h3>Example</h3>
+
+<pre><code>/sys/class/net/lo/mtu
+/sys/class/net/lo/operstate</code></pre>
+
+<p>
+These attributes represent properties associated
+with a network device.
+</p>
+
+<h3>Important design rule</h3>
+
+<p>
+Sysfs attributes should generally be simple,
+human-readable text values. They should not be used
+as a mechanism for transferring large amounts of
+binary data or implementing complex communication
+protocols.
+</p>
+</section>
+
+<section class="section">
+<h2>15. Procfs, Sysfs and Debugfs</h2>
+
+<p>
+Linux also provides Debugfs, commonly mounted at:
+</p>
+
+<pre><code>/sys/kernel/debug</code></pre>
+
+<p>
+Debugfs is intended for kernel and driver debugging.
+It is not intended to provide a stable userspace ABI.
+</p>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>Procfs</th>
+    <th>Sysfs</th>
+    <th>Debugfs</th>
+</tr>
+<tr>
+    <td>Mount point</td>
+    <td>/proc</td>
+    <td>/sys</td>
+    <td>/sys/kernel/debug</td>
+</tr>
+<tr>
+    <td>Main purpose</td>
+    <td>Process and kernel information</td>
+    <td>Kernel objects and device model</td>
+    <td>Debugging</td>
+</tr>
+<tr>
+    <td>Stable userspace ABI</td>
+    <td>Depends on interface</td>
+    <td>Expected for documented interfaces</td>
+    <td>Not guaranteed</td>
+</tr>
+<tr>
+    <td>Typical use</td>
+    <td>System statistics</td>
+    <td>Device attributes</td>
+    <td>Internal diagnostics</td>
+</tr>
+<tr>
+    <td>Driver development</td>
+    <td>Specific interfaces</td>
+    <td>Preferred for device properties</td>
+    <td>Debugging facilities</td>
+</tr>
+</table>
+
+<div class="note">
+    Debugfs is useful during development, but applications
+    should not depend on its files as permanent interfaces.
+</div>
+</section>
+
+<section class="section">
+<h2>16. Important Kernel APIs</h2>
+
+<h3>Procfs-related APIs</h3>
+
+<pre><code>proc_create()
+proc_remove()
+seq_file
+seq_printf()</code></pre>
+
+<p>
+These are commonly used for creating and managing
+Procfs interfaces. The seq_file interface helps
+generate sequential text output.
+</p>
+
+<h3>Sysfs-related APIs</h3>
+
+<pre><code>DEVICE_ATTR_RO()
+DEVICE_ATTR_RW()
+device_create_file()
+device_remove_file()
+
+DRIVER_ATTR_RO()
+DRIVER_ATTR_RW()
+driver_create_file()
+driver_remove_file()
+
+sysfs_create_group()
+sysfs_remove_group()</code></pre>
+
+<p>
+These APIs support the creation and management of
+Sysfs attributes and groups.
+</p>
+</section>
+
+<section class="section">
+<h2>17. Practical Lab: Inspect Procfs and Sysfs</h2>
+
+<h3>Objective</h3>
+
+<p>
+To examine the virtual filesystem interfaces in
+Ubuntu and identify differences between Procfs and Sysfs.
+</p>
+
+<h3>Step 1: Verify Procfs</h3>
+
+<pre><code>mount | grep ' on /proc '</code></pre>
+
+<h3>Step 2: Verify Sysfs</h3>
+
+<pre><code>mount | grep ' on /sys '</code></pre>
+
+<h3>Step 3: Inspect Procfs</h3>
+
+<pre><code>ls /proc
+cat /proc/meminfo
+cat /proc/uptime</code></pre>
+
+<h3>Step 4: Inspect Sysfs</h3>
+
+<pre><code>ls /sys
+ls /sys/class
+ls /sys/bus</code></pre>
+
+<h3>Step 5: Inspect a network device</h3>
+
+<pre><code>ls /sys/class/net/lo
+cat /sys/class/net/lo/mtu
+cat /sys/class/net/lo/operstate</code></pre>
+
+<h3>Step 6: Compare the results</h3>
+
+<p>
+Observe that Procfs provides process and kernel
+information, while Sysfs organizes kernel objects
+and their attributes.
+</p>
+
+<h3>Expected observations</h3>
+
+<div class="success">
+    <ul>
+        <li>Procfs is accessible through /proc.</li>
+        <li>Sysfs is accessible through /sys.</li>
+        <li>/proc contains system and process information.</li>
+        <li>/sys contains device, bus, class and module information.</li>
+        <li>Both filesystems expose kernel-managed information without ordinary disk-backed files.</li>
+    </ul>
+</div>
+</section>
+
+<section class="section">
+<h2>18. Important Design and Security Considerations</h2>
+
+<ul>
+    <li>Use Sysfs for simple device-model properties.</li>
+    <li>Use established Procfs interfaces for their intended purposes.</li>
+    <li>Do not create unnecessary duplicate interfaces.</li>
+    <li>Validate all values written by user-space applications.</li>
+    <li>Apply suitable file permissions.</li>
+    <li>Protect shared driver data against concurrent access.</li>
+    <li>Do not expose sensitive kernel information unnecessarily.</li>
+    <li>Document interfaces that userspace applications depend on.</li>
+    <li>Use Debugfs for debugging rather than permanent application interfaces.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>19. Common Interview Questions</h2>
+
+<h3>Q1. What is Procfs?</h3>
+<p>
+Procfs is a virtual filesystem that exposes process
+and kernel-related information through the /proc
+directory.
+</p>
+
+<h3>Q2. What is Sysfs?</h3>
+<p>
+Sysfs is a virtual filesystem that exposes kernel
+objects and their attributes through the /sys directory.
+</p>
+
+<h3>Q3. What is the main difference between Procfs and Sysfs?</h3>
+<p>
+Procfs primarily exposes process and kernel information,
+whereas Sysfs represents the kernel object hierarchy
+and device-model attributes.
+</p>
+
+<h3>Q4. Which filesystem is generally preferred for new device attributes?</h3>
+<p>
+Sysfs is generally preferred for simple attributes
+associated with device-model objects.
+</p>
+
+<h3>Q5. What is the purpose of Debugfs?</h3>
+<p>
+Debugfs provides interfaces for kernel and driver
+debugging and does not guarantee a stable userspace ABI.
+</p>
+
+<h3>Q6. Are Procfs and Sysfs normal disk filesystems?</h3>
+<p>
+No. They are virtual filesystems that expose
+kernel-managed information and interfaces.
+</p>
+
+<h3>Q7. Can a user-space program access Procfs and Sysfs?</h3>
+<p>
+Yes. Applications can access permitted entries
+using normal file operations such as open(), read()
+and write().
+</p>
+</section>
+
+<section class="section">
+<h2>20. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+    <li>Define Procfs.</li>
+    <li>Define Sysfs.</li>
+    <li>What is the mount point of Procfs?</li>
+    <li>What is the mount point of Sysfs?</li>
+    <li>What is the purpose of /proc/meminfo?</li>
+    <li>What is the purpose of /sys/devices?</li>
+    <li>What is the purpose of /sys/bus?</li>
+    <li>What is Debugfs?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+    <li>Explain Procfs architecture and its applications.</li>
+    <li>Explain Sysfs architecture and its relationship with kobjects.</li>
+    <li>Compare Procfs and Sysfs in detail.</li>
+    <li>Explain why Sysfs is preferred for device attributes.</li>
+    <li>Differentiate Procfs, Sysfs and Debugfs.</li>
+    <li>Discuss security and interface design considerations.</li>
+</ol>
+
+<h3>C. Practical Questions</h3>
+<ol>
+    <li>Display CPU information using Procfs.</li>
+    <li>Display memory information using Procfs.</li>
+    <li>Display loaded kernel modules using Procfs.</li>
+    <li>List available network interfaces using Sysfs.</li>
+    <li>Read the loopback MTU using Sysfs.</li>
+    <li>Inspect available bus types using Sysfs.</li>
+    <li>Identify the real device path of the loopback interface.</li>
+    <li>Explain why Debugfs should not be used for stable userspace interfaces.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>21. Expected Learning Outcome</h2>
+
+<div class="success">
+    After completing this lesson, you should be able
+    to explain the architecture and purpose of Procfs
+    and Sysfs, identify their differences, inspect
+    their interfaces in Ubuntu, and select the
+    appropriate filesystem when developing Linux
+    device drivers.
+</div>
+</section>
+
+<div class="lesson-nav">
+    <a href="L09_Device_Attributes_and_Driver_Attributes.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L11_Debugfs_and_Its_Applications.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 15 - Procfs, Sysfs and Kernel Interfaces</p>
+</footer>
+
+</body>
+</html>
