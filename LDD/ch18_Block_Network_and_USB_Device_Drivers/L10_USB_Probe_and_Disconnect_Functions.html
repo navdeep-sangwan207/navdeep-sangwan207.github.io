@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 10 - USB Probe and Disconnect Functions</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 28px;
+}
+
+header p {
+    margin: 8px 0 0;
+}
+
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    border-bottom: 1px solid #dce3ed;
+}
+
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+
+nav a:hover {
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 16px;
+}
+
+.lesson-info {
+    background: #e6f1ff;
+    border-left: 5px solid #2878d7;
+    padding: 15px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9e;
+}
+
+pre {
+    background: #172334;
+    color: #e8f0fa;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+.note {
+    background: #fff7df;
+    border-left: 5px solid #e5a000;
+    padding: 13px 16px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.example {
+    background: #eaf7ee;
+    border-left: 5px solid #269653;
+    padding: 13px 16px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5deea;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f0f5fc;
+    padding: 17px;
+    border-radius: 7px;
+    text-align: center;
+    font-family: Consolas, monospace;
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.8;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 600px) {
+    header h1 {
+        font-size: 22px;
+    }
+
+    nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+
+    section {
+        padding: 16px;
+    }
+
+    table {
+        font-size: 13px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Chapter 18: Block, Network and USB Device Drivers</h1>
+    <p>Lesson 10: USB Probe and Disconnect Functions</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter Index</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson:</strong> 10<br>
+    <strong>Topic:</strong> USB Probe and Disconnect Functions<br>
+    <strong>Chapter:</strong> Block, Network and USB Device Drivers<br>
+    <strong>Level:</strong> Intermediate to Advanced
+</div>
+
+<section>
+<h2>1. Introduction</h2>
+
+<p>
+A USB device driver communicates with a USB peripheral
+through the Linux USB subsystem.
+</p>
+
+<p>
+Two important callbacks control the interface lifecycle:
+</p>
+
+<ul>
+    <li><strong>probe():</strong> Initializes the driver when a matching USB interface is bound.</li>
+    <li><strong>disconnect():</strong> Releases resources when the interface is disconnected or unbound.</li>
+</ul>
+
+<p>
+The USB core invokes these callbacks. The driver does
+not normally call them directly.
+</p>
+
+<div class="diagram">
+       USB Device Connected
+                |
+                v
+       USB Enumeration
+                |
+                v
+        Driver Matching
+                |
+                v
+          probe()
+                |
+                v
+       Initialize Interface
+                |
+                v
+        Device Operation
+                |
+                v
+      Device Disconnected
+                |
+                v
+         disconnect()
+                |
+                v
+       Release Resources
+</div>
+</section>
+
+<section>
+<h2>2. USB Probe Function</h2>
+
+<p>
+The probe function is called when the USB core finds
+a matching interface for a registered USB driver.
+</p>
+
+<h3>Function Prototype</h3>
+
+<pre><code>static int my_usb_probe(
+    struct usb_interface *interface,
+    const struct usb_device_id *id
+);</code></pre>
+
+<h3>Parameters</h3>
+
+<table>
+<tr>
+    <th>Parameter</th>
+    <th>Description</th>
+</tr>
+<tr>
+    <td>interface</td>
+    <td>Represents the USB interface being bound to the driver.</td>
+</tr>
+<tr>
+    <td>id</td>
+    <td>Points to the matching entry in the driver's USB ID table.</td>
+</tr>
+</table>
+
+<h3>Return Value</h3>
+
+<ul>
+    <li>Return 0 when initialization succeeds.</li>
+    <li>Return a negative error code when initialization fails.</li>
+</ul>
+
+<p>
+A successful probe indicates that the driver accepted
+the interface and completed its initialization.
+</p>
+</section>
+
+<section>
+<h2>3. Responsibilities of the Probe Function</h2>
+
+<p>
+The probe callback performs the initial setup required
+for the USB interface.
+</p>
+
+<p>Common operations include:</p>
+
+<ol>
+    <li>Obtain the associated USB device.</li>
+    <li>Inspect the interface descriptors.</li>
+    <li>Identify the required endpoints.</li>
+    <li>Allocate driver-private memory.</li>
+    <li>Allocate transfer buffers.</li>
+    <li>Allocate and initialize URBs if required.</li>
+    <li>Store private data in the interface.</li>
+    <li>Initialize any device-specific communication state.</li>
+</ol>
+
+<div class="note">
+Not every USB driver needs to allocate URBs during probe.
+The resources depend on the communication method and
+the requirements of the peripheral.
+</div>
+</section>
+
+<section>
+<h2>4. Obtaining the USB Device</h2>
+
+<p>
+The probe function receives a USB interface pointer.
+The associated USB device can be obtained using:
+</p>
+
+<pre><code>struct usb_device *udev;
+
+udev = interface_to_usbdev(interface);</code></pre>
+
+<p>
+The USB device structure contains information about
+the connected peripheral.
+</p>
+
+<p>Examples of device information include:</p>
+
+<ul>
+    <li>Vendor ID.</li>
+    <li>Product ID.</li>
+    <li>Device descriptor.</li>
+    <li>Configuration information.</li>
+    <li>USB speed and device state.</li>
+</ul>
+
+<h3>Reading VID and PID</h3>
+
+<pre><code>udev-&gt;descriptor.idVendor
+udev-&gt;descriptor.idProduct</code></pre>
+
+<p>
+These descriptor fields use little-endian kernel types.
+For general numeric handling, use the appropriate
+endianness conversion helpers when necessary.
+</p>
+</section>
+
+<section>
+<h2>5. Inspecting Interface Information</h2>
+
+<p>
+The probe callback can inspect the current interface
+and its alternate setting.
+</p>
+
+<pre><code>struct usb_host_interface *alt;
+
+alt = interface-&gt;cur_altsetting;</code></pre>
+
+<p>
+The current alternate setting contains the interface
+descriptor and endpoint descriptions.
+</p>
+
+<h3>Important Interface Fields</h3>
+
+<pre><code>alt-&gt;desc.bInterfaceNumber
+alt-&gt;desc.bInterfaceClass
+alt-&gt;desc.bInterfaceSubClass
+alt-&gt;desc.bInterfaceProtocol
+alt-&gt;desc.bNumEndpoints</code></pre>
+
+<p>
+These fields help the driver determine whether the
+interface provides the functionality it expects.
+</p>
+</section>
+
+<section>
+<h2>6. Endpoint Discovery</h2>
+
+<p>
+A USB driver must identify the endpoints needed for
+communication.
+</p>
+
+<p>
+The current alternate setting provides the endpoint
+descriptors.
+</p>
+
+<h3>Endpoint Information</h3>
+
+<ul>
+    <li>Endpoint address.</li>
+    <li>Endpoint direction.</li>
+    <li>Transfer type.</li>
+    <li>Maximum packet size.</li>
+    <li>Polling interval, where applicable.</li>
+</ul>
+
+<h3>Endpoint Helper Macros</h3>
+
+<pre><code>usb_endpoint_is_bulk_in(epd)
+usb_endpoint_is_bulk_out(epd)
+
+usb_endpoint_is_int_in(epd)
+usb_endpoint_is_int_out(epd)
+
+usb_endpoint_is_isoc_in(epd)
+usb_endpoint_is_isoc_out(epd)</code></pre>
+
+<p>
+These helpers test endpoint descriptors for the
+corresponding transfer type and direction.
+</p>
+</section>
+
+<section>
+<h2>7. Finding a Bulk IN Endpoint</h2>
+
+<p>
+A driver can search the current alternate setting
+for a bulk IN endpoint.
+</p>
+
+<pre><code>struct usb_host_interface *alt;
+struct usb_endpoint_descriptor *epd;
+int i;
+
+alt = interface-&gt;cur_altsetting;
+
+for (i = 0; i &lt; alt-&gt;desc.bNumEndpoints; i++) {
+    epd = &amp;alt-&gt;endpoint[i].desc;
+
+    if (usb_endpoint_is_bulk_in(epd)) {
+        dev_info(&amp;interface-&gt;dev,
+                 "Bulk IN endpoint found: 0x%02X\n",
+                 epd-&gt;bEndpointAddress);
+    }
+}</code></pre>
+
+<p>
+The loop examines each endpoint descriptor belonging
+to the current alternate setting.
+</p>
+
+<div class="note">
+Endpoint discovery should verify that the required
+endpoints exist before the driver starts communication.
+A driver must not assume that every USB interface
+provides bulk IN and bulk OUT endpoints.
+</div>
+</section>
+
+<section>
+<h2>8. Driver-Private Data</h2>
+
+<p>
+A USB driver often requires private data to maintain
+its own device-specific state.
+</p>
+
+<p>
+For example, private data may contain:
+</p>
+
+<ul>
+    <li>USB device pointer.</li>
+    <li>USB interface pointer.</li>
+    <li>Endpoint addresses.</li>
+    <li>URB pointers.</li>
+    <li>Transfer buffers.</li>
+    <li>Buffer lengths.</li>
+    <li>Synchronization objects.</li>
+    <li>Device connection state.</li>
+</ul>
+
+<h3>Example Private Structure</h3>
+
+<pre><code>struct my_usb_data {
+    struct usb_device *udev;
+    struct usb_interface *interface;
+
+    unsigned char bulk_in_endpoint;
+    unsigned char bulk_out_endpoint;
+
+    unsigned char *bulk_in_buffer;
+    size_t bulk_in_size;
+
+    struct urb *bulk_in_urb;
+};</code></pre>
+
+<p>
+The exact members depend on the device and transfer
+requirements.
+</p>
+</section>
+
+<section>
+<h2>9. Storing and Retrieving Interface Data</h2>
+
+<p>
+Linux provides functions to associate private data
+with a USB interface.
+</p>
+
+<h3>Store Private Data</h3>
+
+<pre><code>usb_set_intfdata(interface, data);</code></pre>
+
+<h3>Retrieve Private Data</h3>
+
+<pre><code>data = usb_get_intfdata(interface);</code></pre>
+
+<p>
+The disconnect callback can retrieve the same private
+data that was stored during probe.
+</p>
+
+<div class="example">
+<strong>Example:</strong> If probe allocates a private
+structure and stores it using usb_set_intfdata(),
+disconnect can retrieve it using usb_get_intfdata()
+and release its resources.
+</div>
+</section>
+
+<section>
+<h2>10. Allocating a USB URB</h2>
+
+<p>
+A USB Request Block represents a transfer request.
+Asynchronous USB drivers commonly allocate URBs during
+probe or when they are needed.
+</p>
+
+<h3>Allocation Function</h3>
+
+<pre><code>usb_alloc_urb()</code></pre>
+
+<h3>Example</h3>
+
+<pre><code>data-&gt;bulk_in_urb = usb_alloc_urb(0, GFP_KERNEL);
+
+if (!data-&gt;bulk_in_urb) {
+    return -ENOMEM;
+}</code></pre>
+
+<p>
+For a bulk URB, the isochronous packet count is zero.
+For isochronous transfers, the appropriate packet count
+must be supplied.
+</p>
+
+<h3>Freeing the URB</h3>
+
+<pre><code>usb_free_urb(data-&gt;bulk_in_urb);</code></pre>
+
+<p>
+URB references must be managed correctly. A submitted
+URB must be stopped or completed before the driver
+releases resources that its completion handler uses.
+</p>
+</section>
+
+<section>
+<h2>11. Allocating a USB Transfer Buffer</h2>
+
+<p>
+The driver needs a memory buffer for USB data transfers.
+</p>
+
+<p>
+Linux provides USB-aware buffer allocation helpers.
+</p>
+
+<h3>Allocation</h3>
+
+<pre><code>usb_alloc_coherent()</code></pre>
+
+<h3>Example</h3>
+
+<pre><code>data-&gt;bulk_in_buffer =
+    usb_alloc_coherent(
+        data-&gt;udev,
+        data-&gt;bulk_in_size,
+        GFP_KERNEL,
+        &amp;data-&gt;dma_handle
+    );
+
+if (!data-&gt;bulk_in_buffer) {
+    return -ENOMEM;
+}</code></pre>
+
+<h3>Freeing the Buffer</h3>
+
+<pre><code>usb_free_coherent(
+    data-&gt;udev,
+    data-&gt;bulk_in_size,
+    data-&gt;bulk_in_buffer,
+    data-&gt;dma_handle
+);</code></pre>
+
+<p>
+The matching allocation and release functions must
+be used with the same device, size, buffer and DMA
+handle.
+</p>
+
+<div class="note">
+For simple drivers, ordinary kernel memory may also be
+used for transfer buffers when the USB API and DMA
+requirements permit it. Coherent allocation is not
+mandatory for every URB.
+</div>
+</section>
+
+<section>
+<h2>12. USB Disconnect Function</h2>
+
+<p>
+The disconnect callback is called when the USB interface
+is disconnected or the driver is unbound.
+</p>
+
+<h3>Function Prototype</h3>
+
+<pre><code>static void my_usb_disconnect(
+    struct usb_interface *interface
+);</code></pre>
+
+<p>
+Unlike probe, disconnect returns no value.
+</p>
+
+<p>
+Its primary responsibility is to stop operations and
+release resources associated with the interface.
+</p>
+</section>
+
+<section>
+<h2>13. Responsibilities of the Disconnect Function</h2>
+
+<p>
+A safe disconnect callback normally performs the
+following operations:
+</p>
+
+<ol>
+    <li>Prevent new operations from starting.</li>
+    <li>Retrieve the driver's private data.</li>
+    <li>Clear or invalidate the interface's private-data pointer.</li>
+    <li>Stop outstanding URBs.</li>
+    <li>Ensure completion callbacks cannot access freed memory.</li>
+    <li>Free URBs.</li>
+    <li>Free transfer buffers.</li>
+    <li>Release private memory and other resources.</li>
+</ol>
+
+<div class="note">
+Disconnect handling is critical because a USB device
+may disappear while a transfer is active. Resource
+cleanup must be synchronized with asynchronous callbacks.
+</div>
+</section>
+
+<section>
+<h2>14. Cancelling Outstanding URBs</h2>
+
+<p>
+A submitted URB may still be active when a device
+disconnects.
+</p>
+
+<p>
+Linux provides functions to stop USB transfers.
+</p>
+
+<table>
+<tr>
+    <th>Function</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>usb_kill_urb()</td>
+    <td>Stops an active URB synchronously and waits for completion handling to finish.</td>
+</tr>
+<tr>
+    <td>usb_unlink_urb()</td>
+    <td>Requests asynchronous cancellation of an active URB.</td>
+</tr>
+</table>
+
+<p>
+For disconnect cleanup, <code>usb_kill_urb()</code>
+is often useful because it provides synchronization
+before dependent memory is released.
+</p>
+
+<p>
+An URB that has not been submitted does not need to
+be killed.
+</p>
+</section>
+
+<section>
+<h2>15. Probe and Disconnect Lifecycle</h2>
+
+<div class="diagram">
+          USB Interface Matched
+                    |
+                    v
+                  probe()
+                    |
+                    v
+          Allocate Private Data
+                    |
+                    v
+          Inspect Endpoints
+                    |
+                    v
+          Allocate Buffers/URBs
+                    |
+                    v
+          Store Interface Data
+                    |
+                    v
+            Driver Operational
+                    |
+                    v
+        Device Removed / Unbound
+                    |
+                    v
+               disconnect()
+                    |
+                    v
+          Prevent New Operations
+                    |
+                    v
+          Stop Outstanding URBs
+                    |
+                    v
+          Release Transfer Buffers
+                    |
+                    v
+          Free Private Data
+</div>
+</section>
+
+<section>
+<h2>16. Complete USB Probe and Disconnect Example</h2>
+
+<p>
+The following example demonstrates endpoint discovery,
+private-data allocation and resource cleanup.
+</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/usb.h&gt;
+#include &lt;linux/slab.h&gt;
+
+#define MY_VENDOR_ID   0x1234
+#define MY_PRODUCT_ID  0x5678
+
+struct my_usb_data {
+    struct usb_device *udev;
+
+    unsigned char bulk_in_endpoint;
+    unsigned char bulk_out_endpoint;
+
+    size_t bulk_in_size;
+    unsigned char *bulk_in_buffer;
+    struct urb *bulk_in_urb;
+};
+
+static int my_usb_probe(
+    struct usb_interface *interface,
+    const struct usb_device_id *id)
+{
+    struct usb_device *udev;
+    struct usb_host_interface *alt;
+    struct usb_endpoint_descriptor *epd;
+    struct my_usb_data *data;
+    int i;
+
+    udev = interface_to_usbdev(interface);
+    alt = interface-&gt;cur_altsetting;
+
+    data = kzalloc(sizeof(*data), GFP_KERNEL);
+
+    if (!data)
+        return -ENOMEM;
+
+    data-&gt;udev = usb_get_dev(udev);
+
+    for (i = 0; i &lt; alt-&gt;desc.bNumEndpoints; i++) {
+
+        epd = &amp;alt-&gt;endpoint[i].desc;
+
+        if (usb_endpoint_is_bulk_in(epd)) {
+            data-&gt;bulk_in_endpoint =
+                epd-&gt;bEndpointAddress;
+
+            data-&gt;bulk_in_size =
+                usb_endpoint_maxp(epd);
+        }
+
+        if (usb_endpoint_is_bulk_out(epd)) {
+            data-&gt;bulk_out_endpoint =
+                epd-&gt;bEndpointAddress;
+        }
+    }
+
+    if (!data-&gt;bulk_in_endpoint ||
+        !data-&gt;bulk_out_endpoint) {
+        dev_err(&amp;interface-&gt;dev,
+                "Required bulk endpoints not found\n");
+
+        usb_put_dev(data-&gt;udev);
+        kfree(data);
+        return -ENODEV;
+    }
+
+    data-&gt;bulk_in_buffer =
+        kmalloc(data-&gt;bulk_in_size, GFP_KERNEL);
+
+    if (!data-&gt;bulk_in_buffer) {
+        usb_put_dev(data-&gt;udev);
+        kfree(data);
+        return -ENOMEM;
+    }
+
+    data-&gt;bulk_in_urb = usb_alloc_urb(0, GFP_KERNEL);
+
+    if (!data-&gt;bulk_in_urb) {
+        kfree(data-&gt;bulk_in_buffer);
+        usb_put_dev(data-&gt;udev);
+        kfree(data);
+        return -ENOMEM;
+    }
+
+    usb_set_intfdata(interface, data);
+
+    dev_info(&amp;interface-&gt;dev,
+             "USB interface initialized successfully\n");
+
+    return 0;
+}
+
+static void my_usb_disconnect(
+    struct usb_interface *interface)
+{
+    struct my_usb_data *data;
+
+    data = usb_get_intfdata(interface);
+
+    usb_set_intfdata(interface, NULL);
+
+    if (!data)
+        return;
+
+    if (data-&gt;bulk_in_urb) {
+        usb_kill_urb(data-&gt;bulk_in_urb);
+        usb_free_urb(data-&gt;bulk_in_urb);
+    }
+
+    kfree(data-&gt;bulk_in_buffer);
+
+    usb_put_dev(data-&gt;udev);
+
+    kfree(data);
+
+    dev_info(&amp;interface-&gt;dev,
+             "USB interface disconnected\n");
+}
+
+static const struct usb_device_id my_usb_id_table[] = {
+    { USB_DEVICE(MY_VENDOR_ID, MY_PRODUCT_ID) },
+    { }
+};
+
+MODULE_DEVICE_TABLE(usb, my_usb_id_table);
+
+static struct usb_driver my_usb_driver = {
+    .name       = "my_usb_lifecycle_driver",
+    .probe      = my_usb_probe,
+    .disconnect = my_usb_disconnect,
+    .id_table   = my_usb_id_table,
+};
+
+module_usb_driver(my_usb_driver);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("USB Probe and Disconnect Example");</code></pre>
+
+<h3>Important Explanation</h3>
+
+<ul>
+    <li><code>kzalloc()</code> allocates and zero-initializes private data.</li>
+    <li><code>usb_get_dev()</code> obtains a reference to the USB device.</li>
+    <li>The endpoint loop searches the current alternate setting.</li>
+    <li><code>kmalloc()</code> allocates a basic transfer buffer.</li>
+    <li><code>usb_alloc_urb()</code> allocates a bulk URB.</li>
+    <li><code>usb_set_intfdata()</code> associates private data with the interface.</li>
+    <li><code>usb_kill_urb()</code> synchronously stops an active URB.</li>
+    <li><code>usb_free_urb()</code> releases the URB reference.</li>
+    <li><code>usb_put_dev()</code> releases the USB device reference.</li>
+    <li><code>kfree()</code> releases allocated kernel memory.</li>
+</ul>
+
+<div class="note">
+This example allocates an URB but does not submit it.
+It demonstrates lifecycle and resource management,
+not actual USB data communication. A production driver
+must also implement transfer submission, completion
+handling, synchronization and suitable error recovery.
+</div>
+</section>
+
+<section>
+<h2>17. Error Handling in Probe</h2>
+
+<p>
+Probe must release all resources allocated before an
+initialization failure.
+</p>
+
+<p>
+For example, if private data is allocated successfully
+but URB allocation fails, the driver must release the
+private data and any other previously allocated resources.
+</p>
+
+<h3>Common Error Codes</h3>
+
+<table>
+<tr>
+    <th>Error Code</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td>-ENOMEM</td>
+    <td>Insufficient memory.</td>
+</tr>
+<tr>
+    <td>-ENODEV</td>
+    <td>Required device or endpoint is unavailable.</td>
+</tr>
+<tr>
+    <td>-EINVAL</td>
+    <td>Invalid argument or configuration.</td>
+</tr>
+<tr>
+    <td>-EIO</td>
+    <td>Input/output error.</td>
+</tr>
+</table>
+
+<h3>Recommended Practice</h3>
+
+<ul>
+    <li>Check every allocation result.</li>
+    <li>Validate required endpoints.</li>
+    <li>Release references on failure.</li>
+    <li>Do not store invalid private data.</li>
+    <li>Use structured cleanup paths for complex drivers.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Synchronization and Disconnect Safety</h2>
+
+<p>
+USB transfers are often asynchronous. A completion
+callback may run while the driver is handling device
+removal.
+</p>
+
+<p>
+The driver must prevent race conditions between:
+</p>
+
+<ul>
+    <li>Disconnect and transfer completion.</li>
+    <li>Disconnect and new transfer submission.</li>
+    <li>Disconnect and user-space operations.</li>
+    <li>Resource cleanup and asynchronous callbacks.</li>
+</ul>
+
+<p>
+Common techniques include:
+</p>
+
+<ul>
+    <li>State flags indicating device disconnection.</li>
+    <li>Mutexes for process-context operations.</li>
+    <li>Spinlocks for suitable shared state.</li>
+    <li>Reference counting.</li>
+    <li>Synchronous URB cancellation.</li>
+</ul>
+
+<div class="note">
+Do not hold a spinlock while calling a function that may
+sleep. Follow the locking requirements of each USB API.
+</div>
+</section>
+
+<section>
+<h2>19. Testing USB Probe and Disconnect</h2>
+
+<h3>Objective</h3>
+
+<p>
+Verify that the probe and disconnect callbacks execute
+when a supported USB device is connected and removed.
+</p>
+
+<h3>Commands</h3>
+
+<pre><code># Compile module
+make
+
+# Load driver
+sudo insmod my_usb_driver.ko
+
+# Check connected devices
+lsusb
+
+# Monitor kernel messages
+sudo dmesg -w
+
+# Remove driver
+sudo rmmod my_usb_lifecycle_driver</code></pre>
+
+<h3>Testing Procedure</h3>
+
+<ol>
+    <li>Build the driver using matching kernel headers.</li>
+    <li>Load the module.</li>
+    <li>Connect a device with the matching VID/PID.</li>
+    <li>Observe the probe message.</li>
+    <li>Disconnect the USB device.</li>
+    <li>Observe the disconnect message.</li>
+    <li>Reload the module if necessary and repeat.</li>
+</ol>
+
+<h3>Expected Result</h3>
+
+<p>
+The driver should initialize the matching interface
+and release its resources when the device is removed
+or the driver is unbound.
+</p>
+
+<div class="note">
+The example module name in the Makefile determines
+the generated module filename. Use the correct module
+name when running insmod and rmmod.
+</div>
+</section>
+
+<section>
+<h2>20. Important Points to Remember</h2>
+
+<ul>
+    <li>Probe is called when a matching interface is bound.</li>
+    <li>Disconnect is called when the interface is removed or unbound.</li>
+    <li>Probe returns an integer status.</li>
+    <li>Disconnect returns void.</li>
+    <li><code>interface_to_usbdev()</code> obtains the associated USB device.</li>
+    <li><code>cur_altsetting</code> provides the current alternate setting.</li>
+    <li>Endpoint descriptors identify available communication endpoints.</li>
+    <li><code>usb_set_intfdata()</code> stores private interface data.</li>
+    <li><code>usb_get_intfdata()</code> retrieves private interface data.</li>
+    <li>URBs represent USB transfer requests.</li>
+    <li>Outstanding transfers must be stopped safely before freeing dependent memory.</li>
+    <li>Every successful allocation must have a corresponding cleanup path.</li>
+</ul>
+</section>
+
+<section>
+<h2>21. Review Questions</h2>
+
+<ol>
+    <li>What is the purpose of the USB probe function?</li>
+    <li>Write the prototype of the probe callback.</li>
+    <li>What parameters are passed to probe?</li>
+    <li>What is the purpose of interface_to_usbdev()?</li>
+    <li>How can a driver inspect the current alternate setting?</li>
+    <li>How are USB endpoints discovered?</li>
+    <li>What is driver-private data?</li>
+    <li>Explain usb_set_intfdata() and usb_get_intfdata().</li>
+    <li>What is the purpose of usb_alloc_urb()?</li>
+    <li>Why are transfer buffers required?</li>
+    <li>What is the purpose of the disconnect callback?</li>
+    <li>Explain usb_kill_urb().</li>
+    <li>Why must outstanding URBs be stopped before freeing memory?</li>
+    <li>How does probe error handling work?</li>
+    <li>What synchronization problems can occur during disconnect?</li>
+    <li>Explain the complete USB interface lifecycle.</li>
+</ol>
+</section>
+
+<section>
+<h2>22. Lesson Summary</h2>
+
+<p>
+The USB probe function initializes a matching interface,
+examines its endpoints and allocates the resources required
+by the driver.
+</p>
+
+<p>
+The disconnect function stops active operations and
+releases the resources allocated during initialization.
+</p>
+
+<p>
+Correct handling of URBs, transfer buffers, device
+references and private data is essential for reliable
+USB driver development.
+</p>
+
+<p>
+These lifecycle callbacks form the foundation of a
+complete USB device driver.
+</p>
+</section>
+
+<section>
+<h2>Navigation</h2>
+
+<p>
+<strong>Previous Lesson:</strong>
+<a href="L09_USB_Driver_Registration.html">
+Lesson 9 - USB Driver Registration
+</a>
+</p>
+
+<p>
+<strong>Next Lesson:</strong>
+<a href="L11_Device_Driver_Subsystem_Comparison.html">
+Lesson 11 - Device Driver Subsystem Comparison
+</a>
+</p>
+
+<p>
+<a href="index.html">Back to Chapter 18 Index</a>
+</p>
+</section>
+
+</div>
+
+<footer>
+    <p>Linux Device Drivers | NS Learning Hub</p>
+    <p>Chapter 18 - Lesson 10</p>
+</footer>
+
+</body>
+</html>
