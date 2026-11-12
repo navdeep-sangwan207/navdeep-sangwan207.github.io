@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 11 - Interrupt Handling in Character Drivers | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    line-height: 1.7;
+    background: #f4f7fb;
+    color: #263238;
+}
+
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    padding: 35px 20px;
+    text-align: center;
+}
+
+.lesson-banner h1 { margin: 0; font-size: 30px; }
+.lesson-banner p { margin-top: 10px; }
+
+.top-nav {
+    background: #102f60;
+    padding: 12px;
+    text-align: center;
+}
+
+.top-nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+
+.top-nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3f0ff;
+    border-left: 5px solid #2878d7;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8f8;
+    padding-bottom: 7px;
+}
+
+h3 { color: #245a9c; }
+
+pre {
+    background: #17212b;
+    color: #e8f0f8;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+code { font-family: Consolas, monospace; }
+
+.note {
+    background: #fff8df;
+    border-left: 5px solid #e0a800;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.success {
+    background: #e8f5e9;
+    border-left: 5px solid #388e3c;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fe;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #b8cbea;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px;
+    margin: 5px;
+    min-width: 190px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 12px 18px;
+    border-radius: 6px;
+}
+
+.lesson-nav a:hover { background: #0d3475; }
+
+footer {
+    text-align: center;
+    background: #102f60;
+    color: white;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    .lesson-banner h1 { font-size: 23px; }
+    .top-nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    .section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="lesson-banner">
+    <h1>Chapter 14: Interrupt Handling in Linux Device Drivers</h1>
+    <p>Lesson 11: Interrupt Handling in Character Drivers</p>
+</header>
+
+<nav class="top-nav">
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 14</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p>
+        Topic: Interrupt-Driven Character Device Drivers<br>
+        Chapter: Interrupt Handling in Linux Device Drivers<br>
+        Prerequisites: Character Drivers, File Operations,
+        request_irq(), Workqueues and Synchronization<br>
+        Difficulty: Advanced
+    </p>
+</div>
+
+<section class="section">
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Understand interrupt-driven character device architecture.</li>
+    <li>Integrate interrupt handling with character-device registration.</li>
+    <li>Understand the relationship between hardware interrupts and user-space applications.</li>
+    <li>Transfer interrupt-generated data through a character device.</li>
+    <li>Use wait queues to notify processes about available data.</li>
+    <li>Understand interrupt-safe synchronization.</li>
+    <li>Implement a conceptual interrupt-driven character driver.</li>
+    <li>Understand driver initialization and cleanup.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. Introduction to Interrupt-Driven Character Drivers</h2>
+
+<p>
+A character device driver provides a file-based interface
+between a user-space application and a device or software
+interface in the kernel.
+</p>
+
+<p>
+Some character devices generate events asynchronously.
+Examples include:
+</p>
+
+<ul>
+    <li>UART communication devices.</li>
+    <li>Buttons and switches.</li>
+    <li>GPIO event interfaces.</li>
+    <li>Sensor devices.</li>
+    <li>Hardware controllers that generate completion interrupts.</li>
+</ul>
+
+<p>
+Instead of continuously polling the hardware, an interrupt-driven
+driver can respond when an event occurs.
+</p>
+
+<h3>Definition</h3>
+
+<p>
+An <strong>interrupt-driven character driver</strong> is a
+character-device driver that uses hardware interrupts to
+detect device events and makes the resulting information
+available to user-space applications through a device interface.
+</p>
+</section>
+
+<section class="section">
+<h2>3. Polling vs Interrupt-Driven Operation</h2>
+
+<h3>Polling approach</h3>
+
+<p>
+In polling, software repeatedly checks the device status
+to determine whether an event has occurred.
+</p>
+
+<pre><code>while (1)
+{
+    if (device_has_data())
+    {
+        read_device_data();
+    }
+}</code></pre>
+
+<p>
+This is conceptual pseudocode. Actual hardware access must
+use the appropriate kernel subsystem and device APIs.
+</p>
+
+<h3>Interrupt-driven approach</h3>
+
+<p>
+The hardware notifies the processor when an event occurs.
+The driver responds by executing its interrupt handler.
+</p>
+
+<table>
+<tr>
+    <th>Polling</th>
+    <th>Interrupt-driven</th>
+</tr>
+<tr>
+    <td>Software repeatedly checks device status.</td>
+    <td>Hardware signals an event.</td>
+</tr>
+<tr>
+    <td>Can waste CPU time when events are infrequent.</td>
+    <td>Can reduce unnecessary status checking.</td>
+</tr>
+<tr>
+    <td>Simple for some devices and operations.</td>
+    <td>Requires interrupt configuration and synchronization.</td>
+</tr>
+<tr>
+    <td>Detection latency depends on polling frequency.</td>
+    <td>Response begins through the interrupt mechanism.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>4. Interrupt-Driven Character Driver Architecture</h2>
+
+<p>
+An interrupt-driven character driver combines the character
+device interface with the Linux interrupt subsystem.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">Hardware Device</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Hardware Interrupt</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Linux Interrupt Handler</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Driver Event Buffer</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Character Device Interface</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">User-Space Application</div>
+</div>
+
+<p>
+The interrupt handler records or acknowledges the event.
+A deferred-processing mechanism can perform additional work.
+The character-device interface then provides a way for
+applications to retrieve the resulting data.
+</p>
+
+<h3>Main components</h3>
+
+<ol>
+    <li>Hardware device and interrupt source.</li>
+    <li>Interrupt registration and handler.</li>
+    <li>Driver-private data structure.</li>
+    <li>Event buffer or data queue.</li>
+    <li>Wait queue or another notification mechanism.</li>
+    <li>Character-device file operations.</li>
+    <li>User-space application.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>5. Role of the Interrupt Handler</h2>
+
+<p>
+The interrupt handler executes when the registered interrupt
+is delivered to the driver.
+</p>
+
+<h3>Typical responsibilities</h3>
+
+<ul>
+    <li>Identify the interrupt source.</li>
+    <li>Check device status when required.</li>
+    <li>Acknowledge or clear the interrupt at the device.</li>
+    <li>Retrieve urgent data when required by the hardware.</li>
+    <li>Store event information safely.</li>
+    <li>Notify a waiting process or schedule deferred work.</li>
+</ul>
+
+<pre><code>static irqreturn_t my_irq_handler(int irq,
+                                  void *dev_id)
+{
+    struct my_device *dev = dev_id;
+
+    /* Check and acknowledge the device event. */
+
+    /* Record event information safely. */
+
+    wake_up_interruptible(&amp;dev-&gt;read_queue);
+
+    return IRQ_HANDLED;
+}</code></pre>
+
+<p>
+This is a structural example. A real handler must first
+establish that the interrupt belongs to the device and
+must follow its hardware-specific acknowledgement procedure.
+</p>
+
+<div class="warning">
+    Do not call copy_to_user(), copy_from_user(), or blocking
+    functions from a hard IRQ handler. They are not appropriate
+    for hard interrupt context.
+</div>
+</section>
+
+<section class="section">
+<h2>6. Driver-Private Data Structure</h2>
+
+<p>
+A character driver commonly stores its state in a private
+data structure.
+</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/cdev.h&gt;
+#include &lt;linux/interrupt.h&gt;
+#include &lt;linux/wait.h&gt;
+#include &lt;linux/spinlock.h&gt;
+#include &lt;linux/mutex.h&gt;
+
+struct my_device
+{
+    struct cdev cdev;
+
+    int irq;
+
+    wait_queue_head_t read_queue;
+
+    spinlock_t lock;
+    struct mutex read_mutex;
+
+    char event_buffer[128];
+    size_t data_length;
+
+    bool data_available;
+    bool stopping;
+};</code></pre>
+
+<h3>Purpose of important members</h3>
+
+<table>
+<tr>
+    <th>Member</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>cdev</code></td>
+    <td>Character-device registration object.</td>
+</tr>
+<tr>
+    <td><code>irq</code></td>
+    <td>Interrupt number or identifier.</td>
+</tr>
+<tr>
+    <td><code>read_queue</code></td>
+    <td>Wait queue used by readers.</td>
+</tr>
+<tr>
+    <td><code>lock</code></td>
+    <td>Protects shared state accessed from interrupt and process contexts.</td>
+</tr>
+<tr>
+    <td><code>read_mutex</code></td>
+    <td>Serializes sleepable read-side operations.</td>
+</tr>
+<tr>
+    <td><code>event_buffer</code></td>
+    <td>Stores event data.</td>
+</tr>
+<tr>
+    <td><code>data_length</code></td>
+    <td>Tracks the number of valid bytes.</td>
+</tr>
+<tr>
+    <td><code>data_available</code></td>
+    <td>Indicates whether data is available.</td>
+</tr>
+<tr>
+    <td><code>stopping</code></td>
+    <td>Indicates that the device is being removed.</td>
+</tr>
+</table>
+
+<p>
+This structure is illustrative. A production driver may
+need a ring buffer, multiple queues, reference counting,
+resource-management fields and additional state.
+</p>
+</section>
+
+<section class="section">
+<h2>7. Wait Queues in Interrupt-Driven Drivers</h2>
+
+<p>
+A user-space process may call read() before the device
+has generated any data.
+</p>
+
+<p>
+The driver can use a wait queue to put the process to sleep
+until data becomes available.
+</p>
+
+<h3>Wait queue initialization</h3>
+
+<pre><code>init_waitqueue_head(&amp;dev-&gt;read_queue);</code></pre>
+
+<h3>Wake up waiting processes</h3>
+
+<pre><code>wake_up_interruptible(&amp;dev-&gt;read_queue);</code></pre>
+
+<p>
+The interrupt handler or deferred-processing callback
+can wake readers after recording new data.
+</p>
+
+<h3>Conceptual execution flow</h3>
+
+<div class="diagram">
+    <div class="diagram-box">User Application Calls read()</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Driver Checks Data Availability</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">No Data: Process Waits</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Hardware Generates Interrupt</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Driver Stores Data</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Wake Waiting Process</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">read() Returns Data</div>
+</div>
+</section>
+
+<section class="section">
+<h2>8. Synchronization Between IRQ and Read Operations</h2>
+
+<p>
+The interrupt handler and the read callback may access
+the same event buffer.
+</p>
+
+<p>
+Without synchronization, a race condition can occur.
+For example, a reader might access the buffer while the
+interrupt handler is updating it.
+</p>
+
+<h3>Protecting shared data</h3>
+
+<pre><code>unsigned long flags;
+
+spin_lock_irqsave(&amp;dev-&gt;lock, flags);
+
+dev-&gt;data_available = true;
+
+spin_unlock_irqrestore(&amp;dev-&gt;lock, flags);</code></pre>
+
+<p>
+The IRQ-save spinlock variant protects the critical section
+against relevant local interrupt interleavings and provides
+mutual exclusion across CPUs.
+</p>
+
+<h3>Important rules</h3>
+
+<ul>
+    <li>Use a spinlock for short shared-state operations involving hard IRQ context.</li>
+    <li>Do not hold a spinlock while copying data to user space.</li>
+    <li>Do not sleep while holding a spinlock.</li>
+    <li>Use a mutex for longer process-context operations where appropriate.</li>
+    <li>Use a consistent locking design across all callbacks.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>9. Character Driver Read Operation</h2>
+
+<p>
+The read callback transfers data from the kernel buffer
+to the user-space application.
+</p>
+
+<p>
+The following example illustrates a single-buffer design.
+It assumes the driver has serialized readers and uses the
+same spinlock to protect the buffer and its availability flag.
+</p>
+
+<pre><code>#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/errno.h&gt;
+
+static ssize_t my_read(struct file *file,
+                       char __user *buf,
+                       size_t count,
+                       loff_t *ppos)
+{
+    struct my_device *dev = file-&gt;private_data;
+    unsigned long flags;
+    size_t len;
+    char local_buffer[128];
+    int ret;
+
+    if (!count)
+        return 0;
+
+    if (mutex_lock_interruptible(&amp;dev-&gt;read_mutex))
+        return -ERESTARTSYS;
+
+    ret = wait_event_interruptible(
+        dev-&gt;read_queue,
+        READ_ONCE(dev-&gt;data_available) ||
+        READ_ONCE(dev-&gt;stopping)
+    );
+
+    if (ret) {
+        mutex_unlock(&amp;dev-&gt;read_mutex);
+        return ret;
+    }
+
+    if (READ_ONCE(dev-&gt;stopping)) {
+        mutex_unlock(&amp;dev-&gt;read_mutex);
+        return -ENODEV;
+    }
+
+    spin_lock_irqsave(&amp;dev-&gt;lock, flags);
+
+    len = min(count, dev-&gt;data_length);
+    len = min(len, sizeof(local_buffer));
+
+    memcpy(local_buffer, dev-&gt;event_buffer, len);
+
+    dev-&gt;data_length = 0;
+    dev-&gt;data_available = false;
+
+    spin_unlock_irqrestore(&amp;dev-&gt;lock, flags);
+
+    if (copy_to_user(buf, local_buffer, len)) {
+        /*
+         * A production driver should preserve or restore
+         * data if user copying fails.
+         */
+        mutex_unlock(&amp;dev-&gt;read_mutex);
+        return -EFAULT;
+    }
+
+    mutex_unlock(&amp;dev-&gt;read_mutex);
+
+    return len;
+}</code></pre>
+
+<div class="note">
+    This is an instructional fragment, not a complete
+    production-ready read implementation. A robust driver
+    should define how data is retained after copy faults,
+    how multiple events are buffered, and how partial reads
+    and nonblocking access are handled.
+</div>
+</section>
+
+<section class="section">
+<h2>10. Nonblocking Read Operations</h2>
+
+<p>
+A user application can open a device with
+<code>O_NONBLOCK</code>.
+</p>
+
+<p>
+In nonblocking mode, the read callback should not wait
+indefinitely for data. If no data is available, it normally
+returns <code>-EAGAIN</code>.
+</p>
+
+<h3>Conceptual behavior</h3>
+
+<pre><code>if (!data_available) {
+    if (file-&gt;f_flags &amp; O_NONBLOCK)
+        return -EAGAIN;
+
+    /* Otherwise wait for data using a wait queue. */
+}</code></pre>
+
+<p>
+The driver must explicitly implement nonblocking behavior.
+The presence of O_NONBLOCK in the file flags does not
+automatically make a driver nonblocking.
+</p>
+</section>
+
+<section class="section">
+<h2>11. File Operations Structure</h2>
+
+<p>
+The character driver exposes its operations through
+<code>struct file_operations</code>.
+</p>
+
+<pre><code>static const struct file_operations my_fops = {
+    .owner   = THIS_MODULE,
+    .open    = my_open,
+    .read    = my_read,
+    .release = my_release,
+};</code></pre>
+
+<h3>Responsibilities</h3>
+
+<table>
+<tr>
+    <th>Callback</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>open()</code></td>
+    <td>Prepares the per-open file state.</td>
+</tr>
+<tr>
+    <td><code>read()</code></td>
+    <td>Transfers event data to user space.</td>
+</tr>
+<tr>
+    <td><code>release()</code></td>
+    <td>Releases per-open resources when the open-file description is finally released.</td>
+</tr>
+</table>
+
+<p>
+The open callback can store a pointer to the driver's
+private data in <code>file-&gt;private_data</code>.
+</p>
+
+<pre><code>static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    struct my_device *dev;
+
+    dev = container_of(inode-&gt;i_cdev,
+                       struct my_device,
+                       cdev);
+
+    file-&gt;private_data = dev;
+
+    return 0;
+}</code></pre>
+
+<p>
+The example assumes that the containing device object remains
+alive for the entire lifetime of every open file using it.
+A production driver must manage that lifetime explicitly.
+</p>
+</section>
+
+<section class="section">
+<h2>12. Registering the Character Device and IRQ</h2>
+
+<p>
+A driver needs to initialize all resources before making
+the interrupt handler active.
+</p>
+
+<h3>Typical initialization sequence</h3>
+
+<ol>
+    <li>Allocate and initialize private device data.</li>
+    <li>Initialize locks and wait queues.</li>
+    <li>Initialize work items if required.</li>
+    <li>Allocate a device number.</li>
+    <li>Initialize the cdev structure.</li>
+    <li>Register the character device.</li>
+    <li>Configure the hardware and interrupt source.</li>
+    <li>Register the interrupt handler.</li>
+    <li>Expose the device interface when it is ready.</li>
+</ol>
+
+<pre><code>alloc_chrdev_region(&amp;dev_num, 0, 1, "my_device");
+
+cdev_init(&amp;dev-&gt;cdev, &amp;my_fops);
+dev-&gt;cdev.owner = THIS_MODULE;
+
+ret = cdev_add(&amp;dev-&gt;cdev, dev_num, 1);
+
+if (ret) {
+    unregister_chrdev_region(dev_num, 1);
+    return ret;
+}
+
+/* Register IRQ only after all handler state is ready. */
+
+ret = request_irq(dev-&gt;irq,
+                  my_irq_handler,
+                  0,
+                  "my_device",
+                  dev);
+
+if (ret) {
+    cdev_del(&amp;dev-&gt;cdev);
+    unregister_chrdev_region(dev_num, 1);
+    return ret;
+}</code></pre>
+
+<div class="warning">
+    This is a registration fragment, not a complete initialization
+    routine. A real driver must also handle allocation failures,
+    hardware setup, device-node creation and every partially
+    initialized resource.
+</div>
+</section>
+
+<section class="section">
+<h2>13. Driver Cleanup and Resource Management</h2>
+
+<p>
+When the module is removed, the driver must prevent new
+interrupt events and ensure that no callback accesses
+released resources.
+</p>
+
+<h3>Typical cleanup sequence</h3>
+
+<ol>
+    <li>Mark the device as stopping.</li>
+    <li>Prevent new hardware interrupt events.</li>
+    <li>Wake any processes waiting for data or device shutdown.</li>
+    <li>Unregister the IRQ using <code>free_irq()</code>.</li>
+    <li>Cancel or flush deferred work if the driver uses it.</li>
+    <li>Remove the character-device registration.</li>
+    <li>Release the device number and hardware resources.</li>
+    <li>Free private memory only after all users are finished.</li>
+</ol>
+
+<pre><code>static void my_device_cleanup(struct my_device *dev)
+{
+    unsigned long flags;
+
+    spin_lock_irqsave(&amp;dev-&gt;lock, flags);
+    dev-&gt;stopping = true;
+    spin_unlock_irqrestore(&amp;dev-&gt;lock, flags);
+
+    wake_up_interruptible(&amp;dev-&gt;read_queue);
+
+    /* Prevent new hardware events before unregistering IRQ. */
+    disable_device_interrupts();
+
+    free_irq(dev-&gt;irq, dev);
+
+    /* If work items exist, cancel them here. */
+    /* cancel_work_sync(&amp;dev-&gt;work); */
+
+    cdev_del(&amp;dev-&gt;cdev);
+
+    /* Release device numbers and other resources. */
+}</code></pre>
+
+<div class="warning">
+    This cleanup fragment assumes that the device interrupt
+    control operation is valid for the hardware. The function
+    disable_device_interrupts() is illustrative, not a Linux
+    kernel API. Existing open files also require explicit
+    lifetime management; cdev_del() alone does not terminate
+    their file operations.
+</div>
+</section>
+
+<section class="section">
+<h2>14. Complete Driver Architecture: Conceptual View</h2>
+
+<div class="diagram">
+    <div class="diagram-box">User Application</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">open() / read() / release()</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Character Driver</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Event Buffer and Wait Queue</div>
+    <div class="arrow">↑</div>
+    <div class="diagram-box">Interrupt Handler / Deferred Work</div>
+    <div class="arrow">↑</div>
+    <div class="diagram-box">Hardware Device</div>
+</div>
+
+<p>
+This architecture separates hardware event detection from
+user-space data access.
+</p>
+
+<p>
+The interrupt handler handles urgent operations, while
+buffering and synchronization allow user-space processes
+to consume event data safely.
+</p>
+</section>
+
+<section class="section">
+<h2>15. Practical Testing in Ubuntu VirtualBox</h2>
+
+<p>
+A simple software-only character driver can be developed
+and tested inside Ubuntu VirtualBox. However, actual
+hardware interrupt testing requires a suitable device,
+hardware passthrough or an appropriate emulator.
+</p>
+
+<h3>Check kernel version</h3>
+
+<pre><code>uname -r</code></pre>
+
+<h3>Install matching build dependencies</h3>
+
+<pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+<h3>Build a kernel module</h3>
+
+<pre><code>make</code></pre>
+
+<h3>Load a module</h3>
+
+<pre><code>sudo insmod my_driver.ko</code></pre>
+
+<h3>View kernel messages</h3>
+
+<pre><code>sudo dmesg | tail -n 40</code></pre>
+
+<h3>Remove a module</h3>
+
+<pre><code>sudo rmmod my_driver</code></pre>
+
+<div class="note">
+    Do not register an arbitrary interrupt number as if it
+    represented a real hardware device. Use an IRQ obtained
+    from the correct device resource or subsystem.
+</div>
+</section>
+
+<section class="section">
+<h2>16. Common Problems and Their Causes</h2>
+
+<table>
+<tr>
+    <th>Problem</th>
+    <th>Possible Cause</th>
+</tr>
+<tr>
+    <td>Interrupt handler never executes</td>
+    <td>Incorrect IRQ resource, interrupt not enabled or device not generating events.</td>
+</tr>
+<tr>
+    <td>System becomes unresponsive</td>
+    <td>Long-running or blocking operations in hard IRQ context.</td>
+</tr>
+<tr>
+    <td>Incorrect event data</td>
+    <td>Race conditions or incorrect buffer management.</td>
+</tr>
+<tr>
+    <td>read() blocks unexpectedly</td>
+    <td>Wait-queue condition or nonblocking behavior is incorrect.</td>
+</tr>
+<tr>
+    <td>Kernel crash during removal</td>
+    <td>IRQ or deferred callback accesses released memory.</td>
+</tr>
+<tr>
+    <td>Events are lost</td>
+    <td>Insufficient buffering or repeated events being coalesced.</td>
+</tr>
+<tr>
+    <td>Interrupt storm</td>
+    <td>Device interrupt source not acknowledged or cleared correctly.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>17. Best Practices</h2>
+
+<ul>
+    <li>Keep hard IRQ handlers short.</li>
+    <li>Use a suitable deferred-processing mechanism.</li>
+    <li>Use kernel subsystems for standard hardware interfaces whenever possible.</li>
+    <li>Protect shared data between IRQ and process contexts.</li>
+    <li>Use wait queues for blocking event-driven reads where appropriate.</li>
+    <li>Implement nonblocking behavior explicitly.</li>
+    <li>Design buffer overflow and event-loss policies.</li>
+    <li>Initialize all handler data before registering the IRQ.</li>
+    <li>Prevent new events before freeing IRQ-related resources.</li>
+    <li>Manage existing open file descriptions and private-data lifetime.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>18. Lesson Summary</h2>
+
+<ul>
+    <li>Character drivers expose device functionality through file operations.</li>
+    <li>Interrupt-driven drivers respond to hardware events instead of continuously polling.</li>
+    <li>The hard IRQ handler performs urgent, non-sleeping operations.</li>
+    <li>Deferred work handles additional processing.</li>
+    <li>Wait queues allow processes to sleep until data becomes available.</li>
+    <li>Spinlocks protect shared state between interrupt and process contexts.</li>
+    <li>The read callback transfers event data using copy_to_user().</li>
+    <li>O_NONBLOCK requires explicit driver implementation.</li>
+    <li>free_irq() synchronizes interrupt-handler teardown.</li>
+    <li>Existing open files require careful resource-lifetime management.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>19. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+    <li>What is an interrupt-driven character driver?</li>
+    <li>Differentiate polling and interrupt-driven operation.</li>
+    <li>What is the role of the interrupt handler?</li>
+    <li>Why are wait queues used in character drivers?</li>
+    <li>Why is synchronization necessary between an IRQ handler and read callback?</li>
+    <li>What is the purpose of file-&gt;private_data?</li>
+    <li>Why should copy_to_user() not be called from a hard IRQ handler?</li>
+    <li>What is the purpose of free_irq()?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+    <li>Explain the architecture of an interrupt-driven character driver.</li>
+    <li>Explain the interaction between hardware interrupts and read operations.</li>
+    <li>Explain wait-queue-based data notification.</li>
+    <li>Discuss synchronization between interrupt and process contexts.</li>
+    <li>Explain character-device registration and IRQ registration.</li>
+    <li>Explain safe cleanup of an interrupt-driven character driver.</li>
+</ol>
+
+<h3>C. Practical Exercises</h3>
+<ol>
+    <li>Design a character driver that receives hardware event notifications.</li>
+    <li>Write a conceptual interrupt handler that wakes a wait queue.</li>
+    <li>Implement a blocking read operation using a wait queue.</li>
+    <li>Explain how to add nonblocking read support.</li>
+    <li>Design a buffer protected by a spinlock.</li>
+    <li>Prepare a complete initialization and cleanup flow for an interrupt-driven character driver.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>20. Expected Learning Outcome</h2>
+
+<div class="success">
+    You should now understand how hardware interrupts can
+    be integrated with Linux character drivers, how event
+    data can be buffered and delivered to user space, how
+    wait queues and synchronization are used, and how to
+    manage interrupt registration and driver resources safely.
+</div>
+</section>
+
+<section class="section">
+<h2>21. Chapter 14 – Completion</h2>
+
+<div class="success">
+    <h3>Chapter 14 Completed</h3>
+    You have completed all 11 lessons of Interrupt Handling
+    in Linux Device Drivers.
+
+    <p>Topics covered:</p>
+    <ul>
+        <li>Hardware interrupts and interrupt architecture</li>
+        <li>Interrupt service routines</li>
+        <li>request_irq() and free_irq()</li>
+        <li>Shared interrupts</li>
+        <li>Interrupt context and process context</li>
+        <li>Top halves and bottom halves</li>
+        <li>Tasklets and workqueues</li>
+        <li>Deferred interrupt processing</li>
+        <li>Interrupt-driven character drivers</li>
+    </ul>
+</div>
+</section>
+
+<div class="lesson-nav">
+    <a href="L10_Deferred_Interrupt_Processing.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="../ch15_Procfs_Sysfs_and_Kernel_Interfaces/index.html">Next Chapter →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 14 - Interrupt Handling in Linux Device Drivers</p>
+</footer>
+
+</body>
+</html>
