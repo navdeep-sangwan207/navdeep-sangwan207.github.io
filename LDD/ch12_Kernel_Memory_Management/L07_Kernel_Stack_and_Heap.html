@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kernel Stack and Heap | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Kernel Stack and Heap</h1>
+    <p>Linux Device Drivers – Chapter 12, Lesson 7</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 12</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> Kernel Memory Management</p>
+    <p><strong>Lesson:</strong> 7 – Kernel Stack and Heap</p>
+    <p><strong>Prerequisites:</strong> kmalloc(), kfree(), vmalloc(), GFP flags, process context and kernel modules.</p>
+    <p><strong>Objective:</strong> Understand kernel stacks, dynamically allocated kernel memory, their differences and safe memory usage in device drivers.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction</h2>
+
+<p>Linux kernel code requires memory for function execution, local variables, function arguments, data structures and dynamically allocated objects.</p>
+
+<p>Two important memory concepts are:</p>
+
+<ul>
+    <li><strong>Kernel Stack:</strong> Memory used for function-call frames and temporary execution data.</li>
+    <li><strong>Kernel Heap:</strong> A general term for dynamically allocated kernel memory managed through kernel allocators.</li>
+</ul>
+
+<p>Understanding these areas is important because device drivers frequently use both local variables and dynamically allocated buffers.</p>
+
+<div class="diagram">
+    <div class="diagram-box">Kernel Memory Usage</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Stack</div>
+    <div class="diagram-box">Dynamic Kernel Memory</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Function Execution and Driver Data</div>
+</div>
+</section>
+
+<section class="section">
+<h2>2. What Is a Kernel Stack?</h2>
+
+<p>A kernel stack is a region of memory used while kernel code executes.</p>
+
+<p>When a kernel function is called, the CPU and compiler-generated code use stack space for items such as:</p>
+
+<ul>
+    <li>Function-call information.</li>
+    <li>Local variables that are placed on the stack.</li>
+    <li>Saved register values, as required by the calling convention.</li>
+    <li>Temporary execution data.</li>
+</ul>
+
+<h3>Example</h3>
+
+<pre><code>static void calculate_value(void)
+{
+    int a = 10;
+    int b = 20;
+    int result;
+
+    result = a + b;
+
+    pr_info("Result = %d\n", result);
+}</code></pre>
+
+<p>In this example, the local variables may be stored on the stack, depending on compiler optimization and register allocation.</p>
+
+<div class="note">
+    A C local variable is not guaranteed to occupy stack memory. The compiler may keep it in a register or optimize it away.
+</div>
+</section>
+
+<section class="section">
+<h2>3. Kernel Stack Organization</h2>
+
+<p>Linux maintains kernel execution stacks for tasks. A task may enter kernel mode while executing a system call, handling an exception or performing other kernel operations.</p>
+
+<p>The kernel stack is limited in size. Its size depends on architecture and kernel configuration.</p>
+
+<div class="diagram">
+    <div class="diagram-box">Kernel Stack</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Function Call Frame</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Local Variables / Saved State</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Another Function Call</div>
+</div>
+
+<p>Each nested function call may require additional stack space. Excessive recursion or large local arrays can therefore cause stack exhaustion.</p>
+
+<h3>Important Characteristics</h3>
+
+<ul>
+    <li>Stack space is limited.</li>
+    <li>Function calls can increase stack usage.</li>
+    <li>Stack memory is automatically managed as functions enter and return.</li>
+    <li>Kernel code must avoid excessive stack consumption.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>4. What Is the Kernel Heap?</h2>
+
+<p>The term <strong>kernel heap</strong> is commonly used to describe dynamically allocated memory available to kernel code.</p>
+
+<p>Unlike ordinary function-local stack variables, dynamically allocated objects can remain allocated after the function that requested them returns.</p>
+
+<p>Kernel memory allocation interfaces include:</p>
+
+<table>
+<tr>
+    <th>Function</th>
+    <th>Purpose</th>
+    <th>Release Function</th>
+</tr>
+<tr>
+    <td><code>kmalloc()</code></td>
+    <td>Allocates physically contiguous memory.</td>
+    <td><code>kfree()</code></td>
+</tr>
+<tr>
+    <td><code>kzalloc()</code></td>
+    <td>Allocates zero-initialized memory.</td>
+    <td><code>kfree()</code></td>
+</tr>
+<tr>
+    <td><code>kcalloc()</code></td>
+    <td>Allocates a zero-initialized array.</td>
+    <td><code>kfree()</code></td>
+</tr>
+<tr>
+    <td><code>vmalloc()</code></td>
+    <td>Allocates virtually contiguous memory.</td>
+    <td><code>vfree()</code></td>
+</tr>
+</table>
+
+<p>These functions are kernel allocation interfaces. They use different allocator mechanisms and are not simply interchangeable versions of a single heap operation.</p>
+</section>
+
+<section class="section">
+<h2>5. Stack vs Heap in Kernel Programming</h2>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>Kernel Stack</th>
+    <th>Dynamic Kernel Memory</th>
+</tr>
+<tr>
+    <td>Allocation</td>
+    <td>Managed during function execution</td>
+    <td>Requested through allocation APIs</td>
+</tr>
+<tr>
+    <td>Lifetime</td>
+    <td>Usually limited to function execution</td>
+    <td>Until explicitly released or ownership ends</td>
+</tr>
+<tr>
+    <td>Size</td>
+    <td>Limited per task</td>
+    <td>Depends on available memory and allocator constraints</td>
+</tr>
+<tr>
+    <td>Management</td>
+    <td>Automatic stack management</td>
+    <td>Driver must manage allocation and release</td>
+</tr>
+<tr>
+    <td>Typical use</td>
+    <td>Small local variables</td>
+    <td>Buffers and longer-lived data structures</td>
+</tr>
+<tr>
+    <td>Common problem</td>
+    <td>Stack overflow</td>
+    <td>Memory leak or invalid access</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>6. Stack Allocation Example</h2>
+
+<p>Consider a small local array inside a function:</p>
+
+<pre><code>static void process_data(void)
+{
+    int values[10] = {0};
+
+    values[0] = 100;
+
+    pr_info("Value = %d\n", values[0]);
+}</code></pre>
+
+<p>The array is a local automatic variable. It may occupy stack space, although compiler optimization can affect its actual storage.</p>
+
+<p>When the function returns, its local variable lifetime ends.</p>
+
+<div class="note">
+    Avoid large local arrays and large local structures in kernel functions. Kernel stack space is much more constrained than typical application-process stack space.
+</div>
+</section>
+
+<section class="section">
+<h2>7. Dynamic Allocation Example</h2>
+
+<p>When a driver needs a buffer that should remain available beyond a single function call, dynamic allocation may be appropriate.</p>
+
+<pre><code>#include &lt;linux/slab.h&gt;
+#include &lt;linux/errno.h&gt;
+
+static int allocate_buffer(void)
+{
+    char *buffer;
+
+    buffer = kmalloc(1024, GFP_KERNEL);
+
+    if (!buffer)
+        return -ENOMEM;
+
+    /* Use the allocated memory here. */
+
+    kfree(buffer);
+
+    return 0;
+}</code></pre>
+
+<p>The allocation is explicitly released using <code>kfree()</code>.</p>
+
+<p>If the pointer must remain available after the function returns, it must be stored in an appropriately managed longer-lived object, such as driver state.</p>
+</section>
+
+<section class="section">
+<h2>8. Why Large Local Variables Are Dangerous</h2>
+
+<p>Consider this example:</p>
+
+<pre><code>static void unsafe_function(void)
+{
+    char buffer[8192];
+
+    /* Process data */
+}</code></pre>
+
+<p>An 8 KB local array can consume a substantial portion of a task's kernel stack.</p>
+
+<p>Depending on the architecture and configuration, this may cause stack exhaustion or leave too little stack space for nested function calls and interrupt-related execution.</p>
+
+<h3>Better Approach</h3>
+
+<pre><code>static int safer_function(void)
+{
+    char *buffer;
+
+    buffer = kmalloc(8192, GFP_KERNEL);
+
+    if (!buffer)
+        return -ENOMEM;
+
+    /* Process data */
+
+    kfree(buffer);
+
+    return 0;
+}</code></pre>
+
+<p>This example assumes the function executes in a sleepable context. The allocation must be checked and released on every relevant exit path.</p>
+</section>
+
+<section class="section">
+<h2>9. Kernel Stack and Interrupt Handling</h2>
+
+<p>Interrupt handling requires special attention to stack usage.</p>
+
+<p>Hard interrupt handlers execute in atomic context and must not sleep. Their stack usage must also remain controlled.</p>
+
+<p>On many architectures, interrupt handling uses architecture-specific stack arrangements. Some systems use separate interrupt stacks; others have different implementation details.</p>
+
+<ul>
+    <li>Do not allocate large local arrays in interrupt handlers.</li>
+    <li>Do not call sleeping allocation paths from hard interrupt context.</li>
+    <li>Keep interrupt handlers short.</li>
+    <li>Defer lengthy processing to an appropriate workqueue or threaded interrupt handler.</li>
+    <li>Use preallocated buffers when interrupt-time data storage is required.</li>
+</ul>
+
+<div class="diagram">
+    <div class="diagram-box">Hardware Interrupt</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Short Interrupt Handler</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Record Event / Schedule Work</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Deferred Processing</div>
+</div>
+</section>
+
+<section class="section">
+<h2>10. Stack Overflow in the Linux Kernel</h2>
+
+<p>Stack overflow occurs when kernel execution consumes more stack space than is available.</p>
+
+<h3>Common Causes</h3>
+
+<ul>
+    <li>Deep or uncontrolled recursion.</li>
+    <li>Large local arrays.</li>
+    <li>Large local structures.</li>
+    <li>Excessive nested function calls.</li>
+    <li>Complex call chains in interrupt or exception handling.</li>
+</ul>
+
+<h3>Possible Consequences</h3>
+
+<ul>
+    <li>Corruption of nearby memory.</li>
+    <li>Kernel warnings or stack-corruption reports.</li>
+    <li>Kernel oops or panic in severe cases.</li>
+    <li>Unpredictable system behavior.</li>
+</ul>
+
+<div class="important">
+    Never deliberately create a kernel stack overflow on your normal Ubuntu installation. Study stack limits and diagnostics using safe code review and controlled virtual-machine experiments.
+</div>
+</section>
+
+<section class="section">
+<h2>11. Memory Lifetime and Ownership</h2>
+
+<p>Dynamic kernel memory must have a clear owner responsible for releasing it.</p>
+
+<p>A common driver design is:</p>
+
+<pre><code>struct my_device {
+    char *buffer;
+};
+
+static int my_device_init(struct my_device *dev)
+{
+    dev->buffer = kzalloc(1024, GFP_KERNEL);
+
+    if (!dev->buffer)
+        return -ENOMEM;
+
+    return 0;
+}
+
+static void my_device_cleanup(struct my_device *dev)
+{
+    kfree(dev->buffer);
+    dev->buffer = NULL;
+}</code></pre>
+
+<p>The driver state structure stores the pointer, allowing the buffer to remain available after the initialization function returns.</p>
+
+<p>In a real driver, cleanup must be performed on every failure path after successful allocation, as well as during normal device removal.</p>
+</section>
+
+<section class="section">
+<h2>12. Kernel Stack vs User-Space Stack</h2>
+
+<p>Linux applications and Linux kernel code use different execution environments.</p>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>User-Space Stack</th>
+    <th>Kernel Stack</th>
+</tr>
+<tr>
+    <td>Used by</td>
+    <td>Application threads</td>
+    <td>Kernel execution for tasks</td>
+</tr>
+<tr>
+    <td>Management</td>
+    <td>Runtime and operating system</td>
+    <td>Kernel and architecture-specific mechanisms</td>
+</tr>
+<tr>
+    <td>Size</td>
+    <td>Usually configurable and comparatively large</td>
+    <td>Relatively small and architecture-dependent</td>
+</tr>
+<tr>
+    <td>Typical allocation</td>
+    <td>Local variables and function-call data</td>
+    <td>Kernel function-call data and local variables</td>
+</tr>
+<tr>
+    <td>Failure impact</td>
+    <td>Usually affects the application process</td>
+    <td>Can affect kernel stability</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>13. Practical Kernel Module Example</h2>
+
+<p>Create a file named <code>stack_heap_demo.c</code>.</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/slab.h&gt;
+
+#define BUFFER_SIZE 512
+
+static char *heap_buffer;
+
+static int __init stack_heap_demo_init(void)
+{
+    int local_value = 100;
+
+    heap_buffer = kmalloc(BUFFER_SIZE, GFP_KERNEL);
+
+    if (!heap_buffer) {
+        pr_err("Heap allocation failed\n");
+        return -ENOMEM;
+    }
+
+    snprintf(heap_buffer, BUFFER_SIZE,
+             "Dynamic kernel memory example");
+
+    pr_info("Local value = %d\n", local_value);
+    pr_info("Allocated buffer = %s\n", heap_buffer);
+
+    return 0;
+}
+
+static void __exit stack_heap_demo_exit(void)
+{
+    kfree(heap_buffer);
+    heap_buffer = NULL;
+
+    pr_info("Dynamic memory released\n");
+}
+
+module_init(stack_heap_demo_init);
+module_exit(stack_heap_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Kernel stack and heap demonstration");</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li><code>local_value</code> is an automatic local variable and may be stored on the kernel stack.</li>
+    <li><code>heap_buffer</code> is a pointer to dynamically allocated kernel memory.</li>
+    <li><code>kmalloc()</code> allocates the buffer.</li>
+    <li><code>snprintf()</code> writes a bounded string into the allocated buffer.</li>
+    <li><code>kfree()</code> releases the allocated memory during module cleanup.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>14. Makefile</h2>
+
+<pre><code>obj-m += stack_heap_demo.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>Save the Makefile in the same directory as <code>stack_heap_demo.c</code>.</p>
+</section>
+
+<section class="section">
+<h2>15. Compile and Test in Ubuntu</h2>
+
+<h3>Install Build Dependencies</h3>
+
+<pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+<h3>Compile</h3>
+
+<pre><code>make</code></pre>
+
+<h3>Load the Module</h3>
+
+<pre><code>sudo insmod stack_heap_demo.ko</code></pre>
+
+<h3>View Kernel Messages</h3>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+
+<p>Illustrative output:</p>
+
+<pre><code>Local value = 100
+Allocated buffer = Dynamic kernel memory example</code></pre>
+
+<h3>Remove the Module</h3>
+
+<pre><code>sudo rmmod stack_heap_demo</code></pre>
+
+<h3>Clean Build Files</h3>
+
+<pre><code>make clean</code></pre>
+</section>
+
+<section class="section">
+<h2>16. Common Mistakes and Best Practices</h2>
+
+<table>
+<tr>
+    <th>Mistake</th>
+    <th>Problem</th>
+    <th>Best Practice</th>
+</tr>
+<tr>
+    <td>Declaring very large local arrays</td>
+    <td>Excessive stack consumption</td>
+    <td>Use appropriate dynamic allocation.</td>
+</tr>
+<tr>
+    <td>Forgetting kfree()</td>
+    <td>Memory leak</td>
+    <td>Define clear ownership and cleanup paths.</td>
+</tr>
+<tr>
+    <td>Using a pointer after kfree()</td>
+    <td>Use-after-free bug</td>
+    <td>Stop accessing released memory; clear owned pointers where appropriate.</td>
+</tr>
+<tr>
+    <td>Returning a pointer to a local variable</td>
+    <td>The local object's lifetime ends when the function returns.</td>
+    <td>Use a valid longer-lived object or dynamic allocation.</td>
+</tr>
+<tr>
+    <td>Uncontrolled recursion</td>
+    <td>Can exhaust the kernel stack.</td>
+    <td>Use bounded call depth and iterative approaches where appropriate.</td>
+</tr>
+<tr>
+    <td>Sleeping allocation in interrupt context</td>
+    <td>Invalid execution-context behavior</td>
+    <td>Preallocate memory or defer work.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>17. Lesson Summary</h2>
+
+<ul>
+    <li>The kernel stack supports function execution and temporary local data.</li>
+    <li>Kernel stack space is limited and architecture-dependent.</li>
+    <li>Large local variables and deep recursion can cause stack exhaustion.</li>
+    <li>Dynamic kernel memory is obtained through allocation APIs such as kmalloc() and vmalloc().</li>
+    <li>Dynamic allocations require explicit lifetime and cleanup management.</li>
+    <li>Interrupt handlers must avoid sleeping and excessive stack usage.</li>
+    <li>Driver developers must understand memory ownership and prevent leaks and use-after-free errors.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>18. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>What is a kernel stack?</li>
+    <li>What is dynamic kernel memory?</li>
+    <li>What is meant by kernel heap?</li>
+    <li>Why is kernel stack space limited?</li>
+    <li>What happens when a function returns?</li>
+    <li>What is stack overflow?</li>
+    <li>Why should large local arrays be avoided?</li>
+    <li>What is the purpose of kmalloc()?</li>
+    <li>How is dynamically allocated memory released?</li>
+    <li>Why should interrupt handlers use preallocated buffers?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain kernel stack organization and its purpose.</li>
+    <li>Compare kernel stack and dynamically allocated kernel memory.</li>
+    <li>Explain the causes and consequences of kernel stack overflow.</li>
+    <li>Discuss memory lifetime and ownership in device drivers.</li>
+    <li>Explain why interrupt handlers must use limited stack space.</li>
+    <li>Discuss best practices for stack and dynamic memory usage in kernel programming.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Write a kernel module containing a local integer variable.</li>
+    <li>Allocate a buffer using kmalloc().</li>
+    <li>Store the allocated pointer in a driver state structure.</li>
+    <li>Release the memory during module cleanup.</li>
+    <li>Identify the risks of using a large local array.</li>
+    <li>Modify the example to use kzalloc() and compare the behavior.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>19. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Explain the role of the kernel stack.</li>
+    <li>Understand dynamically allocated kernel memory.</li>
+    <li>Differentiate stack variables from dynamically allocated objects.</li>
+    <li>Recognize stack overflow risks.</li>
+    <li>Manage memory lifetime in device drivers.</li>
+    <li>Apply safe stack and heap usage practices.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L06_GFP_Allocation_Flags.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 12 Index</a>
+    <a href="L08_Physical_and_Virtual_Memory.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 12 – Kernel Memory Management</p>
+</footer>
+
+</body>
+</html>
