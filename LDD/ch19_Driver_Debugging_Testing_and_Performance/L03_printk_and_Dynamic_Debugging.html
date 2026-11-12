@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 3: printk() and Dynamic Debugging</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 18px}
+header h1{margin:0;font-size:27px}
+nav{background:white;text-align:center;padding:14px;box-shadow:0 2px 6px #00000012}
+nav a{display:inline-block;margin:5px 12px;color:#174ea6;text-decoration:none;font-weight:bold}
+.container{max-width:1050px;margin:25px auto;padding:0 16px}
+.info{background:#e8f1ff;border-left:5px solid #2878d7;padding:15px 20px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:22px 25px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 8px #0000000b}
+h2{color:#174ea6;border-bottom:2px solid #e5edf8;padding-bottom:8px}
+h3{color:#245b9e}
+pre{background:#172334;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note{background:#fff6df;border-left:4px solid #e0a000;padding:12px 15px;margin:15px 0}
+.qa{background:#f7faff;border-left:4px solid #2878d7;padding:12px 16px;margin:15px 0}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #dce3ed;padding:10px;text-align:left}
+th{background:#eaf1fb}
+footer{text-align:center;padding:22px;color:#64748b}
+@media(max-width:600px){header h1{font-size:22px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
+
+<header>
+<h1>Chapter 19: Driver Debugging, Testing and Performance</h1>
+<p>Lesson 3: printk() and Dynamic Debugging</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">Linux Device Drivers</a>
+<a href="index.html">Chapter 19</a>
+<a href="L02_Kernel_Debugging_Techniques.html">Previous Lesson</a>
+<a href="L04_Debugfs_Based_Driver_Debugging.html">Next Lesson</a>
+</nav>
+
+<div class="container">
+
+<div class="info">
+<strong>Lesson:</strong> L03 – printk() and Dynamic Debugging<br>
+<strong>Level:</strong> Intermediate<br>
+<strong>Focus:</strong> Kernel logging, log levels, printk(), pr_*() macros and dynamic debug
+</div>
+
+<section>
+<h2>1. Introduction</h2>
+<p>Kernel logging is one of the most widely used techniques for debugging Linux device drivers. Developers insert diagnostic messages into kernel code to understand execution flow, inspect variable values and identify errors.</p>
+<p>The Linux kernel provides the printk() function and convenient logging macros such as pr_info(), pr_err() and pr_debug().</p>
+<p>Dynamic debugging allows selected debug messages to be enabled or disabled at runtime without recompiling the kernel or module.</p>
+</section>
+
+<section>
+<h2>2. Understanding printk()</h2>
+<p>printk() is a kernel logging function used to print messages into the kernel log buffer.</p>
+<p>Unlike the user-space printf() function, printk() executes in kernel space and supports kernel-specific log levels.</p>
+
+<h3>Basic Syntax</h3>
+<pre><code>printk(KERN_INFO "Driver initialized\n");</code></pre>
+
+<h3>Example</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/kernel.h&gt;
+
+static int __init demo_init(void)
+{
+    printk(KERN_INFO "Demo driver initialized\n");
+    return 0;
+}
+
+static void __exit demo_exit(void)
+{
+    printk(KERN_INFO "Demo driver removed\n");
+}
+
+module_init(demo_init);
+module_exit(demo_exit);
+
+MODULE_LICENSE("GPL");</code></pre>
+</section>
+
+<section>
+<h2>3. Kernel Log Levels</h2>
+<p>Linux defines several log levels to indicate the importance of a kernel message.</p>
+<table>
+<tr><th>Macro</th><th>Priority</th><th>Meaning</th></tr>
+<tr><td>KERN_EMERG</td><td>0</td><td>System is unusable.</td></tr>
+<tr><td>KERN_ALERT</td><td>1</td><td>Immediate action required.</td></tr>
+<tr><td>KERN_CRIT</td><td>2</td><td>Critical conditions.</td></tr>
+<tr><td>KERN_ERR</td><td>3</td><td>Error conditions.</td></tr>
+<tr><td>KERN_WARNING</td><td>4</td><td>Warning conditions.</td></tr>
+<tr><td>KERN_NOTICE</td><td>5</td><td>Normal but significant condition.</td></tr>
+<tr><td>KERN_INFO</td><td>6</td><td>Informational message.</td></tr>
+<tr><td>KERN_DEBUG</td><td>7</td><td>Debug-level message.</td></tr>
+</table>
+
+<h3>Example</h3>
+<pre><code>printk(KERN_ERR "Device registration failed\n");
+printk(KERN_WARNING "Device configuration warning\n");
+printk(KERN_INFO "Device initialized\n");
+printk(KERN_DEBUG "Debug information\n");</code></pre>
+
+<div class="note">
+The priority indicates message severity. Whether a message appears on the active console depends on the console log level and system configuration. Messages may still be available in the kernel log buffer.
+</div>
+</section>
+
+<section>
+<h2>4. pr_*() Logging Macros</h2>
+<p>The kernel provides convenient logging macros that avoid repeatedly writing the KERN_* prefix.</p>
+<table>
+<tr><th>Macro</th><th>Purpose</th></tr>
+<tr><td>pr_emerg()</td><td>Emergency message</td></tr>
+<tr><td>pr_alert()</td><td>Alert message</td></tr>
+<tr><td>pr_crit()</td><td>Critical message</td></tr>
+<tr><td>pr_err()</td><td>Error message</td></tr>
+<tr><td>pr_warn()</td><td>Warning message</td></tr>
+<tr><td>pr_notice()</td><td>Notice message</td></tr>
+<tr><td>pr_info()</td><td>Informational message</td></tr>
+<tr><td>pr_debug()</td><td>Debug message</td></tr>
+</table>
+
+<h3>Example</h3>
+<pre><code>pr_info("Device initialized\n");
+pr_err("Device registration failed\n");
+pr_warn("Configuration value is unusual\n");
+pr_debug("Register value = %d\n", value);</code></pre>
+
+<h3>Advantages</h3>
+<ul>
+<li>Improves source-code readability.</li>
+<li>Uses standard kernel log levels.</li>
+<li>Provides consistent logging style.</li>
+<li>Supports dynamic debug for appropriate debug call sites.</li>
+</ul>
+</section>
+
+<section>
+<h2>5. dev_*() Logging Macros</h2>
+<p>When a driver has access to a struct device pointer, device-specific logging macros can add device context to messages.</p>
+<table>
+<tr><th>Macro</th><th>Purpose</th></tr>
+<tr><td>dev_err()</td><td>Device-related error</td></tr>
+<tr><td>dev_warn()</td><td>Device-related warning</td></tr>
+<tr><td>dev_notice()</td><td>Device-related notice</td></tr>
+<tr><td>dev_info()</td><td>Device-related information</td></tr>
+<tr><td>dev_dbg()</td><td>Device-related debug message</td></tr>
+</table>
+
+<h3>Example</h3>
+<pre><code>static int my_probe(struct platform_device *pdev)
+{
+    struct device *dev = &amp;pdev-&gt;dev;
+
+    dev_info(dev, "Device probe started\n");
+
+    return 0;
+}</code></pre>
+
+<p>Device-specific logging is particularly useful when the same driver manages multiple hardware devices.</p>
+</section>
+
+<section>
+<h2>6. Kernel Ring Buffer</h2>
+<p>Kernel log messages are stored in a kernel-managed ring buffer. The buffer has a limited capacity, so older messages may be overwritten as new messages arrive.</p>
+
+<h3>6.1 Display Kernel Messages</h3>
+<pre><code>dmesg</code></pre>
+
+<h3>6.2 Display Recent Messages</h3>
+<pre><code>dmesg | tail -n 30</code></pre>
+
+<h3>6.3 Follow New Messages</h3>
+<pre><code>dmesg -w</code></pre>
+
+<h3>6.4 Display Human-Readable Timestamps</h3>
+<pre><code>dmesg -T</code></pre>
+
+<h3>6.5 Clear the Ring Buffer</h3>
+<pre><code>sudo dmesg -C</code></pre>
+
+<div class="note">
+Clearing the ring buffer removes existing messages from that buffer. It does not repair a driver problem and may remove useful diagnostic evidence. Save relevant logs before clearing them.
+</div>
+</section>
+
+<section>
+<h2>7. Console Log Level</h2>
+<p>The console log level determines which messages are printed to the kernel console. It is separate from the existence of messages in the kernel log buffer.</p>
+
+<h3>7.1 Inspect Console Settings</h3>
+<pre><code>cat /proc/sys/kernel/printk</code></pre>
+
+<p>The output contains four integer values representing current console and default message-level settings.</p>
+
+<h3>7.2 Change Console Log Level</h3>
+<pre><code>sudo dmesg -n 7</code></pre>
+
+<p>This changes the console log level to show messages up to debug priority, subject to system configuration.</p>
+
+<h3>7.3 Restore a Typical Default Level</h3>
+<pre><code>sudo dmesg -n 4</code></pre>
+</section>
+
+<section>
+<h2>8. Dynamic Debugging</h2>
+<p>Dynamic debug provides runtime control over selected debug messages compiled using pr_debug(), dev_dbg() and related supported debug call sites.</p>
+<p>It is especially useful when a driver contains many debug messages but only a small subset is required for a particular investigation.</p>
+
+<h3>8.1 Check Kernel Support</h3>
+<pre><code>grep CONFIG_DYNAMIC_DEBUG /boot/config-$(uname -r)</code></pre>
+
+<h3>8.2 Check debugfs</h3>
+<pre><code>mount | grep debugfs</code></pre>
+
+<p>If debugfs is supported but not mounted, it can be mounted using:</p>
+<pre><code>sudo mount -t debugfs none /sys/kernel/debug</code></pre>
+
+<h3>8.3 Locate Dynamic Debug Control</h3>
+<pre><code>ls /sys/kernel/debug/dynamic_debug/</code></pre>
+
+<p>The control interface is commonly:</p>
+<pre><code>/sys/kernel/debug/dynamic_debug/control</code></pre>
+
+<h3>8.4 Display Available Debug Call Sites</h3>
+<pre><code>sudo cat /sys/kernel/debug/dynamic_debug/control</code></pre>
+
+<h3>8.5 Enable Debug Messages for a Module</h3>
+<pre><code>echo 'module my_driver +p' | sudo tee /sys/kernel/debug/dynamic_debug/control</code></pre>
+
+<h3>8.6 Disable Debug Messages for a Module</h3>
+<pre><code>echo 'module my_driver -p' | sudo tee /sys/kernel/debug/dynamic_debug/control</code></pre>
+
+<h3>8.7 Enable Messages for a Source File</h3>
+<pre><code>echo 'file my_driver.c +p' | sudo tee /sys/kernel/debug/dynamic_debug/control</code></pre>
+
+<h3>8.8 Enable Messages for a Function</h3>
+<pre><code>echo 'func my_probe +p' | sudo tee /sys/kernel/debug/dynamic_debug/control</code></pre>
+
+<h3>8.9 Enable Messages for a Line Range</h3>
+<pre><code>echo 'file my_driver.c:100-150 +p' | sudo tee /sys/kernel/debug/dynamic_debug/control</code></pre>
+
+<h3>8.10 Disable All Selected Messages</h3>
+<pre><code>echo 'module my_driver -p' | sudo tee /sys/kernel/debug/dynamic_debug/control</code></pre>
+
+<div class="note">
+Dynamic debug cannot enable arbitrary messages that were not compiled into the kernel or module. Its control syntax and available call sites depend on kernel configuration and version.
+</div>
+</section>
+
+<section>
+<h2>9. Practical Project: printk() Logging</h2>
+<p><strong>Objective:</strong> Create a kernel module that uses different logging levels and inspect the resulting messages.</p>
+
+<h3>9.1 Source Code: printk_demo.c</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/kernel.h&gt;
+
+static int __init printk_demo_init(void)
+{
+    pr_emerg("printk_demo: emergency example\n");
+    pr_alert("printk_demo: alert example\n");
+    pr_crit("printk_demo: critical example\n");
+    pr_err("printk_demo: error example\n");
+    pr_warn("printk_demo: warning example\n");
+    pr_notice("printk_demo: notice example\n");
+    pr_info("printk_demo: informational example\n");
+    pr_debug("printk_demo: debug example\n");
+
+    return 0;
+}
+
+static void __exit printk_demo_exit(void)
+{
+    pr_info("printk_demo: module removed\n");
+}
+
+module_init(printk_demo_init);
+module_exit(printk_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("printk logging demonstration");</code></pre>
+
+<h3>9.2 Makefile</h3>
+<pre><code>obj-m += printk_demo.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+<h3>9.3 Compile and Load</h3>
+<pre><code>make
+sudo insmod printk_demo.ko</code></pre>
+
+<h3>9.4 Inspect Messages</h3>
+<pre><code>dmesg | tail -n 30</code></pre>
+
+<h3>9.5 Unload the Module</h3>
+<pre><code>sudo rmmod printk_demo</code></pre>
+
+<p><strong>Expected result:</strong> The kernel log contains the demonstration messages with their corresponding priorities. The pr_debug() message may require dynamic debug to be enabled.</p>
+</section>
+
+<section>
+<h2>10. Practical Project: Dynamic Debugging</h2>
+<p><strong>Objective:</strong> Enable and disable debug messages without rebuilding the module.</p>
+
+<h3>10.1 Source Code: dynamic_demo.c</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/printk.h&gt;
+
+static int __init dynamic_demo_init(void)
+{
+    pr_info("dynamic_demo: module initialized\n");
+    pr_debug("dynamic_demo: initialization debug message\n");
+
+    return 0;
+}
+
+static void __exit dynamic_demo_exit(void)
+{
+    pr_info("dynamic_demo: module cleanup\n");
+    pr_debug("dynamic_demo: cleanup debug message\n");
+}
+
+module_init(dynamic_demo_init);
+module_exit(dynamic_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Dynamic debugging demonstration");</code></pre>
+
+<h3>10.2 Makefile</h3>
+<pre><code>obj-m += dynamic_demo.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean</code></pre>
+
+<h3>10.3 Build the Module</h3>
+<pre><code>make</code></pre>
+
+<h3>10.4 Enable Debug Messages</h3>
+<p>Ensure the dynamic debug control file is available. Enable messages for the module before loading it:</p>
+<pre><code>echo 'module dynamic_demo +p' | sudo tee /sys/kernel/debug/dynamic_debug/control</code></pre>
+
+<h3>10.5 Load the Module</h3>
+<pre><code>sudo insmod dynamic_demo.ko
+dmesg | tail -n 20</code></pre>
+
+<h3>10.6 Disable Debug Messages</h3>
+<pre><code>echo 'module dynamic_demo -p' | sudo tee /sys/kernel/debug/dynamic_debug/control</code></pre>
+
+<h3>10.7 Remove the Module</h3>
+<pre><code>sudo rmmod dynamic_demo</code></pre>
+
+<p><strong>Expected result:</strong> Informational messages appear normally. Debug messages appear when their call sites are enabled through dynamic debug.</p>
+</section>
+
+<section>
+<h2>11. printk() vs pr_*() vs Dynamic Debug</h2>
+<table>
+<tr><th>Feature</th><th>printk()</th><th>pr_*()</th><th>Dynamic Debug</th></tr>
+<tr><td>Purpose</td><td>Kernel logging</td><td>Convenient kernel logging</td><td>Runtime debug-message control</td></tr>
+<tr><td>Log levels</td><td>Yes</td><td>Yes</td><td>Controls eligible debug call sites</td></tr>
+<tr><td>Runtime selection</td><td>Not generally per-call-site</td><td>Not generally per-call-site</td><td>Yes</td></tr>
+<tr><td>Typical use</td><td>General messages</td><td>Readable driver logs</td><td>Targeted debugging</td></tr>
+</table>
+</section>
+
+<section>
+<h2>12. Best Practices for Kernel Logging</h2>
+<ul>
+<li>Use the appropriate severity level.</li>
+<li>Prefer pr_*() macros for ordinary driver logging.</li>
+<li>Use dev_*() macros when device context is available.</li>
+<li>Include useful device identifiers and relevant values.</li>
+<li>Avoid excessive messages in high-frequency paths.</li>
+<li>Do not print sensitive data.</li>
+<li>Use dynamic debug for detailed diagnostic messages.</li>
+<li>Do not rely on console output as the only source of diagnostic information.</li>
+<li>Remove temporary noisy logging before production deployment.</li>
+</ul>
+</section>
+
+<section>
+<h2>13. Troubleshooting</h2>
+
+<h3>Problem 1: pr_debug() Messages Are Not Visible</h3>
+<p>Check dynamic debug support and enable the relevant call sites.</p>
+
+<h3>Problem 2: Dynamic Debug Control File Is Missing</h3>
+<p>Check CONFIG_DYNAMIC_DEBUG and ensure debugfs is mounted.</p>
+
+<h3>Problem 3: Messages Do Not Appear on the Console</h3>
+<p>Check the console log level. The messages may still be present in the kernel ring buffer.</p>
+
+<h3>Problem 4: Important Messages Are Missing</h3>
+<p>The ring buffer may have overwritten older messages. Capture logs while reproducing the issue.</p>
+
+<h3>Problem 5: Too Many Messages Are Generated</h3>
+<p>Reduce logging frequency, use appropriate log levels and enable only the required dynamic debug call sites.</p>
+</section>
+
+<section>
+<h2>14. Practical Exercises</h2>
+<ol>
+<li>Write a module using printk() with KERN_INFO.</li>
+<li>Generate messages using all standard kernel log levels.</li>
+<li>Rewrite the module using pr_info(), pr_err() and pr_warn().</li>
+<li>Inspect kernel messages using dmesg.</li>
+<li>Compare console log level with the kernel ring buffer.</li>
+<li>Create a module containing pr_debug() messages.</li>
+<li>Enable debug messages using the dynamic debug control file.</li>
+<li>Enable debugging for a particular source file.</li>
+<li>Enable debugging for a specific function.</li>
+<li>Disable dynamic debug messages and compare the output.</li>
+</ol>
+</section>
+
+<section>
+<h2>15. Interview Questions and Answers</h2>
+
+<div class="qa">
+<strong>Q1. What is printk()?</strong>
+<p>printk() is a kernel logging function used to write messages into the kernel log buffer.</p>
+</div>
+
+<div class="qa">
+<strong>Q2. What is the difference between printf() and printk()?</strong>
+<p>printf() is a user-space C library function, whereas printk() is a kernel logging function.</p>
+</div>
+
+<div class="qa">
+<strong>Q3. What is KERN_INFO?</strong>
+<p>It is a kernel log-level prefix for informational messages.</p>
+</div>
+
+<div class="qa">
+<strong>Q4. What is pr_debug()?</strong>
+<p>It is a kernel macro used to generate debug-level messages. Eligible call sites can be controlled using dynamic debug.</p>
+</div>
+
+<div class="qa">
+<strong>Q5. What is dynamic debugging?</strong>
+<p>It enables or disables selected debug messages at runtime without rebuilding the module.</p>
+</div>
+
+<div class="qa">
+<strong>Q6. What is the kernel ring buffer?</strong>
+<p>It is a kernel-managed buffer that stores kernel log messages.</p>
+</div>
+
+<div class="qa">
+<strong>Q7. What is the purpose of dmesg?</strong>
+<p>It displays kernel messages from the ring buffer.</p>
+</div>
+
+<div class="qa">
+<strong>Q8. What is the difference between pr_info() and dev_info()?</strong>
+<p>pr_info() logs a general informational message. dev_info() logs an informational message associated with a particular struct device.</p>
+</div>
+</section>
+
+<section>
+<h2>16. Lesson Summary</h2>
+<ul>
+<li>printk() is the basic kernel logging function.</li>
+<li>Kernel log levels indicate message severity.</li>
+<li>pr_*() macros provide convenient logging interfaces.</li>
+<li>dev_*() macros include device context.</li>
+<li>dmesg displays kernel ring-buffer messages.</li>
+<li>Dynamic debug controls selected debug call sites at runtime.</li>
+<li>Proper logging helps diagnose driver faults and improve maintainability.</li>
+</ul>
+</section>
+
+<div class="info">
+<strong>Next Lesson:</strong> Lesson 4 – Debugfs-Based Driver Debugging
+</div>
+
+<nav>
+<a href="index.html">Chapter 19 Index</a>
+<a href="L04_Debugfs_Based_Driver_Debugging.html">Next Lesson</a>
+</nav>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | Linux Device Drivers Course</p>
+</footer>
+
+</body>
+</html>
