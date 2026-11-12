@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IOCTL Data Transfer | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>IOCTL Data Transfer</h1>
+    <p>Linux Device Drivers – Chapter 11, Lesson 7</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 11</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> IOCTL and Device Control</p>
+    <p><strong>Lesson:</strong> 7 – IOCTL Data Transfer</p>
+    <p><strong>Prerequisites:</strong> IOCTL macros, unlocked_ioctl(), structures, copy_to_user() and copy_from_user().</p>
+    <p><strong>Objective:</strong> Understand how data is transferred between user space and kernel space during IOCTL operations, including scalar values, structures, buffers and bidirectional exchanges.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction</h2>
+
+<p>IOCTL provides a mechanism for an application to request device-specific control operations from a kernel driver. Many IOCTL commands also require information to move between user space and kernel space.</p>
+
+<p>Examples include:</p>
+<ul>
+    <li>Sending a new operating mode to a device.</li>
+    <li>Reading the current device status.</li>
+    <li>Sending configuration parameters.</li>
+    <li>Receiving sensor or device information.</li>
+    <li>Exchanging a request and response structure.</li>
+</ul>
+
+<p>Because user-space and kernel-space memory are separated, a driver must use safe user-memory access mechanisms when transferring data.</p>
+
+<div class="important">
+    A user-space address must not be treated as an ordinary kernel pointer. Use the appropriate kernel user-access functions to transfer data.
+</div>
+</section>
+
+<section class="section">
+<h2>2. User Space and Kernel Space</h2>
+
+<p>Linux separates application memory from kernel memory to provide protection and isolation.</p>
+
+<div class="diagram">
+    <div class="diagram-box">User Space</div>
+    <div class="arrow">IOCTL System Call</div>
+    <div class="diagram-box">Kernel Space</div>
+    <p>Applications request kernel services through system-call interfaces.</p>
+</div>
+
+<p>A user-space application can pass an address to the kernel through an IOCTL argument. That address refers to application memory, not ordinary kernel memory.</p>
+
+<p>The driver uses functions such as:</p>
+<ul>
+    <li><code>copy_from_user()</code> – copies data from an application into kernel memory.</li>
+    <li><code>copy_to_user()</code> – copies data from kernel memory into an application.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>3. Data Transfer Direction</h2>
+
+<table>
+<tr>
+    <th>Function</th>
+    <th>Transfer Direction</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>copy_from_user()</code></td>
+    <td>User space → Kernel space</td>
+    <td>Receive input from the application.</td>
+</tr>
+<tr>
+    <td><code>copy_to_user()</code></td>
+    <td>Kernel space → User space</td>
+    <td>Return output to the application.</td>
+</tr>
+</table>
+
+<div class="diagram">
+    <div class="diagram-box">User Buffer</div>
+    <div class="arrow">copy_from_user() →</div>
+    <div class="diagram-box">Kernel Buffer</div>
+    <p>Application input is copied into kernel memory.</p>
+    <hr>
+    <div class="diagram-box">Kernel Buffer</div>
+    <div class="arrow">copy_to_user() →</div>
+    <div class="diagram-box">User Buffer</div>
+    <p>Driver output is copied into application memory.</p>
+</div>
+</section>
+
+<section class="section">
+<h2>4. Understanding the IOCTL Argument</h2>
+
+<p>The standard callback has this form:</p>
+
+<pre><code>static long my_ioctl(
+    struct file *file,
+    unsigned int cmd,
+    unsigned long arg
+);</code></pre>
+
+<p>The <code>arg</code> parameter carries the third argument supplied to the IOCTL request. For pointer-based commands, it commonly represents a user-space address.</p>
+
+<p>For example, the application calls:</p>
+
+<pre><code>int value = 50;
+
+ioctl(fd, SET_DEVICE_VALUE, &amp;value);</code></pre>
+
+<p>The driver receives the argument in <code>arg</code> and converts it to the appropriate user-pointer type for a user-access operation.</p>
+
+<pre><code>int value;
+
+if (copy_from_user(
+        &amp;value,
+        (int __user *)arg,
+        sizeof(value))) {
+    return -EFAULT;
+}</code></pre>
+
+<div class="note">
+    The <code>__user</code> annotation identifies a pointer that refers to user-space memory. It helps kernel tooling and developers distinguish user pointers from kernel pointers.
+</div>
+</section>
+
+<section class="section">
+<h2>5. Transferring a Single Integer to the Driver</h2>
+
+<p>Use an <code>_IOW</code> request when the application sends an integer value to the driver.</p>
+
+<h3>Command Definition</h3>
+
+<pre><code>#define SET_DEVICE_VALUE \
+    _IOW('N', 1, int)</code></pre>
+
+<h3>User-Space Code</h3>
+
+<pre><code>int value = 150;
+
+if (ioctl(fd, SET_DEVICE_VALUE, &amp;value) == -1) {
+    perror("SET_DEVICE_VALUE");
+}</code></pre>
+
+<h3>Kernel-Space Code</h3>
+
+<pre><code>int value;
+
+if (copy_from_user(
+        &amp;value,
+        (int __user *)arg,
+        sizeof(value))) {
+    return -EFAULT;
+}
+
+/* Validate and use the received value */
+
+if (value &lt; 0 || value &gt; 1000)
+    return -EINVAL;</code></pre>
+
+<p>The driver receives the integer in its own kernel-space variable and validates it before using it.</p>
+</section>
+
+<section class="section">
+<h2>6. Transferring a Single Integer to User Space</h2>
+
+<p>Use an <code>_IOR</code> request when the application retrieves an integer from the driver.</p>
+
+<h3>Command Definition</h3>
+
+<pre><code>#define GET_DEVICE_VALUE \
+    _IOR('N', 2, int)</code></pre>
+
+<h3>Kernel-Space Code</h3>
+
+<pre><code>int value = 250;
+
+if (copy_to_user(
+        (int __user *)arg,
+        &amp;value,
+        sizeof(value))) {
+    return -EFAULT;
+}</code></pre>
+
+<h3>User-Space Code</h3>
+
+<pre><code>int value;
+
+if (ioctl(fd, GET_DEVICE_VALUE, &amp;value) == -1) {
+    perror("GET_DEVICE_VALUE");
+} else {
+    printf("Device value: %d\n", value);
+}</code></pre>
+</section>
+
+<section class="section">
+<h2>7. Transferring Structures</h2>
+
+<p>When multiple related values must be transferred, a structure is often more suitable than several independent scalar arguments.</p>
+
+<h3>Structure Definition</h3>
+
+<pre><code>struct device_status {
+    int mode;
+    int speed;
+    int error_code;
+};</code></pre>
+
+<h3>IOCTL Definition</h3>
+
+<pre><code>#define GET_DEVICE_STATUS \
+    _IOR('N', 3, struct device_status)</code></pre>
+
+<h3>Kernel-Space Code</h3>
+
+<pre><code>struct device_status status;
+
+status.mode = 1;
+status.speed = 100;
+status.error_code = 0;
+
+if (copy_to_user(
+        (struct device_status __user *)arg,
+        &amp;status,
+        sizeof(status))) {
+    return -EFAULT;
+}</code></pre>
+
+<h3>User-Space Code</h3>
+
+<pre><code>struct device_status status;
+
+if (ioctl(fd, GET_DEVICE_STATUS, &amp;status) == -1) {
+    perror("GET_DEVICE_STATUS");
+} else {
+    printf("Mode: %d\n", status.mode);
+    printf("Speed: %d\n", status.speed);
+    printf("Error: %d\n", status.error_code);
+}</code></pre>
+</section>
+
+<section class="section">
+<h2>8. Transferring a Buffer</h2>
+
+<p>Some IOCTL operations need to transfer an array or a block of data rather than a single integer or fixed structure.</p>
+
+<p>For example, an application may send a short configuration string or a block of binary parameters.</p>
+
+<h3>Example Command</h3>
+
+<pre><code>#define SEND_DEVICE_DATA \
+    _IOW('N', 4, char[64])</code></pre>
+
+<p>The application provides a buffer containing up to 64 bytes.</p>
+
+<h3>User-Space Code</h3>
+
+<pre><code>char data[64] = "Device configuration";
+
+if (ioctl(fd, SEND_DEVICE_DATA, data) == -1) {
+    perror("SEND_DEVICE_DATA");
+}</code></pre>
+
+<h3>Kernel-Space Code</h3>
+
+<pre><code>char kernel_buffer[64];
+
+if (copy_from_user(
+        kernel_buffer,
+        (char __user *)arg,
+        sizeof(kernel_buffer))) {
+    return -EFAULT;
+}
+
+/* Process the received buffer */</code></pre>
+
+<p>This example uses a fixed-size buffer. Both sides must agree on its size and format.</p>
+
+<div class="note">
+    For variable-length transfers, define a clear length field and enforce a maximum size. Validate the length before allocating memory or copying data. Never trust a length supplied by an application.
+</div>
+</section>
+
+<section class="section">
+<h2>9. Bidirectional Data Transfer</h2>
+
+<p>The <code>_IOWR</code> macro is suitable when the application sends input data and the driver returns output data through the same argument.</p>
+
+<h3>Command Definition</h3>
+
+<pre><code>struct device_request {
+    int command;
+    int input_value;
+    int output_value;
+};
+
+#define DEVICE_EXCHANGE \
+    _IOWR('N', 5, struct device_request)</code></pre>
+
+<h3>Kernel-Space Handler Concept</h3>
+
+<pre><code>struct device_request request;
+
+/* Copy input structure */
+
+if (copy_from_user(
+        &amp;request,
+        (struct device_request __user *)arg,
+        sizeof(request))) {
+    return -EFAULT;
+}
+
+/* Process the request */
+
+if (request.command == 1) {
+    request.output_value = request.input_value * 2;
+} else {
+    return -EINVAL;
+}
+
+/* Return updated structure */
+
+if (copy_to_user(
+        (struct device_request __user *)arg,
+        &amp;request,
+        sizeof(request))) {
+    return -EFAULT;
+}
+
+return 0;</code></pre>
+
+<p>The driver first copies the input structure into kernel memory, processes the request and then copies the response back to the application.</p>
+</section>
+
+<section class="section">
+<h2>10. Understanding Copy Function Return Values</h2>
+
+<p>Both <code>copy_to_user()</code> and <code>copy_from_user()</code> return the number of bytes that could not be copied.</p>
+
+<table>
+<tr>
+    <th>Return Value</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td>0</td>
+    <td>All requested bytes were copied successfully.</td>
+</tr>
+<tr>
+    <td>Nonzero</td>
+    <td>Some or all bytes could not be copied.</td>
+</tr>
+</table>
+
+<p>Correct error handling:</p>
+
+<pre><code>if (copy_from_user(&amp;value,
+                   (int __user *)arg,
+                   sizeof(value))) {
+    return -EFAULT;
+}</code></pre>
+
+<p><code>-EFAULT</code> indicates an invalid or inaccessible memory address or an unsuccessful user-memory transfer.</p>
+
+<div class="important">
+    Do not interpret the return value of copy_to_user() or copy_from_user() as a negative errno. They return an uncopied-byte count.
+</div>
+</section>
+
+<section class="section">
+<h2>11. Data Transfer and Memory Safety</h2>
+
+<p>Correct IOCTL data transfer requires more than calling a copy function.</p>
+
+<ul>
+    <li>Check user pointers through the copy functions.</li>
+    <li>Validate all input values.</li>
+    <li>Validate lengths before variable-size transfers.</li>
+    <li>Initialize output structures before copying them to user space, so uninitialized kernel data is not exposed.</li>
+    <li>Use compatible structure definitions.</li>
+    <li>Protect shared device state using appropriate synchronization.</li>
+    <li>Do not call user-copy functions from interrupt context because they may sleep.</li>
+</ul>
+
+<h3>Example: Initialize an Output Structure</h3>
+
+<pre><code>struct device_status status = { 0 };
+
+/* Fill fields with valid device information */
+
+status.mode = 1;
+status.speed = 100;
+status.error_code = 0;
+
+if (copy_to_user(
+        (struct device_status __user *)arg,
+        &amp;status,
+        sizeof(status))) {
+    return -EFAULT;
+}</code></pre>
+</section>
+
+<section class="section">
+<h2>12. Variable-Length Data Transfer Design</h2>
+
+<p>When the amount of data changes from request to request, the application and driver need a clearly defined length protocol.</p>
+
+<p>A typical structure can contain a length field and a fixed-size data array:</p>
+
+<pre><code>#define MAX_DATA_SIZE 256
+
+struct device_buffer {
+    __u32 length;
+    __u8 data[MAX_DATA_SIZE];
+};</code></pre>
+
+<p>The driver should:</p>
+
+<ol>
+    <li>Copy the request structure from user space.</li>
+    <li>Check whether the requested length is within the permitted limit.</li>
+    <li>Process only the valid number of bytes.</li>
+    <li>Set the response length correctly.</li>
+    <li>Copy the response structure back if required.</li>
+</ol>
+
+<p>For a flexible array or separate user pointer design, additional allocation, pointer validation and compatibility considerations are necessary.</p>
+</section>
+
+<section class="section">
+<h2>13. Common Mistakes</h2>
+
+<table>
+<tr>
+    <th>Mistake</th>
+    <th>Correct Practice</th>
+</tr>
+<tr>
+    <td>Directly dereferencing a user pointer.</td>
+    <td>Use user-memory copy functions.</td>
+</tr>
+<tr>
+    <td>Ignoring the copy function's return value.</td>
+    <td>Check for a nonzero uncopied-byte count.</td>
+</tr>
+<tr>
+    <td>Trusting a user-supplied length.</td>
+    <td>Validate it against a maximum allowed size.</td>
+</tr>
+<tr>
+    <td>Returning uninitialized kernel data.</td>
+    <td>Initialize output data before copying.</td>
+</tr>
+<tr>
+    <td>Using different structure layouts.</td>
+    <td>Maintain a compatible user-kernel ABI.</td>
+</tr>
+<tr>
+    <td>Calling user-copy functions in interrupt context.</td>
+    <td>Perform these operations in an appropriate sleepable context.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>14. Lesson Summary</h2>
+
+<ul>
+    <li>IOCTL can transfer scalar values, structures and buffers.</li>
+    <li><code>copy_from_user()</code> transfers application data into kernel memory.</li>
+    <li><code>copy_to_user()</code> transfers kernel data into application memory.</li>
+    <li><code>_IOW</code>, <code>_IOR</code> and <code>_IOWR</code> describe the intended data direction in the request code.</li>
+    <li>Copy functions do not replace input validation.</li>
+    <li>Variable-length transfers require strict size validation.</li>
+    <li>Output data should be initialized before being returned.</li>
+    <li>User-copy operations must not be performed from interrupt context.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>15. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>Why is data transfer necessary in IOCTL operations?</li>
+    <li>What is the direction of copy_from_user()?</li>
+    <li>What is the direction of copy_to_user()?</li>
+    <li>What does a nonzero copy function return value indicate?</li>
+    <li>Why must user-supplied buffer lengths be validated?</li>
+    <li>Why should output structures be initialized?</li>
+    <li>Why should copy functions not be called from interrupt context?</li>
+    <li>What is the purpose of a variable-length data protocol?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain the IOCTL data-transfer mechanism between user space and kernel space.</li>
+    <li>Describe scalar, structure and buffer-based IOCTL data transfer.</li>
+    <li>Explain bidirectional data transfer using _IOWR.</li>
+    <li>Discuss error handling in copy_to_user() and copy_from_user().</li>
+    <li>Explain memory-safety considerations in IOCTL data transfer.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Write an IOCTL handler that receives an integer.</li>
+    <li>Write an IOCTL handler that returns an integer.</li>
+    <li>Transfer a configuration structure from user space.</li>
+    <li>Return a device-status structure to user space.</li>
+    <li>Implement bidirectional request-response transfer.</li>
+    <li>Design a fixed-size buffer transfer with length validation.</li>
+    <li>Handle copy failures using -EFAULT.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>16. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Explain the IOCTL data-transfer process.</li>
+    <li>Use copy_from_user() and copy_to_user() correctly.</li>
+    <li>Transfer integers, structures and buffers.</li>
+    <li>Implement bidirectional data exchange.</li>
+    <li>Handle copy failures and invalid input.</li>
+    <li>Apply basic memory-safety practices in IOCTL handlers.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L06_Passing_Structures_Through_IOCTL.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L08_Testing_IOCTL_from_User_Space.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 11 – IOCTL and Device Control</p>
+</footer>
+
+</body>
+</html>
