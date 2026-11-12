@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 12: Synchronization in Character Drivers | Linux Device Drivers</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 20px;
+}
+
+header h1 {
+    margin: 0 0 10px;
+    font-size: 30px;
+}
+
+header p {
+    margin: 0;
+}
+
+nav {
+    background: white;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+
+nav a {
+    display: inline-block;
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 5px 12px;
+}
+
+nav a:hover {
+    color: #007bff;
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e4efff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e2eaf5;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9c;
+    margin-top: 24px;
+}
+
+pre {
+    background: #17212e;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    line-height: 1.55;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+
+th, td {
+    border: 1px solid #d5dfeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #edf4ff;
+    border: 1px solid #bfd4f3;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+    font-weight: bold;
+}
+
+.diagram .arrow {
+    color: #174ea6;
+    font-size: 23px;
+    margin: 5px;
+}
+
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #fff0f0;
+    border-left: 5px solid #d9534f;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.navigation-buttons a:hover {
+    background: #2878d7;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 650px) {
+    header h1 {
+        font-size: 23px;
+    }
+
+    section {
+        padding: 17px;
+    }
+
+    table {
+        display: block;
+        overflow-x: auto;
+    }
+
+    .navigation-buttons {
+        flex-direction: column;
+    }
+
+    .navigation-buttons a {
+        text-align: center;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Lesson 12: Synchronization in Character Drivers</h1>
+    <p>Linux Device Drivers – Synchronization and Concurrency</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> 13 – Synchronization and Concurrency<br>
+    <strong>Lesson:</strong> 12 – Synchronization in Character Drivers<br>
+    <strong>Level:</strong> Intermediate to Advanced<br>
+    <strong>Prerequisites:</strong> Character Drivers, File Operations, User-Kernel Data Transfer, Mutexes, Spinlocks, Atomic Operations, Wait Queues and Completions.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Understand why synchronization is required in character drivers.</li>
+    <li>Identify race conditions in concurrent file operations.</li>
+    <li>Protect shared driver buffers using mutexes.</li>
+    <li>Use spinlocks for short, non-sleeping critical sections.</li>
+    <li>Understand atomic operations for simple shared counters.</li>
+    <li>Use wait queues for blocking read operations.</li>
+    <li>Understand completions for event-based synchronization.</li>
+    <li>Combine synchronization mechanisms in a character driver.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Synchronization in Character Drivers</h2>
+
+<p>A Linux character driver provides an interface between user-space applications and a device or software-managed data source.</p>
+
+<p>Applications can access a character device using system calls such as:</p>
+
+<pre><code>open()
+read()
+write()
+ioctl()
+poll()
+close()</code></pre>
+
+<p>Multiple processes or threads may access the same character device at the same time.</p>
+
+<p>For example:</p>
+
+<ul>
+    <li>Process A writes data to a device.</li>
+    <li>Process B reads data from the same device.</li>
+    <li>Process C changes device configuration using IOCTL.</li>
+    <li>An interrupt handler updates device status.</li>
+</ul>
+
+<p>These operations may access shared driver data concurrently.</p>
+
+<h3>Why Synchronization Is Required</h3>
+
+<p>Without synchronization, concurrent operations can modify shared data unexpectedly, produce inconsistent results or corrupt driver state.</p>
+
+<div class="diagram">
+    <div>User Application A</div>
+    <div>↓ read()</div>
+    <hr>
+    <div>User Application B</div>
+    <div>↓ write()</div>
+    <hr>
+    <div>Interrupt Handler</div>
+    <div>↓ updates status</div>
+    <div class="arrow">↓</div>
+    <div>Character Driver</div>
+    <div class="arrow">↓</div>
+    <div>Shared Driver Data</div>
+    <div class="arrow">↓</div>
+    <div>Synchronization Required</div>
+</div>
+</section>
+
+<section>
+<h2>3. Shared Data in a Character Driver</h2>
+
+<p>A character driver may maintain several shared data structures.</p>
+
+<table>
+    <tr>
+        <th>Shared Data</th>
+        <th>Purpose</th>
+        <th>Possible Concurrent Access</th>
+    </tr>
+    <tr>
+        <td>Device buffer</td>
+        <td>Stores data transferred through read and write operations.</td>
+        <td>Read and write callbacks.</td>
+    </tr>
+    <tr>
+        <td>Device status</td>
+        <td>Stores ready, busy or error state.</td>
+        <td>Process and interrupt contexts.</td>
+    </tr>
+    <tr>
+        <td>Device configuration</td>
+        <td>Stores operating parameters.</td>
+        <td>Read and IOCTL operations.</td>
+    </tr>
+    <tr>
+        <td>Open counter</td>
+        <td>Tracks active opens or application usage.</td>
+        <td>Open and release callbacks.</td>
+    </tr>
+    <tr>
+        <td>Event state</td>
+        <td>Indicates whether new data or an event is available.</td>
+        <td>Interrupt and read paths.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>4. Race Conditions in Character Drivers</h2>
+
+<p>A race condition occurs when the result of concurrent operations depends on their execution order or timing.</p>
+
+<h3>Example: Shared Counter</h3>
+
+<p>Suppose two processes execute the following operation:</p>
+
+<pre><code>counter = counter + 1;</code></pre>
+
+<p>This operation involves reading, incrementing and writing the counter. It is not necessarily atomic.</p>
+
+<h3>Possible Execution Sequence</h3>
+
+<table>
+    <tr>
+        <th>Step</th>
+        <th>Process A</th>
+        <th>Process B</th>
+    </tr>
+    <tr>
+        <td>1</td>
+        <td>Reads counter = 10</td>
+        <td></td>
+    </tr>
+    <tr>
+        <td>2</td>
+        <td></td>
+        <td>Reads counter = 10</td>
+    </tr>
+    <tr>
+        <td>3</td>
+        <td>Calculates 11</td>
+        <td></td>
+    </tr>
+    <tr>
+        <td>4</td>
+        <td></td>
+        <td>Calculates 11</td>
+    </tr>
+    <tr>
+        <td>5</td>
+        <td>Writes 11</td>
+        <td></td>
+    </tr>
+    <tr>
+        <td>6</td>
+        <td></td>
+        <td>Writes 11</td>
+    </tr>
+</table>
+
+<p>The expected result is 12, but the actual result is 11.</p>
+
+<p>This is called a lost update.</p>
+</section>
+
+<section>
+<h2>5. Choosing the Correct Synchronization Mechanism</h2>
+
+<p>The correct synchronization mechanism depends on the execution context and the operation being protected.</p>
+
+<table>
+    <tr>
+        <th>Mechanism</th>
+        <th>Purpose</th>
+        <th>Typical Use</th>
+    </tr>
+    <tr>
+        <td>Mutex</td>
+        <td>Sleepable exclusive locking.</td>
+        <td>Protecting buffers in read and write callbacks.</td>
+    </tr>
+    <tr>
+        <td>Spinlock</td>
+        <td>Short non-sleeping critical sections.</td>
+        <td>Shared status accessed by process and interrupt contexts.</td>
+    </tr>
+    <tr>
+        <td>Atomic operations</td>
+        <td>Atomic operations on simple integer values.</td>
+        <td>Event counters and simple flags.</td>
+    </tr>
+    <tr>
+        <td>Wait queues</td>
+        <td>Waiting for a condition to become true.</td>
+        <td>Blocking read until data becomes available.</td>
+    </tr>
+    <tr>
+        <td>Completions</td>
+        <td>Waiting for a specific event or operation to finish.</td>
+        <td>Waiting for an asynchronous device operation.</td>
+    </tr>
+    <tr>
+        <td>Read-write locks</td>
+        <td>Multiple readers or one exclusive writer.</td>
+        <td>Read-heavy configuration data.</td>
+    </tr>
+    <tr>
+        <td>Semaphores</td>
+        <td>Managing access to a limited number of resources.</td>
+        <td>Counting available resources.</td>
+    </tr>
+</table>
+
+<div class="note">
+    A mutex is generally a suitable choice for protecting a shared character-driver buffer when the callbacks execute in process context. A spinlock is appropriate only when the protected operation must be non-sleeping.
+</div>
+</section>
+
+<section>
+<h2>6. Using Mutexes in Character Drivers</h2>
+
+<p>A mutex is commonly used to protect shared data accessed by read, write and IOCTL callbacks.</p>
+
+<h3>Declaration</h3>
+
+<pre><code>#include &lt;linux/mutex.h&gt;
+
+static DEFINE_MUTEX(device_mutex);</code></pre>
+
+<h3>Protecting Shared Data</h3>
+
+<pre><code>mutex_lock(&amp;device_mutex);
+
+/* Access shared driver data */
+
+mutex_unlock(&amp;device_mutex);</code></pre>
+
+<h3>Example: Protected Read Operation</h3>
+
+<pre><code>static ssize_t device_read(
+    struct file *file,
+    char __user *buffer,
+    size_t count,
+    loff_t *position)
+{
+    mutex_lock(&amp;device_mutex);
+
+    /* Access protected kernel buffer */
+
+    mutex_unlock(&amp;device_mutex);
+
+    return 0;
+}</code></pre>
+
+<p>This is only a synchronization illustration. A functional read callback must also implement data-length checks, file-position handling and user-space copying.</p>
+
+<h3>Example: Protected Write Operation</h3>
+
+<pre><code>static ssize_t device_write(
+    struct file *file,
+    const char __user *buffer,
+    size_t count,
+    loff_t *position)
+{
+    mutex_lock(&amp;device_mutex);
+
+    /* Update protected kernel buffer */
+
+    mutex_unlock(&amp;device_mutex);
+
+    return count;
+}</code></pre>
+
+<p>In a complete implementation, the driver must handle buffer bounds, copy failures and partial writes correctly.</p>
+</section>
+
+<section>
+<h2>7. Using Spinlocks in Character Drivers</h2>
+
+<p>Spinlocks are useful when shared data is accessed from contexts that cannot sleep, such as hard interrupt handlers.</p>
+
+<h3>Declaration</h3>
+
+<pre><code>#include &lt;linux/spinlock.h&gt;
+
+static DEFINE_SPINLOCK(status_lock);
+
+static int device_status;</code></pre>
+
+<h3>Updating Shared Status</h3>
+
+<pre><code>spin_lock(&amp;status_lock);
+
+device_status = 1;
+
+spin_unlock(&amp;status_lock);</code></pre>
+
+<h3>Reading Shared Status</h3>
+
+<pre><code>int status;
+
+spin_lock(&amp;status_lock);
+
+status = device_status;
+
+spin_unlock(&amp;status_lock);</code></pre>
+
+<h3>When an Interrupt Handler Shares the Lock</h3>
+
+<p>If process context and a local hard interrupt handler use the same lock, process context should use the appropriate IRQ-safe variant.</p>
+
+<pre><code>unsigned long flags;
+
+spin_lock_irqsave(&amp;status_lock, flags);
+
+/* Access data shared with hard IRQ */
+
+spin_unlock_irqrestore(&amp;status_lock, flags);</code></pre>
+
+<p>The hard interrupt handler can use the corresponding non-sleeping locking operation under the applicable kernel locking model.</p>
+
+<div class="warning">
+    Do not call <code>copy_to_user()</code>, <code>copy_from_user()</code>, <code>mutex_lock()</code>, <code>msleep()</code> or blocking wait operations while holding a spinlock. User-copy operations may sleep.
+</div>
+</section>
+
+<section>
+<h2>8. Using Atomic Operations</h2>
+
+<p>Atomic operations are useful for simple integer counters and state updates.</p>
+
+<h3>Declaration</h3>
+
+<pre><code>#include &lt;linux/atomic.h&gt;
+
+static atomic_t open_count = ATOMIC_INIT(0);</code></pre>
+
+<h3>Increment Counter</h3>
+
+<pre><code>atomic_inc(&amp;open_count);</code></pre>
+
+<h3>Decrement Counter</h3>
+
+<pre><code>atomic_dec(&amp;open_count);</code></pre>
+
+<h3>Read Counter</h3>
+
+<pre><code>int count;
+
+count = atomic_read(&amp;open_count);</code></pre>
+
+<h3>Example in an Open Callback</h3>
+
+<pre><code>static int device_open(
+    struct inode *inode,
+    struct file *file)
+{
+    atomic_inc(&amp;open_count);
+
+    pr_info("Device opened. Count = %d\n",
+            atomic_read(&amp;open_count));
+
+    return 0;
+}</code></pre>
+
+<h3>Example in a Release Callback</h3>
+
+<pre><code>static int device_release(
+    struct inode *inode,
+    struct file *file)
+{
+    atomic_dec(&amp;open_count);
+
+    pr_info("Device released. Count = %d\n",
+            atomic_read(&amp;open_count));
+
+    return 0;
+}</code></pre>
+
+<p>For object lifetime and reference counting, prefer <code>refcount_t</code> rather than using a plain <code>atomic_t</code> as an unrestricted reference counter.</p>
+</section>
+
+<section>
+<h2>9. Using Wait Queues in Character Drivers</h2>
+
+<p>Wait queues allow a process to sleep until a particular condition becomes true.</p>
+
+<p>For example, a user application may call <code>read()</code> when no data is available.</p>
+
+<p>The driver can put the calling process to sleep until new data arrives.</p>
+
+<h3>Declaration</h3>
+
+<pre><code>#include &lt;linux/wait.h&gt;
+
+static DECLARE_WAIT_QUEUE_HEAD(data_wait_queue);
+
+static bool data_available;</code></pre>
+
+<h3>Waiting for Data</h3>
+
+<pre><code>wait_event_interruptible(
+    data_wait_queue,
+    READ_ONCE(data_available)
+);</code></pre>
+
+<p>The actual driver must check the return value and re-evaluate its data condition under the appropriate synchronization.</p>
+
+<h3>Waking Up Waiting Processes</h3>
+
+<pre><code>WRITE_ONCE(data_available, true);
+
+wake_up_interruptible(&amp;data_wait_queue);</code></pre>
+
+<p>In a real driver, the producer must publish the data and update the condition using a synchronization design that guarantees correct ordering and prevents data races. <code>READ_ONCE()</code> and <code>WRITE_ONCE()</code> alone are not general-purpose locking mechanisms.</p>
+
+<h3>Typical Read Flow</h3>
+
+<div class="diagram">
+    <div>User calls read()</div>
+    <div class="arrow">↓</div>
+    <div>Check whether data is available</div>
+    <div class="arrow">↓</div>
+    <div>No data available</div>
+    <div class="arrow">↓</div>
+    <div>Process sleeps on wait queue</div>
+    <div class="arrow">↓</div>
+    <div>New data arrives</div>
+    <div class="arrow">↓</div>
+    <div>Driver wakes waiting process</div>
+    <div class="arrow">↓</div>
+    <div>Process reads available data</div>
+</div>
+</section>
+
+<section>
+<h2>10. Using Completions in Character Drivers</h2>
+
+<p>Completions are useful when one execution context must wait for a particular operation or event to finish.</p>
+
+<p>For example, a character driver may initiate an asynchronous device operation and wait until the operation completes.</p>
+
+<h3>Declaration</h3>
+
+<pre><code>#include &lt;linux/completion.h&gt;
+
+static DECLARE_COMPLETION(device_completion);</code></pre>
+
+<h3>Waiting for Completion</h3>
+
+<pre><code>wait_for_completion(&amp;device_completion);</code></pre>
+
+<h3>Signaling Completion</h3>
+
+<pre><code>complete(&amp;device_completion);</code></pre>
+
+<h3>Typical Workflow</h3>
+
+<div class="diagram">
+    <div>Driver Starts Device Operation</div>
+    <div class="arrow">↓</div>
+    <div>Process Waits for Completion</div>
+    <div class="arrow">↓</div>
+    <div>Device Operation Finishes</div>
+    <div class="arrow">↓</div>
+    <div>Completion Event Is Signaled</div>
+    <div class="arrow">↓</div>
+    <div>Waiting Process Continues</div>
+</div>
+
+<p>Completions represent event signaling. They do not replace mutexes or spinlocks used to protect shared data.</p>
+</section>
+
+<section>
+<h2>11. Complete Practical Example: Synchronized Character Driver</h2>
+
+<p>This example implements a simple character driver with:</p>
+
+<ul>
+    <li>A shared kernel buffer.</li>
+    <li>A mutex protecting buffer operations.</li>
+    <li>A wait queue for blocking reads.</li>
+    <li>A condition indicating whether data is available.</li>
+    <li>Read and write file operations.</li>
+</ul>
+
+<h3>Source Code: sync_char_driver.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/mutex.h&gt;
+#include &lt;linux/wait.h&gt;
+#include &lt;linux/device.h&gt;
+#include &lt;linux/version.h&gt;
+
+#define DEVICE_NAME "sync_char"
+#define BUFFER_SIZE 256
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Linux Device Drivers Course");
+MODULE_DESCRIPTION("Synchronized Character Driver");
+MODULE_VERSION("1.0");
+
+static int major_number;
+
+static char device_buffer[BUFFER_SIZE];
+
+static size_t data_length;
+
+static DEFINE_MUTEX(device_mutex);
+
+static DECLARE_WAIT_QUEUE_HEAD(data_wait_queue);
+
+static bool data_available;
+
+static struct class *sync_class;
+static struct device *sync_device;
+
+/* Read operation */
+static ssize_t sync_read(
+    struct file *file,
+    char __user *user_buffer,
+    size_t count,
+    loff_t *position)
+{
+    size_t available;
+    size_t bytes_to_copy;
+    int ret;
+
+    if (count == 0)
+        return 0;
+
+    if (file-&gt;f_flags &amp; O_NONBLOCK) {
+
+        if (!READ_ONCE(data_available))
+            return -EAGAIN;
+
+    } else {
+
+        ret = wait_event_interruptible(
+            data_wait_queue,
+            READ_ONCE(data_available)
+        );
+
+        if (ret)
+            return ret;
+    }
+
+    if (*position &lt; 0)
+        return -EINVAL;
+
+    ret = mutex_lock_interruptible(&amp;device_mutex);
+
+    if (ret)
+        return ret;
+
+    /*
+     * Recheck the condition after acquiring
+     * the mutex because another reader may
+     * have consumed the data.
+     */
+    if (!data_available || *position &gt;= data_length) {
+
+        mutex_unlock(&amp;device_mutex);
+
+        if (file-&gt;f_flags &amp; O_NONBLOCK)
+            return -EAGAIN;
+
+        return -EAGAIN;
+    }
+
+    available = data_length - *position;
+
+    bytes_to_copy = min(count, available);
+
+    if (copy_to_user(
+            user_buffer,
+            device_buffer + *position,
+            bytes_to_copy)) {
+
+        mutex_unlock(&amp;device_mutex);
+        return -EFAULT;
+    }
+
+    *position += bytes_to_copy;
+
+    if (*position &gt;= data_length) {
+        data_available = false;
+        data_length = 0;
+        *position = 0;
+    }
+
+    mutex_unlock(&amp;device_mutex);
+
+    return bytes_to_copy;
+}
+
+/* Write operation */
+static ssize_t sync_write(
+    struct file *file,
+    const char __user *user_buffer,
+    size_t count,
+    loff_t *position)
+{
+    size_t bytes_to_copy;
+    int ret;
+
+    if (count == 0)
+        return 0;
+
+    ret = mutex_lock_interruptible(&amp;device_mutex);
+
+    if (ret)
+        return ret;
+
+    if (data_available) {
+        mutex_unlock(&amp;device_mutex);
+        return -EBUSY;
+    }
+
+    bytes_to_copy = min(count, (size_t)BUFFER_SIZE);
+
+    if (copy_from_user(
+            device_buffer,
+            user_buffer,
+            bytes_to_copy)) {
+
+        mutex_unlock(&amp;device_mutex);
+        return -EFAULT;
+    }
+
+    data_length = bytes_to_copy;
+    data_available = true;
+
+    mutex_unlock(&amp;device_mutex);
+
+    wake_up_interruptible(&amp;data_wait_queue);
+
+    return bytes_to_copy;
+}
+
+/* Open operation */
+static int sync_open(
+    struct inode *inode,
+    struct file *file)
+{
+    pr_info("sync_char: device opened\n");
+
+    return 0;
+}
+
+/* Release operation */
+static int sync_release(
+    struct inode *inode,
+    struct file *file)
+{
+    pr_info("sync_char: device closed\n");
+
+    return 0;
+}
+
+/* File operations */
+static const struct file_operations sync_fops = {
+    .owner   = THIS_MODULE,
+    .open    = sync_open,
+    .read    = sync_read,
+    .write   = sync_write,
+    .release = sync_release,
+};
+
+static int __init sync_driver_init(void)
+{
+    int ret;
+
+    major_number = register_chrdev(
+        0,
+        DEVICE_NAME,
+        &amp;sync_fops
+    );
+
+    if (major_number &lt; 0) {
+        pr_err("sync_char: registration failed\n");
+        return major_number;
+    }
+
+#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(6, 4, 0)
+    sync_class = class_create(DEVICE_NAME);
+#else
+    sync_class = class_create(THIS_MODULE, DEVICE_NAME);
+#endif
+
+    if (IS_ERR(sync_class)) {
+
+        ret = PTR_ERR(sync_class);
+        unregister_chrdev(major_number, DEVICE_NAME);
+
+        return ret;
+    }
+
+    sync_device = device_create(
+        sync_class,
+        NULL,
+        MKDEV(major_number, 0),
+        NULL,
+        DEVICE_NAME
+    );
+
+    if (IS_ERR(sync_device)) {
+
+        ret = PTR_ERR(sync_device);
+
+        class_destroy(sync_class);
+        unregister_chrdev(major_number, DEVICE_NAME);
+
+        return ret;
+    }
+
+    pr_info("sync_char: driver loaded\n");
+    pr_info("sync_char: major number = %d\n",
+            major_number);
+
+    return 0;
+}
+
+static void __exit sync_driver_exit(void)
+{
+    device_destroy(
+        sync_class,
+        MKDEV(major_number, 0)
+    );
+
+    class_destroy(sync_class);
+
+    unregister_chrdev(
+        major_number,
+        DEVICE_NAME
+    );
+
+    pr_info("sync_char: driver unloaded\n");
+}
+
+module_init(sync_driver_init);
+module_exit(sync_driver_exit);</code></pre>
+
+<h3>Explanation of the Example</h3>
+
+<h4>1. Shared Buffer</h4>
+
+<pre><code>static char device_buffer[BUFFER_SIZE];
+static size_t data_length;</code></pre>
+
+<p>The buffer stores data written by a user application.</p>
+
+<h4>2. Mutex</h4>
+
+<pre><code>static DEFINE_MUTEX(device_mutex);</code></pre>
+
+<p>The mutex protects the shared buffer, its length and the data-availability condition.</p>
+
+<h4>3. Wait Queue</h4>
+
+<pre><code>static DECLARE_WAIT_QUEUE_HEAD(data_wait_queue);</code></pre>
+
+<p>A blocking reader waits until data becomes available.</p>
+
+<h4>4. Write Operation</h4>
+
+<p>The write callback:</p>
+
+<ol>
+    <li>Acquires the mutex.</li>
+    <li>Checks whether previous data is still available.</li>
+    <li>Copies data from user space.</li>
+    <li>Updates the data length and availability state.</li>
+    <li>Releases the mutex.</li>
+    <li>Wakes waiting readers.</li>
+</ol>
+
+<h4>5. Read Operation</h4>
+
+<p>The read callback:</p>
+
+<ol>
+    <li>Waits for data when operating in blocking mode.</li>
+    <li>Acquires the mutex.</li>
+    <li>Rechecks the data condition.</li>
+    <li>Copies available data to user space.</li>
+    <li>Updates the file position.</li>
+    <li>Clears the data state when the buffer is consumed.</li>
+    <li>Releases the mutex.</li>
+</ol>
+
+<div class="warning">
+    This is an instructional single-buffer example, not a production-ready streaming driver. It supports one outstanding message at a time, returns <code>-EBUSY</code> if another write arrives before consumption, and does not implement <code>poll()</code>, IOCTL, removal-time lifetime management or a multi-reader message-queue policy. A production driver needs an explicit buffer ownership and reader-consumption design.
+</div>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += sync_char_driver.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<h3>Compile the Driver</h3>
+
+<pre><code>make</code></pre>
+
+<h3>Load the Driver</h3>
+
+<pre><code>sudo insmod sync_char_driver.ko</code></pre>
+
+<h3>Check the Kernel Log</h3>
+
+<pre><code>sudo dmesg | tail -20</code></pre>
+
+<h3>Find the Device Node</h3>
+
+<p>The driver creates a device-model object named <code>sync_char</code>. On a typical Ubuntu system, devtmpfs/udev creates the corresponding device node.</p>
+
+<pre><code>ls -l /dev/sync_char</code></pre>
+
+<p>If the node is not created automatically, inspect the kernel log and device-model state before proceeding.</p>
+
+<h3>Test from User Space</h3>
+
+<p>Write a message:</p>
+
+<pre><code>echo "Hello Linux Device Driver" &gt; /dev/sync_char</code></pre>
+
+<p>Read the message:</p>
+
+<pre><code>cat /dev/sync_char</code></pre>
+
+<h3>Expected Output</h3>
+
+<pre><code>Hello Linux Device Driver</code></pre>
+
+<h3>Unload the Driver</h3>
+
+<pre><code>sudo rmmod sync_char_driver</code></pre>
+
+<h3>Clean Build Files</h3>
+
+<pre><code>make clean</code></pre>
+
+<div class="note">
+    This example uses <code>register_chrdev()</code> for a compact teaching implementation. It does not demonstrate the separate <code>cdev</code> allocation and registration workflow covered in Chapter 8.
+</div>
+</section>
+
+<section>
+<h2>12. Synchronization Design: Process Context and Interrupt Context</h2>
+
+<p>A character driver may share data between its file operations and an interrupt handler.</p>
+
+<p>For example:</p>
+
+<ul>
+    <li>The interrupt handler updates a device event status.</li>
+    <li>The read callback checks whether an event is available.</li>
+    <li>The read callback waits if no event has arrived.</li>
+</ul>
+
+<h3>Possible Design</h3>
+
+<div class="diagram">
+    <div>Hardware Interrupt</div>
+    <div class="arrow">↓</div>
+    <div>Interrupt Handler</div>
+    <div class="arrow">↓</div>
+    <div>Update Event State Under Spinlock</div>
+    <div class="arrow">↓</div>
+    <div>Wake Up Wait Queue</div>
+    <div class="arrow">↓</div>
+    <div>Read Callback Resumes</div>
+    <div class="arrow">↓</div>
+    <div>Process Event in Sleepable Context</div>
+</div>
+
+<p>In this design:</p>
+
+<ul>
+    <li>A spinlock protects short state updates shared with hard IRQ context.</li>
+    <li>A wait queue allows the process to sleep until an event occurs.</li>
+    <li>The read callback performs user-space copying in process context.</li>
+    <li>The interrupt handler does not call sleeping functions.</li>
+</ul>
+
+<h3>Important Design Rule</h3>
+
+<p>Never hold a spinlock while calling a function that may sleep. Release the spinlock before performing operations such as user-space data copying or waiting.</p>
+</section>
+
+<section>
+<h2>13. Synchronization and poll() in Character Drivers</h2>
+
+<p>The <code>poll()</code> file operation allows applications to monitor whether a device can be read or written without blocking indefinitely.</p>
+
+<p>A typical driver uses a wait queue inside its poll callback:</p>
+
+<pre><code>static __poll_t sync_poll(
+    struct file *file,
+    struct poll_table_struct *wait)
+{
+    __poll_t mask = 0;
+
+    poll_wait(file, &amp;data_wait_queue, wait);
+
+    if (READ_ONCE(data_available))
+        mask |= EPOLLIN | EPOLLRDNORM;
+
+    return mask;
+}</code></pre>
+
+<p>The application can then use <code>poll()</code> or <code>select()</code> to wait for readiness.</p>
+
+<p>The actual readiness condition must be synchronized with the data-management logic. A production implementation should also handle concurrent consumption and buffer-state changes correctly.</p>
+
+<div class="note">
+    <code>poll_wait()</code> registers the application's polling wait queue with the driver's wait queue. It does not itself wait for data to arrive.
+</div>
+</section>
+
+<section>
+<h2>14. Common Synchronization Mistakes</h2>
+
+<table>
+    <tr>
+        <th>Mistake</th>
+        <th>Problem</th>
+    </tr>
+    <tr>
+        <td>Accessing a shared buffer without locking.</td>
+        <td>Concurrent read and write operations may corrupt data.</td>
+    </tr>
+    <tr>
+        <td>Holding a mutex in interrupt context.</td>
+        <td>Mutex acquisition may sleep and is not permitted in hard IRQ context.</td>
+    </tr>
+    <tr>
+        <td>Sleeping while holding a spinlock.</td>
+        <td>Can cause deadlocks and invalid execution-context behavior.</td>
+    </tr>
+    <tr>
+        <td>Calling copy_to_user() while holding a spinlock.</td>
+        <td>User-copy operations may sleep.</td>
+    </tr>
+    <tr>
+        <td>Using atomic operations for complex data structures.</td>
+        <td>Atomic integer operations do not protect arbitrary multi-field state.</td>
+    </tr>
+    <tr>
+        <td>Waking a wait queue without updating its condition correctly.</td>
+        <td>Waiters may wake without the required data being available.</td>
+    </tr>
+    <tr>
+        <td>Forgetting to release a mutex on an error path.</td>
+        <td>Other tasks may remain blocked.</td>
+    </tr>
+    <tr>
+        <td>Using a completion as a data lock.</td>
+        <td>Completions signal events; they do not provide mutual exclusion.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>15. Best Practices for Character Driver Synchronization</h2>
+
+<ol>
+    <li>Identify all shared driver data before selecting synchronization primitives.</li>
+    <li>Use mutexes for shared buffers accessed in sleepable process context.</li>
+    <li>Use spinlocks for short, non-sleeping operations where required.</li>
+    <li>Use IRQ-safe locking when a lock is shared with a hard interrupt handler.</li>
+    <li>Use atomic operations for simple counters and flags where their semantics are sufficient.</li>
+    <li>Use wait queues for condition-based blocking.</li>
+    <li>Use completions for one-shot or explicitly reinitialized event signaling.</li>
+    <li>Define consistent lock acquisition ordering.</li>
+    <li>Keep critical sections short.</li>
+    <li>Handle all error paths without leaving locks held.</li>
+    <li>Test concurrent access from multiple user-space processes.</li>
+    <li>Use lockdep and other kernel debugging tools during development.</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Testing Concurrent Access</h2>
+
+<p>After loading a character driver, multiple user-space processes can test concurrent access.</p>
+
+<h3>Terminal 1: Write Data</h3>
+
+<pre><code>echo "Message from process 1" &gt; /dev/sync_char</code></pre>
+
+<h3>Terminal 2: Read Data</h3>
+
+<pre><code>cat /dev/sync_char</code></pre>
+
+<h3>Check Device Information</h3>
+
+<pre><code>ls -l /dev/sync_char
+
+sudo dmesg | tail -30
+
+lsmod | grep sync_char</code></pre>
+
+<p>Repeat the operations using separate terminal windows or small user-space programs to explore concurrent access.</p>
+
+<div class="note">
+    Because this example uses a single shared message buffer, concurrent tests should be interpreted according to its one-message-at-a-time policy. It is not a general-purpose multi-client message queue.
+</div>
+</section>
+
+<section>
+<h2>17. Lesson Summary</h2>
+
+<ul>
+    <li>Character drivers may be accessed concurrently by multiple processes and interrupt handlers.</li>
+    <li>Shared buffers, configuration values and device status require appropriate synchronization.</li>
+    <li>Mutexes are useful for sleepable exclusive access.</li>
+    <li>Spinlocks protect short non-sleeping critical sections.</li>
+    <li>Atomic operations support simple integer updates.</li>
+    <li>Wait queues allow processes to sleep until a condition becomes true.</li>
+    <li>Completions provide event-based synchronization.</li>
+    <li>Read-write locks allow concurrent readers and exclusive writers.</li>
+    <li>Lock ordering and deadlock prevention are essential for complex drivers.</li>
+    <li>Correct synchronization must consider execution context and data lifetime.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Short Answer Questions</h2>
+
+<ol>
+    <li>Why is synchronization required in character drivers?</li>
+    <li>What is a race condition?</li>
+    <li>What is a shared driver buffer?</li>
+    <li>Why are mutexes useful in read and write callbacks?</li>
+    <li>When should a spinlock be used?</li>
+    <li>What is the purpose of atomic operations?</li>
+    <li>What is a wait queue?</li>
+    <li>What is a completion?</li>
+    <li>Why should copy_to_user() not be called while holding a spinlock?</li>
+    <li>What is the role of poll_wait()?</li>
+    <li>What is the difference between a wait queue and a completion?</li>
+    <li>Why is lock ordering important?</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Long Answer Questions</h2>
+
+<ol>
+    <li>Explain the need for synchronization in Linux character drivers.</li>
+    <li>Describe race conditions with a shared-buffer example.</li>
+    <li>Explain mutex-based synchronization in read and write callbacks.</li>
+    <li>Explain the use of spinlocks in interrupt-driven character drivers.</li>
+    <li>Discuss atomic operations in device drivers.</li>
+    <li>Explain wait queues and blocking read operations.</li>
+    <li>Explain the use of completions in asynchronous driver operations.</li>
+    <li>Design a synchronization strategy for a character driver accessed by multiple processes.</li>
+    <li>Explain the interaction between interrupt handling, wait queues and shared driver state.</li>
+    <li>Discuss common synchronization mistakes and their prevention.</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Practical Exercises</h2>
+
+<ol>
+    <li>Implement a character driver with a mutex-protected shared buffer.</li>
+    <li>Allow a user application to write data to the driver.</li>
+    <li>Implement a read operation that copies protected data to user space.</li>
+    <li>Use a wait queue to block read operations until data becomes available.</li>
+    <li>Implement a simple atomic open counter.</li>
+    <li>Protect shared device status using a spinlock.</li>
+    <li>Extend the driver with a poll operation.</li>
+    <li>Test concurrent access using multiple user-space processes.</li>
+    <li>Inspect locking behavior using kernel logs and lockdep where available.</li>
+    <li>Document the locking strategy and execution context for each shared variable.</li>
+</ol>
+
+<h3>Expected Learning Outcome</h3>
+
+<p>You should be able to design and implement a synchronization strategy for Linux character drivers, protect shared resources, coordinate blocking operations, and avoid common race conditions and deadlocks.</p>
+</section>
+
+<section>
+<h2>21. Chapter 13 – Completion Checklist</h2>
+
+<p>You have now completed all 12 lessons of Synchronization and Concurrency.</p>
+
+<table>
+    <tr>
+        <th>Lesson</th>
+        <th>Topic</th>
+        <th>Status</th>
+    </tr>
+    <tr><td>01</td><td>Introduction to Kernel Synchronization</td><td>Completed</td></tr>
+    <tr><td>02</td><td>Race Conditions in Device Drivers</td><td>Completed</td></tr>
+    <tr><td>03</td><td>Critical Sections</td><td>Completed</td></tr>
+    <tr><td>04</td><td>Atomic Operations</td><td>Completed</td></tr>
+    <tr><td>05</td><td>Spinlocks</td><td>Completed</td></tr>
+    <tr><td>06</td><td>Mutexes</td><td>Completed</td></tr>
+    <tr><td>07</td><td>Semaphores</td><td>Completed</td></tr>
+    <tr><td>08</td><td>Wait Queues</td><td>Completed</td></tr>
+    <tr><td>09</td><td>Completions</td><td>Completed</td></tr>
+    <tr><td>10</td><td>Read-Write Locks</td><td>Completed</td></tr>
+    <tr><td>11</td><td>Deadlocks and Their Prevention</td><td>Completed</td></tr>
+    <tr><td>12</td><td>Synchronization in Character Drivers</td><td>Completed</td></tr>
+</table>
+
+<h3>Chapter Outcome</h3>
+
+<p>You should now understand the major synchronization mechanisms used in Linux kernel and device-driver development, and be able to select an appropriate mechanism based on shared data, execution context and blocking requirements.</p>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L11_Deadlocks_and_Their_Prevention.html">← Previous: Deadlocks and Their Prevention</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="../../ldd.html">Return to Course Chapters →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 13 – Synchronization and Concurrency</p>
+</footer>
+
+</body>
+</html>
