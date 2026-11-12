@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 2: GPIO Subsystem Architecture | Linux Device Drivers</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            line-height: 1.7;
+            background: #f4f7fb;
+            color: #263238;
+        }
+        header {
+            background: linear-gradient(135deg, #123b80, #2878d7);
+            color: white;
+            text-align: center;
+            padding: 35px 20px;
+        }
+        header h1 { font-size: 30px; margin-bottom: 8px; }
+        nav {
+            background: #092b61;
+            text-align: center;
+            padding: 12px;
+        }
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin: 0 13px;
+            font-weight: bold;
+        }
+        nav a:hover { color: #b9dcff; text-decoration: underline; }
+        .container {
+            max-width: 1100px;
+            margin: 25px auto;
+            padding: 0 18px;
+        }
+        .lesson-info {
+            background: #e4f1ff;
+            border-left: 5px solid #2878d7;
+            padding: 18px 22px;
+            margin-bottom: 25px;
+            border-radius: 6px;
+        }
+        .lesson-info p { margin: 5px 0; }
+        section {
+            background: white;
+            padding: 25px;
+            margin-bottom: 22px;
+            border-radius: 8px;
+            box-shadow: 0 2px 9px rgba(0,0,0,0.06);
+        }
+        h2 {
+            color: #174ea6;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #e3ecf8;
+            padding-bottom: 8px;
+        }
+        h3 { color: #174ea6; margin: 18px 0 9px; }
+        p { margin-bottom: 12px; }
+        ul, ol { margin: 10px 0 15px 25px; }
+        li { margin-bottom: 7px; }
+        code {
+            background: #edf2f8;
+            color: #b42318;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-family: Consolas, monospace;
+        }
+        pre {
+            background: #172438;
+            color: #e7f0ff;
+            padding: 17px;
+            border-radius: 7px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-family: Consolas, monospace;
+            line-height: 1.5;
+        }
+        pre code { background: transparent; color: inherit; padding: 0; }
+        .diagram {
+            background: #f1f7ff;
+            border: 1px solid #b8d4f5;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 18px 0;
+            text-align: center;
+        }
+        .diagram-box {
+            display: block;
+            max-width: 720px;
+            margin: 9px auto;
+            padding: 12px;
+            border: 2px solid #2878d7;
+            border-radius: 6px;
+            background: white;
+            font-weight: bold;
+            color: #174ea6;
+        }
+        .diagram-arrow {
+            color: #174ea6;
+            font-size: 22px;
+            font-weight: bold;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d4deea;
+            padding: 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th { background: #174ea6; color: white; }
+        tr:nth-child(even) { background: #f4f8fd; }
+        .note {
+            background: #fff8e6;
+            border-left: 4px solid #e0a000;
+            padding: 13px 16px;
+            margin: 15px 0;
+        }
+        .important {
+            background: #eaf7ef;
+            border-left: 4px solid #239653;
+            padding: 13px 16px;
+            margin: 15px 0;
+        }
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+        .navigation-buttons a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 19px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .navigation-buttons a:hover { background: #2878d7; }
+        footer {
+            background: #092b61;
+            color: white;
+            text-align: center;
+            padding: 20px;
+            margin-top: 30px;
+        }
+        @media (max-width: 650px) {
+            header h1 { font-size: 23px; }
+            nav a { display: inline-block; margin: 5px 8px; }
+            section { padding: 17px; }
+            table { display: block; overflow-x: auto; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Linux Device Drivers</h1>
+    <p>Chapter 17 – I2C, SPI and GPIO Device Drivers</p>
+    <p>Lesson 2: GPIO Subsystem Architecture</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">Course</a>
+    <a href="index.html">Chapter Index</a>
+</nav>
+
+<div class="container">
+
+    <div class="lesson-info">
+        <p><strong>Chapter:</strong> 17 – I2C, SPI and GPIO Device Drivers</p>
+        <p><strong>Lesson:</strong> 2 – GPIO Subsystem Architecture</p>
+        <p><strong>Level:</strong> Intermediate</p>
+        <p><strong>Prerequisites:</strong> GPIO fundamentals, Linux kernel architecture and platform device drivers.</p>
+        <p><strong>Estimated Study Time:</strong> 75–90 minutes</p>
+    </div>
+
+    <section>
+        <h2>1. Learning Objectives</h2>
+        <p>After completing this lesson, you will be able to:</p>
+        <ul>
+            <li>Explain the Linux GPIO subsystem.</li>
+            <li>Understand the relationship between GPIO controllers and GPIO consumers.</li>
+            <li>Describe the role of the GPIO controller driver.</li>
+            <li>Understand the GPIO descriptor-based API.</li>
+            <li>Identify GPIO chips and line offsets.</li>
+            <li>Understand GPIO input, output and direction configuration.</li>
+            <li>Explain GPIO Device Tree integration.</li>
+            <li>Inspect GPIO information through Linux interfaces.</li>
+            <li>Understand GPIO access from kernel space and user space.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>2. Introduction to the Linux GPIO Subsystem</h2>
+        <p>The Linux GPIO subsystem provides a standard framework for controlling General Purpose Input/Output pins.</p>
+
+        <p>Different SoCs and embedded boards may have different GPIO controller hardware. Linux provides a common interface so that device drivers can request and control GPIO lines without directly manipulating controller registers.</p>
+
+        <h3>Common GPIO Applications</h3>
+        <ul>
+            <li>LED control.</li>
+            <li>Push-button input.</li>
+            <li>Reset signals.</li>
+            <li>Enable signals.</li>
+            <li>Chip-select control.</li>
+            <li>Digital sensor signals.</li>
+            <li>Interrupt-generating input lines.</li>
+        </ul>
+
+        <div class="diagram">
+            <div class="diagram-box">Linux Device Driver / Consumer</div>
+            <div class="diagram-arrow">↓ GPIO Descriptor API</div>
+            <div class="diagram-box">Linux GPIO Subsystem</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">GPIO Controller Driver</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">Physical GPIO Controller Hardware</div>
+            <div class="diagram-arrow">↓</div>
+            <div class="diagram-box">GPIO Pin → External Circuit</div>
+        </div>
+    </section>
+
+    <section>
+        <h2>3. GPIO Controller</h2>
+        <p>A GPIO controller is a hardware block that manages a group of GPIO lines.</p>
+
+        <p>It may be integrated into:</p>
+        <ul>
+            <li>An application processor.</li>
+            <li>A microcontroller.</li>
+            <li>A system-on-chip.</li>
+            <li>An external GPIO expander connected through I2C or SPI.</li>
+        </ul>
+
+        <h3>Typical GPIO Controller Features</h3>
+        <ul>
+            <li>Input and output direction control.</li>
+            <li>Input value reading.</li>
+            <li>Output value setting.</li>
+            <li>Pull-up and pull-down configuration where supported.</li>
+            <li>Interrupt generation where supported.</li>
+            <li>Pin configuration and multiplexing support through related pin-control facilities.</li>
+        </ul>
+
+        <p>The exact capabilities depend on the GPIO controller hardware.</p>
+    </section>
+
+    <section>
+        <h2>4. GPIO Controller Driver</h2>
+        <p>A GPIO controller driver is a kernel driver that registers a hardware GPIO controller with the Linux GPIO subsystem.</p>
+
+        <p>It translates standard GPIO subsystem operations into controller-specific register operations.</p>
+
+        <h3>Example Responsibilities</h3>
+        <ul>
+            <li>Register the GPIO chip.</li>
+            <li>Configure GPIO direction.</li>
+            <li>Read GPIO input values.</li>
+            <li>Set GPIO output values.</li>
+            <li>Configure supported interrupt functionality.</li>
+            <li>Handle controller-specific register operations.</li>
+        </ul>
+
+        <p>The controller driver normally uses the GPIO chip infrastructure provided by the kernel.</p>
+    </section>
+
+    <section>
+        <h2>5. GPIO Consumer Driver</h2>
+        <p>A GPIO consumer is a driver that uses one or more GPIO lines for its own device functionality.</p>
+
+        <p>Examples include:</p>
+        <ul>
+            <li>An LED driver using a GPIO output.</li>
+            <li>A button driver using a GPIO input.</li>
+            <li>A sensor driver using a reset GPIO.</li>
+            <li>A peripheral driver using an enable GPIO.</li>
+        </ul>
+
+        <div class="diagram">
+            <div class="diagram-box">GPIO Controller Driver</div>
+            <div class="diagram-arrow">↓ Registers GPIO Chip</div>
+            <div class="diagram-box">Linux GPIO Subsystem</div>
+            <div class="diagram-arrow">↓ Provides GPIO Lines</div>
+            <div class="diagram-box">LED Consumer / Button Consumer / Sensor Consumer</div>
+        </div>
+
+        <div class="important">
+            A GPIO controller driver manages the GPIO hardware. A GPIO consumer driver uses GPIO lines for a particular device. These are different responsibilities.
+        </div>
+    </section>
+
+    <section>
+        <h2>6. GPIO Chip and GPIO Lines</h2>
+        <p>Linux represents a GPIO controller using the GPIO chip infrastructure.</p>
+
+        <p>A GPIO chip commonly represents a controller that provides a group of GPIO lines.</p>
+
+        <h3>Example</h3>
+        <p>Suppose a GPIO controller provides 32 lines.</p>
+
+        <table>
+            <tr>
+                <th>Line Offset</th>
+                <th>Illustrative Purpose</th>
+            </tr>
+            <tr><td>0</td><td>LED output</td></tr>
+            <tr><td>1</td><td>Push-button input</td></tr>
+            <tr><td>2</td><td>Peripheral reset</td></tr>
+            <tr><td>3</td><td>Peripheral enable</td></tr>
+            <tr><td>4–31</td><td>Other GPIO functions</td></tr>
+        </table>
+
+        <p>These offsets are relative to the GPIO chip. They are not universal pin numbers.</p>
+
+        <h3>GPIO Chip Device Nodes</h3>
+        <pre><code>ls /dev/gpiochip*</code></pre>
+
+        <p>On systems using the GPIO character-device interface, devices may appear as:</p>
+        <pre><code>/dev/gpiochip0
+/dev/gpiochip1</code></pre>
+
+        <div class="note">
+            The names and number of GPIO chips depend on the target system. Do not assume that gpiochip0 corresponds to a particular physical connector or SoC port.
+        </div>
+    </section>
+
+    <section>
+        <h2>7. GPIO Descriptor-Based API</h2>
+        <p>Modern Linux GPIO consumer drivers generally use the GPIO descriptor-based API.</p>
+
+        <p>A descriptor is represented by:</p>
+        <pre><code>struct gpio_desc;</code></pre>
+
+        <p>The descriptor identifies a GPIO line obtained through the GPIO subsystem.</p>
+
+        <h3>Common Descriptor APIs</h3>
+        <table>
+            <tr>
+                <th>API</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td><code>devm_gpiod_get()</code></td>
+                <td>Obtain a GPIO descriptor associated with a device.</td>
+            </tr>
+            <tr>
+                <td><code>gpiod_get()</code></td>
+                <td>Obtain a GPIO descriptor without automatic device-managed cleanup.</td>
+            </tr>
+            <tr>
+                <td><code>gpiod_put()</code></td>
+                <td>Release a descriptor obtained with non-managed APIs.</td>
+            </tr>
+            <tr>
+                <td><code>gpiod_direction_input()</code></td>
+                <td>Configure a GPIO as input.</td>
+            </tr>
+            <tr>
+                <td><code>gpiod_direction_output()</code></td>
+                <td>Configure a GPIO as output.</td>
+            </tr>
+            <tr>
+                <td><code>gpiod_get_value_cansleep()</code></td>
+                <td>Read a GPIO value when the controller may sleep.</td>
+            </tr>
+            <tr>
+                <td><code>gpiod_set_value_cansleep()</code></td>
+                <td>Set a GPIO value when the controller may sleep.</td>
+            </tr>
+        </table>
+
+        <p>The descriptor API helps keep consumer drivers independent of controller-specific numbering.</p>
+    </section>
+
+    <section>
+        <h2>8. GPIO Input and Output Direction</h2>
+
+        <h3>Input Direction</h3>
+        <p>An input GPIO reads the logic state supplied by an external circuit.</p>
+
+        <pre><code>ret = gpiod_direction_input(button);
+
+if (ret)
+    return ret;</code></pre>
+
+        <h3>Output Direction</h3>
+        <p>An output GPIO drives a logic state, subject to the electrical limits of the controller.</p>
+
+        <pre><code>ret = gpiod_direction_output(led, 0);
+
+if (ret)
+    return ret;</code></pre>
+
+        <h3>Reading an Input</h3>
+        <pre><code>int value;
+
+value = gpiod_get_value_cansleep(button);
+
+if (value &lt; 0)
+    return value;</code></pre>
+
+        <h3>Setting an Output</h3>
+        <pre><code>gpiod_set_value_cansleep(led, 1);</code></pre>
+
+        <div class="note">
+            GPIO logical values account for active-low configuration. A logical value of 1 does not necessarily mean a physical HIGH voltage when the GPIO is configured as active-low.
+        </div>
+    </section>
+
+    <section>
+        <h2>9. Device Tree Integration with GPIO</h2>
+        <p>Device Tree can describe GPIO connections between a consumer device and a GPIO controller.</p>
+
+        <h3>Illustrative Device Tree</h3>
+        <pre><code>led-device {
+    compatible = "demo,gpio-led";
+    led-gpios = &lt;&amp;gpio0 12 0&gt;;
+    status = "okay";
+};
+
+button-device {
+    compatible = "demo,gpio-button";
+    button-gpios = &lt;&amp;gpio0 13 0&gt;;
+    status = "okay";
+};</code></pre>
+
+        <p>In this example:</p>
+        <ul>
+            <li><code>&amp;gpio0</code> references a GPIO controller node.</li>
+            <li><code>12</code> and <code>13</code> are illustrative line offsets.</li>
+            <li>The final cell represents GPIO flags as defined by the binding.</li>
+            <li><code>led-gpios</code> and <code>button-gpios</code> describe consumer connections.</li>
+        </ul>
+
+        <p>A consumer driver can request a descriptor by using the corresponding connection ID.</p>
+
+        <pre><code>devm_gpiod_get(&amp;pdev-&gt;dev,
+               "led",
+               GPIOD_OUT_LOW);</code></pre>
+
+        <div class="note">
+            Real Device Tree nodes must follow the binding for the GPIO controller and consumer device. The controller phandle, line offset, flags and compatible strings must be valid for the target hardware.
+        </div>
+    </section>
+
+    <section>
+        <h2>10. GPIO Interrupt Support</h2>
+        <p>Some GPIO controllers can generate interrupts when an input line changes state.</p>
+
+        <p>Common interrupt trigger types include:</p>
+        <ul>
+            <li>Rising edge.</li>
+            <li>Falling edge.</li>
+            <li>Both edges.</li>
+            <li>High level.</li>
+            <li>Low level.</li>
+        </ul>
+
+        <p>A GPIO descriptor can be converted into an IRQ number using:</p>
+
+        <pre><code>int irq;
+
+irq = gpiod_to_irq(button);
+
+if (irq &lt; 0)
+    return irq;</code></pre>
+
+        <p>The returned IRQ can then be requested using the appropriate IRQ API.</p>
+
+        <div class="note">
+            GPIO-to-IRQ support depends on the controller and its interrupt configuration. Not every GPIO line supports interrupt generation.
+        </div>
+    </section>
+
+    <section>
+        <h2>11. GPIO Access from User Space</h2>
+        <p>Linux provides a GPIO character-device interface for user-space access.</p>
+
+        <p>The modern GPIO character-device API is commonly used through libgpiod tools and libraries.</p>
+
+        <h3>List GPIO Chips</h3>
+        <pre><code>gpiodetect</code></pre>
+
+        <h3>Display GPIO Lines</h3>
+        <pre><code>gpioinfo</code></pre>
+
+        <h3>Request and Read a Line</h3>
+        <p>On systems with a compatible libgpiod command-line tool, commands can request a line and read its value. Exact command syntax varies between libgpiod versions.</p>
+
+        <p>For example, the libgpiod v2 command family includes:</p>
+        <pre><code>gpioget --help
+gpioset --help</code></pre>
+
+        <div class="note">
+            Older tutorials may use the deprecated GPIO sysfs interface under <code>/sys/class/gpio</code>. New development should generally use the GPIO character-device interface and the descriptor API in kernel drivers.
+        </div>
+    </section>
+
+    <section>
+        <h2>12. GPIO Controller Registration</h2>
+        <p>A GPIO controller driver registers its GPIO chip with the kernel GPIO subsystem.</p>
+
+        <p>The GPIO chip infrastructure is represented by <code>struct gpio_chip</code>.</p>
+
+        <h3>Conceptual Structure</h3>
+        <pre><code>struct gpio_chip {
+    const char *label;
+    int base;
+    unsigned int ngpio;
+
+    int (*get_direction)(struct gpio_chip *gc,
+                         unsigned int offset);
+
+    int (*direction_input)(struct gpio_chip *gc,
+                           unsigned int offset);
+
+    int (*direction_output)(struct gpio_chip *gc,
+                            unsigned int offset,
+                            int value);
+
+    int (*get)(struct gpio_chip *gc,
+               unsigned int offset);
+
+    int (*set)(struct gpio_chip *gc,
+               unsigned int offset,
+               int value);
+};</code></pre>
+
+        <p>This is a simplified conceptual illustration. The actual kernel structure contains additional members, and exact callback signatures or registration details can vary across kernel versions.</p>
+
+        <h3>Common Registration Function</h3>
+        <pre><code>devm_gpiochip_add_data(dev, gc, data);</code></pre>
+
+        <p>This registers a GPIO chip with device-managed lifetime handling. It is commonly used by GPIO controller drivers.</p>
+
+        <div class="important">
+            Peripheral consumer drivers should not normally register a GPIO chip. They request GPIO descriptors from an existing controller. GPIO chip registration is the responsibility of the controller driver.
+        </div>
+    </section>
+
+    <section>
+        <h2>13. GPIO Subsystem and Pin Control</h2>
+        <p>GPIO control and pin multiplexing are related but distinct concepts.</p>
+
+        <h3>GPIO Subsystem</h3>
+        <p>Manages digital input and output operations on GPIO lines.</p>
+
+        <h3>Pin Control Subsystem</h3>
+        <p>Manages pin multiplexing and electrical configuration where supported.</p>
+
+        <p>A physical SoC pin may support several functions, such as:</p>
+        <ul>
+            <li>GPIO.</li>
+            <li>UART transmit or receive.</li>
+            <li>I2C clock or data.</li>
+            <li>SPI clock or data.</li>
+            <li>PWM output.</li>
+        </ul>
+
+        <p>The pin-control configuration selects the required pin function. The GPIO subsystem then manages the line when it is configured for GPIO use.</p>
+    </section>
+
+    <section>
+        <h2>14. GPIO Kernel APIs: Managed and Non-Managed</h2>
+        <table>
+            <tr>
+                <th>Managed API</th>
+                <th>Non-Managed API</th>
+            </tr>
+            <tr>
+                <td><code>devm_gpiod_get()</code></td>
+                <td><code>gpiod_get()</code></td>
+            </tr>
+            <tr>
+                <td>Automatically released when the device is detached.</td>
+                <td>Must be released using <code>gpiod_put()</code>.</td>
+            </tr>
+            <tr>
+                <td>Useful in many platform and peripheral drivers.</td>
+                <td>Useful when the driver needs explicit lifetime control.</td>
+            </tr>
+        </table>
+
+        <p>Managed resources reduce cleanup code, but they do not remove the need to stop hardware activity and handle interrupts correctly before device removal.</p>
+    </section>
+
+    <section>
+        <h2>15. Common GPIO Subsystem Errors</h2>
+        <table>
+            <tr>
+                <th>Problem</th>
+                <th>Possible Cause</th>
+                <th>Investigation</th>
+            </tr>
+            <tr>
+                <td>GPIO descriptor request fails</td>
+                <td>Missing or incorrect GPIO property</td>
+                <td>Check Device Tree and consumer connection ID.</td>
+            </tr>
+            <tr>
+                <td>GPIO line is busy</td>
+                <td>Another consumer owns the line</td>
+                <td>Inspect GPIO line information.</td>
+            </tr>
+            <tr>
+                <td>Direction configuration fails</td>
+                <td>Controller limitation or invalid configuration</td>
+                <td>Check controller documentation and error code.</td>
+            </tr>
+            <tr>
+                <td>Output does not change</td>
+                <td>Pin mux, wiring or hardware configuration issue</td>
+                <td>Inspect pinctrl and electrical connections.</td>
+            </tr>
+            <tr>
+                <td>GPIO interrupt does not occur</td>
+                <td>Unsupported line or incorrect trigger configuration</td>
+                <td>Check IRQ mapping and controller support.</td>
+            </tr>
+            <tr>
+                <td>GPIO chip is missing</td>
+                <td>Controller driver not loaded or probe failed</td>
+                <td>Inspect kernel logs and device configuration.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section>
+        <h2>16. Practical Exercise: Inspect the GPIO Subsystem</h2>
+        <p><strong>Objective:</strong> Inspect GPIO controller information and available GPIO lines in Linux.</p>
+
+        <h3>Step 1: Check GPIO Device Nodes</h3>
+        <pre><code>ls -l /dev/gpiochip*</code></pre>
+
+        <h3>Step 2: Install GPIO Tools</h3>
+        <pre><code>sudo apt update
+sudo apt install gpiod</code></pre>
+
+        <h3>Step 3: Detect GPIO Controllers</h3>
+        <pre><code>gpiodetect</code></pre>
+
+        <h3>Step 4: Inspect GPIO Lines</h3>
+        <pre><code>gpioinfo</code></pre>
+
+        <h3>Step 5: Inspect Kernel Messages</h3>
+        <pre><code>sudo dmesg | grep -i gpio</code></pre>
+
+        <h3>Expected Result</h3>
+        <p>On a supported Linux system, GPIO tools should display available GPIO chips and line information.</p>
+
+        <p>If no GPIO controllers are available in the virtual machine, the commands may report that no chips were found. This does not mean the Linux GPIO subsystem is missing; it may mean the virtual hardware does not expose a GPIO controller.</p>
+    </section>
+
+    <section>
+        <h2>17. Ubuntu VirtualBox and LPC2129 Notes</h2>
+
+        <h3>Ubuntu in VirtualBox</h3>
+        <p>Your Ubuntu virtual machine can be used to study:</p>
+        <ul>
+            <li>GPIO subsystem architecture.</li>
+            <li>GPIO kernel APIs.</li>
+            <li>GPIO character-device tools.</li>
+            <li>Driver source code and compilation.</li>
+            <li>GPIO Device Tree concepts.</li>
+        </ul>
+
+        <p>A standard x86 virtual machine may not provide a physical GPIO controller or GPIO lines. Actual GPIO operation requires suitable hardware or an emulator that implements the required controller.</p>
+
+        <h3>LPC2129 with Keil uVision</h3>
+        <p>Your LPC2129 bare-metal work uses the microcontroller's GPIO-related registers and pin configuration.</p>
+
+        <p>For example, LPC2129 firmware may configure direction and output registers to control an LED or read a switch.</p>
+
+        <p>Linux GPIO descriptor APIs are different: they are kernel interfaces used by Linux drivers on supported Linux hardware.</p>
+    </section>
+
+    <section>
+        <h2>18. Review Questions</h2>
+
+        <h3>A. Short Answer Questions</h3>
+        <ol>
+            <li>What is the Linux GPIO subsystem?</li>
+            <li>What is a GPIO controller?</li>
+            <li>What is a GPIO consumer?</li>
+            <li>What is a GPIO chip?</li>
+            <li>What is a GPIO line offset?</li>
+            <li>What is a GPIO descriptor?</li>
+            <li>What is the purpose of <code>devm_gpiod_get()</code>?</li>
+            <li>What is the purpose of <code>gpiod_direction_input()</code>?</li>
+            <li>How can a GPIO line be converted into an IRQ number?</li>
+            <li>What is the purpose of the GPIO character-device interface?</li>
+        </ol>
+
+        <h3>B. Long Answer Questions</h3>
+        <ol>
+            <li>Explain the architecture of the Linux GPIO subsystem.</li>
+            <li>Differentiate between GPIO controller and consumer drivers.</li>
+            <li>Explain the GPIO descriptor-based API.</li>
+            <li>Describe GPIO input and output operations.</li>
+            <li>Explain Device Tree integration with GPIO.</li>
+            <li>Explain GPIO interrupt support.</li>
+            <li>Differentiate between GPIO and pin control subsystems.</li>
+        </ol>
+
+        <h3>C. Practical Questions</h3>
+        <ol>
+            <li>Inspect GPIO chips using <code>gpiodetect</code>.</li>
+            <li>Inspect GPIO lines using <code>gpioinfo</code>.</li>
+            <li>Write a simple GPIO consumer driver.</li>
+            <li>Request a GPIO descriptor using <code>devm_gpiod_get()</code>.</li>
+            <li>Configure a GPIO as input and read its value.</li>
+            <li>Configure a GPIO as output and control an LED.</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>19. Expected Learning Outcome</h2>
+        <p>After completing this lesson, you should understand how Linux organizes GPIO controllers, GPIO chips and consumer drivers.</p>
+
+        <p>You should also be able to identify the main GPIO descriptor APIs, understand Device Tree GPIO properties and inspect GPIO devices using Linux tools.</p>
+
+        <p><strong>Next Lesson:</strong> Lesson 3 – GPIO Descriptor API.</p>
+    </section>
+
+    <div class="navigation-buttons">
+        <a href="L01_Introduction_to_Linux_Hardware_Interfaces.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L03_GPIO_Descriptor_API.html">Next Lesson →</a>
+    </div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 17 – I2C, SPI and GPIO Device Drivers</p>
+</footer>
+
+</body>
+</html>
