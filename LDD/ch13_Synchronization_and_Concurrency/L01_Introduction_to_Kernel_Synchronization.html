@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Introduction to Kernel Synchronization | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Introduction to Kernel Synchronization</h1>
+    <p>Linux Device Drivers – Chapter 13, Lesson 1</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> Synchronization and Concurrency</p>
+    <p><strong>Lesson:</strong> 1 – Introduction to Kernel Synchronization</p>
+    <p><strong>Prerequisites:</strong> Linux kernel modules, character drivers, file operations, interrupts and kernel execution contexts.</p>
+    <p><strong>Objective:</strong> Understand concurrency, shared resources, critical sections and the need for synchronization in Linux device drivers.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction</h2>
+
+<p>Linux is a multitasking operating system. Multiple processes, kernel threads, interrupt handlers and other kernel execution paths can operate during overlapping periods.</p>
+
+<p>A Linux device driver may be accessed by several execution paths simultaneously. If these paths access or modify the same data without proper coordination, the driver can produce incorrect results or become unstable.</p>
+
+<p><strong>Kernel synchronization</strong> is the set of techniques used to coordinate concurrent execution and protect shared resources.</p>
+
+<p>Synchronization helps ensure that shared data is accessed in a controlled and consistent manner.</p>
+
+<div class="diagram">
+    <div class="diagram-box">Process A</div>
+    <div class="diagram-box">Process B</div>
+    <div class="diagram-box">Interrupt Handler</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Shared Driver Data</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Synchronization Mechanism</div>
+</div>
+</section>
+
+<section class="section">
+<h2>2. What Is Concurrency?</h2>
+
+<p>Concurrency means that multiple execution paths make progress during overlapping periods.</p>
+
+<p>On a single-core processor, execution paths may be interleaved through scheduling and interrupts. On a multicore processor, multiple execution paths may actually execute simultaneously.</p>
+
+<h3>Example</h3>
+
+<p>Suppose a character driver maintains a global variable:</p>
+
+<pre><code>static int device_counter;</code></pre>
+
+<p>Two processes access the same driver. Both attempt to increment the counter.</p>
+
+<p>Without synchronization, their operations can overlap and produce an incorrect result.</p>
+
+<div class="note">
+    Concurrency does not always mean that instructions execute at exactly the same time. Interleaving alone can create synchronization problems.
+</div>
+</section>
+
+<section class="section">
+<h2>3. What Is a Shared Resource?</h2>
+
+<p>A shared resource is a data object or system resource that can be accessed by multiple execution paths.</p>
+
+<h3>Examples in Device Drivers</h3>
+
+<ul>
+    <li>Global variables.</li>
+    <li>Device-private data structures.</li>
+    <li>Character-device buffers.</li>
+    <li>Hardware status information.</li>
+    <li>Queue data structures.</li>
+    <li>DMA descriptors and buffer metadata.</li>
+    <li>Device state and configuration information.</li>
+</ul>
+
+<p>When several execution paths access a shared resource, the driver must define how those accesses are coordinated.</p>
+</section>
+
+<section class="section">
+<h2>4. Why Is Synchronization Required?</h2>
+
+<p>Synchronization is required to prevent multiple execution paths from modifying shared data in an unsafe manner.</p>
+
+<h3>Main Reasons</h3>
+
+<ol>
+    <li><strong>Data consistency:</strong> Prevent inconsistent shared data.</li>
+    <li><strong>Race prevention:</strong> Coordinate operations that depend on each other.</li>
+    <li><strong>Resource protection:</strong> Prevent unsafe simultaneous access.</li>
+    <li><strong>Correctness:</strong> Ensure operations produce predictable results.</li>
+    <li><strong>Reliability:</strong> Reduce corruption and unexpected driver behavior.</li>
+</ol>
+
+<div class="important">
+    A device driver must be designed for concurrent access unless its interface and execution model explicitly guarantee otherwise.
+</div>
+</section>
+
+<section class="section">
+<h2>5. What Is a Race Condition?</h2>
+
+<p>A race condition occurs when the result of an operation depends on the timing or ordering of concurrent execution paths.</p>
+
+<p>Consider a shared counter initially set to 10.</p>
+
+<p>Two execution paths both increment the counter.</p>
+
+<h3>Expected Result</h3>
+
+<pre><code>Initial counter = 10
+
+Process A increments counter
+Process B increments counter
+
+Expected final counter = 12</code></pre>
+
+<h3>Possible Unsafe Execution</h3>
+
+<table>
+<tr>
+    <th>Step</th>
+    <th>Process A</th>
+    <th>Process B</th>
+    <th>Counter</th>
+</tr>
+<tr>
+    <td>1</td>
+    <td>Reads 10</td>
+    <td>–</td>
+    <td>10</td>
+</tr>
+<tr>
+    <td>2</td>
+    <td>–</td>
+    <td>Reads 10</td>
+    <td>10</td>
+</tr>
+<tr>
+    <td>3</td>
+    <td>Calculates 11</td>
+    <td>–</td>
+    <td>10</td>
+</tr>
+<tr>
+    <td>4</td>
+    <td>–</td>
+    <td>Calculates 11</td>
+    <td>10</td>
+</tr>
+<tr>
+    <td>5</td>
+    <td>Writes 11</td>
+    <td>–</td>
+    <td>11</td>
+</tr>
+<tr>
+    <td>6</td>
+    <td>–</td>
+    <td>Writes 11</td>
+    <td>11</td>
+</tr>
+</table>
+
+<p>The final value is 11 instead of 12. One increment has been lost.</p>
+
+<p>This is called a lost-update problem.</p>
+</section>
+
+<section class="section">
+<h2>6. What Is a Critical Section?</h2>
+
+<p>A critical section is a part of code that accesses or modifies a shared resource and therefore requires controlled access.</p>
+
+<h3>Example</h3>
+
+<pre><code>device_counter++;
+
+device_status = 1;
+
+buffer[index] = value;</code></pre>
+
+<p>If these operations involve shared data, they may need protection against concurrent access.</p>
+
+<div class="diagram">
+    <div class="diagram-box">Execution Path A</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Acquire Protection</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Critical Section</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Release Protection</div>
+</div>
+
+<p>The specific protection mechanism depends on whether the code can sleep, whether interrupts can access the same data, and whether execution can occur on multiple CPUs.</p>
+</section>
+
+<section class="section">
+<h2>7. Process Context and Interrupt Context</h2>
+
+<p>Linux kernel code can execute in different contexts. Synchronization mechanisms must be selected according to those contexts.</p>
+
+<table>
+<tr>
+    <th>Context</th>
+    <th>Description</th>
+    <th>Can Sleep?</th>
+</tr>
+<tr>
+    <td>Process context</td>
+    <td>Code executing on behalf of a process or kernel thread.</td>
+    <td>Usually yes, where permitted.</td>
+</tr>
+<tr>
+    <td>Hard interrupt context</td>
+    <td>Code executing in response to a hardware interrupt.</td>
+    <td>No.</td>
+</tr>
+<tr>
+    <td>Softirq context</td>
+    <td>Deferred interrupt processing context.</td>
+    <td>No.</td>
+</tr>
+<tr>
+    <td>Tasklet context</td>
+    <td>Legacy deferred processing mechanism based on softirqs.</td>
+    <td>No.</td>
+</tr>
+<tr>
+    <td>Workqueue context</td>
+    <td>Deferred work executed by kernel worker threads.</td>
+    <td>Usually yes.</td>
+</tr>
+</table>
+
+<div class="note">
+    A mutex may sleep while waiting for a lock. Therefore, it must not be used in hard interrupt, softirq or other atomic contexts.
+</div>
+</section>
+
+<section class="section">
+<h2>8. Types of Synchronization Problems</h2>
+
+<h3>8.1 Race Condition</h3>
+<p>Concurrent access causes an outcome that depends on execution timing.</p>
+
+<h3>8.2 Data Corruption</h3>
+<p>Multiple execution paths modify shared data without suitable coordination.</p>
+
+<h3>8.3 Lost Update</h3>
+<p>One update overwrites another update because operations overlap.</p>
+
+<h3>8.4 Deadlock</h3>
+<p>Two or more execution paths wait indefinitely for resources held by each other.</p>
+
+<h3>8.5 Starvation</h3>
+<p>An execution path is repeatedly denied access to a required resource.</p>
+
+<h3>8.6 Priority Inversion</h3>
+<p>A high-priority task is indirectly delayed because a lower-priority task holds a resource it needs.</p>
+</section>
+
+<section class="section">
+<h2>9. Overview of Linux Synchronization Mechanisms</h2>
+
+<p>Linux provides several synchronization mechanisms. Each one is designed for particular requirements and execution contexts.</p>
+
+<table>
+<tr>
+    <th>Mechanism</th>
+    <th>Purpose</th>
+    <th>Typical Use</th>
+</tr>
+<tr>
+    <td>Atomic operations</td>
+    <td>Perform specific operations atomically.</td>
+    <td>Counters and flags.</td>
+</tr>
+<tr>
+    <td>Spinlocks</td>
+    <td>Protect short critical sections without sleeping.</td>
+    <td>Atomic contexts and shared data.</td>
+</tr>
+<tr>
+    <td>Mutexes</td>
+    <td>Provide sleeping mutual exclusion.</td>
+    <td>Process-context operations.</td>
+</tr>
+<tr>
+    <td>Semaphores</td>
+    <td>Control access to a resource or count of available resources.</td>
+    <td>Specific resource coordination.</td>
+</tr>
+<tr>
+    <td>Wait queues</td>
+    <td>Allow tasks to wait for a condition.</td>
+    <td>Waiting for device data or events.</td>
+</tr>
+<tr>
+    <td>Completions</td>
+    <td>Coordinate completion of an operation.</td>
+    <td>Waiting for asynchronous work.</td>
+</tr>
+<tr>
+    <td>Read-write locks</td>
+    <td>Allow multiple readers or an exclusive writer.</td>
+    <td>Read-heavy shared data.</td>
+</tr>
+<tr>
+    <td>RCU</td>
+    <td>Support efficient read-mostly access with specialized update and reclamation rules.</td>
+    <td>Read-heavy kernel data structures.</td>
+</tr>
+</table>
+
+<p>These mechanisms will be studied individually in the upcoming lessons.</p>
+</section>
+
+<section class="section">
+<h2>10. Mutual Exclusion</h2>
+
+<p>Mutual exclusion means that only one execution path at a time is allowed to enter a protected critical section, when the chosen locking mechanism provides exclusive ownership.</p>
+
+<p>For example, a mutex can protect a shared device buffer from simultaneous modification by multiple process-context operations.</p>
+
+<div class="diagram">
+    <div class="diagram-box">Process A</div>
+    <div class="diagram-box">Process B</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Mutex Lock</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Protected Shared Buffer</div>
+</div>
+
+<p>Mutual exclusion prevents conflicting operations from entering the protected section simultaneously. It does not automatically solve every ordering, lifetime or interrupt-context problem.</p>
+</section>
+
+<section class="section">
+<h2>11. Synchronization Example: Conceptual Device Counter</h2>
+
+<p>Consider a character driver maintaining a counter that can be updated by process-context operations.</p>
+
+<h3>Unprotected Concept</h3>
+
+<pre><code>static int device_counter;
+
+static void update_counter(void)
+{
+    device_counter++;
+}</code></pre>
+
+<p>If multiple execution paths call this function concurrently, the increment may not be safe.</p>
+
+<h3>Protected Concept Using a Mutex</h3>
+
+<pre><code>#include &lt;linux/mutex.h&gt;
+
+static int device_counter;
+static DEFINE_MUTEX(counter_lock);
+
+static void update_counter(void)
+{
+    mutex_lock(&amp;counter_lock);
+
+    device_counter++;
+
+    mutex_unlock(&amp;counter_lock);
+}</code></pre>
+
+<p>This example is appropriate only when callers execute in contexts where sleeping is allowed. It is not suitable for a hard interrupt handler.</p>
+
+<div class="note">
+    A mutex protects the counter only if every code path that accesses the counter follows the same locking discipline.
+</div>
+</section>
+
+<section class="section">
+<h2>12. Synchronization and Multicore Processors</h2>
+
+<p>Modern systems commonly contain multiple CPU cores. Different execution paths may run on different cores at the same time.</p>
+
+<p>Without synchronization, two CPUs can modify shared memory concurrently.</p>
+
+<div class="diagram">
+    <div class="diagram-box">CPU Core 0</div>
+    <div class="diagram-box">CPU Core 1</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Shared Kernel Memory</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Synchronization Required</div>
+</div>
+
+<p>Disabling local interrupts on one CPU does not by itself prevent another CPU from accessing the same shared data. Cross-CPU synchronization requires an appropriate mechanism such as a spinlock or another suitable primitive.</p>
+</section>
+
+<section class="section">
+<h2>13. Synchronization in Character Device Drivers</h2>
+
+<p>A character driver may have multiple open file descriptions and concurrent read, write or ioctl operations.</p>
+
+<p>For example, consider a shared buffer:</p>
+
+<pre><code>struct my_device {
+    char buffer[1024];
+    size_t data_length;
+    struct mutex lock;
+};</code></pre>
+
+<p>When process-context read and write operations access the shared buffer, a mutex can protect the relevant critical sections.</p>
+
+<p>However, if an interrupt handler also accesses the same data, the design must account for interrupt context. A mutex cannot be acquired in a hard interrupt handler.</p>
+
+<p>The driver may need a spinlock for short atomic-context protection, or it may arrange for the interrupt handler to communicate with process context through a suitable deferred-work design.</p>
+</section>
+
+<section class="section">
+<h2>14. General Rules for Kernel Synchronization</h2>
+
+<ol>
+    <li>Identify all shared resources.</li>
+    <li>Identify every execution path that accesses each resource.</li>
+    <li>Determine the execution context of each access.</li>
+    <li>Select a synchronization mechanism appropriate to those contexts.</li>
+    <li>Keep critical sections as short as practical.</li>
+    <li>Use a consistent lock ordering.</li>
+    <li>Do not sleep while holding a spinlock.</li>
+    <li>Do not acquire a mutex from hard interrupt context.</li>
+    <li>Ensure that every access follows the same protection rules.</li>
+    <li>Consider object lifetime and cleanup in addition to data locking.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>15. Practical Exercise in Ubuntu</h2>
+
+<p>For this lesson, begin by observing the number of available processors and the kernel version in your Ubuntu VirtualBox environment.</p>
+
+<h3>Check Kernel Version</h3>
+
+<pre><code>uname -r</code></pre>
+
+<h3>Check CPU Information</h3>
+
+<pre><code>lscpu</code></pre>
+
+<h3>Check Online CPU Count</h3>
+
+<pre><code>nproc</code></pre>
+
+<h3>Check Kernel Configuration for SMP</h3>
+
+<pre><code>grep CONFIG_SMP /boot/config-$(uname -r)</code></pre>
+
+<p>If the configuration is available, <code>CONFIG_SMP=y</code> indicates that the kernel was built with symmetric multiprocessing support.</p>
+
+<h3>Learning Exercise</h3>
+
+<ol>
+    <li>Identify the number of CPUs visible to Ubuntu.</li>
+    <li>Explain why multiple CPU cores can access shared memory concurrently.</li>
+    <li>Describe a race condition using a shared counter.</li>
+    <li>Explain why a mutex is unsuitable in hard interrupt context.</li>
+    <li>Identify which synchronization mechanism could protect a short critical section accessed from atomic context.</li>
+</ol>
+
+<div class="note">
+    This lesson uses observation and conceptual examples. No physical hardware is required. Later synchronization exercises can be tested with kernel modules inside Ubuntu VirtualBox.
+</div>
+</section>
+
+<section class="section">
+<h2>16. Lesson Summary</h2>
+
+<ul>
+    <li>Concurrency occurs when execution paths make progress during overlapping periods.</li>
+    <li>Shared resources can be accessed by processes, threads and interrupt handlers.</li>
+    <li>Race conditions can cause lost updates and inconsistent data.</li>
+    <li>Critical sections require suitable protection.</li>
+    <li>Mutual exclusion controls access to protected resources.</li>
+    <li>Process, interrupt and deferred-work contexts have different sleeping rules.</li>
+    <li>Linux provides atomic operations, spinlocks, mutexes, semaphores, wait queues, completions and other mechanisms.</li>
+    <li>The correct synchronization mechanism depends on context and access patterns.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>17. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>What is kernel synchronization?</li>
+    <li>Define concurrency.</li>
+    <li>What is a shared resource?</li>
+    <li>What is a race condition?</li>
+    <li>What is a critical section?</li>
+    <li>What is mutual exclusion?</li>
+    <li>What is a lost-update problem?</li>
+    <li>What is a deadlock?</li>
+    <li>Name four Linux synchronization mechanisms.</li>
+    <li>Why can a mutex not be used in hard interrupt context?</li>
+    <li>Why is synchronization important on multicore systems?</li>
+    <li>Does disabling local interrupts prevent another CPU from accessing shared data?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain the need for synchronization in Linux device drivers.</li>
+    <li>Discuss concurrency and race conditions with a shared-counter example.</li>
+    <li>Explain critical sections and mutual exclusion.</li>
+    <li>Compare process context and interrupt context from a synchronization perspective.</li>
+    <li>Describe the major synchronization mechanisms available in Linux.</li>
+    <li>Explain synchronization challenges in character device drivers.</li>
+    <li>Discuss why synchronization is important on multicore processors.</li>
+</ol>
+
+<h3>Practical Questions</h3>
+<ol>
+    <li>Write a conceptual example of an unprotected shared counter.</li>
+    <li>Modify the example to protect the counter using a mutex.</li>
+    <li>Explain why the mutex example cannot be called from a hard IRQ handler.</li>
+    <li>Design a conceptual shared-buffer protection strategy for a character driver.</li>
+    <li>Explain how an interrupt handler can communicate with a workqueue without directly performing sleepable operations.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>18. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Explain kernel synchronization and concurrency.</li>
+    <li>Identify shared resources in device drivers.</li>
+    <li>Understand race conditions and lost updates.</li>
+    <li>Identify critical sections requiring protection.</li>
+    <li>Differentiate process context, interrupt context and workqueue context.</li>
+    <li>Recognize the purpose of major Linux synchronization mechanisms.</li>
+    <li>Understand why multicore systems require appropriate synchronization.</li>
+    <li>Plan a basic synchronization strategy for a character driver.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="../ch12_Kernel_Memory_Management/L10_Memory_Management_in_Device_Drivers.html">← Previous Chapter</a>
+    <a href="index.html">Chapter 13 Index</a>
+    <a href="L02_Race_Conditions_in_Device_Drivers.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 13 – Synchronization and Concurrency</p>
+</footer>
+
+</body>
+</html>
