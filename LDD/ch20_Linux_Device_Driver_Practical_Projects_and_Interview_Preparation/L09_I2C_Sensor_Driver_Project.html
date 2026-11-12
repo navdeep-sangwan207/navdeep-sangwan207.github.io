@@ -1,1 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 9: I2C Sensor Driver Project</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 18px}
+header h1{margin:0;font-size:27px}
+nav{background:white;text-align:center;padding:14px;box-shadow:0 2px 6px #00000012}
+nav a{display:inline-block;margin:5px 12px;color:#174ea6;text-decoration:none;font-weight:bold}
+.container{max-width:1050px;margin:25px auto;padding:0 16px}
+.info{background:#e8f1ff;border-left:5px solid #2878d7;padding:15px 20px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:22px 25px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 8px #0000000b}
+h2{color:#174ea6;border-bottom:2px solid #e5edf8;padding-bottom:8px}
+h3{color:#245b9e}
+pre{background:#172334;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note{background:#fff6df;border-left:4px solid #e0a000;padding:12px 15px;margin:15px 0}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #dce3ed;padding:10px;text-align:left}
+th{background:#eaf1fb}
+footer{text-align:center;padding:22px;color:#64748b}
+@media(max-width:600px){header h1{font-size:22px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 20: Linux Device Driver Practical Projects and Interview Preparation</h1>
+<p>Lesson 9: I2C Sensor Driver Project</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">Linux Device Drivers</a>
+<a href="index.html">Chapter 20</a>
+<a href="L08_GPIO_Device_Driver_Project.html">Previous Lesson</a>
+</nav>
+
+<div class="container">
+
+<div class="info">
+<strong>Lesson:</strong> L09 – I2C Sensor Driver Project<br>
+<strong>Level:</strong> Intermediate to Advanced<br>
+<strong>Interface:</strong> I2C<br>
+<strong>Example Device:</strong> TMP102 Digital Temperature Sensor
+</div>
+
+<section>
+<h2>1. Introduction to I2C</h2>
+<p>I2C stands for Inter-Integrated Circuit. It is a synchronous serial communication protocol used to connect processors, sensors, EEPROMs, ADCs, RTCs and other peripherals.</p>
+
+<p>I2C generally uses two signal lines:</p>
+<ul>
+<li><strong>SDA:</strong> Serial Data Line.</li>
+<li><strong>SCL:</strong> Serial Clock Line.</li>
+</ul>
+
+<p>Multiple I2C devices can share the same bus. Each device is selected using its address.</p>
+</section>
+
+<section>
+<h2>2. Project Objectives</h2>
+<ul>
+<li>Understand I2C communication in Linux.</li>
+<li>Understand the Linux I2C subsystem architecture.</li>
+<li>Learn the roles of I2C adapters, clients and drivers.</li>
+<li>Understand I2C device matching through Device Tree.</li>
+<li>Implement an I2C sensor driver.</li>
+<li>Read temperature data from a TMP102 sensor.</li>
+<li>Expose sensor readings through a sysfs attribute.</li>
+<li>Understand error handling and resource management.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. I2C Communication Architecture</h2>
+<pre><code>            User Space
+                |
+                v
+          Linux Kernel
+                |
+                v
+          I2C Subsystem
+                |
+          +-----+-----+
+          |           |
+          v           v
+     I2C Adapter   I2C Driver
+          |           |
+          |       I2C Client
+          |           |
+          +-----+-----+
+                |
+                v
+            SDA / SCL
+                |
+                v
+          I2C Temperature
+              Sensor</code></pre>
+</section>
+
+<section>
+<h2>4. Important I2C Terminology</h2>
+<table>
+<tr><th>Term</th><th>Description</th></tr>
+<tr><td>I2C Adapter</td><td>Represents the I2C controller and bus.</td></tr>
+<tr><td>I2C Client</td><td>Represents a device connected to an I2C adapter.</td></tr>
+<tr><td>I2C Driver</td><td>Implements device-specific operations.</td></tr>
+<tr><td>Slave Address</td><td>Address used to select an I2C device.</td></tr>
+<tr><td>SDA</td><td>Serial data signal.</td></tr>
+<tr><td>SCL</td><td>Serial clock signal.</td></tr>
+<tr><td>Register</td><td>Internal device location used for configuration or data.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5. Linux I2C Subsystem Functions</h2>
+<table>
+<tr><th>Function / Structure</th><th>Purpose</th></tr>
+<tr><td>struct i2c_driver</td><td>Defines the I2C device driver.</td></tr>
+<tr><td>struct i2c_client</td><td>Represents an I2C peripheral.</td></tr>
+<tr><td>i2c_smbus_read_word_swapped()</td><td>Reads a 16-bit SMBus word and swaps byte order.</td></tr>
+<tr><td>i2c_smbus_read_byte_data()</td><td>Reads one byte from a register.</td></tr>
+<tr><td>i2c_smbus_write_byte_data()</td><td>Writes one byte to a register.</td></tr>
+<tr><td>i2c_transfer()</td><td>Performs I2C message transfers.</td></tr>
+<tr><td>i2c_check_functionality()</td><td>Checks adapter functionality.</td></tr>
+<tr><td>devm_kzalloc()</td><td>Allocates managed kernel memory.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>6. TMP102 Sensor Introduction</h2>
+<p>The TMP102 is a digital temperature sensor that communicates over I2C. It provides a temperature measurement in a 16-bit register format.</p>
+
+<table>
+<tr><th>Parameter</th><th>Typical TMP102 Information</th></tr>
+<tr><td>Interface</td><td>I2C / SMBus-compatible</td></tr>
+<tr><td>Default address</td><td>0x48, depending on ADD0 connection</td></tr>
+<tr><td>Temperature register</td><td>0x00</td></tr>
+<tr><td>Configuration register</td><td>0x01</td></tr>
+<tr><td>Temperature resolution</td><td>0.0625 °C per bit in normal mode</td></tr>
+<tr><td>Data format</td><td>12-bit two's-complement temperature value in a 16-bit word</td></tr>
+</table>
+
+<div class="note">
+The TMP102 supports different operating configurations. This lesson assumes its normal 12-bit temperature mode and the standard register format. Verify the exact sensor variant and configuration before using the conversion formula.
+</div>
+</section>
+
+<section>
+<h2>7. TMP102 Register Format</h2>
+<p>The temperature register is 16 bits wide. In normal mode, the 12-bit signed temperature value occupies bits 15 through 4.</p>
+
+<pre><code>15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0
+|              Temperature          |X X X X|
+
+Temperature value = Signed 12-bit number
+Temperature (°C) = Raw signed value × 0.0625</code></pre>
+
+<p>For example, a raw signed value of 400 represents:</p>
+<pre><code>400 × 0.0625 = 25.0 °C</code></pre>
+</section>
+
+<section>
+<h2>8. Project Directory Structure</h2>
+<pre><code>i2c_project/
+|
+|-- tmp102_driver.c
+|-- Makefile
+|-- tmp102_device.dts</code></pre>
+
+<pre><code>mkdir -p ~/Linux_Driver_Projects/i2c_project
+cd ~/Linux_Driver_Projects/i2c_project</code></pre>
+</section>
+
+<section>
+<h2>9. Device Tree Configuration</h2>
+<p>The following is an illustrative Device Tree node for a TMP102 sensor.</p>
+
+<pre><code>&amp;i2c1 {
+    status = "okay";
+
+    tmp102@48 {
+        compatible = "ti,tmp102";
+        reg = &lt;0x48&gt;;
+    };
+};</code></pre>
+
+<p>Explanation:</p>
+<ul>
+<li><code>&amp;i2c1</code> refers to a board-specific I2C controller label.</li>
+<li><code>status = "okay"</code> enables the controller.</li>
+<li><code>tmp102@48</code> describes the sensor at address 0x48.</li>
+<li><code>compatible</code> identifies the device type.</li>
+<li><code>reg</code> contains the I2C address.</li>
+</ul>
+
+<div class="note">
+This is a board-specific example. The I2C controller label, pin configuration, status and address must match the actual hardware. Do not add a second TMP102 node if the board Device Tree already describes the sensor.
+</div>
+</section>
+
+<section>
+<h2>10. Complete TMP102 Driver Source Code</h2>
+<p>Create the source file:</p>
+<pre><code>nano tmp102_driver.c</code></pre>
+
+<h3>File: tmp102_driver.c</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/i2c.h&gt;
+#include &lt;linux/slab.h&gt;
+#include &lt;linux/sysfs.h&gt;
+#include &lt;linux/err.h&gt;
+
+#define TMP102_TEMP_REG 0x00
+
+struct tmp102_data {
+    struct i2c_client *client;
+};
+
+/* Read and convert temperature */
+static int tmp102_read_temperature(struct i2c_client *client,
+                                   int *temperature_mc)
+{
+    int raw;
+    s16 signed_raw;
+    int temperature_c;
+
+    /*
+     * TMP102 temperature register is big-endian.
+     * This helper reads a word and swaps the byte order.
+     */
+    raw = i2c_smbus_read_word_swapped(
+        client,
+        TMP102_TEMP_REG
+    );
+
+    if (raw &lt; 0)
+        return raw;
+
+    /* Extract the 12-bit temperature field */
+    signed_raw = (s16)raw;
+    signed_raw &gt;&gt;= 4;
+
+    /* Convert to millidegrees Celsius */
+    temperature_c = (int)signed_raw * 625 / 10;
+
+    *temperature_mc = temperature_c;
+
+    return 0;
+}
+
+/* Sysfs show callback */
+static ssize_t temperature_show(
+    struct device *dev,
+    struct device_attribute *attr,
+    char *buf)
+{
+    struct i2c_client *client =
+        to_i2c_client(dev);
+    int temperature_mc;
+    int ret;
+
+    ret = tmp102_read_temperature(
+        client,
+        &amp;temperature_mc
+    );
+
+    if (ret)
+        return ret;
+
+    return sysfs_emit(
+        buf,
+        "%d.%03d\n",
+        temperature_mc / 1000,
+        abs(temperature_mc % 1000)
+    );
+}
+
+static DEVICE_ATTR_RO(temperature);
+
+/* Probe callback */
+static int tmp102_probe(struct i2c_client *client)
+{
+    int ret;
+
+    if (!i2c_check_functionality(
+            client-&gt;adapter,
+            I2C_FUNC_SMBUS_READ_WORD_DATA)) {
+        dev_err(&amp;client-&gt;dev,
+                "SMBus word-read not supported\n");
+        return -EOPNOTSUPP;
+    }
+
+    ret = device_create_file(
+        &amp;client-&gt;dev,
+        &amp;dev_attr_temperature
+    );
+
+    if (ret) {
+        dev_err(&amp;client-&gt;dev,
+                "Failed to create temperature attribute\n");
+        return ret;
+    }
+
+    dev_info(&amp;client-&gt;dev,
+             "TMP102 sensor driver initialized\n");
+
+    return 0;
+}
+
+/* Remove callback */
+static void tmp102_remove(struct i2c_client *client)
+{
+    device_remove_file(
+        &amp;client-&gt;dev,
+        &amp;dev_attr_temperature
+    );
+
+    dev_info(&amp;client-&gt;dev,
+             "TMP102 sensor driver removed\n");
+}
+
+/* Device Tree matching */
+static const struct of_device_id tmp102_of_match[] = {
+    { .compatible = "ti,tmp102" },
+    { }
+};
+MODULE_DEVICE_TABLE(of, tmp102_of_match);
+
+/* I2C device ID */
+static const struct i2c_device_id tmp102_id[] = {
+    { "tmp102", 0 },
+    { }
+};
+MODULE_DEVICE_TABLE(i2c, tmp102_id);
+
+/* I2C driver definition */
+static struct i2c_driver tmp102_driver = {
+    .driver = {
+        .name = "tmp102_custom",
+        .of_match_table = tmp102_of_match,
+    },
+    .probe = tmp102_probe,
+    .remove = tmp102_remove,
+    .id_table = tmp102_id,
+};
+
+module_i2c_driver(tmp102_driver);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("TMP102 I2C Temperature Sensor Driver");
+MODULE_VERSION("1.0");</code></pre>
+
+<div class="note">
+<strong>Kernel API note:</strong> This example uses the modern one-argument I2C probe callback and void remove callback found in current kernel APIs. Older kernels may require different callback signatures. Check the target kernel's <code>include/linux/i2c.h</code> before compiling.
+</div>
+</section>
+
+<section>
+<h2>11. Understanding the Driver Code</h2>
+
+<h3>11.1 I2C Driver Structure</h3>
+<pre><code>static struct i2c_driver tmp102_driver = {
+    .driver = {
+        .name = "tmp102_custom",
+        .of_match_table = tmp102_of_match,
+    },
+    .probe = tmp102_probe,
+    .remove = tmp102_remove,
+    .id_table = tmp102_id,
+};</code></pre>
+<p>This structure connects the driver to matching I2C devices.</p>
+
+<h3>11.2 Device Tree Matching</h3>
+<p>The <code>of_match_table</code> matches the compatible string in Device Tree.</p>
+
+<h3>11.3 Reading the Temperature Register</h3>
+<pre><code>raw = i2c_smbus_read_word_swapped(
+    client,
+    TMP102_TEMP_REG
+);</code></pre>
+<p>The function reads a 16-bit register and handles the byte order expected by the TMP102.</p>
+
+<h3>11.4 Temperature Conversion</h3>
+<pre><code>signed_raw = (s16)raw;
+signed_raw &gt;&gt;= 4;
+
+temperature_c = (int)signed_raw * 625 / 10;</code></pre>
+<p>The signed 12-bit value is converted into millidegrees Celsius using the 0.0625 °C resolution.</p>
+
+<h3>11.5 Sysfs Attribute</h3>
+<p>The driver creates a read-only attribute named <code>temperature</code>. It allows a user-space application to read the current sensor value.</p>
+</section>
+
+<section>
+<h2>12. Create the Makefile</h2>
+<pre><code>nano Makefile</code></pre>
+
+<h3>File: Makefile</h3>
+<pre><code>obj-m += tmp102_driver.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>Use a real tab character before each command under the targets.</p>
+</section>
+
+<section>
+<h2>13. Compile the Driver</h2>
+<pre><code>make
+
+modinfo tmp102_driver.ko</code></pre>
+
+<p>Successful compilation generates <code>tmp102_driver.ko</code>.</p>
+</section>
+
+<section>
+<h2>14. Detect the I2C Sensor</h2>
+<p>On a compatible embedded Linux board, install the I2C tools if required:</p>
+<pre><code>sudo apt update
+sudo apt install i2c-tools</code></pre>
+
+<p>List I2C adapters:</p>
+<pre><code>i2cdetect -l</code></pre>
+
+<p>Inspect the relevant bus, for example bus 1:</p>
+<pre><code>sudo i2cdetect -y 1</code></pre>
+
+<p>If the TMP102 is connected and responds at its default address, the scan may show:</p>
+<pre><code>48</code></pre>
+
+<div class="note">
+Do not scan an active I2C bus indiscriminately. Some devices may not tolerate arbitrary probing. Follow the board and device documentation.
+</div>
+</section>
+
+<section>
+<h2>15. Load and Test the Driver</h2>
+<p>On a target board where the Device Tree describes the TMP102:</p>
+<pre><code>sudo insmod tmp102_driver.ko
+
+sudo dmesg | tail -30</code></pre>
+
+<p>Find the sensor's I2C device directory and its sysfs attribute. For an I2C device on bus 1 at address 0x48, the path is commonly:</p>
+<pre><code>/sys/bus/i2c/devices/1-0048/temperature</code></pre>
+
+<p>Read the temperature:</p>
+<pre><code>cat /sys/bus/i2c/devices/1-0048/temperature</code></pre>
+
+<p>Example output:</p>
+<pre><code>25.000</code></pre>
+
+<p>This is an illustrative reading. Actual output depends on the sensor's measured temperature.</p>
+</section>
+
+<section>
+<h2>16. Remove the Driver</h2>
+<pre><code>sudo rmmod tmp102_driver
+
+sudo dmesg | tail -20</code></pre>
+
+<p>The driver removes its sysfs attribute during the remove callback.</p>
+
+<p>Clean the build directory:</p>
+<pre><code>make clean</code></pre>
+</section>
+
+<section>
+<h2>17. Common I2C Driver Errors</h2>
+<table>
+<tr><th>Error</th><th>Possible Cause</th><th>Solution</th></tr>
+<tr><td>Device not detected</td><td>Wrong address or wiring</td><td>Verify SDA, SCL, power and address.</td></tr>
+<tr><td>Probe not called</td><td>Device Tree mismatch</td><td>Check compatible string and node status.</td></tr>
+<tr><td>-EOPNOTSUPP</td><td>Adapter lacks required SMBus operation</td><td>Check adapter capabilities and use a supported transfer method.</td></tr>
+<tr><td>-ENXIO</td><td>Device did not acknowledge</td><td>Check device presence and address.</td></tr>
+<tr><td>Incorrect temperature</td><td>Wrong byte order or conversion</td><td>Verify sensor mode and register format.</td></tr>
+<tr><td>Invalid module format</td><td>Kernel/header mismatch</td><td>Build against the target kernel.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>18. I2C vs SPI</h2>
+<table>
+<tr><th>Feature</th><th>I2C</th><th>SPI</th></tr>
+<tr><td>Signal lines</td><td>SDA and SCL</td><td>SCLK, MOSI, MISO and CS</td></tr>
+<tr><td>Addressing</td><td>Device address</td><td>Chip-select line</td></tr>
+<tr><td>Communication</td><td>Typically two-wire shared bus</td><td>Full-duplex capable</td></tr>
+<tr><td>Speed</td><td>Depends on I2C mode</td><td>Often higher, depending on controller and device</td></tr>
+<tr><td>Typical use</td><td>Temperature sensors, RTCs, EEPROMs</td><td>Displays, flash memory, ADCs and sensors</td></tr>
+</table>
+</section>
+
+<section>
+<h2>19. VirtualBox and I2C Hardware Limitations</h2>
+<p>Ubuntu inside VirtualBox does not automatically have access to the laptop's motherboard I2C controller or an external I2C sensor.</p>
+
+<p>You can still perform the following activities in your current environment:</p>
+<ul>
+<li>Study the I2C subsystem and driver architecture.</li>
+<li>Write and compile an I2C driver against matching kernel headers.</li>
+<li>Study Device Tree source and register formats.</li>
+<li>Inspect the kernel's I2C driver examples.</li>
+</ul>
+
+<p>For actual sensor readings, use a compatible embedded Linux board with an enabled I2C controller and a connected TMP102 sensor.</p>
+</section>
+
+<section>
+<h2>20. Practical Exercises</h2>
+<ol>
+<li>Modify the driver to expose the temperature in Fahrenheit.</li>
+<li>Read the TMP102 configuration register.</li>
+<li>Implement a writable attribute to change sensor configuration.</li>
+<li>Study I2C bus scanning and address selection.</li>
+<li>Write an I2C driver for a different sensor.</li>
+<li>Compare SMBus helper functions with i2c_transfer().</li>
+<li>Implement proper handling for sensor read failures.</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Interview Questions</h2>
+<ol>
+<li>What is I2C communication?</li>
+<li>What are SDA and SCL?</li>
+<li>What is an I2C adapter?</li>
+<li>What is an I2C client?</li>
+<li>What is the purpose of struct i2c_driver?</li>
+<li>What is the purpose of the probe callback?</li>
+<li>How does Device Tree match an I2C driver?</li>
+<li>What is the difference between I2C and SMBus?</li>
+<li>What is i2c_smbus_read_word_swapped()?</li>
+<li>Why is byte order important when reading sensor registers?</li>
+<li>What is the purpose of i2c_check_functionality()?</li>
+<li>How does a Linux I2C driver expose sensor data to user space?</li>
+<li>What happens when an I2C device is removed?</li>
+<li>How would you debug an I2C sensor that is not responding?</li>
+</ol>
+</section>
+
+<section>
+<h2>22. Lesson Summary</h2>
+<ul>
+<li>I2C uses SDA and SCL communication lines.</li>
+<li>The Linux I2C subsystem manages adapters, clients and drivers.</li>
+<li>Device Tree can describe I2C-connected peripherals.</li>
+<li>struct i2c_driver defines the device-specific driver.</li>
+<li>SMBus helpers simplify common register operations.</li>
+<li>The TMP102 provides a practical temperature-sensor example.</li>
+<li>Sysfs can expose sensor readings to user space.</li>
+<li>Physical testing requires an actual I2C controller and sensor.</li>
+</ul>
+</section>
+
+<div class="info">
+<strong>Next Lesson:</strong> Lesson 10 – SPI Peripheral Driver Project
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | Linux Device Drivers Course</p>
+</footer>
+
+</body>
+</html>
