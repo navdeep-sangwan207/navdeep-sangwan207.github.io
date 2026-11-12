@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 6: Mutexes | Linux Device Drivers</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 35px 20px;
+}
+
+header h1 {
+    margin: 0 0 10px;
+    font-size: 30px;
+}
+
+nav {
+    background: white;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+
+nav a {
+    display: inline-block;
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 5px 12px;
+}
+
+nav a:hover {
+    color: #007bff;
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e4efff;
+    border-left: 5px solid #2878d7;
+    padding: 18px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e2eaf5;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9c;
+    margin-top: 24px;
+}
+
+p {
+    margin: 12px 0;
+}
+
+ul, ol {
+    padding-left: 25px;
+}
+
+pre {
+    background: #17212e;
+    color: #e8f1ff;
+    padding: 18px;
+    border-radius: 7px;
+    overflow-x: auto;
+    line-height: 1.55;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+}
+
+th, td {
+    border: 1px solid #d5dfeb;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #edf4ff;
+    border: 1px solid #bfd4f3;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+    font-weight: bold;
+}
+
+.diagram .arrow {
+    color: #174ea6;
+    font-size: 23px;
+    margin: 5px;
+}
+
+.note {
+    background: #fff8e6;
+    border-left: 5px solid #e6a700;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #fff0f0;
+    border-left: 5px solid #d9534f;
+    padding: 14px;
+    margin: 16px 0;
+    border-radius: 5px;
+}
+
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 25px 0;
+}
+
+.navigation-buttons a {
+    background: #174ea6;
+    color: white;
+    padding: 11px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.navigation-buttons a:hover {
+    background: #2878d7;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 650px) {
+    header h1 {
+        font-size: 23px;
+    }
+
+    section {
+        padding: 17px;
+    }
+
+    table {
+        display: block;
+        overflow-x: auto;
+    }
+
+    .navigation-buttons {
+        flex-direction: column;
+    }
+
+    .navigation-buttons a {
+        text-align: center;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Lesson 6: Mutexes</h1>
+    <p>Linux Device Drivers – Synchronization and Concurrency</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Chapter:</strong> 13 – Synchronization and Concurrency<br>
+    <strong>Lesson:</strong> 6 – Mutexes<br>
+    <strong>Level:</strong> Intermediate<br>
+    <strong>Prerequisites:</strong> Race Conditions, Critical Sections, Atomic Operations and Spinlocks.
+</div>
+
+<section>
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Explain mutex-based synchronization.</li>
+    <li>Understand mutual exclusion and lock ownership.</li>
+    <li>Initialize a Linux kernel mutex.</li>
+    <li>Use <code>mutex_lock()</code> and <code>mutex_unlock()</code>.</li>
+    <li>Understand <code>mutex_trylock()</code> and <code>mutex_is_locked()</code>.</li>
+    <li>Understand why a mutex can sleep while waiting.</li>
+    <li>Choose between mutexes and spinlocks.</li>
+    <li>Apply mutexes to shared buffers and character drivers.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Introduction to Mutexes</h2>
+
+<p>A <strong>mutex</strong> is a synchronization mechanism used to ensure that only one task at a time can access a protected resource.</p>
+
+<p>The term mutex comes from <strong>mutual exclusion</strong>.</p>
+
+<p>When one task acquires a mutex, another task attempting to acquire the same mutex must wait until the owner releases it.</p>
+
+<p>Unlike a spinlock, a task waiting for a mutex can be put to sleep rather than continuously consuming CPU time.</p>
+
+<h3>Example: Shared Device Buffer</h3>
+
+<p>Suppose two processes access the same character driver's data buffer.</p>
+
+<ul>
+    <li>Process A begins writing data.</li>
+    <li>Process B attempts to access the same buffer.</li>
+    <li>Without synchronization, their operations may interfere.</li>
+    <li>A mutex allows Process A to complete its protected operation before Process B enters the critical section.</li>
+</ul>
+
+<div class="diagram">
+    <div>Process A requests mutex</div>
+    <div class="arrow">↓</div>
+    <div>Process A acquires mutex</div>
+    <div class="arrow">↓</div>
+    <div>Process A accesses shared buffer</div>
+    <div class="arrow">↓</div>
+    <div>Process A releases mutex</div>
+    <div class="arrow">↓</div>
+    <div>Process B acquires mutex and continues</div>
+</div>
+</section>
+
+<section>
+<h2>3. Why Are Mutexes Required?</h2>
+
+<p>Device drivers frequently maintain shared resources such as:</p>
+
+<ul>
+    <li>Device data buffers.</li>
+    <li>Configuration structures.</li>
+    <li>Device state variables.</li>
+    <li>Shared file-operation data.</li>
+    <li>Software queues and resource-management structures.</li>
+</ul>
+
+<p>When multiple processes or kernel threads access these resources concurrently, a race condition may occur.</p>
+
+<h3>Without a Mutex</h3>
+
+<pre><code>static int device_value = 0;
+
+static void update_device_value(void)
+{
+    device_value++;
+}</code></pre>
+
+<p>Concurrent execution of this function may cause lost updates.</p>
+
+<h3>With a Mutex</h3>
+
+<pre><code>static DEFINE_MUTEX(device_mutex);
+static int device_value = 0;
+
+static void update_device_value(void)
+{
+    mutex_lock(&amp;device_mutex);
+
+    device_value++;
+
+    mutex_unlock(&amp;device_mutex);
+}</code></pre>
+
+<p>The mutex ensures that tasks following the same locking protocol do not execute this protected update simultaneously.</p>
+</section>
+
+<section>
+<h2>4. Mutex Data Structure</h2>
+
+<p>Linux provides the <code>struct mutex</code> type for mutex synchronization.</p>
+
+<p>Include the appropriate header:</p>
+
+<pre><code>#include &lt;linux/mutex.h&gt;</code></pre>
+
+<h3>Static Initialization</h3>
+
+<pre><code>static DEFINE_MUTEX(device_mutex);</code></pre>
+
+<p><code>DEFINE_MUTEX()</code> declares and statically initializes a mutex.</p>
+
+<h3>Dynamic Initialization</h3>
+
+<pre><code>static struct mutex device_mutex;
+
+static int __init my_init(void)
+{
+    mutex_init(&amp;device_mutex);
+
+    return 0;
+}</code></pre>
+
+<p><code>mutex_init()</code> initializes a dynamically declared mutex before it is used.</p>
+
+<div class="note">
+    A mutex must be initialized before use. Do not reinitialize a mutex while another task may be using or waiting for it.
+</div>
+</section>
+
+<section>
+<h2>5. Basic Mutex Operations</h2>
+
+<h3>5.1 mutex_lock()</h3>
+
+<p>Acquires a mutex. If another task owns it, the calling task waits until the mutex becomes available.</p>
+
+<pre><code>mutex_lock(&amp;device_mutex);
+
+/* Critical section */
+
+mutex_unlock(&amp;device_mutex);</code></pre>
+
+<h3>5.2 mutex_unlock()</h3>
+
+<p>Releases a mutex previously acquired by the current task.</p>
+
+<pre><code>mutex_unlock(&amp;device_mutex);</code></pre>
+
+<p>Only the task that owns the mutex should release it.</p>
+
+<h3>5.3 mutex_trylock()</h3>
+
+<p>Attempts to acquire a mutex without waiting.</p>
+
+<pre><code>if (mutex_trylock(&amp;device_mutex)) {
+
+    /* Mutex successfully acquired */
+
+    mutex_unlock(&amp;device_mutex);
+
+} else {
+
+    pr_info("Mutex is currently unavailable\n");
+}</code></pre>
+
+<p><code>mutex_trylock()</code> returns a non-zero value if the mutex is acquired and zero otherwise.</p>
+
+<h3>5.4 mutex_is_locked()</h3>
+
+<p>Checks whether a mutex appears to be locked.</p>
+
+<pre><code>if (mutex_is_locked(&amp;device_mutex)) {
+    pr_info("Mutex appears to be locked\n");
+}</code></pre>
+
+<p>This is a diagnostic check only. It does not acquire the mutex and cannot guarantee that the mutex will remain in the same state after the check.</p>
+</section>
+
+<section>
+<h2>6. How Does a Mutex Work?</h2>
+
+<p>A mutex manages ownership of a protected resource.</p>
+
+<div class="diagram">
+    <div>Task A requests mutex</div>
+    <div class="arrow">↓</div>
+    <div>Mutex available?</div>
+    <div class="arrow">↓</div>
+    <div>Yes: Task A becomes owner</div>
+    <div class="arrow">↓</div>
+    <div>Task A executes critical section</div>
+    <div class="arrow">↓</div>
+    <div>Task A unlocks mutex</div>
+    <div class="arrow">↓</div>
+    <div>Waiting task can acquire mutex</div>
+</div>
+
+<p>If the mutex is already owned, a competing task may be placed into a waiting state by the kernel scheduler.</p>
+
+<h3>Important Characteristics</h3>
+
+<ul>
+    <li>A mutex has an owner.</li>
+    <li>Only the owner should unlock it.</li>
+    <li>A task waiting for a mutex can sleep.</li>
+    <li>A mutex cannot be used in interrupt context.</li>
+    <li>A mutex is suitable for process-context synchronization.</li>
+</ul>
+</section>
+
+<section>
+<h2>7. Sleeping Behavior of Mutexes</h2>
+
+<p>One major difference between mutexes and spinlocks is the way they wait for access.</p>
+
+<h3>Spinlock Waiting</h3>
+
+<p>A task repeatedly checks the lock while waiting. This is busy waiting.</p>
+
+<h3>Mutex Waiting</h3>
+
+<p>A task that cannot acquire a mutex may sleep. The scheduler can run another task instead of making the waiting task continuously consume CPU time.</p>
+
+<div class="diagram">
+    <div>Task B requests an unavailable mutex</div>
+    <div class="arrow">↓</div>
+    <div>Task B waits and may sleep</div>
+    <div class="arrow">↓</div>
+    <div>Task A continues executing</div>
+    <div class="arrow">↓</div>
+    <div>Task A releases mutex</div>
+    <div class="arrow">↓</div>
+    <div>Task B becomes eligible to continue</div>
+</div>
+
+<div class="note">
+    The task waiting for a mutex is not guaranteed to run immediately after unlock. The scheduler determines when it runs.
+</div>
+</section>
+
+<section>
+<h2>8. Mutexes and Process Context</h2>
+
+<p>Mutexes are intended for contexts where sleeping is permitted, especially process context and kernel-thread context.</p>
+
+<p>They are commonly used in:</p>
+
+<ul>
+    <li>Character driver's <code>open()</code> operation.</li>
+    <li>Character driver's <code>read()</code> and <code>write()</code> operations.</li>
+    <li>Device configuration operations.</li>
+    <li>IOCTL command processing.</li>
+    <li>Shared buffer management.</li>
+</ul>
+
+<h3>Example: Protecting a Shared Buffer</h3>
+
+<pre><code>#include &lt;linux/mutex.h&gt;
+
+static DEFINE_MUTEX(buffer_mutex);
+static char device_buffer[128];
+
+static void update_buffer(void)
+{
+    mutex_lock(&amp;buffer_mutex);
+
+    /* Modify shared buffer safely */
+
+    mutex_unlock(&amp;buffer_mutex);
+}</code></pre>
+
+<p>Every operation that accesses the shared buffer in a way requiring mutual exclusion must follow the same locking protocol.</p>
+
+<div class="warning">
+    Never call <code>mutex_lock()</code> from hard interrupt context, softirq context or another atomic context where sleeping is not allowed.
+</div>
+</section>
+
+<section>
+<h2>9. Mutex vs Spinlock</h2>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Mutex</th>
+        <th>Spinlock</th>
+    </tr>
+    <tr>
+        <td>Meaning</td>
+        <td>Mutual exclusion lock</td>
+        <td>Busy-wait synchronization lock</td>
+    </tr>
+    <tr>
+        <td>Waiting behavior</td>
+        <td>Waiting task may sleep</td>
+        <td>Waiting CPU spins</td>
+    </tr>
+    <tr>
+        <td>Can sleep while held?</td>
+        <td>Yes, in an appropriate sleepable context</td>
+        <td>No</td>
+    </tr>
+    <tr>
+        <td>Interrupt context</td>
+        <td>Not permitted</td>
+        <td>Possible with correct IRQ-safe design</td>
+    </tr>
+    <tr>
+        <td>Typical critical section</td>
+        <td>Longer or sleepable operations</td>
+        <td>Short, non-sleeping operations</td>
+    </tr>
+    <tr>
+        <td>Ownership</td>
+        <td>Has task ownership</td>
+        <td>Does not have mutex-style task ownership</td>
+    </tr>
+    <tr>
+        <td>Typical use</td>
+        <td>Shared buffers and device configuration</td>
+        <td>Short shared-state updates</td>
+    </tr>
+</table>
+
+<h3>When Should You Use a Mutex?</h3>
+
+<ul>
+    <li>When a protected operation may sleep.</li>
+    <li>When accessing a shared buffer in process context.</li>
+    <li>When performing longer critical sections.</li>
+    <li>When protecting device configuration and state.</li>
+</ul>
+
+<h3>When Should You Use a Spinlock?</h3>
+
+<ul>
+    <li>When protecting a very short critical section.</li>
+    <li>When the protected code cannot sleep.</li>
+    <li>When synchronizing process context with an appropriately protected interrupt-related path.</li>
+</ul>
+</section>
+
+<section>
+<h2>10. Mutex Locking and Error Handling</h2>
+
+<p>Some mutex APIs provide different waiting and error-handling behavior.</p>
+
+<h3>10.1 mutex_lock()</h3>
+
+<pre><code>mutex_lock(&amp;device_mutex);
+
+/* Protected operation */
+
+mutex_unlock(&amp;device_mutex);</code></pre>
+
+<p>Waits until the mutex can be acquired.</p>
+
+<h3>10.2 mutex_lock_interruptible()</h3>
+
+<p>Attempts to acquire the mutex, allowing the wait to be interrupted by a signal.</p>
+
+<pre><code>int ret;
+
+ret = mutex_lock_interruptible(&amp;device_mutex);
+
+if (ret) {
+    return ret;
+}
+
+/* Protected operation */
+
+mutex_unlock(&amp;device_mutex);</code></pre>
+
+<p>If the wait is interrupted, the function returns a non-zero error value, commonly <code>-EINTR</code>, and the mutex has not been acquired by that call.</p>
+
+<h3>10.3 mutex_trylock()</h3>
+
+<p>Attempts immediate acquisition without sleeping.</p>
+
+<pre><code>if (!mutex_trylock(&amp;device_mutex)) {
+    return -EBUSY;
+}
+
+/* Protected operation */
+
+mutex_unlock(&amp;device_mutex);</code></pre>
+
+<table>
+    <tr>
+        <th>Function</th>
+        <th>Behavior</th>
+    </tr>
+    <tr>
+        <td><code>mutex_lock()</code></td>
+        <td>Waits until acquired.</td>
+    </tr>
+    <tr>
+        <td><code>mutex_lock_interruptible()</code></td>
+        <td>Wait can be interrupted by a signal.</td>
+    </tr>
+    <tr>
+        <td><code>mutex_trylock()</code></td>
+        <td>Attempts immediate acquisition.</td>
+    </tr>
+    <tr>
+        <td><code>mutex_unlock()</code></td>
+        <td>Releases the mutex.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>11. Mutexes in Character Device Drivers</h2>
+
+<p>A character driver may have a shared data buffer that is accessed by multiple processes.</p>
+
+<p>For example, two applications may open the same device file and attempt to write data at the same time.</p>
+
+<p>A mutex can protect the shared buffer from concurrent modifications.</p>
+
+<h3>Conceptual Driver Structure</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/mutex.h&gt;
+#include &lt;linux/fs.h&gt;
+
+#define BUFFER_SIZE 128
+
+static DEFINE_MUTEX(device_mutex);
+static char device_buffer[BUFFER_SIZE];
+
+static int device_open(struct inode *inode,
+                       struct file *file)
+{
+    return 0;
+}
+
+static int device_release(struct inode *inode,
+                          struct file *file)
+{
+    return 0;
+}</code></pre>
+
+<p>The mutex can then be used by the driver's read, write or IOCTL operations to protect shared state.</p>
+</section>
+
+<section>
+<h2>12. Practical Kernel Module: Mutex Counter</h2>
+
+<p>Let us implement a simple kernel module that protects a shared counter using a mutex.</p>
+
+<h3>Source Code: mutex_counter.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/mutex.h&gt;
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Linux Device Drivers Course");
+MODULE_DESCRIPTION("Mutex Counter Demonstration");
+MODULE_VERSION("1.0");
+
+static DEFINE_MUTEX(counter_mutex);
+static int shared_counter = 0;
+
+static void update_counter(void)
+{
+    mutex_lock(&amp;counter_mutex);
+
+    shared_counter++;
+
+    mutex_unlock(&amp;counter_mutex);
+}
+
+static int __init mutex_counter_init(void)
+{
+    int i;
+
+    pr_info("Mutex counter module loaded\n");
+
+    for (i = 0; i &lt; 5; i++) {
+        update_counter();
+    }
+
+    mutex_lock(&amp;counter_mutex);
+
+    pr_info("Counter value = %d\n", shared_counter);
+
+    mutex_unlock(&amp;counter_mutex);
+
+    return 0;
+}
+
+static void __exit mutex_counter_exit(void)
+{
+    pr_info("Mutex counter module unloaded\n");
+}
+
+module_init(mutex_counter_init);
+module_exit(mutex_counter_exit);</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li><code>linux/mutex.h</code> provides mutex interfaces.</li>
+    <li><code>DEFINE_MUTEX()</code> initializes the mutex.</li>
+    <li><code>shared_counter</code> stores the shared counter.</li>
+    <li><code>mutex_lock()</code> acquires the mutex.</li>
+    <li>The counter is incremented inside the critical section.</li>
+    <li><code>mutex_unlock()</code> releases the mutex.</li>
+</ol>
+
+<p>The module performs five increments during initialization, so the expected counter value is 5.</p>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += mutex_counter.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>Ensure that the recipe lines begin with actual tab characters.</p>
+
+<h3>Compile and Test in Ubuntu</h3>
+
+<pre><code>make
+
+sudo insmod mutex_counter.ko
+
+lsmod | grep mutex_counter
+
+sudo dmesg | tail -20
+
+sudo rmmod mutex_counter
+
+sudo dmesg | tail -20
+
+make clean</code></pre>
+
+<h3>Expected Output</h3>
+
+<pre><code>Mutex counter module loaded
+Counter value = 5
+Mutex counter module unloaded</code></pre>
+
+<div class="note">
+    This module demonstrates mutex initialization, locking and unlocking. Its initialization loop is sequential and does not create real concurrent contention.
+</div>
+</section>
+
+<section>
+<h2>13. Practical Example: Protecting a Shared Character Driver Buffer</h2>
+
+<p>The following example demonstrates a mutex-protected write operation in a character driver.</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/mutex.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/errno.h&gt;
+#include &lt;linux/string.h&gt;
+
+#define BUFFER_SIZE 128
+
+static DEFINE_MUTEX(buffer_mutex);
+static char device_buffer[BUFFER_SIZE];
+
+static ssize_t device_write(struct file *file,
+                            const char __user *user_buffer,
+                            size_t count,
+                            loff_t *position)
+{
+    size_t len;
+
+    if (count == 0)
+        return 0;
+
+    if (mutex_lock_interruptible(&amp;buffer_mutex))
+        return -ERESTARTSYS;
+
+    len = min(count, (size_t)(BUFFER_SIZE - 1));
+
+    if (copy_from_user(device_buffer,
+                       user_buffer,
+                       len)) {
+        mutex_unlock(&amp;buffer_mutex);
+        return -EFAULT;
+    }
+
+    device_buffer[len] = '\0';
+
+    mutex_unlock(&amp;buffer_mutex);
+
+    return len;
+}</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li>The mutex protects the shared buffer.</li>
+    <li><code>mutex_lock_interruptible()</code> acquires the mutex or returns if the wait is interrupted.</li>
+    <li>The write length is limited to the buffer capacity.</li>
+    <li><code>copy_from_user()</code> transfers data from user space.</li>
+    <li>If the copy fails, the mutex is released before returning <code>-EFAULT</code>.</li>
+    <li>The mutex is released after the buffer update.</li>
+</ol>
+
+<div class="warning">
+    This is a write-callback fragment, not a complete character driver. A complete implementation must also handle registration, open/release, read behavior, file-position semantics and device lifetime. <code>copy_from_user()</code> returns the number of bytes not copied, not a negative error code.
+</div>
+
+<p>Because <code>copy_from_user()</code> may sleep, using a mutex in this process-context callback is appropriate. A spinlock must not be held across this operation.</p>
+</section>
+
+<section>
+<h2>14. Mutex Ownership and Deadlocks</h2>
+
+<p>A mutex is owned by the task that successfully acquires it.</p>
+
+<h3>Important Ownership Rules</h3>
+
+<ul>
+    <li>The owning task should release the mutex.</li>
+    <li>A different task must not attempt to unlock a mutex owned by another task.</li>
+    <li>A task must not recursively acquire the same ordinary mutex.</li>
+    <li>Every successful acquisition must have a corresponding release.</li>
+</ul>
+
+<h3>Example of Incorrect Recursive Locking</h3>
+
+<pre><code>static DEFINE_MUTEX(my_mutex);
+
+static void operation(void)
+{
+    mutex_lock(&amp;my_mutex);
+
+    /* Incorrect: attempts to acquire the same mutex again */
+    mutex_lock(&amp;my_mutex);
+
+    mutex_unlock(&amp;my_mutex);
+    mutex_unlock(&amp;my_mutex);
+}</code></pre>
+
+<p>This can deadlock because the task already owns the mutex and waits for itself to release it.</p>
+
+<h3>Deadlock Prevention</h3>
+
+<ul>
+    <li>Maintain a consistent lock acquisition order.</li>
+    <li>Avoid recursive acquisition.</li>
+    <li>Keep lock ownership and release paths clear.</li>
+    <li>Use lockdep-enabled kernels to help identify locking errors.</li>
+</ul>
+</section>
+
+<section>
+<h2>15. Mutex and Atomic Operations</h2>
+
+<p>Atomic operations and mutexes solve different synchronization problems.</p>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Atomic Operation</th>
+        <th>Mutex</th>
+    </tr>
+    <tr>
+        <td>Primary purpose</td>
+        <td>Simple atomic data updates</td>
+        <td>Mutual exclusion over a critical section</td>
+    </tr>
+    <tr>
+        <td>Lock ownership</td>
+        <td>No mutex-style ownership</td>
+        <td>Owned by the acquiring task</td>
+    </tr>
+    <tr>
+        <td>Waiting</td>
+        <td>Individual operation executes atomically</td>
+        <td>Competing task may sleep</td>
+    </tr>
+    <tr>
+        <td>Multiple related fields</td>
+        <td>Not automatically protected together</td>
+        <td>Can protect a coordinated update</td>
+    </tr>
+    <tr>
+        <td>Interrupt context</td>
+        <td>Many atomic operations are suitable</td>
+        <td>Not suitable</td>
+    </tr>
+</table>
+
+<p>For a single independent event counter, an atomic operation may be simpler. For a shared buffer that requires several coordinated operations, a mutex is usually more appropriate in process context.</p>
+</section>
+
+<section>
+<h2>16. Common Mutex Mistakes</h2>
+
+<table>
+    <tr>
+        <th>Mistake</th>
+        <th>Correct Practice</th>
+    </tr>
+    <tr>
+        <td>Using a mutex in interrupt context.</td>
+        <td>Use an appropriate non-sleeping synchronization mechanism.</td>
+    </tr>
+    <tr>
+        <td>Forgetting to unlock the mutex.</td>
+        <td>Ensure every successful lock acquisition has a matching unlock.</td>
+    </tr>
+    <tr>
+        <td>Unlocking a mutex from a different task.</td>
+        <td>Only the owning task should unlock it.</td>
+    </tr>
+    <tr>
+        <td>Acquiring the same mutex recursively.</td>
+        <td>Redesign the locking structure to avoid recursive acquisition.</td>
+    </tr>
+    <tr>
+        <td>Using different mutexes for the same shared data without a valid protocol.</td>
+        <td>Use a consistent synchronization design.</td>
+    </tr>
+    <tr>
+        <td>Assuming a mutex protects unguarded accesses.</td>
+        <td>Ensure all relevant accesses follow the same locking protocol.</td>
+    </tr>
+    <tr>
+        <td>Holding multiple mutexes in inconsistent orders.</td>
+        <td>Establish a consistent lock ordering.</td>
+    </tr>
+</table>
+</section>
+
+<section>
+<h2>17. Debugging Mutex Problems</h2>
+
+<p>Kernel logs and lock debugging facilities can help identify mutex-related problems.</p>
+
+<h3>Inspect Kernel Messages</h3>
+
+<pre><code>sudo dmesg | tail -50
+
+sudo journalctl -k -n 50</code></pre>
+
+<h3>Inspect Lock Debugging Configuration</h3>
+
+<pre><code>grep -E 'CONFIG_PROVE_LOCKING|CONFIG_DEBUG_MUTEXES|CONFIG_LOCKDEP' \
+/boot/config-$(uname -r)</code></pre>
+
+<p>Depending on kernel configuration, lockdep and mutex debugging facilities can help identify:</p>
+
+<ul>
+    <li>Potential deadlocks.</li>
+    <li>Incorrect lock ordering.</li>
+    <li>Recursive locking problems.</li>
+    <li>Invalid locking or unlocking behavior.</li>
+</ul>
+</section>
+
+<section>
+<h2>18. Lesson Summary</h2>
+
+<ul>
+    <li>A mutex provides mutual exclusion.</li>
+    <li><code>struct mutex</code> represents a Linux kernel mutex.</li>
+    <li><code>DEFINE_MUTEX()</code> provides static initialization.</li>
+    <li><code>mutex_init()</code> provides dynamic initialization.</li>
+    <li><code>mutex_lock()</code> acquires the mutex.</li>
+    <li><code>mutex_unlock()</code> releases the mutex.</li>
+    <li><code>mutex_trylock()</code> attempts immediate acquisition.</li>
+    <li><code>mutex_lock_interruptible()</code> allows a waiting acquisition to be interrupted by a signal.</li>
+    <li>A task waiting for a mutex may sleep.</li>
+    <li>Mutexes are suitable for process-context synchronization.</li>
+    <li>Mutexes must not be used in interrupt context.</li>
+    <li>Mutexes are useful for protecting shared buffers and device state.</li>
+</ul>
+</section>
+
+<section>
+<h2>19. Short Answer Questions</h2>
+
+<ol>
+    <li>What is a mutex?</li>
+    <li>What does mutual exclusion mean?</li>
+    <li>What is the purpose of <code>struct mutex</code>?</li>
+    <li>What does <code>DEFINE_MUTEX()</code> do?</li>
+    <li>What is the purpose of <code>mutex_init()</code>?</li>
+    <li>What does <code>mutex_lock()</code> do?</li>
+    <li>What does <code>mutex_unlock()</code> do?</li>
+    <li>What is the purpose of <code>mutex_trylock()</code>?</li>
+    <li>What is the purpose of <code>mutex_lock_interruptible()</code>?</li>
+    <li>Why can a task sleep while waiting for a mutex?</li>
+    <li>Why must a mutex not be used in interrupt context?</li>
+    <li>What is mutex ownership?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Long Answer Questions</h2>
+
+<ol>
+    <li>Explain mutex-based synchronization in Linux device drivers.</li>
+    <li>Describe static and dynamic mutex initialization.</li>
+    <li>Explain <code>mutex_lock()</code>, <code>mutex_unlock()</code> and <code>mutex_trylock()</code>.</li>
+    <li>Explain the sleeping behavior of mutexes.</li>
+    <li>Compare mutexes and spinlocks.</li>
+    <li>Explain how mutexes protect shared character-driver buffers.</li>
+    <li>Discuss mutex ownership and recursive locking problems.</li>
+    <li>Explain common mutex-related deadlocks and their prevention.</li>
+</ol>
+</section>
+
+<section>
+<h2>21. Practical Exercises</h2>
+
+<ol>
+    <li>Write a kernel module using <code>DEFINE_MUTEX()</code>.</li>
+    <li>Declare a shared integer counter.</li>
+    <li>Protect the counter update using <code>mutex_lock()</code> and <code>mutex_unlock()</code>.</li>
+    <li>Use <code>mutex_trylock()</code> and display whether acquisition succeeds.</li>
+    <li>Demonstrate the return behavior of <code>mutex_lock_interruptible()</code>.</li>
+    <li>Write a character-driver write callback that protects a shared buffer using a mutex.</li>
+    <li>Explain why <code>copy_from_user()</code> must not be called while holding a spinlock.</li>
+    <li>Compare a mutex-protected counter with an atomic counter.</li>
+</ol>
+
+<h3>Expected Learning Outcome</h3>
+
+<p>You should be able to initialize and use Linux kernel mutexes, protect shared resources in process context, handle waiting and error paths correctly, and distinguish mutex synchronization from spinlock and atomic-operation mechanisms.</p>
+</section>
+
+<div class="navigation-buttons">
+    <a href="L05_Spinlocks.html">← Previous: Spinlocks</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L07_Semaphores.html">Next: Semaphores →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 13 – Synchronization and Concurrency</p>
+</footer>
+
+</body>
+</html>
