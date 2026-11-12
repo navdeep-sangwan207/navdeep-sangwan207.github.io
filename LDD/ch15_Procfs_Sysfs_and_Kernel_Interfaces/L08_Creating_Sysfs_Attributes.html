@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 8 - Creating Sysfs Attributes | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    line-height: 1.7;
+    background: #f4f7fb;
+    color: #263238;
+}
+
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    padding: 35px 20px;
+    text-align: center;
+}
+
+.lesson-banner h1 { margin: 0; font-size: 30px; }
+
+.top-nav {
+    background: #102f60;
+    padding: 12px;
+    text-align: center;
+}
+
+.top-nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+
+.top-nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3f0ff;
+    border-left: 5px solid #2878d7;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8f8;
+    padding-bottom: 7px;
+}
+
+h3 { color: #245a9c; }
+
+pre {
+    background: #17212b;
+    color: #e8f0f8;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+code { font-family: Consolas, monospace; }
+
+.note {
+    background: #fff8df;
+    border-left: 5px solid #e0a800;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.success {
+    background: #e8f5e9;
+    border-left: 5px solid #388e3c;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fe;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #b8cbea;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px;
+    margin: 5px;
+    min-width: 190px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 12px 18px;
+    border-radius: 6px;
+}
+
+.lesson-nav a:hover { background: #0d3475; }
+
+footer {
+    text-align: center;
+    background: #102f60;
+    color: white;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    .lesson-banner h1 { font-size: 23px; }
+    .top-nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    .section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="lesson-banner">
+    <h1>Chapter 15: Procfs, Sysfs and Kernel Interfaces</h1>
+    <p>Lesson 8: Creating Sysfs Attributes</p>
+</header>
+
+<nav class="top-nav">
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 15</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p>
+        Topic: Creating Sysfs Attributes<br>
+        Chapter: Procfs, Sysfs and Kernel Interfaces<br>
+        Prerequisites: Sysfs Filesystem, Kernel Objects and Kobjects, Kernel Modules<br>
+        Difficulty: Intermediate to Advanced
+    </p>
+</div>
+
+<section class="section">
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Understand Sysfs attributes in device drivers.</li>
+    <li>Explain the purpose of show() and store() callbacks.</li>
+    <li>Understand struct attribute and struct device_attribute.</li>
+    <li>Use DEVICE_ATTR macros.</li>
+    <li>Create read-only and read-write attributes.</li>
+    <li>Register and remove Sysfs files.</li>
+    <li>Understand attribute groups.</li>
+    <li>Compile and test a basic Sysfs kernel module.</li>
+    <li>Apply safe input validation and cleanup practices.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. Introduction to Sysfs Attributes</h2>
+
+<p>
+Sysfs attributes are file-like interfaces used to expose
+selected information about kernel objects to user space.
+</p>
+
+<p>
+A device driver can use attributes to provide information
+such as:
+</p>
+
+<ul>
+    <li>Device status.</li>
+    <li>Operating mode.</li>
+    <li>Configuration values.</li>
+    <li>Sensor measurements.</li>
+    <li>Driver-specific parameters.</li>
+</ul>
+
+<h3>Example</h3>
+
+<pre><code>/sys/class/net/lo/mtu</code></pre>
+
+<p>
+This file exposes the MTU value associated with the
+loopback network interface.
+</p>
+
+<p>
+A user-space program can read the value using:
+</p>
+
+<pre><code>cat /sys/class/net/lo/mtu</code></pre>
+
+<p>
+A driver can similarly expose its own attributes using
+the Sysfs APIs.
+</p>
+
+<div class="note">
+    Sysfs is designed mainly for simple text-based
+    attributes. It is not intended to be a general-purpose
+    mechanism for transferring large amounts of data.
+</div>
+</section>
+
+<section class="section">
+<h2>3. What Is a Sysfs Attribute?</h2>
+
+<p>
+A Sysfs attribute is an interface associated with a
+kernel object.
+</p>
+
+<p>
+It is commonly represented as a file inside a Sysfs
+directory.
+</p>
+
+<h3>Conceptual structure</h3>
+
+<pre><code>/sys/
+└── example_device/
+    ├── status
+    ├── mode
+    └── value</code></pre>
+
+<table>
+<tr>
+    <th>Attribute</th>
+    <th>Possible Purpose</th>
+</tr>
+<tr>
+    <td>status</td>
+    <td>Reports the current device state.</td>
+</tr>
+<tr>
+    <td>mode</td>
+    <td>Reports or configures an operating mode.</td>
+</tr>
+<tr>
+    <td>value</td>
+    <td>Reports a measurement or configuration value.</td>
+</tr>
+</table>
+
+<p>
+The actual attributes exposed by a driver depend on
+its design and the relevant kernel subsystem.
+</p>
+</section>
+
+<section class="section">
+<h2>4. How Sysfs Attributes Work</h2>
+
+<p>
+Sysfs attributes connect user-space file operations
+to kernel callback functions.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">User-Space Application</div>
+    <div class="arrow">↓ read() / write()</div>
+    <div class="diagram-box">Sysfs Attribute File</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">show() / store() Callback</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Driver Data or Device State</div>
+</div>
+
+<h3>Read operation</h3>
+
+<ol>
+    <li>User space opens an attribute file.</li>
+    <li>The application requests data.</li>
+    <li>Sysfs invokes the associated show callback.</li>
+    <li>The callback formats the value as text.</li>
+    <li>The result is returned to user space.</li>
+</ol>
+
+<h3>Write operation</h3>
+
+<ol>
+    <li>User space opens a writable attribute.</li>
+    <li>The application submits text data.</li>
+    <li>Sysfs invokes the associated store callback.</li>
+    <li>The callback validates and processes the input.</li>
+    <li>The driver updates the permitted state.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>5. Device Attribute Structure</h2>
+
+<p>
+For attributes associated with a device object,
+Linux provides <code>struct device_attribute</code>.
+</p>
+
+<p>
+The relevant header is:
+</p>
+
+<pre><code>#include &lt;linux/device.h&gt;</code></pre>
+
+<p>
+Conceptually, a device attribute associates a basic
+attribute definition with device-specific callbacks.
+</p>
+
+<p>
+The callbacks use the following signatures:
+</p>
+
+<h3>show() callback</h3>
+
+<pre><code>ssize_t show(struct device *dev,
+             struct device_attribute *attr,
+             char *buf);</code></pre>
+
+<h3>store() callback</h3>
+
+<pre><code>ssize_t store(struct device *dev,
+              struct device_attribute *attr,
+              const char *buf,
+              size_t count);</code></pre>
+
+<table>
+<tr>
+    <th>Parameter</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td><code>dev</code></td>
+    <td>Device associated with the attribute.</td>
+</tr>
+<tr>
+    <td><code>attr</code></td>
+    <td>Attribute being accessed.</td>
+</tr>
+<tr>
+    <td><code>buf</code></td>
+    <td>Output buffer for show(), or input data for store().</td>
+</tr>
+<tr>
+    <td><code>count</code></td>
+    <td>Number of input bytes supplied to store().</td>
+</tr>
+</table>
+
+<div class="note">
+    The show() and store() callback signatures differ
+    for generic kobject attributes and device attributes.
+    This lesson focuses on device attributes.
+</div>
+</section>
+
+<section class="section">
+<h2>6. The show() Function</h2>
+
+<p>
+The show() callback is used when user space reads a
+Sysfs attribute.
+</p>
+
+<p>
+It formats the attribute value into the supplied buffer.
+</p>
+
+<h3>Example</h3>
+
+<pre><code>static int device_value = 100;
+
+static ssize_t value_show(struct device *dev,
+                          struct device_attribute *attr,
+                          char *buf)
+{
+    return sysfs_emit(buf, "%d\n", device_value);
+}</code></pre>
+
+<h3>Explanation</h3>
+
+<ul>
+    <li><code>device_value</code> stores the example value.</li>
+    <li><code>value_show()</code> is invoked for a read.</li>
+    <li><code>sysfs_emit()</code> formats the value safely into the Sysfs output buffer.</li>
+    <li>The callback returns the number of bytes produced.</li>
+</ul>
+
+<p>For example, user space executes:</p>
+
+<pre><code>cat /sys/.../value</code></pre>
+
+<p>
+The callback returns the text representation of
+the value.
+</p>
+
+<div class="note">
+    In modern kernel code, sysfs_emit() is preferred
+    for formatting ordinary Sysfs text output.
+</div>
+</section>
+
+<section class="section">
+<h2>7. The store() Function</h2>
+
+<p>
+The store() callback is used when user space writes
+to a writable Sysfs attribute.
+</p>
+
+<h3>Example</h3>
+
+<pre><code>static int device_value = 100;
+
+static ssize_t value_store(struct device *dev,
+                           struct device_attribute *attr,
+                           const char *buf,
+                           size_t count)
+{
+    int value;
+    int ret;
+
+    ret = kstrtoint(buf, 10, &amp;value);
+    if (ret)
+        return ret;
+
+    if (value &lt; 0 || value &gt; 1000)
+        return -EINVAL;
+
+    device_value = value;
+
+    return count;
+}</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li>The user supplies a text value.</li>
+    <li><code>kstrtoint()</code> converts it into an integer.</li>
+    <li>The callback checks the permitted range.</li>
+    <li>The value is updated only if validation succeeds.</li>
+    <li>The callback returns the number of bytes consumed.</li>
+</ol>
+
+<h3>Example user-space command</h3>
+
+<pre><code>echo 250 &gt; /sys/.../value</code></pre>
+
+<div class="warning">
+    This is an illustrative callback. A real driver must
+    synchronize shared state where necessary and apply
+    changes through the correct hardware or subsystem
+    interface. Do not expose arbitrary hardware controls
+    without proper validation.
+</div>
+</section>
+
+<section class="section">
+<h2>8. DEVICE_ATTR Macros</h2>
+
+<p>
+Linux provides macros that simplify the declaration
+of device attributes.
+</p>
+
+<p>
+The common macros include:
+</p>
+
+<table>
+<tr>
+    <th>Macro</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>DEVICE_ATTR_RO(name)</code></td>
+    <td>Declares a read-only device attribute.</td>
+</tr>
+<tr>
+    <td><code>DEVICE_ATTR_WO(name)</code></td>
+    <td>Declares a write-only device attribute.</td>
+</tr>
+<tr>
+    <td><code>DEVICE_ATTR_RW(name)</code></td>
+    <td>Declares a read-write device attribute.</td>
+</tr>
+<tr>
+    <td><code>DEVICE_ATTR(name, mode, show, store)</code></td>
+    <td>Declares an attribute with an explicit permission mode and callbacks.</td>
+</tr>
+</table>
+
+<h3>Read-only attribute</h3>
+
+<pre><code>static ssize_t status_show(struct device *dev,
+                           struct device_attribute *attr,
+                           char *buf)
+{
+    return sysfs_emit(buf, "ready\n");
+}
+
+static DEVICE_ATTR_RO(status);</code></pre>
+
+<p>
+The macro associates the attribute with the
+<code>status_show()</code> callback.
+</p>
+
+<h3>Read-write attribute</h3>
+
+<pre><code>static ssize_t value_show(struct device *dev,
+                          struct device_attribute *attr,
+                          char *buf)
+{
+    return sysfs_emit(buf, "%d\n", device_value);
+}
+
+static ssize_t value_store(struct device *dev,
+                           struct device_attribute *attr,
+                           const char *buf,
+                           size_t count)
+{
+    int value;
+    int ret;
+
+    ret = kstrtoint(buf, 10, &amp;value);
+    if (ret)
+        return ret;
+
+    if (value &lt; 0 || value &gt; 1000)
+        return -EINVAL;
+
+    device_value = value;
+    return count;
+}
+
+static DEVICE_ATTR_RW(value);</code></pre>
+
+<div class="note">
+    DEVICE_ATTR_RO, DEVICE_ATTR_WO and DEVICE_ATTR_RW
+    are convenience macros. The corresponding callback
+    names must follow the required naming convention.
+</div>
+</section>
+
+<section class="section">
+<h2>9. Creating a Sysfs Attribute File</h2>
+
+<p>
+For a device object, an attribute can be registered
+using <code>device_create_file()</code>.
+</p>
+
+<h3>Function</h3>
+
+<pre><code>int device_create_file(struct device *dev,
+                       const struct device_attribute *attr);</code></pre>
+
+<p>
+The function creates the attribute file associated
+with the specified device.
+</p>
+
+<h3>Removing an attribute</h3>
+
+<pre><code>void device_remove_file(struct device *dev,
+                        const struct device_attribute *attr);</code></pre>
+
+<p>
+This removes an attribute previously created for
+that device.
+</p>
+
+<table>
+<tr>
+    <th>Function</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>device_create_file()</code></td>
+    <td>Creates a device attribute.</td>
+</tr>
+<tr>
+    <td><code>device_remove_file()</code></td>
+    <td>Removes a device attribute.</td>
+</tr>
+</table>
+
+<div class="warning">
+    The device object must be valid and remain alive
+    while the attribute is registered. Remove attributes
+    before destroying the associated device object.
+</div>
+</section>
+
+<section class="section">
+<h2>10. Attribute Groups</h2>
+
+<p>
+When a driver exposes multiple attributes, registering
+them individually may become difficult to maintain.
+</p>
+
+<p>
+Sysfs provides attribute groups for organizing related
+attributes.
+</p>
+
+<h3>Conceptual example</h3>
+
+<pre><code>static DEVICE_ATTR_RO(status);
+static DEVICE_ATTR_RW(value);
+
+static struct attribute *example_attrs[] = {
+    &amp;dev_attr_status.attr,
+    &amp;dev_attr_value.attr,
+    NULL,
+};
+
+static const struct attribute_group example_group = {
+    .attrs = example_attrs,
+};</code></pre>
+
+<p>
+The group can be associated with a kobject using
+Sysfs attribute-group APIs, or supplied through the
+appropriate device-model mechanism.
+</p>
+
+<h3>Important functions</h3>
+
+<pre><code>sysfs_create_group()
+sysfs_remove_group()</code></pre>
+
+<p>
+These APIs create or remove a group of attributes
+associated with a kobject.
+</p>
+
+<p>
+Attribute groups can also be associated with device
+objects through device-model attribute-group facilities.
+</p>
+</section>
+
+<section class="section">
+<h2>11. Difference Between Individual Attributes and Attribute Groups</h2>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>Individual Attribute</th>
+    <th>Attribute Group</th>
+</tr>
+<tr>
+    <td>Registration</td>
+    <td>One attribute at a time.</td>
+    <td>Multiple related attributes together.</td>
+</tr>
+<tr>
+    <td>Management</td>
+    <td>Separate create and remove operations.</td>
+    <td>Group-based management.</td>
+</tr>
+<tr>
+    <td>Organization</td>
+    <td>Suitable for a small number of attributes.</td>
+    <td>Useful for related attribute collections.</td>
+</tr>
+<tr>
+    <td>Typical APIs</td>
+    <td>device_create_file(), device_remove_file()</td>
+    <td>sysfs_create_group(), sysfs_remove_group()</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>12. Complete Practical Example: Sysfs Kernel Module</h2>
+
+<p>
+The following educational module creates a standalone
+kobject with two attributes:
+</p>
+
+<ul>
+    <li><code>status</code> - read-only attribute.</li>
+    <li><code>value</code> - read-write attribute.</li>
+</ul>
+
+<p>
+The example uses a standalone kobject so that it can
+be tested without physical hardware or a registered
+device.
+</p>
+
+<h3>File: sysfs_example.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/kobject.h&gt;
+#include &lt;linux/sysfs.h&gt;
+#include &lt;linux/slab.h&gt;
+#include &lt;linux/mutex.h&gt;
+
+static struct kobject *example_kobj;
+
+static int device_value = 100;
+static DEFINE_MUTEX(value_lock);
+
+/* Read-only status attribute */
+
+static ssize_t status_show(struct kobject *kobj,
+                           struct kobj_attribute *attr,
+                           char *buf)
+{
+    return sysfs_emit(buf, "Driver is active\n");
+}
+
+/* Read-write value attribute */
+
+static ssize_t value_show(struct kobject *kobj,
+                          struct kobj_attribute *attr,
+                          char *buf)
+{
+    int value;
+
+    mutex_lock(&amp;value_lock);
+    value = device_value;
+    mutex_unlock(&amp;value_lock);
+
+    return sysfs_emit(buf, "%d\n", value);
+}
+
+static ssize_t value_store(struct kobject *kobj,
+                           struct kobj_attribute *attr,
+                           const char *buf,
+                           size_t count)
+{
+    int value;
+    int ret;
+
+    ret = kstrtoint(buf, 10, &amp;value);
+    if (ret)
+        return ret;
+
+    if (value &lt; 0 || value &gt; 1000)
+        return -EINVAL;
+
+    mutex_lock(&amp;value_lock);
+    device_value = value;
+    mutex_unlock(&amp;value_lock);
+
+    return count;
+}
+
+/* Declare attributes */
+
+static struct kobj_attribute status_attr =
+    __ATTR_RO(status);
+
+static struct kobj_attribute value_attr =
+    __ATTR_RW(value);
+
+/* Attribute group */
+
+static struct attribute *example_attrs[] = {
+    &amp;status_attr.attr,
+    &amp;value_attr.attr,
+    NULL,
+};
+
+static const struct attribute_group example_group = {
+    .attrs = example_attrs,
+};
+
+/* Module initialization */
+
+static int __init sysfs_example_init(void)
+{
+    int ret;
+
+    example_kobj = kobject_create_and_add(
+        "sysfs_example", kernel_kobj);
+
+    if (!example_kobj)
+        return -ENOMEM;
+
+    ret = sysfs_create_group(example_kobj,
+                             &amp;example_group);
+
+    if (ret) {
+        kobject_put(example_kobj);
+        example_kobj = NULL;
+        return ret;
+    }
+
+    pr_info("Sysfs example module loaded\n");
+
+    return 0;
+}
+
+/* Module cleanup */
+
+static void __exit sysfs_example_exit(void)
+{
+    if (example_kobj) {
+        sysfs_remove_group(example_kobj,
+                           &amp;example_group);
+
+        kobject_put(example_kobj);
+        example_kobj = NULL;
+    }
+
+    pr_info("Sysfs example module unloaded\n");
+}
+
+module_init(sysfs_example_init);
+module_exit(sysfs_example_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Sysfs Attribute Example");</code></pre>
+
+<h3>Understanding the example</h3>
+
+<ol>
+    <li><code>kernel_kobj</code> provides the parent kobject under the kernel Sysfs hierarchy.</li>
+    <li><code>kobject_create_and_add()</code> creates the directory <code>/sys/kernel/sysfs_example</code>.</li>
+    <li><code>__ATTR_RO(status)</code> declares a read-only attribute.</li>
+    <li><code>__ATTR_RW(value)</code> declares a read-write attribute.</li>
+    <li><code>sysfs_create_group()</code> registers both attributes.</li>
+    <li><code>sysfs_remove_group()</code> removes the attributes during cleanup.</li>
+    <li><code>kobject_put()</code> releases the kobject reference.</li>
+</ol>
+
+<h3>Expected Sysfs directory</h3>
+
+<pre><code>/sys/kernel/sysfs_example/
+├── status
+└── value</code></pre>
+
+<div class="note">
+    The example demonstrates generic kobject attributes,
+    not device attributes. Its show() and store() callbacks
+    therefore use struct kobject and struct kobj_attribute.
+    Device attributes use struct device and
+    struct device_attribute, as introduced earlier.
+</div>
+</section>
+
+<section class="section">
+<h2>13. Makefile for the Sysfs Module</h2>
+
+<p>Create a file named <code>Makefile</code>:</p>
+
+<pre><code>obj-m += sysfs_example.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>
+The Makefile uses the kernel build system to compile
+the external module.
+</p>
+
+<div class="warning">
+    The command lines beneath all: and clean: must begin
+    with a real tab character, not spaces.
+</div>
+</section>
+
+<section class="section">
+<h2>14. Compile and Test the Module</h2>
+
+<h3>Step 1: Install build dependencies</h3>
+
+<pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+<h3>Step 2: Create a project directory</h3>
+
+<pre><code>mkdir sysfs_project
+cd sysfs_project</code></pre>
+
+<h3>Step 3: Create source and Makefile</h3>
+
+<p>
+Save the C example as <code>sysfs_example.c</code>
+and the Makefile in the same directory.
+</p>
+
+<h3>Step 4: Compile</h3>
+
+<pre><code>make</code></pre>
+
+<h3>Step 5: Load the module</h3>
+
+<pre><code>sudo insmod sysfs_example.ko</code></pre>
+
+<h3>Step 6: Check the Sysfs directory</h3>
+
+<pre><code>ls /sys/kernel/sysfs_example</code></pre>
+
+<h3>Step 7: Read the status attribute</h3>
+
+<pre><code>cat /sys/kernel/sysfs_example/status</code></pre>
+
+<p>Expected output:</p>
+
+<pre><code>Driver is active</code></pre>
+
+<h3>Step 8: Read the initial value</h3>
+
+<pre><code>cat /sys/kernel/sysfs_example/value</code></pre>
+
+<p>Expected output:</p>
+
+<pre><code>100</code></pre>
+
+<h3>Step 9: Write a new value</h3>
+
+<pre><code>echo 250 | sudo tee /sys/kernel/sysfs_example/value</code></pre>
+
+<h3>Step 10: Read the updated value</h3>
+
+<pre><code>cat /sys/kernel/sysfs_example/value</code></pre>
+
+<p>Expected output:</p>
+
+<pre><code>250</code></pre>
+
+<h3>Step 11: Test invalid input</h3>
+
+<pre><code>echo 1500 | sudo tee /sys/kernel/sysfs_example/value</code></pre>
+
+<p>
+The callback should reject this value because the
+permitted range is 0 to 1000.
+</p>
+
+<h3>Step 12: Remove the module</h3>
+
+<pre><code>sudo rmmod sysfs_example</code></pre>
+
+<h3>Step 13: Verify cleanup</h3>
+
+<pre><code>ls /sys/kernel/sysfs_example</code></pre>
+
+<p>
+The directory should no longer exist after successful
+module removal.
+</p>
+
+<h3>Step 14: Inspect kernel messages</h3>
+
+<pre><code>sudo dmesg | tail -n 20</code></pre>
+</section>
+
+<section class="section">
+<h2>15. Important Rules for Sysfs Attribute Development</h2>
+
+<ul>
+    <li>Keep attributes simple and text-based.</li>
+    <li>Use one logical value per ordinary attribute.</li>
+    <li>Validate all data received through store().</li>
+    <li>Return the correct byte count from callbacks.</li>
+    <li>Use sysfs_emit() for modern Sysfs text output.</li>
+    <li>Use suitable synchronization for shared driver data.</li>
+    <li>Remove attributes before destroying their associated objects.</li>
+    <li>Use established subsystem interfaces when available.</li>
+    <li>Document interfaces intended for userspace applications.</li>
+    <li>Do not use Sysfs for large binary data transfers.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>16. Common Errors and Troubleshooting</h2>
+
+<table>
+<tr>
+    <th>Problem</th>
+    <th>Possible Cause</th>
+    <th>Action</th>
+</tr>
+<tr>
+    <td>Module compilation fails</td>
+    <td>Missing kernel headers or incompatible source.</td>
+    <td>Install matching headers and inspect compiler output.</td>
+</tr>
+<tr>
+    <td>Module loading fails</td>
+    <td>Kernel version mismatch or initialization error.</td>
+    <td>Inspect dmesg and module information.</td>
+</tr>
+<tr>
+    <td>Sysfs directory missing</td>
+    <td>Module initialization failed or registration was not completed.</td>
+    <td>Check module status and kernel logs.</td>
+</tr>
+<tr>
+    <td>Permission denied</td>
+    <td>Attribute permissions or system security policy.</td>
+    <td>Check permissions and use authorized access.</td>
+</tr>
+<tr>
+    <td>Invalid argument</td>
+    <td>store() rejected the supplied value.</td>
+    <td>Use an accepted value and format.</td>
+</tr>
+<tr>
+    <td>Directory remains after failure</td>
+    <td>Incorrect cleanup or incomplete error handling.</td>
+    <td>Review registration and removal paths.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>17. Lesson Summary</h2>
+
+<ul>
+    <li>Sysfs attributes expose selected kernel object properties.</li>
+    <li>Device attributes use struct device_attribute.</li>
+    <li>show() handles attribute reads.</li>
+    <li>store() handles attribute writes.</li>
+    <li>DEVICE_ATTR_RO declares read-only attributes.</li>
+    <li>DEVICE_ATTR_RW declares read-write attributes.</li>
+    <li>device_create_file() creates an individual device attribute.</li>
+    <li>device_remove_file() removes an individual device attribute.</li>
+    <li>Attribute groups organize related attributes.</li>
+    <li>sysfs_create_group() and sysfs_remove_group() manage groups.</li>
+    <li>Generic kobject attributes use different callback structures from device attributes.</li>
+    <li>Input validation, synchronization and correct cleanup are essential.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>18. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+    <li>What is a Sysfs attribute?</li>
+    <li>What is struct device_attribute?</li>
+    <li>What is the purpose of show()?</li>
+    <li>What is the purpose of store()?</li>
+    <li>What is DEVICE_ATTR_RO?</li>
+    <li>What is DEVICE_ATTR_RW?</li>
+    <li>What is the purpose of device_create_file()?</li>
+    <li>What is the purpose of device_remove_file()?</li>
+    <li>What is a Sysfs attribute group?</li>
+    <li>Why is input validation important?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+    <li>Explain the architecture of Sysfs attributes.</li>
+    <li>Explain show() and store() callbacks with examples.</li>
+    <li>Describe the DEVICE_ATTR macros.</li>
+    <li>Explain individual attribute registration and removal.</li>
+    <li>Explain how attribute groups are created and removed.</li>
+    <li>Describe the complete lifecycle of a Sysfs attribute.</li>
+    <li>Discuss synchronization and input validation in Sysfs callbacks.</li>
+</ol>
+
+<h3>C. Practical and Programming Questions</h3>
+<ol>
+    <li>Write a read-only Sysfs attribute using DEVICE_ATTR_RO.</li>
+    <li>Write a read-write attribute using DEVICE_ATTR_RW.</li>
+    <li>Create a standalone kobject with a Sysfs attribute group.</li>
+    <li>Compile and load the example module in Ubuntu.</li>
+    <li>Read the status attribute using cat.</li>
+    <li>Update the value attribute using echo and tee.</li>
+    <li>Test invalid input and observe the error.</li>
+    <li>Remove the module and verify Sysfs cleanup.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>19. Expected Learning Outcome</h2>
+
+<div class="success">
+    After completing this lesson, you should be able to
+    explain how Sysfs attributes work, implement show()
+    and store() callbacks, declare attributes using
+    DEVICE_ATTR macros, organize attributes into groups,
+    and develop and test a basic Sysfs kernel module.
+</div>
+</section>
+
+<div class="lesson-nav">
+    <a href="L07_Kernel_Objects_and_Kobjects.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L09_Device_Attributes_and_Driver_Attributes.html">Next Lesson →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 15 - Procfs, Sysfs and Kernel Interfaces</p>
+</footer>
+
+</body>
+</html>
