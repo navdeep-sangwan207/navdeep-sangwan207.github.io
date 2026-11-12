@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 11 - Debugfs and Its Applications | Linux Device Drivers</title>
+<link rel="stylesheet" href="../../style.css">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    line-height: 1.7;
+    background: #f4f7fb;
+    color: #263238;
+}
+
+.lesson-banner {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    padding: 35px 20px;
+    text-align: center;
+}
+
+.lesson-banner h1 { margin: 0; font-size: 30px; }
+
+.top-nav {
+    background: #102f60;
+    padding: 12px;
+    text-align: center;
+}
+
+.top-nav a {
+    color: white;
+    text-decoration: none;
+    margin: 0 12px;
+    font-weight: bold;
+}
+
+.top-nav a:hover { text-decoration: underline; }
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+
+.lesson-info {
+    background: #e3f0ff;
+    border-left: 5px solid #2878d7;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+.section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #dce8f8;
+    padding-bottom: 7px;
+}
+
+h3 { color: #245a9c; }
+
+pre {
+    background: #17212b;
+    color: #e8f0f8;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+code { font-family: Consolas, monospace; }
+
+.note {
+    background: #fff8df;
+    border-left: 5px solid #e0a800;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.warning {
+    background: #ffebee;
+    border-left: 5px solid #d32f2f;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.success {
+    background: #e8f5e9;
+    border-left: 5px solid #388e3c;
+    padding: 13px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5dce5;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fe;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #b8cbea;
+    padding: 18px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 18px 0;
+}
+
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px;
+    margin: 5px;
+    min-width: 190px;
+    font-weight: bold;
+}
+
+.arrow {
+    color: #174ea6;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+
+.lesson-nav a {
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 12px 18px;
+    border-radius: 6px;
+}
+
+.lesson-nav a:hover { background: #0d3475; }
+
+footer {
+    text-align: center;
+    background: #102f60;
+    color: white;
+    padding: 18px;
+    margin-top: 35px;
+}
+
+@media (max-width: 650px) {
+    .lesson-banner h1 { font-size: 23px; }
+    .top-nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+    .section { padding: 16px; }
+    table { font-size: 13px; }
+}
+</style>
+</head>
+
+<body>
+
+<header class="lesson-banner">
+    <h1>Chapter 15: Procfs, Sysfs and Kernel Interfaces</h1>
+    <p>Lesson 11: Debugfs and Its Applications</p>
+</header>
+
+<nav class="top-nav">
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 15</a>
+</nav>
+
+<main class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p>
+        Topic: Debugfs and Its Applications<br>
+        Chapter: Procfs, Sysfs and Kernel Interfaces<br>
+        Prerequisites: Kernel Modules, Procfs, Sysfs and File Operations<br>
+        Difficulty: Intermediate to Advanced
+    </p>
+</div>
+
+<section class="section">
+<h2>1. Learning Objectives</h2>
+
+<p>After completing this lesson, you will be able to:</p>
+
+<ul>
+    <li>Understand Debugfs and its purpose.</li>
+    <li>Explain why Debugfs is used in kernel development.</li>
+    <li>Understand the Debugfs filesystem hierarchy.</li>
+    <li>Use important Debugfs APIs.</li>
+    <li>Create files and directories using Debugfs.</li>
+    <li>Understand simple read and write interfaces.</li>
+    <li>Inspect Debugfs entries in Ubuntu.</li>
+    <li>Understand the security and lifecycle considerations of Debugfs.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>2. Introduction to Debugfs</h2>
+
+<p>
+Debugfs is a virtual filesystem provided by the Linux
+kernel for exposing debugging information from kernel
+subsystems and device drivers.
+</p>
+
+<p>
+It allows kernel developers to inspect internal
+driver state, counters, configuration values and
+diagnostic information from user space.
+</p>
+
+<p>
+Debugfs is commonly mounted at:
+</p>
+
+<pre><code>/sys/kernel/debug</code></pre>
+
+<p>
+Unlike ordinary filesystems, Debugfs does not normally
+store its contents on a physical storage device.
+Its entries are provided by kernel code.
+</p>
+
+<h3>Why is Debugfs needed?</h3>
+
+<p>
+During driver development, developers often need to
+inspect internal information that should not become
+part of a permanent user-space interface.
+</p>
+
+<p>
+Examples include:
+</p>
+
+<ul>
+    <li>Internal driver counters.</li>
+    <li>Interrupt statistics.</li>
+    <li>Debugging flags.</li>
+    <li>Hardware initialization status.</li>
+    <li>Temporary diagnostic values.</li>
+    <li>Internal state of a kernel subsystem.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>3. Purpose of Debugfs</h2>
+
+<p>
+Debugfs provides a convenient way to access selected
+kernel information without requiring a custom
+system call or a separate user-space debugging tool.
+</p>
+
+<h3>Example scenario</h3>
+
+<p>
+Suppose a device driver processes interrupts. During
+development, the developer wants to know how many
+interrupts have occurred.
+</p>
+
+<p>
+The driver can maintain an internal counter and
+expose it through a Debugfs file.
+</p>
+
+<pre><code>/sys/kernel/debug/example_driver/interrupt_count</code></pre>
+
+<p>
+A user-space developer can inspect the counter using:
+</p>
+
+<pre><code>cat /sys/kernel/debug/example_driver/interrupt_count</code></pre>
+
+<div class="note">
+    Debugfs is primarily a development and diagnostic
+    facility. Its interfaces are not guaranteed to
+    remain stable across kernel versions.
+</div>
+</section>
+
+<section class="section">
+<h2>4. Debugfs Architecture</h2>
+
+<p>
+A kernel driver creates Debugfs entries using
+Debugfs APIs. User-space applications access those
+entries through ordinary file operations.
+</p>
+
+<div class="diagram">
+    <div class="diagram-box">User-Space Tools</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">cat / echo / Custom Application</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Virtual Filesystem (VFS)</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Debugfs</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Driver Debug Callbacks</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Kernel Driver State</div>
+</div>
+
+<h3>Working sequence</h3>
+
+<ol>
+    <li>The driver creates a Debugfs directory.</li>
+    <li>The driver creates one or more debugging files.</li>
+    <li>The kernel associates those entries with the relevant operations.</li>
+    <li>A user-space application opens a Debugfs file.</li>
+    <li>The corresponding callback provides or modifies diagnostic information.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>5. Debugfs Mount Point</h2>
+
+<p>
+The conventional Debugfs mount point is:
+</p>
+
+<pre><code>/sys/kernel/debug</code></pre>
+
+<p>
+Check whether Debugfs is mounted:
+</p>
+
+<pre><code>mount | grep debugfs</code></pre>
+
+<p>
+Alternatively:
+</p>
+
+<pre><code>findmnt /sys/kernel/debug</code></pre>
+
+<h3>Mount Debugfs manually</h3>
+
+<p>
+If Debugfs is supported by the kernel but not mounted,
+an administrator can mount it:
+</p>
+
+<pre><code>sudo mount -t debugfs none /sys/kernel/debug</code></pre>
+
+<p>
+Check the directory:
+</p>
+
+<pre><code>ls -l /sys/kernel/debug</code></pre>
+
+<div class="note">
+    Mounting Debugfs requires appropriate privileges.
+    Some systems mount it automatically during boot.
+    If the kernel does not support Debugfs, mounting
+    it will fail.
+</div>
+</section>
+
+<section class="section">
+<h2>6. Important Debugfs APIs</h2>
+
+<p>
+The primary header used for Debugfs programming is:
+</p>
+
+<pre><code>#include &lt;linux/debugfs.h&gt;</code></pre>
+
+<table>
+<tr>
+    <th>API</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>debugfs_create_dir()</td>
+    <td>Creates a Debugfs directory.</td>
+</tr>
+<tr>
+    <td>debugfs_create_file()</td>
+    <td>Creates a Debugfs file.</td>
+</tr>
+<tr>
+    <td>debugfs_create_u32()</td>
+    <td>Creates a file exposing a 32-bit unsigned integer.</td>
+</tr>
+<tr>
+    <td>debugfs_create_u64()</td>
+    <td>Creates a file exposing a 64-bit unsigned integer.</td>
+</tr>
+<tr>
+    <td>debugfs_create_bool()</td>
+    <td>Creates a file exposing a Boolean value.</td>
+</tr>
+<tr>
+    <td>debugfs_create_symlink()</td>
+    <td>Creates a symbolic link in Debugfs.</td>
+</tr>
+<tr>
+    <td>debugfs_remove()</td>
+    <td>Removes a Debugfs entry and its descendants.</td>
+</tr>
+<tr>
+    <td>debugfs_remove_recursive()</td>
+    <td>Removes a Debugfs directory hierarchy recursively.</td>
+</tr>
+</table>
+
+<div class="note">
+    Debugfs APIs and available helper functions can vary
+    across kernel versions. Always check the headers
+    for the target kernel.
+</div>
+</section>
+
+<section class="section">
+<h2>7. Creating a Debugfs Directory</h2>
+
+<p>
+The <code>debugfs_create_dir()</code> function creates
+a directory inside Debugfs.
+</p>
+
+<h3>Function</h3>
+
+<pre><code>struct dentry *debugfs_create_dir(
+    const char *name,
+    struct dentry *parent
+);</code></pre>
+
+<h3>Parameters</h3>
+
+<table>
+<tr>
+    <th>Parameter</th>
+    <th>Description</th>
+</tr>
+<tr>
+    <td>name</td>
+    <td>Name of the directory to create.</td>
+</tr>
+<tr>
+    <td>parent</td>
+    <td>Parent directory entry. NULL means the Debugfs root.</td>
+</tr>
+</table>
+
+<h3>Example</h3>
+
+<pre><code>static struct dentry *debug_dir;
+
+debug_dir = debugfs_create_dir("example_driver", NULL);
+
+if (IS_ERR_OR_NULL(debug_dir)) {
+    pr_err("Unable to create Debugfs directory\n");
+    debug_dir = NULL;
+}</code></pre>
+
+<p>
+If successful, the directory appears at:
+</p>
+
+<pre><code>/sys/kernel/debug/example_driver</code></pre>
+</section>
+
+<section class="section">
+<h2>8. Creating a Debugfs File</h2>
+
+<p>
+The <code>debugfs_create_file()</code> function creates
+a file and associates it with file operations.
+</p>
+
+<h3>Function</h3>
+
+<pre><code>struct dentry *debugfs_create_file(
+    const char *name,
+    umode_t mode,
+    struct dentry *parent,
+    void *data,
+    const struct file_operations *fops
+);</code></pre>
+
+<h3>Parameters</h3>
+
+<table>
+<tr>
+    <th>Parameter</th>
+    <th>Description</th>
+</tr>
+<tr>
+    <td>name</td>
+    <td>Name of the Debugfs file.</td>
+</tr>
+<tr>
+    <td>mode</td>
+    <td>Permission bits for the file.</td>
+</tr>
+<tr>
+    <td>parent</td>
+    <td>Parent Debugfs directory.</td>
+</tr>
+<tr>
+    <td>data</td>
+    <td>Private data passed to file operations through the file's private_data field.</td>
+</tr>
+<tr>
+    <td>fops</td>
+    <td>File operations associated with the entry.</td>
+</tr>
+</table>
+
+<h3>Example</h3>
+
+<pre><code>debugfs_create_file(
+    "status",
+    0444,
+    debug_dir,
+    NULL,
+    &amp;status_fops
+);</code></pre>
+
+<p>
+This creates a read-only Debugfs file named
+<code>status</code> under the example driver directory.
+</p>
+</section>
+
+<section class="section">
+<h2>9. Creating Simple Debugfs Integer Files</h2>
+
+<p>
+Debugfs provides helper functions for exposing simple
+integer values without writing custom file operations.
+</p>
+
+<h3>Example: 32-bit unsigned integer</h3>
+
+<pre><code>static u32 interrupt_count = 0;
+
+debugfs_create_u32(
+    "interrupt_count",
+    0444,
+    debug_dir,
+    &amp;interrupt_count
+);</code></pre>
+
+<p>
+The file can be inspected using:
+</p>
+
+<pre><code>cat /sys/kernel/debug/example_driver/interrupt_count</code></pre>
+
+<h3>Example: Boolean value</h3>
+
+<pre><code>static bool debug_enabled = true;
+
+debugfs_create_bool(
+    "debug_enabled",
+    0644,
+    debug_dir,
+    &amp;debug_enabled
+);</code></pre>
+
+<p>
+This exposes a Boolean debugging setting. Writing to
+such a file can change the value, subject to permissions.
+</p>
+
+<div class="warning">
+    Simple Debugfs helpers do not automatically solve
+    all synchronization or object-lifetime problems.
+    Protect shared state appropriately, especially when
+    interrupt handlers or other concurrent code access it.
+</div>
+</section>
+
+<section class="section">
+<h2>10. Reading and Writing Debugfs Files</h2>
+
+<p>
+Debugfs files can support read and write operations
+through their associated file operations.
+</p>
+
+<h3>Read operation</h3>
+
+<p>
+A user-space application reads a Debugfs file using
+a command such as:
+</p>
+
+<pre><code>cat /sys/kernel/debug/example_driver/status</code></pre>
+
+<p>
+The driver provides the output through its read-related
+file operation.
+</p>
+
+<h3>Write operation</h3>
+
+<p>
+A writable Debugfs file may accept diagnostic controls:
+</p>
+
+<pre><code>echo 1 | sudo tee /sys/kernel/debug/example_driver/debug_enabled</code></pre>
+
+<p>
+The exact accepted values depend on the implementation.
+</p>
+
+<h3>File operation callbacks</h3>
+
+<pre><code>static const struct file_operations debug_fops = {
+    .owner = THIS_MODULE,
+    .open = simple_open,
+    .read = debug_read,
+    .write = debug_write,
+    .llseek = default_llseek,
+};</code></pre>
+
+<p>
+The example illustrates the relationship between
+a Debugfs file and a driver's file operations.
+The actual callback implementation must handle
+user-kernel data transfer, validation and synchronization.
+</p>
+</section>
+
+<section class="section">
+<h2>11. Complete Example: Debugfs Kernel Module</h2>
+
+<p>
+The following example creates a Debugfs directory
+and exposes an interrupt counter as a read-only
+32-bit integer.
+</p>
+
+<h3>Source file: debugfs_example.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/debugfs.h&gt;
+#include &lt;linux/types.h&gt;
+
+static struct dentry *debug_dir;
+static u32 interrupt_count = 25;
+
+static int __init debugfs_example_init(void)
+{
+    debug_dir = debugfs_create_dir("example_driver", NULL);
+
+    if (IS_ERR_OR_NULL(debug_dir)) {
+        pr_err("Debugfs directory creation failed\n");
+        debug_dir = NULL;
+        return -ENOMEM;
+    }
+
+    if (!debugfs_create_u32("interrupt_count",
+                            0444,
+                            debug_dir,
+                            &amp;interrupt_count)) {
+        pr_err("Debugfs file creation failed\n");
+        debugfs_remove_recursive(debug_dir);
+        debug_dir = NULL;
+        return -ENOMEM;
+    }
+
+    pr_info("Debugfs example loaded\n");
+
+    return 0;
+}
+
+static void __exit debugfs_example_exit(void)
+{
+    debugfs_remove_recursive(debug_dir);
+    debug_dir = NULL;
+
+    pr_info("Debugfs example unloaded\n");
+}
+
+module_init(debugfs_example_init);
+module_exit(debugfs_example_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Basic Debugfs Example Module");</code></pre>
+
+<h3>Explanation</h3>
+
+<ol>
+    <li>The module includes the Debugfs header.</li>
+    <li>A directory named example_driver is created.</li>
+    <li>A 32-bit unsigned integer variable is declared.</li>
+    <li>The interrupt_count file exposes that variable.</li>
+    <li>The file is created with read-only permissions.</li>
+    <li>During module removal, the Debugfs hierarchy is removed.</li>
+</ol>
+
+<div class="note">
+    This is a simple learning example. A production
+    driver must also account for concurrent access,
+    object lifetime and any users that may already
+    have opened a Debugfs file when teardown begins.
+</div>
+</section>
+
+<section class="section">
+<h2>12. Makefile</h2>
+
+<p>
+Create a Makefile in the same directory:
+</p>
+
+<pre><code>obj-m += debugfs_example.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	make -C $(KDIR) M=$(PWD) modules
+
+clean:
+	make -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<p>
+The Makefile uses the kernel build system to compile
+the external kernel module.
+</p>
+
+<div class="note">
+    The recipe lines beginning with make must start
+    with a tab character in the actual Makefile.
+</div>
+</section>
+
+<section class="section">
+<h2>13. Compiling and Testing in Ubuntu</h2>
+
+<h3>Step 1: Install build dependencies</h3>
+
+<pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)</code></pre>
+
+<h3>Step 2: Compile the module</h3>
+
+<pre><code>make</code></pre>
+
+<h3>Step 3: Load the module</h3>
+
+<pre><code>sudo insmod debugfs_example.ko</code></pre>
+
+<h3>Step 4: Check kernel messages</h3>
+
+<pre><code>dmesg | tail -n 20</code></pre>
+
+<h3>Step 5: Check Debugfs mount</h3>
+
+<pre><code>findmnt /sys/kernel/debug</code></pre>
+
+<p>
+If Debugfs is not mounted and is supported by the
+kernel, mount it:
+</p>
+
+<pre><code>sudo mount -t debugfs none /sys/kernel/debug</code></pre>
+
+<h3>Step 6: Inspect the directory</h3>
+
+<pre><code>ls -l /sys/kernel/debug/example_driver</code></pre>
+
+<h3>Step 7: Read the counter</h3>
+
+<pre><code>cat /sys/kernel/debug/example_driver/interrupt_count</code></pre>
+
+<h3>Expected output</h3>
+
+<pre><code>25</code></pre>
+
+<h3>Step 8: Remove the module</h3>
+
+<pre><code>sudo rmmod debugfs_example</code></pre>
+
+<h3>Step 9: Verify removal</h3>
+
+<pre><code>ls /sys/kernel/debug/example_driver</code></pre>
+
+<p>
+The directory should no longer exist after successful
+module cleanup.
+</p>
+
+<div class="success">
+    Expected result: The module loads successfully,
+    creates the Debugfs directory and file, exposes
+    the counter value, and removes the Debugfs entries
+    when the module is unloaded.
+</div>
+</section>
+
+<section class="section">
+<h2>14. Debugfs vs Procfs vs Sysfs</h2>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>Procfs</th>
+    <th>Sysfs</th>
+    <th>Debugfs</th>
+</tr>
+<tr>
+    <td>Mount point</td>
+    <td>/proc</td>
+    <td>/sys</td>
+    <td>/sys/kernel/debug</td>
+</tr>
+<tr>
+    <td>Main purpose</td>
+    <td>Process and kernel information</td>
+    <td>Kernel objects and device model</td>
+    <td>Debugging information</td>
+</tr>
+<tr>
+    <td>Device attributes</td>
+    <td>Not its primary purpose</td>
+    <td>Preferred interface</td>
+    <td>Temporary diagnostic use</td>
+</tr>
+<tr>
+    <td>Stable ABI</td>
+    <td>Depends on interface</td>
+    <td>Expected for documented interfaces</td>
+    <td>Not guaranteed</td>
+</tr>
+<tr>
+    <td>Typical use</td>
+    <td>System information</td>
+    <td>Device configuration</td>
+    <td>Internal driver diagnostics</td>
+</tr>
+<tr>
+    <td>Kernel API examples</td>
+    <td>proc_create()</td>
+    <td>DEVICE_ATTR_RO()</td>
+    <td>debugfs_create_file()</td>
+</tr>
+</table>
+
+<h3>Selection rule</h3>
+
+<ul>
+    <li>Use Procfs for its established process and kernel information interfaces.</li>
+    <li>Use Sysfs for structured device-model attributes.</li>
+    <li>Use Debugfs for development-time diagnostic interfaces.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>15. Debugfs Security Considerations</h2>
+
+<p>
+Debugfs can expose internal kernel information.
+Therefore, developers must consider security when
+creating debugging entries.
+</p>
+
+<ul>
+    <li>Do not expose passwords, keys or sensitive information.</li>
+    <li>Use appropriate file permissions.</li>
+    <li>Validate all values received from user space.</li>
+    <li>Do not expose unrestricted hardware controls.</li>
+    <li>Protect shared data with appropriate synchronization.</li>
+    <li>Remove entries during driver teardown.</li>
+    <li>Do not assume Debugfs files are available on every system.</li>
+</ul>
+
+<div class="warning">
+    Debugfs is not intended to provide a stable,
+    documented userspace ABI. Do not build production
+    applications that depend on its internal file
+    names or formats.
+</div>
+</section>
+
+<section class="section">
+<h2>16. Common Debugfs Programming Mistakes</h2>
+
+<table>
+<tr>
+    <th>Mistake</th>
+    <th>Problem</th>
+    <th>Correct Practice</th>
+</tr>
+<tr>
+    <td>Not checking creation results</td>
+    <td>Module may continue with incomplete entries.</td>
+    <td>Check error pointers and NULL results as appropriate.</td>
+</tr>
+<tr>
+    <td>Not removing Debugfs entries</td>
+    <td>Incorrect resource lifecycle.</td>
+    <td>Remove entries during cleanup.</td>
+</tr>
+<tr>
+    <td>Using Debugfs for permanent ABI</td>
+    <td>Applications may break across kernel versions.</td>
+    <td>Use a documented subsystem interface.</td>
+</tr>
+<tr>
+    <td>Ignoring synchronization</td>
+    <td>Concurrent access can corrupt or misreport data.</td>
+    <td>Use suitable locking and atomic operations.</td>
+</tr>
+<tr>
+    <td>Unsafe write operations</td>
+    <td>Invalid values may affect driver behavior.</td>
+    <td>Validate and restrict accepted input.</td>
+</tr>
+<tr>
+    <td>Ignoring open-file lifetime</td>
+    <td>Callbacks may access freed driver data.</td>
+    <td>Manage references and teardown carefully.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>17. Practical Applications of Debugfs</h2>
+
+<h3>Application 1: Interrupt debugging</h3>
+<p>
+Expose the number of interrupts handled by a device driver.
+</p>
+
+<h3>Application 2: Driver state inspection</h3>
+<p>
+Expose whether a driver is initialized, active or
+in an error state.
+</p>
+
+<h3>Application 3: Performance monitoring</h3>
+<p>
+Expose diagnostic counters such as completed requests,
+timeouts or retry counts.
+</p>
+
+<h3>Application 4: Hardware debugging</h3>
+<p>
+During development, expose selected register values
+or hardware status information, with suitable
+access restrictions and hardware safety checks.
+</p>
+
+<h3>Application 5: Driver testing</h3>
+<p>
+Provide temporary controls for testing internal
+driver behavior in a controlled development environment.
+</p>
+</section>
+
+<section class="section">
+<h2>18. Important Interview Questions</h2>
+
+<h3>Q1. What is Debugfs?</h3>
+<p>
+Debugfs is a virtual filesystem used to expose
+kernel and driver debugging information to user space.
+</p>
+
+<h3>Q2. Where is Debugfs mounted?</h3>
+<p>
+It is conventionally mounted at /sys/kernel/debug.
+</p>
+
+<h3>Q3. Which header is used for Debugfs programming?</h3>
+<p>
+The header is linux/debugfs.h.
+</p>
+
+<h3>Q4. What is debugfs_create_dir()?</h3>
+<p>
+It creates a directory inside the Debugfs hierarchy.
+</p>
+
+<h3>Q5. What is debugfs_create_file()?</h3>
+<p>
+It creates a Debugfs file associated with file operations.
+</p>
+
+<h3>Q6. What is debugfs_create_u32()?</h3>
+<p>
+It creates an interface for exposing a 32-bit unsigned
+integer value.
+</p>
+
+<h3>Q7. What is debugfs_remove_recursive()?</h3>
+<p>
+It removes a Debugfs directory hierarchy and its
+descendant entries.
+</p>
+
+<h3>Q8. Is Debugfs suitable for production userspace ABI?</h3>
+<p>
+No. Debugfs does not guarantee a stable userspace ABI.
+</p>
+
+<h3>Q9. What is the difference between Sysfs and Debugfs?</h3>
+<p>
+Sysfs provides structured kernel-object and device
+attributes, whereas Debugfs exposes development-time
+diagnostic information.
+</p>
+
+<h3>Q10. Why must Debugfs entries be removed?</h3>
+<p>
+They must be removed to prevent stale interfaces and
+to maintain correct resource and object lifetimes.
+</p>
+</section>
+
+<section class="section">
+<h2>19. Practice Questions</h2>
+
+<h3>A. Short Answer Questions</h3>
+<ol>
+    <li>Define Debugfs.</li>
+    <li>What is the mount point of Debugfs?</li>
+    <li>Which header file is used for Debugfs?</li>
+    <li>What is debugfs_create_dir()?</li>
+    <li>What is debugfs_create_file()?</li>
+    <li>What is debugfs_create_u32()?</li>
+    <li>What is debugfs_remove_recursive()?</li>
+    <li>Why is Debugfs not considered a stable ABI?</li>
+</ol>
+
+<h3>B. Long Answer Questions</h3>
+<ol>
+    <li>Explain Debugfs architecture and its applications.</li>
+    <li>Explain the important Debugfs APIs.</li>
+    <li>Describe how to create a Debugfs directory and file.</li>
+    <li>Explain how a driver can expose diagnostic counters.</li>
+    <li>Compare Procfs, Sysfs and Debugfs.</li>
+    <li>Discuss Debugfs security and lifecycle considerations.</li>
+</ol>
+
+<h3>C. Practical and Programming Questions</h3>
+<ol>
+    <li>Check whether Debugfs is mounted in Ubuntu.</li>
+    <li>Mount Debugfs manually if it is supported but not mounted.</li>
+    <li>Create a Debugfs directory in a kernel module.</li>
+    <li>Create a read-only integer file using debugfs_create_u32().</li>
+    <li>Read a Debugfs counter from user space.</li>
+    <li>Remove Debugfs entries during module cleanup.</li>
+    <li>Explain how to expose an interrupt counter for debugging.</li>
+    <li>Identify why Debugfs should not be used for a permanent userspace interface.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>20. Chapter 15 Completion</h2>
+
+<p>
+You have now completed all 11 lessons of Chapter 15:
+</p>
+
+<ol>
+    <li>Introduction to Procfs</li>
+    <li>proc Filesystem</li>
+    <li>Creating Procfs Entries</li>
+    <li>Reading and Writing Procfs Entries</li>
+    <li>Introduction to Sysfs</li>
+    <li>sys Filesystem</li>
+    <li>Kernel Objects and Kobjects</li>
+    <li>Creating Sysfs Attributes</li>
+    <li>Device Attributes and Driver Attributes</li>
+    <li>Procfs vs Sysfs</li>
+    <li>Debugfs and Its Applications</li>
+</ol>
+
+<div class="success">
+    <strong>Chapter learning outcome</strong>
+    <p>
+        You should now understand how Linux exposes
+        kernel and device information through Procfs,
+        Sysfs and Debugfs. You should also be able to
+        create basic interfaces, inspect kernel objects,
+        and select the appropriate interface for
+        device-driver development.
+    </p>
+</div>
+</section>
+
+<div class="lesson-nav">
+    <a href="L10_Procfs_vs_Sysfs.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="../ch16_Platform_Device_Drivers/index.html">Next Chapter →</a>
+</div>
+
+</main>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 15 - Procfs, Sysfs and Kernel Interfaces</p>
+</footer>
+
+</body>
+</html>
