@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 6 - Linux Network Device Structure</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 28px;
+}
+
+header p {
+    margin: 8px 0 0;
+}
+
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    border-bottom: 1px solid #dce3ed;
+}
+
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+
+nav a:hover {
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 16px;
+}
+
+.lesson-info {
+    background: #e6f1ff;
+    border-left: 5px solid #2878d7;
+    padding: 15px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9e;
+}
+
+pre {
+    background: #172334;
+    color: #e8f0fa;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+.note {
+    background: #fff7df;
+    border-left: 5px solid #e5a000;
+    padding: 13px 16px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.example {
+    background: #eaf7ee;
+    border-left: 5px solid #269653;
+    padding: 13px 16px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5deea;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f0f5fc;
+    padding: 17px;
+    border-radius: 7px;
+    text-align: center;
+    font-family: Consolas, monospace;
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.8;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 600px) {
+    header h1 {
+        font-size: 22px;
+    }
+
+    nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+
+    section {
+        padding: 16px;
+    }
+
+    table {
+        font-size: 13px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Chapter 18: Block, Network and USB Device Drivers</h1>
+    <p>Lesson 6: Linux Network Device Structure</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter Index</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson:</strong> 06<br>
+    <strong>Topic:</strong> Linux Network Device Structure<br>
+    <strong>Chapter:</strong> Block, Network and USB Device Drivers<br>
+    <strong>Level:</strong> Intermediate to Advanced
+</div>
+
+<section>
+<h2>1. Introduction</h2>
+
+<p>
+Linux network device drivers use a collection of kernel
+data structures to represent network interfaces, manage
+packets and communicate with network hardware.
+</p>
+
+<p>
+These structures provide a standard interface between
+the Linux networking subsystem and hardware-specific
+network drivers.
+</p>
+
+<p>The important structures include:</p>
+
+<ul>
+    <li><code>struct net_device</code></li>
+    <li><code>struct net_device_ops</code></li>
+    <li><code>struct sk_buff</code></li>
+    <li><code>struct napi_struct</code></li>
+    <li><code>struct net_device_stats</code></li>
+    <li><code>struct ethtool_ops</code></li>
+    <li>Network transmit and receive queue structures.</li>
+    <li>Driver-private data structures.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Overall Network Device Structure</h2>
+
+<div class="diagram">
++--------------------------------------+
+|          Linux Network Stack         |
++--------------------------------------+
+                  |
+                  v
++--------------------------------------+
+|            net_device                |
+|                                      |
+| Interface Name                       |
+| MAC Address                          |
+| MTU                                  |
+| Device State                         |
+| TX Queue Information                 |
+| Network Operations                   |
++--------------------------------------+
+                  |
+       +----------+----------+
+       |          |          |
+       v          v          v
++------------+ +----------+ +------------+
+| net_device | |   NAPI   | | Statistics |
+|   _ops     | | Structure| |            |
++------------+ +----------+ +------------+
+       |
+       v
++--------------------------------------+
+|          Network Driver              |
+|                                      |
+| Driver Private Data                  |
+| DMA Descriptors                      |
+| Hardware Registers                   |
+| RX/TX Buffers                        |
++--------------------------------------+
+                  |
+                  v
++--------------------------------------+
+|          Network Controller          |
++--------------------------------------+
+</div>
+</section>
+
+<section>
+<h2>3. struct net_device</h2>
+
+<p>
+The <code>struct net_device</code> structure represents
+a network interface in the Linux kernel.
+</p>
+
+<p>
+For example, an Ethernet interface named
+<code>enp3s0</code> is represented by a net_device instance.
+</p>
+
+<p>Important information associated with this structure includes:</p>
+
+<ul>
+    <li>Network interface name.</li>
+    <li>MAC address.</li>
+    <li>Maximum transmission unit.</li>
+    <li>Interface flags and state.</li>
+    <li>Network device operation callbacks.</li>
+    <li>Transmit queue information.</li>
+    <li>Network device features.</li>
+    <li>Driver-private data association.</li>
+</ul>
+
+<h3>Conceptual Example</h3>
+
+<pre><code>struct net_device
+{
+    /* Interface information */
+    /* Network device operations */
+    /* Transmit queue information */
+    /* Device state and features */
+    /* Driver-private data association */
+};</code></pre>
+
+<div class="note">
+This is a conceptual representation, not the actual
+kernel structure definition. The real structure contains
+many fields and changes between kernel versions.
+</div>
+</section>
+
+<section>
+<h2>4. Allocating a Network Device</h2>
+
+<p>
+A network driver needs a network device structure before
+it can register an interface with the networking subsystem.
+</p>
+
+<p>
+For Ethernet-style devices, a commonly used allocation
+helper is:
+</p>
+
+<pre><code>alloc_etherdev()</code></pre>
+
+<p>
+It allocates and initializes an Ethernet network device
+and provides space for driver-private data.
+</p>
+
+<h3>Conceptual Syntax</h3>
+
+<pre><code>struct net_device *ndev;
+
+ndev = alloc_etherdev(sizeof(struct my_private_data));</code></pre>
+
+<p>
+The size argument specifies the amount of driver-private
+storage associated with the allocated network device.
+</p>
+
+<p>
+The returned pointer refers to the network device.
+The driver can access its private data using supported
+kernel helper functions.
+</p>
+</section>
+
+<section>
+<h2>5. Network Device Private Data</h2>
+
+<p>
+A network driver requires additional information that
+is specific to its hardware.
+</p>
+
+<p>
+Examples include:
+</p>
+
+<ul>
+    <li>Hardware register information.</li>
+    <li>DMA descriptor ring addresses.</li>
+    <li>Transmit and receive buffer information.</li>
+    <li>Interrupt number and state.</li>
+    <li>NAPI structure.</li>
+    <li>Hardware configuration information.</li>
+    <li>Queue management data.</li>
+</ul>
+
+<p>
+This information is commonly stored in a driver-private
+structure.
+</p>
+
+<h3>Example</h3>
+
+<pre><code>struct my_private_data
+{
+    int irq_number;
+
+    /* Hardware-specific state */
+    /* DMA descriptor information */
+    /* TX/RX queue information */
+
+    struct napi_struct napi;
+};</code></pre>
+
+<p>
+The exact members depend on the network controller.
+</p>
+
+<h3>Accessing Private Data</h3>
+
+<pre><code>struct my_private_data *priv;
+
+priv = netdev_priv(ndev);</code></pre>
+
+<p>
+The <code>netdev_priv()</code> helper retrieves the
+driver-private data associated with the network device.
+</p>
+</section>
+
+<section>
+<h2>6. struct net_device_ops</h2>
+
+<p>
+The <code>struct net_device_ops</code> structure contains
+function pointers for network interface operations.
+</p>
+
+<p>
+The driver assigns supported callback functions to this
+structure.
+</p>
+
+<h3>Important Callbacks</h3>
+
+<table>
+<tr>
+    <th>Callback</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>ndo_open</td>
+    <td>Starts the network interface.</td>
+</tr>
+<tr>
+    <td>ndo_stop</td>
+    <td>Stops the network interface.</td>
+</tr>
+<tr>
+    <td>ndo_start_xmit</td>
+    <td>Handles outgoing packets.</td>
+</tr>
+<tr>
+    <td>ndo_get_stats64</td>
+    <td>Reports network statistics.</td>
+</tr>
+<tr>
+    <td>ndo_set_mac_address</td>
+    <td>Changes the MAC address when supported.</td>
+</tr>
+<tr>
+    <td>ndo_change_mtu</td>
+    <td>Handles MTU changes when supported.</td>
+</tr>
+<tr>
+    <td>ndo_set_rx_mode</td>
+    <td>Configures receive filtering mode.</td>
+</tr>
+</table>
+
+<h3>Conceptual Definition</h3>
+
+<pre><code>static const struct net_device_ops my_netdev_ops = {
+    .ndo_open       = my_open,
+    .ndo_stop       = my_stop,
+    .ndo_start_xmit = my_start_xmit,
+};</code></pre>
+
+<p>
+The callback functions must use the correct signatures
+and behavior for the target kernel version.
+</p>
+</section>
+
+<section>
+<h2>7. ndo_open Callback</h2>
+
+<p>
+The <code>ndo_open</code> callback is invoked when the
+network interface is brought up.
+</p>
+
+<p>Typical responsibilities include:</p>
+
+<ul>
+    <li>Initializing the network controller.</li>
+    <li>Allocating or preparing receive buffers.</li>
+    <li>Setting up transmit and receive queues.</li>
+    <li>Configuring interrupts.</li>
+    <li>Enabling NAPI where required.</li>
+    <li>Starting the hardware.</li>
+</ul>
+
+<h3>Conceptual Example</h3>
+
+<pre><code>static int my_open(struct net_device *ndev)
+{
+    /*
+     * Initialize hardware.
+     * Prepare DMA buffers.
+     * Configure interrupts.
+     * Enable receive processing.
+     */
+
+    netif_start_queue(ndev);
+
+    return 0;
+}</code></pre>
+
+<p>
+This is an illustrative skeleton. A real driver must
+initialize the hardware and handle failures correctly.
+</p>
+</section>
+
+<section>
+<h2>8. ndo_stop Callback</h2>
+
+<p>
+The <code>ndo_stop</code> callback is invoked when the
+network interface is stopped.
+</p>
+
+<p>Typical responsibilities include:</p>
+
+<ul>
+    <li>Stopping packet transmission.</li>
+    <li>Disabling hardware reception.</li>
+    <li>Stopping or synchronizing interrupt handling.</li>
+    <li>Disabling NAPI.</li>
+    <li>Stopping hardware queues.</li>
+    <li>Releasing resources that are no longer required.</li>
+</ul>
+
+<h3>Conceptual Example</h3>
+
+<pre><code>static int my_stop(struct net_device *ndev)
+{
+    netif_stop_queue(ndev);
+
+    /*
+     * Stop hardware.
+     * Disable interrupts safely.
+     * Stop NAPI.
+     * Release active resources.
+     */
+
+    return 0;
+}</code></pre>
+</section>
+
+<section>
+<h2>9. ndo_start_xmit Callback</h2>
+
+<p>
+The <code>ndo_start_xmit</code> callback handles packet
+transmission from the networking subsystem to the driver.
+</p>
+
+<p>
+It receives an skb containing the packet to transmit.
+</p>
+
+<h3>Conceptual Function</h3>
+
+<pre><code>static netdev_tx_t my_start_xmit(
+    struct sk_buff *skb,
+    struct net_device *ndev)
+{
+    /*
+     * Obtain driver-private data.
+     * Check TX queue availability.
+     * Map packet data for DMA.
+     * Prepare hardware descriptors.
+     * Notify the network controller.
+     */
+
+    return NETDEV_TX_OK;
+}</code></pre>
+
+<p>
+The return value is important:
+</p>
+
+<table>
+<tr>
+    <th>Return Value</th>
+    <th>Meaning</th>
+</tr>
+<tr>
+    <td>NETDEV_TX_OK</td>
+    <td>The driver accepted the packet.</td>
+</tr>
+<tr>
+    <td>NETDEV_TX_BUSY</td>
+    <td>The driver could not accept the packet at that time.</td>
+</tr>
+</table>
+
+<div class="note">
+The driver must follow the skb ownership rules. Returning
+NETDEV_TX_BUSY means the packet was not accepted and the
+networking subsystem may retry it. A driver must not
+incorrectly free or consume that skb.
+</div>
+</section>
+
+<section>
+<h2>10. struct sk_buff</h2>
+
+<p>
+The <code>struct sk_buff</code> structure represents
+network packet data and metadata.
+</p>
+
+<p>
+It is one of the most important structures in Linux
+networking.
+</p>
+
+<h3>Important Information</h3>
+
+<ul>
+    <li>Packet length.</li>
+    <li>Packet data references.</li>
+    <li>Network protocol information.</li>
+    <li>MAC header position.</li>
+    <li>Network header position.</li>
+    <li>Transport header position.</li>
+    <li>Checksum information.</li>
+    <li>Packet-processing metadata.</li>
+</ul>
+
+<div class="diagram">
++--------------------------------------+
+|              sk_buff                 |
++--------------------------------------+
+| Packet Metadata                      |
++--------------------------------------+
+| MAC Header Reference                 |
++--------------------------------------+
+| Network Header Reference             |
++--------------------------------------+
+| Transport Header Reference           |
++--------------------------------------+
+| Packet Length                        |
++--------------------------------------+
+| Data Buffer References               |
++--------------------------------------+
+</div>
+
+<p>
+An skb may reference linear and non-linear packet data.
+Drivers must use supported skb and DMA APIs rather than
+assuming every packet is stored in one contiguous buffer.
+</p>
+</section>
+
+<section>
+<h2>11. struct napi_struct</h2>
+
+<p>
+The <code>struct napi_struct</code> structure represents
+a NAPI polling context.
+</p>
+
+<p>
+NAPI is used to process received packets efficiently,
+especially under heavy network traffic.
+</p>
+
+<p>
+A driver commonly embeds a NAPI structure in its
+driver-private data.
+</p>
+
+<h3>Conceptual Example</h3>
+
+<pre><code>struct my_private_data
+{
+    struct napi_struct napi;
+
+    /* Other driver-specific members */
+};</code></pre>
+
+<h3>Important NAPI Functions</h3>
+
+<pre><code>netif_napi_add()
+napi_schedule()
+napi_complete_done()
+napi_disable()
+</code></pre>
+
+<p>
+The exact function signatures and helper variants depend
+on the target kernel version.
+</p>
+
+<p>
+The driver supplies a polling callback that processes
+received packets within the specified budget.
+</p>
+</section>
+
+<section>
+<h2>12. Network Statistics</h2>
+
+<p>
+Network statistics provide information about the operation
+of a network interface.
+</p>
+
+<p>Common statistics include:</p>
+
+<ul>
+    <li>Packets received.</li>
+    <li>Packets transmitted.</li>
+    <li>Bytes received.</li>
+    <li>Bytes transmitted.</li>
+    <li>Receive errors.</li>
+    <li>Transmit errors.</li>
+    <li>Dropped packets.</li>
+</ul>
+
+<p>
+Linux provides network statistics interfaces, including
+<code>struct rtnl_link_stats64</code> for 64-bit link
+statistics.
+</p>
+
+<p>
+A driver may report statistics using
+<code>ndo_get_stats64</code> where required by its design.
+</p>
+
+<h3>Conceptual Callback</h3>
+
+<pre><code>static void my_get_stats64(
+    struct net_device *ndev,
+    struct rtnl_link_stats64 *stats)
+{
+    /*
+     * Copy driver-maintained counters into stats.
+     */
+}</code></pre>
+
+<p>
+Actual statistics must be maintained consistently by the
+driver, including appropriate synchronization for concurrent
+access.
+</p>
+</section>
+
+<section>
+<h2>13. struct ethtool_ops</h2>
+
+<p>
+The ethtool interface provides tools for inspecting and
+configuring supported Ethernet device features.
+</p>
+
+<p>
+Drivers can implement supported operations using
+<code>struct ethtool_ops</code>.
+</p>
+
+<p>Possible capabilities include:</p>
+
+<ul>
+    <li>Driver information.</li>
+    <li>Link settings.</li>
+    <li>Link status.</li>
+    <li>Network statistics.</li>
+    <li>Ring parameters.</li>
+    <li>Coalescing settings.</li>
+    <li>Supported offload features.</li>
+</ul>
+
+<h3>Inspect Driver Information</h3>
+
+<pre><code>sudo ethtool -i enp3s0</code></pre>
+
+<h3>Inspect Link Settings</h3>
+
+<pre><code>sudo ethtool enp3s0</code></pre>
+
+<p>
+The available commands and information depend on the
+driver and hardware capabilities.
+</p>
+</section>
+
+<section>
+<h2>14. Network Transmit Queue Structures</h2>
+
+<p>
+Linux network interfaces can have one or more transmit
+queues.
+</p>
+
+<p>
+A transmit queue manages outgoing packet scheduling and
+transmission.
+</p>
+
+<p>
+The networking subsystem provides queue-management
+functions such as:
+</p>
+
+<pre><code>netif_start_queue()
+netif_stop_queue()
+netif_wake_queue()
+
+netif_tx_start_all_queues()
+netif_tx_stop_all_queues()
+netif_tx_wake_all_queues()</code></pre>
+
+<p>
+These helpers allow the driver to control whether the
+networking subsystem should submit more packets for
+transmission.
+</p>
+
+<div class="example">
+<strong>Example:</strong> If a hardware transmit ring becomes
+full, the driver can stop the relevant queue. When transmission
+completes and descriptor space becomes available, the driver
+can wake the queue.
+</div>
+</section>
+
+<section>
+<h2>15. Network Device Features</h2>
+
+<p>
+Network devices may support hardware and software features
+that improve packet processing.
+</p>
+
+<p>
+Linux represents network device feature capabilities using
+the networking feature mechanisms, including
+<code>netdev_features_t</code>.
+</p>
+
+<p>Examples include:</p>
+
+<ul>
+    <li>Checksum offloading.</li>
+    <li>Scatter-gather transmission.</li>
+    <li>TCP segmentation offload.</li>
+    <li>Generic segmentation offload.</li>
+    <li>Receive checksum processing.</li>
+</ul>
+
+<p>
+Drivers must advertise only features that are correctly
+supported by the hardware and implementation.
+</p>
+</section>
+
+<section>
+<h2>16. Network Device Registration</h2>
+
+<p>
+A network driver must register its network device before
+the interface can be managed by the networking subsystem.
+</p>
+
+<h3>Important Functions</h3>
+
+<table>
+<tr>
+    <th>Function</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>alloc_etherdev()</td>
+    <td>Allocates an Ethernet network device and private data area.</td>
+</tr>
+<tr>
+    <td>netdev_priv()</td>
+    <td>Returns the driver-private data area.</td>
+</tr>
+<tr>
+    <td>register_netdev()</td>
+    <td>Registers the network interface.</td>
+</tr>
+<tr>
+    <td>unregister_netdev()</td>
+    <td>Unregisters the network interface.</td>
+</tr>
+<tr>
+    <td>free_netdev()</td>
+    <td>Releases the network device allocation.</td>
+</tr>
+</table>
+
+<h3>Conceptual Registration Sequence</h3>
+
+<pre><code>ndev = alloc_etherdev(sizeof(struct my_private_data));
+
+if (!ndev)
+    return -ENOMEM;
+
+/* Configure the network device. */
+/* Set the device operations. */
+/* Initialize private data. */
+
+ret = register_netdev(ndev);
+
+if (ret) {
+    free_netdev(ndev);
+    return ret;
+}</code></pre>
+
+<p>
+This example demonstrates the basic allocation and
+registration sequence only. A complete driver must also
+handle hardware initialization, resource acquisition,
+error paths and bus-specific cleanup.
+</p>
+</section>
+
+<section>
+<h2>17. Network Device Unregistration</h2>
+
+<p>
+When a network driver is removed, its interface must be
+unregistered before its memory and hardware resources
+are released.
+</p>
+
+<h3>Conceptual Cleanup Sequence</h3>
+
+<pre><code>unregister_netdev(ndev);
+
+/* Release hardware resources. */
+/* Release DMA resources. */
+/* Free driver-specific resources. */
+
+free_netdev(ndev);</code></pre>
+
+<p>
+The driver must ensure that the interface is no longer
+active and that asynchronous operations cannot access
+freed resources.
+</p>
+</section>
+
+<section>
+<h2>18. Driver Structure Relationship</h2>
+
+<p>
+The important structures work together during network
+communication.
+</p>
+
+<div class="diagram">
+             net_device
+                 |
+       +---------+----------+
+       |         |          |
+       v         v          v
+ net_device_ops  TX/RX     Private
+                 Queues     Data
+                              |
+                    +---------+---------+
+                    |         |         |
+                    v         v         v
+                  NAPI      DMA       Hardware
+                 Structure  Rings     State
+
+                  sk_buff
+                     |
+                     v
+              Packet Processing
+</div>
+
+<p>
+The network device represents the interface. The operations
+structure connects the networking subsystem to driver
+callbacks. Private data stores hardware-specific state.
+The skb represents packets, while NAPI and queue structures
+support efficient packet processing.
+</p>
+</section>
+
+<section>
+<h2>19. Practical Network Inspection in Ubuntu</h2>
+
+<p>
+Use these commands to inspect network interfaces and
+their associated information.
+</p>
+
+<h3>List Interfaces</h3>
+
+<pre><code>ip link show</code></pre>
+
+<h3>Display MAC Address</h3>
+
+<pre><code>cat /sys/class/net/enp3s0/address</code></pre>
+
+<h3>Display MTU</h3>
+
+<pre><code>cat /sys/class/net/enp3s0/mtu</code></pre>
+
+<h3>Display Interface State</h3>
+
+<pre><code>cat /sys/class/net/enp3s0/operstate</code></pre>
+
+<h3>Display Driver Information</h3>
+
+<pre><code>sudo ethtool -i enp3s0</code></pre>
+
+<h3>Display Network Statistics</h3>
+
+<pre><code>ip -s link show enp3s0</code></pre>
+
+<h3>Display Network Device Entries</h3>
+
+<pre><code>ls /sys/class/net/</code></pre>
+
+<p>
+Replace <code>enp3s0</code> with your actual interface
+name.
+</p>
+</section>
+
+<section>
+<h2>20. Practical Exercise</h2>
+
+<h3>Objective</h3>
+
+<p>
+Inspect network interface properties and understand
+the relationship between the interface and its driver.
+</p>
+
+<h3>Procedure</h3>
+
+<ol>
+    <li>Open the Ubuntu terminal.</li>
+    <li>Run <code>ip link show</code>.</li>
+    <li>Identify the Ethernet or virtual network interface.</li>
+    <li>Inspect its MAC address.</li>
+    <li>Inspect its MTU.</li>
+    <li>Inspect its operational state.</li>
+    <li>Run <code>ethtool -i</code> if supported.</li>
+    <li>Record the driver name and version if available.</li>
+</ol>
+
+<h3>Expected Result</h3>
+
+<p>
+You should be able to identify the network interface,
+its MAC address, MTU, operational state and available
+driver information.
+</p>
+
+<div class="note">
+VirtualBox exposes a virtual network adapter to Ubuntu.
+The guest's network driver therefore operates on the
+virtual device model rather than directly controlling
+the host's physical Wi-Fi hardware.
+</div>
+</section>
+
+<section>
+<h2>21. Important Points to Remember</h2>
+
+<ul>
+    <li><code>struct net_device</code> represents a network interface.</li>
+    <li><code>netdev_priv()</code> accesses driver-private data.</li>
+    <li><code>struct net_device_ops</code> defines network callbacks.</li>
+    <li><code>ndo_open</code> starts the network interface.</li>
+    <li><code>ndo_stop</code> stops the network interface.</li>
+    <li><code>ndo_start_xmit</code> handles outgoing packets.</li>
+    <li><code>struct sk_buff</code> represents packet data and metadata.</li>
+    <li><code>struct napi_struct</code> supports NAPI polling.</li>
+    <li><code>struct ethtool_ops</code> provides optional ethtool operations.</li>
+    <li>TX queues manage outgoing packet transmission.</li>
+    <li>Network statistics help monitor interface operation.</li>
+    <li>Network registration makes the interface available to the kernel.</li>
+</ul>
+</section>
+
+<section>
+<h2>22. Review Questions</h2>
+
+<ol>
+    <li>What is struct net_device?</li>
+    <li>Why is a network device structure required?</li>
+    <li>What is the purpose of alloc_etherdev()?</li>
+    <li>What is driver-private data?</li>
+    <li>What does netdev_priv() return?</li>
+    <li>What is struct net_device_ops?</li>
+    <li>Explain ndo_open and ndo_stop.</li>
+    <li>What is the purpose of ndo_start_xmit?</li>
+    <li>What is struct sk_buff?</li>
+    <li>What is struct napi_struct?</li>
+    <li>What is the purpose of struct ethtool_ops?</li>
+    <li>How are network statistics reported?</li>
+    <li>What are transmit queues?</li>
+    <li>Why must a network device be registered?</li>
+    <li>What is the purpose of unregister_netdev()?</li>
+    <li>Differentiate net_device and sk_buff.</li>
+</ol>
+</section>
+
+<section>
+<h2>23. Lesson Summary</h2>
+
+<p>
+Linux network device drivers use standard kernel structures
+to represent interfaces, manage packet data and communicate
+with hardware.
+</p>
+
+<p>
+The most important structures are
+<code>struct net_device</code>,
+<code>struct net_device_ops</code>,
+<code>struct sk_buff</code> and
+<code>struct napi_struct</code>.
+</p>
+
+<p>
+Understanding these structures provides the foundation
+for implementing and debugging Linux network drivers.
+</p>
+</section>
+
+<section>
+<h2>Navigation</h2>
+
+<p>
+<strong>Previous Lesson:</strong>
+<a href="L05_Network_Interface_Architecture.html">
+Lesson 5 - Network Interface Architecture
+</a>
+</p>
+
+<p>
+<strong>Next Lesson:</strong>
+<a href="L07_Introduction_to_USB_Device_Drivers.html">
+Lesson 7 - Introduction to USB Device Drivers
+</a>
+</p>
+
+<p>
+<a href="index.html">Back to Chapter 18 Index</a>
+</p>
+</section>
+
+</div>
+
+<footer>
+    <p>Linux Device Drivers | NS Learning Hub</p>
+    <p>Chapter 18 - Lesson 6</p>
+</footer>
+
+</body>
+</html>
