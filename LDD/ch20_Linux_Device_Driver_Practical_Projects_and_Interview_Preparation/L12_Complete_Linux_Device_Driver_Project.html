@@ -1,1 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 12: Complete Linux Device Driver Project</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f7fb;color:#263238;line-height:1.7}
+header{background:linear-gradient(135deg,#123b80,#2878d7);color:white;text-align:center;padding:32px 18px}
+header h1{margin:0;font-size:27px}
+nav{background:white;text-align:center;padding:14px;box-shadow:0 2px 6px #00000012}
+nav a{display:inline-block;margin:5px 12px;color:#174ea6;text-decoration:none;font-weight:bold}
+.container{max-width:1050px;margin:25px auto;padding:0 16px}
+.info{background:#e8f1ff;border-left:5px solid #2878d7;padding:15px 20px;border-radius:6px;margin-bottom:22px}
+section{background:white;padding:22px 25px;margin-bottom:20px;border-radius:9px;box-shadow:0 2px 8px #0000000b}
+h2{color:#174ea6;border-bottom:2px solid #e5edf8;padding-bottom:8px}
+h3{color:#245b9e}
+pre{background:#172334;color:#e8f1ff;padding:16px;border-radius:7px;overflow-x:auto;line-height:1.5}
+code{font-family:Consolas,monospace}
+.note{background:#fff6df;border-left:4px solid #e0a000;padding:12px 15px;margin:15px 0}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{border:1px solid #dce3ed;padding:10px;text-align:left}
+th{background:#eaf1fb}
+footer{text-align:center;padding:22px;color:#64748b}
+@media(max-width:600px){header h1{font-size:22px}section{padding:17px}table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 20: Linux Device Driver Practical Projects and Interview Preparation</h1>
+<p>Lesson 12: Complete Linux Device Driver Project</p>
+</header>
+
+<nav>
+<a href="../../index.html">Home</a>
+<a href="../ldd.html">Linux Device Drivers</a>
+<a href="index.html">Chapter 20</a>
+<a href="L11_Interrupt_Based_Character_Driver_Project.html">Previous Lesson</a>
+</nav>
+
+<div class="container">
+
+<div class="info">
+<strong>Lesson:</strong> L12 – Complete Linux Device Driver Project<br>
+<strong>Level:</strong> Advanced Practical<br>
+<strong>Project:</strong> Memory-Based Character Device Driver<br>
+<strong>Environment:</strong> Ubuntu Linux
+</div>
+
+<section>
+<h2>1. Project Introduction</h2>
+<p>In this lesson, we will develop a complete Linux character device driver and a user-space application to communicate with it.</p>
+
+<p>The driver will provide the following functionality:</p>
+<ul>
+<li>Register a character device dynamically.</li>
+<li>Create a device class and device node.</li>
+<li>Implement open(), read(), write() and release().</li>
+<li>Implement IOCTL commands.</li>
+<li>Use kernel memory allocation.</li>
+<li>Protect shared data using a mutex.</li>
+<li>Transfer data safely between kernel space and user space.</li>
+<li>Build a C application to test all driver operations.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. Project Architecture</h2>
+<pre><code>              User Application
+                 (test_driver)
+                       |
+                       |
+              System Call Interface
+                       |
+                       v
+                Character Device
+                 /dev/my_device
+                       |
+                       v
+               File Operations
+             open / read / write
+                  ioctl / release
+                       |
+                       v
+                Linux Kernel
+                       |
+              +--------+--------+
+              |                 |
+              v                 v
+          Device Buffer       IOCTL
+              |
+              v
+          Mutex Lock
+              |
+              v
+         Kernel Memory</code></pre>
+</section>
+
+<section>
+<h2>3. Project Directory Structure</h2>
+<pre><code>complete_driver_project/
+|
+|-- complete_driver.c
+|-- my_driver_ioctl.h
+|-- test_driver.c
+|-- Makefile</code></pre>
+
+<p>Create the project directory:</p>
+<pre><code>mkdir -p ~/Linux_Driver_Projects/complete_driver_project
+cd ~/Linux_Driver_Projects/complete_driver_project</code></pre>
+</section>
+
+<section>
+<h2>4. Define IOCTL Commands</h2>
+<p>IOCTL allows a user-space application to perform device-specific control operations.</p>
+
+<p>Create the shared header file:</p>
+<pre><code>nano my_driver_ioctl.h</code></pre>
+
+<h3>File: my_driver_ioctl.h</h3>
+<pre><code>#ifndef MY_DRIVER_IOCTL_H
+#define MY_DRIVER_IOCTL_H
+
+#include &lt;linux/ioctl.h&gt;
+
+#define MY_MAGIC 'M'
+
+#define MY_IOCTL_CLEAR \
+    _IO(MY_MAGIC, 1)
+
+#define MY_IOCTL_GET_SIZE \
+    _IOR(MY_MAGIC, 2, int)
+
+#define MY_IOCTL_SET_VALUE \
+    _IOW(MY_MAGIC, 3, int)
+
+#define MY_IOCTL_GET_VALUE \
+    _IOR(MY_MAGIC, 4, int)
+
+#endif</code></pre>
+
+<p>Command meanings:</p>
+<table>
+<tr><th>Command</th><th>Purpose</th></tr>
+<tr><td>MY_IOCTL_CLEAR</td><td>Clear the device buffer.</td></tr>
+<tr><td>MY_IOCTL_GET_SIZE</td><td>Get the current buffer length.</td></tr>
+<tr><td>MY_IOCTL_SET_VALUE</td><td>Set an integer value.</td></tr>
+<tr><td>MY_IOCTL_GET_VALUE</td><td>Read the stored integer value.</td></tr>
+</table>
+
+<div class="note">
+The header is shared between kernel and user space. In a production project, use fixed-width UAPI types such as __u32 and __s32 for data structures and carefully design ABI-compatible IOCTL interfaces.
+</div>
+</section>
+
+<section>
+<h2>5. Complete Character Device Driver</h2>
+<p>Create the kernel source file:</p>
+<pre><code>nano complete_driver.c</code></pre>
+
+<h3>File: complete_driver.c</h3>
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/cdev.h&gt;
+#include &lt;linux/device.h&gt;
+#include &lt;linux/slab.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &lt;linux/mutex.h&gt;
+#include &lt;linux/string.h&gt;
+
+#include "my_driver_ioctl.h"
+
+#define DEVICE_NAME "my_device"
+#define CLASS_NAME  "my_device_class"
+#define BUFFER_SIZE 1024
+
+static dev_t dev_number;
+static struct cdev my_cdev;
+static struct class *my_class;
+static struct device *my_device;
+
+static char *device_buffer;
+static size_t buffer_length;
+
+static int stored_value;
+
+static DEFINE_MUTEX(device_mutex);
+
+/* Open callback */
+static int my_open(struct inode *inode,
+                   struct file *file)
+{
+    pr_info("my_device: opened\n");
+    return 0;
+}
+
+/* Read callback */
+static ssize_t my_read(struct file *file,
+                       char __user *user_buffer,
+                       size_t count,
+                       loff_t *offset)
+{
+    size_t available;
+    size_t bytes_to_copy;
+    ssize_t ret;
+
+    if (mutex_lock_interruptible(&amp;device_mutex))
+        return -ERESTARTSYS;
+
+    if (*offset &gt;= buffer_length) {
+        ret = 0;
+        goto out;
+    }
+
+    available = buffer_length - *offset;
+
+    bytes_to_copy = min(count, available);
+
+    if (copy_to_user(
+            user_buffer,
+            device_buffer + *offset,
+            bytes_to_copy)) {
+        ret = -EFAULT;
+        goto out;
+    }
+
+    *offset += bytes_to_copy;
+    ret = bytes_to_copy;
+
+out:
+    mutex_unlock(&amp;device_mutex);
+    return ret;
+}
+
+/* Write callback */
+static ssize_t my_write(struct file *file,
+                        const char __user *user_buffer,
+                        size_t count,
+                        loff_t *offset)
+{
+    size_t bytes_to_copy;
+    ssize_t ret;
+
+    if (mutex_lock_interruptible(&amp;device_mutex))
+        return -ERESTARTSYS;
+
+    bytes_to_copy = min(count, (size_t)BUFFER_SIZE);
+
+    if (copy_from_user(
+            device_buffer,
+            user_buffer,
+            bytes_to_copy)) {
+        ret = -EFAULT;
+        goto out;
+    }
+
+    buffer_length = bytes_to_copy;
+
+    *offset = bytes_to_copy;
+
+    ret = bytes_to_copy;
+
+    pr_info("my_device: received %zu bytes\n",
+            bytes_to_copy);
+
+out:
+    mutex_unlock(&amp;device_mutex);
+    return ret;
+}
+
+/* IOCTL callback */
+static long my_ioctl(struct file *file,
+                     unsigned int cmd,
+                     unsigned long arg)
+{
+    int value;
+    int ret = 0;
+
+    switch (cmd) {
+
+    case MY_IOCTL_CLEAR:
+
+        if (mutex_lock_interruptible(&amp;device_mutex))
+            return -ERESTARTSYS;
+
+        memset(device_buffer, 0, BUFFER_SIZE);
+        buffer_length = 0;
+
+        mutex_unlock(&amp;device_mutex);
+
+        pr_info("my_device: buffer cleared\n");
+        break;
+
+    case MY_IOCTL_GET_SIZE:
+
+        if (mutex_lock_interruptible(&amp;device_mutex))
+            return -ERESTARTSYS;
+
+        value = (int)buffer_length;
+
+        mutex_unlock(&amp;device_mutex);
+
+        if (copy_to_user(
+                (int __user *)arg,
+                &amp;value,
+                sizeof(value)))
+            ret = -EFAULT;
+
+        break;
+
+    case MY_IOCTL_SET_VALUE:
+
+        if (copy_from_user(
+                &amp;value,
+                (int __user *)arg,
+                sizeof(value)))
+            return -EFAULT;
+
+        if (mutex_lock_interruptible(&amp;device_mutex))
+            return -ERESTARTSYS;
+
+        stored_value = value;
+
+        mutex_unlock(&amp;device_mutex);
+
+        pr_info("my_device: value set to %d\n",
+                value);
+        break;
+
+    case MY_IOCTL_GET_VALUE:
+
+        if (mutex_lock_interruptible(&amp;device_mutex))
+            return -ERESTARTSYS;
+
+        value = stored_value;
+
+        mutex_unlock(&amp;device_mutex);
+
+        if (copy_to_user(
+                (int __user *)arg,
+                &amp;value,
+                sizeof(value)))
+            ret = -EFAULT;
+
+        break;
+
+    default:
+        ret = -ENOTTY;
+        break;
+    }
+
+    return ret;
+}
+
+/* Release callback */
+static int my_release(struct inode *inode,
+                      struct file *file)
+{
+    pr_info("my_device: closed\n");
+    return 0;
+}
+
+/* File operations */
+static const struct file_operations my_fops = {
+    .owner = THIS_MODULE,
+    .open = my_open,
+    .read = my_read,
+    .write = my_write,
+    .unlocked_ioctl = my_ioctl,
+    .release = my_release,
+};
+
+/* Module initialization */
+static int __init my_driver_init(void)
+{
+    int ret;
+
+    device_buffer = kzalloc(
+        BUFFER_SIZE,
+        GFP_KERNEL
+    );
+
+    if (!device_buffer)
+        return -ENOMEM;
+
+    ret = alloc_chrdev_region(
+        &amp;dev_number,
+        0,
+        1,
+        DEVICE_NAME
+    );
+
+    if (ret)
+        goto free_buffer;
+
+    cdev_init(&amp;my_cdev, &amp;my_fops);
+    my_cdev.owner = THIS_MODULE;
+
+    ret = cdev_add(
+        &amp;my_cdev,
+        dev_number,
+        1
+    );
+
+    if (ret)
+        goto unregister_region;
+
+    my_class = class_create(CLASS_NAME);
+
+    if (IS_ERR(my_class)) {
+        ret = PTR_ERR(my_class);
+        goto delete_cdev;
+    }
+
+    my_device = device_create(
+        my_class,
+        NULL,
+        dev_number,
+        NULL,
+        DEVICE_NAME
+    );
+
+    if (IS_ERR(my_device)) {
+        ret = PTR_ERR(my_device);
+        goto destroy_class;
+    }
+
+    pr_info("my_device: driver initialized\n");
+    pr_info("Major: %d Minor: %d\n",
+            MAJOR(dev_number),
+            MINOR(dev_number));
+
+    return 0;
+
+destroy_class:
+    class_destroy(my_class);
+
+delete_cdev:
+    cdev_del(&amp;my_cdev);
+
+unregister_region:
+    unregister_chrdev_region(dev_number, 1);
+
+free_buffer:
+    kfree(device_buffer);
+
+    return ret;
+}
+
+/* Module cleanup */
+static void __exit my_driver_exit(void)
+{
+    device_destroy(my_class, dev_number);
+    class_destroy(my_class);
+
+    cdev_del(&amp;my_cdev);
+
+    unregister_chrdev_region(
+        dev_number,
+        1
+    );
+
+    kfree(device_buffer);
+
+    pr_info("my_device: driver removed\n");
+}
+
+module_init(my_driver_init);
+module_exit(my_driver_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("NS Learning Hub");
+MODULE_DESCRIPTION("Complete Linux Character Device Driver");
+MODULE_VERSION("1.0");</code></pre>
+
+<div class="note">
+<strong>Kernel compatibility:</strong> This example uses the modern <code>class_create("name")</code> API. Older kernels may use a different signature. Compile against the exact target kernel headers.
+</div>
+</section>
+
+<section>
+<h2>6. Explanation of Driver Functions</h2>
+
+<h3>6.1 Dynamic Device Number Allocation</h3>
+<pre><code>alloc_chrdev_region(
+    &amp;dev_number,
+    0,
+    1,
+    DEVICE_NAME
+);</code></pre>
+<p>Allocates a major and minor device number dynamically.</p>
+
+<h3>6.2 Character Device Registration</h3>
+<pre><code>cdev_init(&amp;my_cdev, &amp;my_fops);
+cdev_add(&amp;my_cdev, dev_number, 1);</code></pre>
+<p>Initializes the character device and makes it available to the kernel's character-device subsystem.</p>
+
+<h3>6.3 Kernel Memory Allocation</h3>
+<pre><code>device_buffer = kzalloc(
+    BUFFER_SIZE,
+    GFP_KERNEL
+);</code></pre>
+<p>Allocates a zero-initialized kernel buffer.</p>
+
+<h3>6.4 User-to-Kernel Data Transfer</h3>
+<pre><code>copy_from_user(
+    device_buffer,
+    user_buffer,
+    bytes_to_copy
+);</code></pre>
+<p>Copies data from a user-space buffer into kernel memory.</p>
+
+<h3>6.5 Kernel-to-User Data Transfer</h3>
+<pre><code>copy_to_user(
+    user_buffer,
+    device_buffer,
+    bytes_to_copy
+);</code></pre>
+<p>Copies data from kernel memory to a user-space buffer.</p>
+
+<h3>6.6 Mutex Synchronization</h3>
+<pre><code>mutex_lock_interruptible(&amp;device_mutex);
+mutex_unlock(&amp;device_mutex);</code></pre>
+<p>Protects shared device state against concurrent access.</p>
+</section>
+
+<section>
+<h2>7. Create the Makefile</h2>
+<pre><code>nano Makefile</code></pre>
+
+<h3>File: Makefile</h3>
+<pre><code>obj-m += complete_driver.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+<p>Use a real tab character before each command under the targets.</p>
+</section>
+
+<section>
+<h2>8. Compile the Kernel Module</h2>
+<pre><code>make
+
+modinfo complete_driver.ko</code></pre>
+
+<p>Check that the generated kernel module exists:</p>
+<pre><code>ls -l complete_driver.ko</code></pre>
+</section>
+
+<section>
+<h2>9. Load the Driver</h2>
+<pre><code>sudo insmod complete_driver.ko
+
+ls -l /dev/my_device
+
+sudo dmesg | tail -30</code></pre>
+
+<p>The device node should be created by the device model and userspace device manager.</p>
+</section>
+
+<section>
+<h2>10. User-Space Test Application</h2>
+<p>Create a C application:</p>
+<pre><code>nano test_driver.c</code></pre>
+
+<h3>File: test_driver.c</h3>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/ioctl.h&gt;
+#include &lt;errno.h&gt;
+
+#include "my_driver_ioctl.h"
+
+int main(void)
+{
+    int fd;
+    int value;
+    int size;
+    char write_data[] = "Linux Device Driver Project";
+    char read_data[128];
+    ssize_t bytes;
+
+    fd = open("/dev/my_device", O_RDWR);
+
+    if (fd &lt; 0) {
+        perror("open");
+        return 1;
+    }
+
+    printf("Device opened successfully\n");
+
+    /* Write data */
+    bytes = write(
+        fd,
+        write_data,
+        strlen(write_data)
+    );
+
+    if (bytes &lt; 0) {
+        perror("write");
+        goto error;
+    }
+
+    printf("Written: %s\n", write_data);
+
+    /* Reset the file position before reading */
+    if (lseek(fd, 0, SEEK_SET) &lt; 0) {
+        perror("lseek");
+        goto error;
+    }
+
+    /* Read data */
+    bytes = read(
+        fd,
+        read_data,
+        sizeof(read_data) - 1
+    );
+
+    if (bytes &lt; 0) {
+        perror("read");
+        goto error;
+    }
+
+    read_data[bytes] = '\0';
+
+    printf("Read: %s\n", read_data);
+
+    /* Get buffer size */
+    if (ioctl(fd, MY_IOCTL_GET_SIZE, &amp;size) &lt; 0) {
+        perror("GET_SIZE");
+        goto error;
+    }
+
+    printf("Buffer size: %d\n", size);
+
+    /* Set an integer value */
+    value = 100;
+
+    if (ioctl(fd, MY_IOCTL_SET_VALUE, &amp;value) &lt; 0) {
+        perror("SET_VALUE");
+        goto error;
+    }
+
+    printf("Stored value: %d\n", value);
+
+    /* Read the stored integer value */
+    value = 0;
+
+    if (ioctl(fd, MY_IOCTL_GET_VALUE, &amp;value) &lt; 0) {
+        perror("GET_VALUE");
+        goto error;
+    }
+
+    printf("Retrieved value: %d\n", value);
+
+    /* Clear the device buffer */
+    if (ioctl(fd, MY_IOCTL_CLEAR) &lt; 0) {
+        perror("CLEAR");
+        goto error;
+    }
+
+    printf("Device buffer cleared\n");
+
+    close(fd);
+
+    printf("Device closed\n");
+
+    return 0;
+
+error:
+    close(fd);
+    return 1;
+}</code></pre>
+
+<div class="note">
+The <code>MY_IOCTL_CLEAR</code> command uses <code>_IO</code>, so it does not require a third argument. The other IOCTL commands pass a pointer to an integer.
+</div>
+</section>
+
+<section>
+<h2>11. Compile the User Application</h2>
+<pre><code>gcc -Wall -Wextra test_driver.c -o test_driver</code></pre>
+</section>
+
+<section>
+<h2>12. Run the Complete Project</h2>
+<pre><code>sudo ./test_driver</code></pre>
+
+<h3>Expected Output</h3>
+<pre><code>Device opened successfully
+Written: Linux Device Driver Project
+Read: Linux Device Driver Project
+Buffer size: 28
+Stored value: 100
+Retrieved value: 100
+Device buffer cleared
+Device closed</code></pre>
+
+<p>The output demonstrates the character driver's read, write and IOCTL operations.</p>
+</section>
+
+<section>
+<h2>13. Verify Kernel Logs</h2>
+<pre><code>sudo dmesg | tail -30</code></pre>
+
+<p>Example messages:</p>
+<pre><code>my_device: driver initialized
+Major: 240 Minor: 0
+my_device: opened
+my_device: received 28 bytes
+my_device: value set to 100
+my_device: buffer cleared
+my_device: closed</code></pre>
+
+<p>The major number shown is illustrative; the kernel assigns it dynamically.</p>
+</section>
+
+<section>
+<h2>14. Remove the Kernel Module</h2>
+<pre><code>sudo rmmod complete_driver
+
+ls /dev/my_device
+
+sudo dmesg | tail -20</code></pre>
+
+<p>The device node should disappear when the device is removed.</p>
+
+<p>Clean the build directory:</p>
+<pre><code>make clean</code></pre>
+</section>
+
+<section>
+<h2>15. Driver Development Workflow</h2>
+<ol>
+<li>Identify the hardware or device requirement.</li>
+<li>Select the appropriate Linux driver subsystem.</li>
+<li>Design the character-device or subsystem interface.</li>
+<li>Allocate and register device resources.</li>
+<li>Implement file operations and device callbacks.</li>
+<li>Handle memory allocation and synchronization.</li>
+<li>Compile against the target kernel headers.</li>
+<li>Load and test the kernel module.</li>
+<li>Validate error handling and concurrent access.</li>
+<li>Perform cleanup and reliability testing.</li>
+</ol>
+</section>
+
+<section>
+<h2>16. Important Design Considerations</h2>
+<ul>
+<li>Validate all user-provided inputs.</li>
+<li>Never directly dereference user-space pointers.</li>
+<li>Use suitable synchronization for shared state.</li>
+<li>Check every allocation and registration return value.</li>
+<li>Release resources in reverse order of acquisition.</li>
+<li>Do not sleep while holding a spinlock or inside hard IRQ context.</li>
+<li>Consider concurrent readers and writers.</li>
+<li>Design IOCTL interfaces with long-term ABI compatibility in mind.</li>
+</ul>
+
+<div class="note">
+<strong>Production limitation:</strong> This is an educational memory-backed driver. It demonstrates the main character-device mechanisms but is not a production hardware driver. A production implementation should define the intended multi-process semantics, handle partial transfers and file-position rules carefully, consider 32-bit compatibility where needed, and test concurrent access and device removal.
+</div>
+</section>
+
+<section>
+<h2>17. Common Errors and Troubleshooting</h2>
+<table>
+<tr><th>Error</th><th>Possible Cause</th><th>Solution</th></tr>
+<tr><td>Unknown symbol</td><td>Kernel API or dependency mismatch</td><td>Check kernel headers and module dependencies.</td></tr>
+<tr><td>Invalid module format</td><td>Module built for another kernel</td><td>Build against the running kernel.</td></tr>
+<tr><td>Permission denied</td><td>Device-node permissions</td><td>Check ownership and permissions.</td></tr>
+<tr><td>Device not found</td><td>Module not loaded or creation failed</td><td>Check insmod output and kernel logs.</td></tr>
+<tr><td>Bad address</td><td>Invalid user buffer</td><td>Check copy_to_user() and copy_from_user() handling.</td></tr>
+<tr><td>IOCTL not supported</td><td>Incorrect command number or handler</td><td>Verify shared header and IOCTL definitions.</td></tr>
+<tr><td>Kernel warning</td><td>Incorrect locking or resource handling</td><td>Inspect logs and validate all cleanup paths.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>18. Practical Exercises</h2>
+<ol>
+<li>Increase the buffer size to 4096 bytes.</li>
+<li>Implement append mode instead of overwriting the buffer.</li>
+<li>Add an IOCTL command to reset the stored integer.</li>
+<li>Add a device status query.</li>
+<li>Test multiple user-space processes accessing the device.</li>
+<li>Implement non-blocking access.</li>
+<li>Implement poll() support.</li>
+<li>Add robust handling for partial read and write operations.</li>
+<li>Study the Linux miscdevice framework and compare it with manual cdev registration.</li>
+</ol>
+</section>
+
+<section>
+<h2>19. Interview Questions</h2>
+<ol>
+<li>What is a Linux character device driver?</li>
+<li>What is the difference between major and minor numbers?</li>
+<li>What does alloc_chrdev_region() do?</li>
+<li>What is the purpose of cdev_init()?</li>
+<li>What does cdev_add() do?</li>
+<li>What is struct file_operations?</li>
+<li>What is the purpose of copy_to_user()?</li>
+<li>What is the purpose of copy_from_user()?</li>
+<li>What is IOCTL?</li>
+<li>What is the difference between _IO, _IOR, _IOW and _IOWR?</li>
+<li>Why is mutex synchronization required?</li>
+<li>What is the difference between kzalloc() and kmalloc()?</li>
+<li>What is the purpose of class_create()?</li>
+<li>What happens during module cleanup?</li>
+<li>How would you debug a character driver that does not create its device node?</li>
+</ol>
+</section>
+
+<section>
+<h2>20. Lesson Summary</h2>
+<ul>
+<li>Built a complete memory-backed Linux character driver.</li>
+<li>Registered a dynamic device number.</li>
+<li>Implemented open, read, write and release operations.</li>
+<li>Implemented IOCTL-based device control.</li>
+<li>Used kernel memory allocation and mutex synchronization.</li>
+<li>Developed a user-space C application.</li>
+<li>Tested the driver using Ubuntu Linux.</li>
+<li>Reviewed debugging, error handling and cleanup.</li>
+</ul>
+</section>
+
+<div class="info">
+<strong>Next Lesson:</strong> Lesson 13 – Linux Device Driver Programming Exercises
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | Linux Device Drivers Course</p>
+</footer>
+
+</body>
+</html>
