@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 2 - Block Device Architecture</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #263238;
+    line-height: 1.7;
+}
+
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 30px 15px;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 28px;
+}
+
+header p {
+    margin: 8px 0 0;
+}
+
+nav {
+    background: #fff;
+    padding: 13px;
+    text-align: center;
+    border-bottom: 1px solid #dce3ed;
+}
+
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+
+nav a:hover {
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1050px;
+    margin: 25px auto;
+    padding: 0 16px;
+}
+
+.lesson-info {
+    background: #e6f1ff;
+    border-left: 5px solid #2878d7;
+    padding: 15px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+
+section {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 9px;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.06);
+}
+
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+
+h3 {
+    color: #245b9e;
+}
+
+pre {
+    background: #172334;
+    color: #e8f0fa;
+    padding: 16px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+}
+
+code {
+    font-family: Consolas, monospace;
+}
+
+.note {
+    background: #fff7df;
+    border-left: 5px solid #e5a000;
+    padding: 13px 16px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+.example {
+    background: #eaf7ee;
+    border-left: 5px solid #269653;
+    padding: 13px 16px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+th, td {
+    border: 1px solid #d5deea;
+    padding: 11px;
+    text-align: left;
+}
+
+th {
+    background: #e8f0fc;
+    color: #174ea6;
+}
+
+.diagram {
+    background: #f0f5fc;
+    padding: 17px;
+    border-radius: 7px;
+    text-align: center;
+    font-family: Consolas, monospace;
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.8;
+}
+
+footer {
+    text-align: center;
+    padding: 22px;
+    background: #123b80;
+    color: white;
+    margin-top: 30px;
+}
+
+@media (max-width: 600px) {
+    header h1 {
+        font-size: 22px;
+    }
+
+    nav a {
+        display: inline-block;
+        margin: 5px 8px;
+    }
+
+    section {
+        padding: 16px;
+    }
+
+    table {
+        font-size: 13px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Chapter 18: Block, Network and USB Device Drivers</h1>
+    <p>Lesson 2: Block Device Architecture</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter Index</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson:</strong> 02<br>
+    <strong>Topic:</strong> Block Device Architecture<br>
+    <strong>Chapter:</strong> Block, Network and USB Device Drivers<br>
+    <strong>Level:</strong> Intermediate to Advanced
+</div>
+
+<section>
+<h2>1. Introduction</h2>
+
+<p>
+The Linux block device architecture is the kernel framework
+responsible for managing storage devices and transferring data
+between the operating system and storage hardware.
+</p>
+
+<p>
+It provides a common interface for different types of storage
+devices, including hard disks, SSDs, NVMe devices, USB storage
+and virtual disks.
+</p>
+
+<p>
+Without this common architecture, every filesystem would need
+to understand the specific communication protocol of every
+storage controller.
+</p>
+
+<div class="example">
+<strong>Example:</strong> An ext4 filesystem does not need to know
+whether its data is stored on a SATA HDD, NVMe SSD or virtual disk.
+It communicates with the block layer, which handles the storage
+request through the appropriate driver.
+</div>
+</section>
+
+<section>
+<h2>2. Main Components of Block Device Architecture</h2>
+
+<p>The main components are:</p>
+
+<ul>
+    <li>Application and system-call interface</li>
+    <li>Virtual File System (VFS)</li>
+    <li>Filesystem layer</li>
+    <li>Page cache</li>
+    <li>Block I/O subsystem</li>
+    <li>BIO structures</li>
+    <li>Request structures</li>
+    <li>blk-mq multi-queue framework</li>
+    <li>Block device driver</li>
+    <li>Storage controller and hardware</li>
+</ul>
+
+<div class="diagram">
++------------------------------------+
+|          User Application          |
++------------------------------------+
+                  |
+                  v
++------------------------------------+
+|        System Call Interface       |
++------------------------------------+
+                  |
+                  v
++------------------------------------+
+|      VFS and Filesystem Layer      |
++------------------------------------+
+                  |
+                  v
++------------------------------------+
+|             Page Cache             |
++------------------------------------+
+                  |
+                  v
++------------------------------------+
+|          Block I/O Layer           |
++------------------------------------+
+                  |
+                  v
++------------------------------------+
+|          BIO Structures            |
++------------------------------------+
+                  |
+                  v
++------------------------------------+
+|        Request Management          |
++------------------------------------+
+                  |
+                  v
++------------------------------------+
+|            blk-mq Layer            |
++------------------------------------+
+                  |
+                  v
++------------------------------------+
+|        Block Device Driver         |
++------------------------------------+
+                  |
+                  v
++------------------------------------+
+|       Storage Controller           |
++------------------------------------+
+                  |
+                  v
++------------------------------------+
+|          Storage Device            |
++------------------------------------+
+</div>
+</section>
+
+<section>
+<h2>3. Application and System Call Interface</h2>
+
+<p>
+Applications access files and storage through system calls.
+Common operations include:
+</p>
+
+<table>
+<tr>
+    <th>System Call</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td>open()</td>
+    <td>Opens a file or device.</td>
+</tr>
+<tr>
+    <td>read()</td>
+    <td>Reads data.</td>
+</tr>
+<tr>
+    <td>write()</td>
+    <td>Writes data.</td>
+</tr>
+<tr>
+    <td>lseek()</td>
+    <td>Changes the file offset where supported.</td>
+</tr>
+<tr>
+    <td>fsync()</td>
+    <td>Requests synchronization of modified file data.</td>
+</tr>
+<tr>
+    <td>close()</td>
+    <td>Closes an open file descriptor.</td>
+</tr>
+</table>
+
+<p>
+When an application accesses a regular file, these operations
+normally pass through the VFS and the relevant filesystem.
+The filesystem determines which storage blocks are needed.
+</p>
+
+<p>
+Direct access to a block-device node follows a different path
+from ordinary file access, but it still uses the block-device
+framework.
+</p>
+</section>
+
+<section>
+<h2>4. Virtual File System (VFS)</h2>
+
+<p>
+The Virtual File System provides a common interface between
+user applications and different filesystem implementations.
+</p>
+
+<p>
+Linux supports several filesystems, including:
+</p>
+
+<ul>
+    <li>ext4</li>
+    <li>XFS</li>
+    <li>Btrfs</li>
+    <li>FAT</li>
+    <li>NTFS implementations</li>
+</ul>
+
+<p>
+VFS allows applications to use common operations such as
+open(), read(), write() and close() without knowing the
+internal implementation of each filesystem.
+</p>
+
+<div class="diagram">
+Application
+     |
+     v
+    VFS
+     |
+     +----------+----------+
+     |          |          |
+     v          v          v
+   ext4        XFS       Btrfs
+     |          |          |
+     +----------+----------+
+                |
+                v
+           Block Layer
+</div>
+</section>
+
+<section>
+<h2>5. Filesystem Layer</h2>
+
+<p>
+The filesystem layer organizes storage into files, directories,
+metadata and allocation structures.
+</p>
+
+<p>Its responsibilities include:</p>
+
+<ul>
+    <li>Managing files and directories.</li>
+    <li>Maintaining file metadata.</li>
+    <li>Mapping file offsets to storage blocks.</li>
+    <li>Managing free and allocated storage space.</li>
+    <li>Requesting storage reads and writes.</li>
+</ul>
+
+<p>
+For example, when an application reads a file using ext4,
+the filesystem determines which storage blocks contain the
+requested file data.
+</p>
+</section>
+
+<section>
+<h2>6. Page Cache</h2>
+
+<p>
+The page cache stores file data in system memory to reduce
+unnecessary storage-device access.
+</p>
+
+<h3>Read Operation</h3>
+
+<ol>
+    <li>The application requests file data.</li>
+    <li>The kernel checks whether the data is cached.</li>
+    <li>If cached, data can be returned from memory.</li>
+    <li>If not cached, the filesystem requests the required data
+    from the block layer.</li>
+</ol>
+
+<h3>Write Operation</h3>
+
+<p>
+Modified file data may initially be stored in memory. The kernel
+can write this data to storage later through writeback.
+</p>
+
+<div class="note">
+The page cache is primarily associated with buffered file I/O.
+Direct I/O and other I/O paths can behave differently.
+</div>
+</section>
+
+<section>
+<h2>7. Block I/O Subsystem</h2>
+
+<p>
+The block I/O subsystem is the central component responsible
+for managing storage requests.
+</p>
+
+<p>Its responsibilities include:</p>
+
+<ul>
+    <li>Managing block-device I/O operations.</li>
+    <li>Representing and organizing I/O requests.</li>
+    <li>Handling request merging and dispatch.</li>
+    <li>Managing queues and scheduling.</li>
+    <li>Coordinating I/O completion.</li>
+    <li>Providing common infrastructure to storage drivers.</li>
+</ul>
+
+<p>
+The block layer separates filesystem-specific logic from
+hardware-specific driver implementation.
+</p>
+</section>
+
+<section>
+<h2>8. BIO Structure</h2>
+
+<p>
+The <code>struct bio</code> structure represents a block I/O
+operation in the Linux kernel.
+</p>
+
+<p>
+A BIO describes an operation such as reading or writing data
+and the memory segments involved in that operation.
+</p>
+
+<h3>Important BIO Concepts</h3>
+
+<ul>
+    <li>Operation type, such as read or write.</li>
+    <li>Target block device.</li>
+    <li>Starting sector or logical block location.</li>
+    <li>Data segments represented through BIO vectors.</li>
+    <li>Completion handling.</li>
+</ul>
+
+<p>
+A BIO can describe data distributed across multiple memory
+segments. The block layer can organize compatible BIO operations
+into requests for submission to the device.
+</p>
+
+<div class="diagram">
++----------------------------------+
+|             BIO                  |
++----------------------------------+
+| Operation: READ / WRITE          |
+| Target: Block Device             |
+| Starting Sector                  |
+| Data Size                        |
+| Data Segments                    |
+| Completion Information           |
++----------------------------------+
+</div>
+
+<div class="note">
+A BIO represents an I/O operation, not necessarily a complete
+hardware command. Request construction and dispatch depend on
+the block layer and driver.
+</div>
+</section>
+
+<section>
+<h2>9. Request Structure</h2>
+
+<p>
+The <code>struct request</code> structure represents a block I/O
+request organized for processing by a device driver.
+</p>
+
+<p>
+A request can contain one or more BIOs. Compatible operations
+may be merged to reduce overhead and improve efficiency.
+</p>
+
+<h3>Example</h3>
+
+<p>
+Suppose the block layer receives two adjacent write operations:
+</p>
+
+<pre><code>BIO 1:
+Starting sector = 100
+Length = 8 sectors
+
+BIO 2:
+Starting sector = 108
+Length = 8 sectors</code></pre>
+
+<p>
+If the operations are compatible and merging is permitted,
+the block layer may combine them into a larger request.
+</p>
+
+<pre><code>Combined Request:
+Starting sector = 100
+Length = 16 sectors</code></pre>
+
+<p>
+This can reduce the number of individual requests that the
+driver needs to process.
+</p>
+</section>
+
+<section>
+<h2>10. Request Queue</h2>
+
+<p>
+A request queue manages storage requests before they are
+dispatched to the hardware driver.
+</p>
+
+<p>
+Queue management is important because storage devices may
+receive many requests from multiple applications at the same
+time.
+</p>
+
+<p>Queue-related responsibilities include:</p>
+
+<ul>
+    <li>Organizing pending requests.</li>
+    <li>Supporting request dispatch.</li>
+    <li>Applying queue limits.</li>
+    <li>Supporting request merging where appropriate.</li>
+    <li>Coordinating with the storage driver.</li>
+</ul>
+
+<p>
+Modern Linux block I/O uses the multi-queue framework rather
+than relying on the old single-queue model.
+</p>
+</section>
+
+<section>
+<h2>11. blk-mq Architecture</h2>
+
+<p>
+blk-mq is the Linux block multi-queue framework. It was designed
+to improve scalability and performance, particularly with
+multi-core systems and fast storage devices.
+</p>
+
+<h3>Why Multi-Queue Is Needed</h3>
+
+<p>
+High-performance storage devices can process many commands
+concurrently. A single shared request queue can become a
+performance bottleneck when many CPU cores submit I/O.
+</p>
+
+<p>
+blk-mq supports multiple software submission queues and
+hardware dispatch queues.
+</p>
+
+<div class="diagram">
+             CPU Core 0       CPU Core 1
+                 |                |
+                 v                v
+          +-------------+  +-------------+
+          | Software Q0 |  | Software Q1 |
+          +-------------+  +-------------+
+                 |                |
+                 +--------+-------+
+                          |
+                          v
+                 +------------------+
+                 | Hardware Queues  |
+                 +------------------+
+                          |
+                          v
+                 +------------------+
+                 | Storage Driver   |
+                 +------------------+
+                          |
+                          v
+                 +------------------+
+                 | Storage Device   |
+                 +------------------+
+</div>
+
+<h3>Advantages</h3>
+
+<ul>
+    <li>Better scalability on multi-core processors.</li>
+    <li>Reduced contention on shared queue data.</li>
+    <li>Improved parallel I/O processing.</li>
+    <li>Suitable for high-performance NVMe storage.</li>
+</ul>
+</section>
+
+<section>
+<h2>12. I/O Scheduler</h2>
+
+<p>
+An I/O scheduler organizes requests before they are dispatched
+to a storage device.
+</p>
+
+<p>
+Different workloads may require different scheduling behavior.
+For example, a system may prioritize latency for interactive
+applications or throughput for bulk data transfers.
+</p>
+
+<p>Common scheduler concepts include:</p>
+
+<ul>
+    <li>Request ordering.</li>
+    <li>Request merging.</li>
+    <li>Fairness between competing I/O sources.</li>
+    <li>Latency management.</li>
+    <li>Throughput optimization.</li>
+</ul>
+
+<p>
+The available schedulers depend on the kernel, device and
+configuration. Not every scheduler is suitable for every device.
+</p>
+
+<h3>Inspect the Active Scheduler</h3>
+
+<pre><code>cat /sys/block/sda/queue/scheduler</code></pre>
+
+<p>
+Replace <code>sda</code> with the block-device name available
+on your system.
+</p>
+</section>
+
+<section>
+<h2>13. Block Device Driver</h2>
+
+<p>
+The block device driver communicates with the storage controller
+and performs the hardware-specific work required to process
+block I/O requests.
+</p>
+
+<p>Typical responsibilities include:</p>
+
+<ul>
+    <li>Initializing the controller.</li>
+    <li>Configuring hardware queues.</li>
+    <li>Submitting storage commands.</li>
+    <li>Managing DMA operations where supported.</li>
+    <li>Handling interrupts and completion notifications.</li>
+    <li>Reporting errors and timeouts.</li>
+    <li>Managing device removal and resource cleanup.</li>
+</ul>
+
+<p>
+Different storage devices require different drivers. For example,
+NVMe and USB mass-storage devices use different communication
+protocols and controller interfaces.
+</p>
+</section>
+
+<section>
+<h2>14. struct gendisk</h2>
+
+<p>
+The <code>struct gendisk</code> structure represents a disk
+within the Linux block subsystem.
+</p>
+
+<p>
+It is associated with information such as:</p>
+
+<ul>
+    <li>Disk name.</li>
+    <li>Capacity.</li>
+    <li>Device and partition information.</li>
+    <li>Queue association.</li>
+    <li>Disk registration and lifecycle state.</li>
+</ul>
+
+<p>
+The exact fields and registration APIs vary with kernel versions.
+A driver should use the interfaces documented for its target
+kernel.
+</p>
+</section>
+
+<section>
+<h2>15. struct block_device</h2>
+
+<p>
+The <code>struct block_device</code> structure represents
+a block-device object or a particular block-device region
+managed by the kernel.
+</p>
+
+<p>
+It is important in the kernel's handling of block devices,
+partitions and associated I/O operations.
+</p>
+
+<p>
+A whole disk and an individual partition can be represented
+as distinct block-device objects while belonging to the same
+underlying storage device.
+</p>
+</section>
+
+<section>
+<h2>16. Device Registration and Discovery</h2>
+
+<p>
+A block device must be registered with the kernel so that
+the block subsystem can manage it.
+</p>
+
+<p>
+The driver is responsible for setting up the appropriate
+device structures, queues and hardware resources before
+making the device available.
+</p>
+
+<p>
+After registration, device-management mechanisms can expose
+the device through the Linux device model and user-space
+device nodes.
+</p>
+
+<h3>Typical Discovery Flow</h3>
+
+<div class="diagram">
+Storage Hardware Detected
+          |
+          v
+Controller Driver Initializes
+          |
+          v
+Storage Device Identified
+          |
+          v
+Block Device Registered
+          |
+          v
+Device Information Published
+          |
+          v
+/dev Device Node Available
+          |
+          v
+Filesystem Can Access Storage
+</div>
+
+<div class="note">
+The exact sequence differs between storage technologies.
+Device discovery, block registration and device-node creation
+are related stages, but they are not a single operation.
+</div>
+</section>
+
+<section>
+<h2>17. I/O Completion</h2>
+
+<p>
+After a storage operation has been submitted, the driver and
+device must eventually report its completion or failure.
+</p>
+
+<p>
+Completion may be reported using interrupts, polling or other
+mechanisms supported by the hardware and driver.
+</p>
+
+<h3>Typical Completion Flow</h3>
+
+<ol>
+    <li>The block layer submits a request.</li>
+    <li>The driver sends the required command to the controller.</li>
+    <li>The controller performs the storage operation.</li>
+    <li>The controller reports completion.</li>
+    <li>The driver processes completion status.</li>
+    <li>The block layer completes the associated I/O operations.</li>
+    <li>Waiting processes can continue when their data is available.</li>
+</ol>
+
+<p>
+Correct completion handling is essential for data integrity,
+resource management and application reliability.
+</p>
+</section>
+
+<section>
+<h2>18. Error Handling in Block Devices</h2>
+
+<p>
+Storage operations can fail for several reasons.
+The driver and block layer must handle these failures safely.
+</p>
+
+<table>
+<tr>
+    <th>Error</th>
+    <th>Possible Cause</th>
+</tr>
+<tr>
+    <td>I/O Error</td>
+    <td>Device cannot complete a read or write operation.</td>
+</tr>
+<tr>
+    <td>Timeout</td>
+    <td>Device does not respond within the expected time.</td>
+</tr>
+<tr>
+    <td>Media Error</td>
+    <td>Storage media contains an unreadable or unwritable region.</td>
+</tr>
+<tr>
+    <td>Device Disconnect</td>
+    <td>Storage device is removed or becomes unavailable.</td>
+</tr>
+<tr>
+    <td>Controller Error</td>
+    <td>Controller reports a hardware or command failure.</td>
+</tr>
+</table>
+
+<p>
+A driver must report failures accurately, release resources
+and follow the recovery mechanisms appropriate to the device.
+</p>
+</section>
+
+<section>
+<h2>19. Inspecting Block Architecture in Ubuntu</h2>
+
+<p>
+The following commands help examine the block-device architecture
+of an Ubuntu system.
+</p>
+
+<h3>List Devices</h3>
+<pre><code>lsblk</code></pre>
+
+<h3>Display Kernel Partition Information</h3>
+<pre><code>cat /proc/partitions</code></pre>
+
+<h3>Inspect Queue Attributes</h3>
+<pre><code>ls /sys/block/</code></pre>
+
+<h3>Inspect a Device Queue</h3>
+<pre><code>ls /sys/block/sda/queue/</code></pre>
+
+<h3>Read Logical Block Size</h3>
+<pre><code>cat /sys/block/sda/queue/logical_block_size</code></pre>
+
+<h3>Read Physical Block Size</h3>
+<pre><code>cat /sys/block/sda/queue/physical_block_size</code></pre>
+
+<h3>Inspect Device Capacity</h3>
+<pre><code>cat /sys/block/sda/size</code></pre>
+
+<p>
+Replace <code>sda</code> with the actual device name.
+The value in the <code>size</code> attribute is expressed in
+512-byte sectors, even when the device has a different logical
+sector size.
+</p>
+
+<div class="note">
+Sysfs exposes kernel device and queue attributes. These are useful
+for inspection, but they are not a substitute for understanding
+the internal block-layer data structures.
+</div>
+</section>
+
+<section>
+<h2>20. Kernel API and Version Considerations</h2>
+
+<p>
+Linux block-device APIs have evolved significantly. Older
+examples may use interfaces that are no longer appropriate
+for current kernels.
+</p>
+
+<p>
+When studying or developing a block driver:
+</p>
+
+<ul>
+    <li>Identify the exact kernel version.</li>
+    <li>Use the matching kernel headers and documentation.</li>
+    <li>Study current blk-mq-based driver examples.</li>
+    <li>Check the definitions of structures and registration APIs.</li>
+    <li>Do not copy legacy request_fn examples into a modern
+    kernel without verifying compatibility.</li>
+</ul>
+
+<p>
+For practical driver development, the kernel source tree and
+the official Linux kernel documentation are important references.
+</p>
+</section>
+
+<section>
+<h2>21. Practical Activity: Inspect Block Device Architecture</h2>
+
+<p>
+Perform these activities inside Ubuntu running in VirtualBox.
+</p>
+
+<h3>Step 1: Identify the Block Devices</h3>
+<pre><code>lsblk</code></pre>
+
+<h3>Step 2: Inspect Sysfs</h3>
+<pre><code>ls /sys/block/</code></pre>
+
+<h3>Step 3: Inspect Queue Attributes</h3>
+<pre><code>ls /sys/block/sda/queue/</code></pre>
+
+<h3>Step 4: Check Sector Sizes</h3>
+<pre><code>cat /sys/block/sda/queue/logical_block_size
+cat /sys/block/sda/queue/physical_block_size</code></pre>
+
+<h3>Step 5: Check Kernel Messages</h3>
+<pre><code>dmesg | grep -i -E "block|scsi|ata|virtio"</code></pre>
+
+<h3>Expected Result</h3>
+
+<ul>
+    <li>Identify the virtual storage device.</li>
+    <li>Observe its queue attributes.</li>
+    <li>Read logical and physical sector sizes.</li>
+    <li>Understand how sysfs exposes block-device information.</li>
+</ul>
+</section>
+
+<section>
+<h2>22. Review Questions</h2>
+
+<ol>
+    <li>What is the purpose of the Linux block device architecture?</li>
+    <li>What are the major components of the block I/O architecture?</li>
+    <li>What is the role of VFS?</li>
+    <li>What is the responsibility of a filesystem?</li>
+    <li>What is the page cache?</li>
+    <li>What is the role of the block I/O subsystem?</li>
+    <li>What information does a BIO represent?</li>
+    <li>Differentiate BIO and request structures.</li>
+    <li>What is a request queue?</li>
+    <li>What is blk-mq?</li>
+    <li>Why is multi-queue processing useful?</li>
+    <li>What is the purpose of an I/O scheduler?</li>
+    <li>What is struct gendisk?</li>
+    <li>What is struct block_device?</li>
+    <li>How does a driver report I/O completion?</li>
+    <li>What are common block-device errors?</li>
+    <li>How can block-device queue information be inspected through sysfs?</li>
+</ol>
+</section>
+
+<section>
+<h2>23. Practical Exercises</h2>
+
+<ol>
+    <li>Run <code>lsblk</code> and identify all block devices.</li>
+    <li>Inspect <code>/sys/block/</code> for available devices.</li>
+    <li>Read the logical block size of your virtual disk.</li>
+    <li>Read the physical block size of your virtual disk.</li>
+    <li>Inspect the queue directory of a block device.</li>
+    <li>Compare the disk capacity shown by <code>lsblk</code> with
+    its sysfs capacity value.</li>
+    <li>Explain the relationship between BIOs, requests and blk-mq.</li>
+</ol>
+</section>
+
+<section>
+<h2>24. Lesson Summary</h2>
+
+<p>
+The Linux block device architecture provides a common framework
+for accessing storage hardware. It connects applications and
+filesystems to storage drivers through the VFS, page cache,
+block I/O subsystem and request-management infrastructure.
+</p>
+
+<p>
+Important concepts include BIO structures, request structures,
+request queues, blk-mq, disk registration and I/O completion.
+Understanding these components is essential before studying
+how block drivers process actual read and write requests.
+</p>
+</section>
+
+<section>
+<h2>Navigation</h2>
+
+<p>
+<strong>Previous Lesson:</strong>
+<a href="L01_Introduction_to_Block_Device_Drivers.html">
+Lesson 1 - Introduction to Block Device Drivers
+</a>
+</p>
+
+<p>
+<strong>Next Lesson:</strong>
+<a href="L03_Block_IO_and_Request_Processing.html">
+Lesson 3 - Block I/O and Request Processing
+</a>
+</p>
+
+<p>
+<a href="index.html">Back to Chapter 18 Index</a>
+</p>
+</section>
+
+</div>
+
+<footer>
+    <p>Linux Device Drivers | NS Learning Hub</p>
+    <p>Chapter 18 - Lesson 2</p>
+</footer>
+
+</body>
+</html>
