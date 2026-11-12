@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Implementing IOCTL in Character Drivers | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Implementing IOCTL in Character Drivers</h1>
+    <p>Linux Device Drivers – Chapter 11, Lesson 5</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 11</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> IOCTL and Device Control</p>
+    <p><strong>Lesson:</strong> 5 – Implementing IOCTL in Character Drivers</p>
+    <p><strong>Prerequisites:</strong> Character driver fundamentals, file_operations, ioctl command macros, copy_to_user() and copy_from_user().</p>
+    <p><strong>Objective:</strong> Implement an IOCTL handler, connect it to file_operations and invoke commands from a user-space application.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction</h2>
+
+<p>A character device driver commonly provides <code>open()</code>, <code>read()</code>, <code>write()</code> and <code>release()</code> operations. However, some device operations require more than ordinary data reading and writing.</p>
+
+<p>For example, an application may need to:</p>
+<ul>
+    <li>Reset a device.</li>
+    <li>Change an operating mode.</li>
+    <li>Configure a sampling rate.</li>
+    <li>Retrieve device status.</li>
+    <li>Enable or disable a device feature.</li>
+</ul>
+
+<p>These control operations can be implemented through the IOCTL interface.</p>
+
+<div class="important">
+    In a character driver, IOCTL is normally implemented through the <code>unlocked_ioctl</code> member of the <code>struct file_operations</code> structure.
+</div>
+</section>
+
+<section class="section">
+<h2>2. IOCTL Implementation Architecture</h2>
+
+<div class="diagram">
+    <div class="diagram-box">User Application</div>
+    <div class="arrow">↓ ioctl()</div>
+    <div class="diagram-box">VFS / IOCTL System Call Interface</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Driver unlocked_ioctl()</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Command Handler</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Device or Driver State</div>
+</div>
+
+<p>The sequence is:</p>
+<ol>
+    <li>The application opens the device file.</li>
+    <li>The application calls <code>ioctl()</code> with a request code and optional argument.</li>
+    <li>The kernel dispatches the request to the driver's IOCTL callback.</li>
+    <li>The driver checks the command.</li>
+    <li>The driver performs the requested operation.</li>
+    <li>The driver returns a success value or an error code.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>3. IOCTL Command Header</h2>
+
+<p>Driver and application must agree on command definitions and data structures. A shared header is a convenient way to keep them consistent.</p>
+
+<p>Example header: <code>my_device_ioctl.h</code></p>
+
+<pre><code>#ifndef MY_DEVICE_IOCTL_H
+#define MY_DEVICE_IOCTL_H
+
+#include &lt;linux/ioctl.h&gt;
+
+#define MY_DEVICE_MAGIC 'N'
+
+#define DEVICE_RESET \
+    _IO(MY_DEVICE_MAGIC, 1)
+
+#define GET_DEVICE_VALUE \
+    _IOR(MY_DEVICE_MAGIC, 2, int)
+
+#define SET_DEVICE_VALUE \
+    _IOW(MY_DEVICE_MAGIC, 3, int)
+
+#endif</code></pre>
+
+<p>The three commands have different purposes:</p>
+
+<table>
+<tr>
+    <th>Command</th>
+    <th>Purpose</th>
+</tr>
+<tr>
+    <td><code>DEVICE_RESET</code></td>
+    <td>Reset operation without an encoded data-transfer argument.</td>
+</tr>
+<tr>
+    <td><code>GET_DEVICE_VALUE</code></td>
+    <td>Return an integer value to the application.</td>
+</tr>
+<tr>
+    <td><code>SET_DEVICE_VALUE</code></td>
+    <td>Receive an integer value from the application.</td>
+</tr>
+</table>
+
+<div class="note">
+    This header is written for the kernel-side example. A production shared header should use types and conditional includes compatible with both kernel and user-space compilation environments.
+</div>
+</section>
+
+<section class="section">
+<h2>4. unlocked_ioctl() Callback</h2>
+
+<p>The <code>unlocked_ioctl()</code> callback receives three parameters.</p>
+
+<pre><code>static long my_ioctl(
+    struct file *file,
+    unsigned int cmd,
+    unsigned long arg
+);</code></pre>
+
+<table>
+<tr>
+    <th>Parameter</th>
+    <th>Description</th>
+</tr>
+<tr>
+    <td><code>file</code></td>
+    <td>Pointer to the open file description associated with the device.</td>
+</tr>
+<tr>
+    <td><code>cmd</code></td>
+    <td>IOCTL request code sent by the application.</td>
+</tr>
+<tr>
+    <td><code>arg</code></td>
+    <td>Argument supplied by the application. For pointer-based commands, it contains a user-space address.</td>
+</tr>
+</table>
+
+<p>The driver generally uses a <code>switch</code> statement to select the required operation.</p>
+
+<pre><code>switch (cmd) {
+    case DEVICE_RESET:
+        /* Reset device */
+        break;
+
+    case GET_DEVICE_VALUE:
+        /* Return device value */
+        break;
+
+    case SET_DEVICE_VALUE:
+        /* Set device value */
+        break;
+
+    default:
+        return -ENOTTY;
+}</code></pre>
+
+<p><code>-ENOTTY</code> is commonly returned when the driver does not recognize or support the requested IOCTL command.</p>
+</section>
+
+<section class="section">
+<h2>5. Implementing the Driver State</h2>
+
+<p>For this teaching example, the driver maintains an integer value in kernel memory.</p>
+
+<pre><code>static int device_value = 0;</code></pre>
+
+<p>The variable represents a simple software-controlled device setting. It is not connected to physical hardware.</p>
+
+<p>The driver will support three operations:</p>
+<ul>
+    <li>Reset the stored value to zero.</li>
+    <li>Return the current value to user space.</li>
+    <li>Accept a new value from user space.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>6. Implementing the IOCTL Handler</h2>
+
+<p>The following handler implements all three commands.</p>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include "my_device_ioctl.h"
+
+static int device_value = 0;
+
+static long my_ioctl(
+    struct file *file,
+    unsigned int cmd,
+    unsigned long arg
+)
+{
+    int value;
+
+    switch (cmd) {
+
+        case DEVICE_RESET:
+            device_value = 0;
+            pr_info("Device value reset\n");
+            return 0;
+
+        case GET_DEVICE_VALUE:
+
+            value = device_value;
+
+            if (copy_to_user(
+                    (int __user *)arg,
+                    &amp;value,
+                    sizeof(value))) {
+                return -EFAULT;
+            }
+
+            return 0;
+
+        case SET_DEVICE_VALUE:
+
+            if (copy_from_user(
+                    &amp;value,
+                    (int __user *)arg,
+                    sizeof(value))) {
+                return -EFAULT;
+            }
+
+            if (value &lt; 0 || value &gt; 1000) {
+                return -EINVAL;
+            }
+
+            device_value = value;
+
+            pr_info("Device value updated: %d\n",
+                    device_value);
+
+            return 0;
+
+        default:
+            return -ENOTTY;
+    }
+}</code></pre>
+
+<h3>Explanation</h3>
+
+<p><strong>DEVICE_RESET:</strong> Sets the stored value to zero.</p>
+
+<p><strong>GET_DEVICE_VALUE:</strong> Copies the current kernel value into the application's memory using <code>copy_to_user()</code>.</p>
+
+<p><strong>SET_DEVICE_VALUE:</strong> Copies an integer from user space using <code>copy_from_user()</code>, validates its range and updates the kernel variable.</p>
+
+<p><strong>Default case:</strong> Returns <code>-ENOTTY</code> for unsupported requests.</p>
+
+<div class="important">
+    The copy functions return the number of bytes not copied. A nonzero result indicates that the transfer was incomplete; this example handles it by returning <code>-EFAULT</code>.
+</div>
+</section>
+
+<section class="section">
+<h2>7. Connecting IOCTL to file_operations</h2>
+
+<p>Defining the callback is not sufficient. The driver must register it in the <code>file_operations</code> structure.</p>
+
+<pre><code>static const struct file_operations my_fops = {
+    .owner = THIS_MODULE,
+    .unlocked_ioctl = my_ioctl,
+};</code></pre>
+
+<p>When the application issues an IOCTL request on a file descriptor associated with this driver, the kernel can dispatch it to <code>my_ioctl()</code>.</p>
+
+<div class="note">
+    The <code>unlocked_ioctl</code> callback does not automatically provide a driver-specific lock. If multiple applications or threads can access shared state, the driver must implement appropriate synchronization, such as a mutex.
+</div>
+</section>
+
+<section class="section">
+<h2>8. User-Space Application</h2>
+
+<p>The application opens the device file and sends IOCTL requests.</p>
+
+<p>Example: <code>test_ioctl.c</code></p>
+
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/ioctl.h&gt;
+#include "my_device_ioctl.h"
+
+int main(void)
+{
+    int fd;
+    int value;
+
+    fd = open("/dev/mydevice", O_RDWR);
+
+    if (fd &lt; 0) {
+        perror("open");
+        return EXIT_FAILURE;
+    }
+
+    /* Set a value */
+    value = 250;
+
+    if (ioctl(fd, SET_DEVICE_VALUE, &amp;value) == -1) {
+        perror("SET_DEVICE_VALUE");
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    printf("Value sent to driver: %d\n", value);
+
+    /* Read the value */
+    value = 0;
+
+    if (ioctl(fd, GET_DEVICE_VALUE, &amp;value) == -1) {
+        perror("GET_DEVICE_VALUE");
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    printf("Value received from driver: %d\n", value);
+
+    /* Reset the device */
+    if (ioctl(fd, DEVICE_RESET) == -1) {
+        perror("DEVICE_RESET");
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    close(fd);
+
+    return EXIT_SUCCESS;
+}</code></pre>
+
+<p>The application performs the following operations:</p>
+<ol>
+    <li>Opens <code>/dev/mydevice</code>.</li>
+    <li>Sends 250 to the driver.</li>
+    <li>Requests the stored value.</li>
+    <li>Receives the value from the driver.</li>
+    <li>Resets the stored value.</li>
+    <li>Closes the device file.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>9. Important Note About the Shared Header</h2>
+
+<p>The driver and application need matching IOCTL request definitions. However, the kernel-oriented header shown earlier includes <code>&lt;linux/ioctl.h&gt;</code>, whereas a user-space application normally uses <code>&lt;sys/ioctl.h&gt;</code>.</p>
+
+<p>For a portable shared header, conditional compilation can select the appropriate include:</p>
+
+<pre><code>#ifndef MY_DEVICE_IOCTL_H
+#define MY_DEVICE_IOCTL_H
+
+#ifdef __KERNEL__
+#include &lt;linux/ioctl.h&gt;
+#else
+#include &lt;sys/ioctl.h&gt;
+#endif
+
+#define MY_DEVICE_MAGIC 'N'
+
+#define DEVICE_RESET \
+    _IO(MY_DEVICE_MAGIC, 1)
+
+#define GET_DEVICE_VALUE \
+    _IOR(MY_DEVICE_MAGIC, 2, int)
+
+#define SET_DEVICE_VALUE \
+    _IOW(MY_DEVICE_MAGIC, 3, int)
+
+#endif</code></pre>
+
+<p>Both sides must use compatible definitions. For more complex structures, use suitable fixed-width types and ensure that structure layout, alignment and padding are compatible. Drivers supporting 32-bit applications on a 64-bit kernel may also need a <code>compat_ioctl</code> implementation.</p>
+</section>
+
+<section class="section">
+<h2>10. Building and Testing in Ubuntu</h2>
+
+<p>Before testing, the character driver must be compiled, loaded and registered, and a device node must exist. This lesson focuses on the IOCTL handler and application; it does not provide a complete registration module.</p>
+
+<h3>Compile the User-Space Application</h3>
+
+<pre><code>gcc test_ioctl.c -o test_ioctl</code></pre>
+
+<h3>Run the Application</h3>
+
+<pre><code>sudo ./test_ioctl</code></pre>
+
+<p>The device node <code>/dev/mydevice</code> must point to the character device registered by the driver. Its major and minor numbers must match the driver's registration.</p>
+
+<h3>Expected Result</h3>
+
+<pre><code>Value sent to driver: 250
+Value received from driver: 250</code></pre>
+
+<p>The reset operation should also complete successfully. The driver may log the reset and value update operations in the kernel log.</p>
+
+<pre><code>sudo dmesg | tail</code></pre>
+
+<div class="note">
+    This is a software-only example. It demonstrates IOCTL dispatch and data transfer, not control of a physical peripheral. In a VirtualBox Ubuntu environment, physical hardware access requires suitable USB/device passthrough or other hardware access configuration.
+</div>
+</section>
+
+<section class="section">
+<h2>11. Common Errors and Troubleshooting</h2>
+
+<table>
+<tr>
+    <th>Problem</th>
+    <th>Possible Cause / Solution</th>
+</tr>
+<tr>
+    <td><code>open()</code> fails</td>
+    <td>Check whether the device node exists, its major/minor numbers and permissions.</td>
+</tr>
+<tr>
+    <td><code>ioctl()</code> returns <code>ENOTTY</code></td>
+    <td>Check the command definition and whether the driver handles that request.</td>
+</tr>
+<tr>
+    <td><code>ioctl()</code> returns <code>EFAULT</code></td>
+    <td>Check the user pointer and the copy operation.</td>
+</tr>
+<tr>
+    <td><code>ioctl()</code> returns <code>EINVAL</code></td>
+    <td>The driver may have rejected an invalid value or argument.</td>
+</tr>
+<tr>
+    <td>Incorrect value returned</td>
+    <td>Check the kernel state, command direction and data type.</td>
+</tr>
+<tr>
+    <td>Driver does not receive the command</td>
+    <td>Check that <code>unlocked_ioctl</code> is registered in the correct file_operations structure.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>12. Best Practices</h2>
+
+<ul>
+    <li>Use a unique command group identifier and organize command numbers consistently.</li>
+    <li>Use the standard IOCTL macros rather than manually constructing request numbers.</li>
+    <li>Validate every value received from user space.</li>
+    <li>Use <code>copy_to_user()</code> and <code>copy_from_user()</code> for pointer-based data transfers.</li>
+    <li>Return meaningful negative kernel error codes.</li>
+    <li>Protect shared driver state with suitable synchronization.</li>
+    <li>Keep user-space and kernel-space structure definitions compatible.</li>
+    <li>Consider 32-bit compatibility when supporting applications with a different pointer size.</li>
+    <li>Do not call user-copy functions from interrupt context because they may sleep.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>13. Lesson Summary</h2>
+
+<ul>
+    <li>IOCTL provides a control interface for character device drivers.</li>
+    <li><code>unlocked_ioctl</code> implements the driver's IOCTL callback.</li>
+    <li>The <code>cmd</code> parameter identifies the requested operation.</li>
+    <li>The <code>arg</code> parameter commonly carries a user-space pointer for data-transfer commands.</li>
+    <li><code>copy_from_user()</code> receives application data.</li>
+    <li><code>copy_to_user()</code> returns driver data to the application.</li>
+    <li>The callback is connected through <code>file_operations</code>.</li>
+    <li>The application invokes commands using the <code>ioctl()</code> system call.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>14. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>What is the purpose of the unlocked_ioctl callback?</li>
+    <li>What are the parameters of the IOCTL callback?</li>
+    <li>What is the purpose of the cmd parameter?</li>
+    <li>What is stored in the arg parameter for a pointer-based IOCTL?</li>
+    <li>Why is copy_from_user() required?</li>
+    <li>Why is copy_to_user() required?</li>
+    <li>What does -ENOTTY indicate?</li>
+    <li>How is IOCTL connected to file_operations?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain the complete flow of an IOCTL request in a character driver.</li>
+    <li>Describe how to implement an IOCTL handler using switch-case.</li>
+    <li>Explain how user-space applications communicate with IOCTL handlers.</li>
+    <li>Discuss error handling and validation in IOCTL implementation.</li>
+    <li>Explain why synchronization may be necessary in an IOCTL handler.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Implement a reset command using _IO.</li>
+    <li>Implement a command to retrieve a device value using _IOR.</li>
+    <li>Implement a command to set a device value using _IOW.</li>
+    <li>Connect the IOCTL callback to file_operations.</li>
+    <li>Write a user-space application to test all three commands.</li>
+    <li>Add validation for an integer range and return -EINVAL for invalid input.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>15. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Implement an IOCTL callback in a character driver.</li>
+    <li>Handle multiple IOCTL commands using switch-case.</li>
+    <li>Transfer data safely between user space and kernel space.</li>
+    <li>Register the callback through file_operations.</li>
+    <li>Write a user-space application to test IOCTL operations.</li>
+    <li>Identify common IOCTL implementation and testing errors.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L04_IO_IOR_IOW_and_IOWR.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L06_Passing_Structures_Through_IOCTL.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 11 – IOCTL and Device Control</p>
+</footer>
+
+</body>
+</html>
