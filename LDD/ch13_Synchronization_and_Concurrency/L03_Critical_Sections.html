@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Critical Sections | Linux Device Drivers</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f3f6fb;
+    color: #263238;
+    line-height: 1.7;
+}
+header {
+    background: linear-gradient(135deg, #123b80, #2878d7);
+    color: white;
+    text-align: center;
+    padding: 32px 18px;
+}
+header h1 { margin: 0; font-size: 29px; }
+header p { margin: 8px 0 0; }
+nav {
+    background: white;
+    padding: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+nav a {
+    color: #174ea6;
+    text-decoration: none;
+    font-weight: bold;
+    margin: 0 12px;
+}
+nav a:hover { text-decoration: underline; }
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+.lesson-info {
+    background: #e3efff;
+    border-left: 5px solid #2878d7;
+    padding: 17px 20px;
+    border-radius: 6px;
+    margin-bottom: 22px;
+}
+.section {
+    background: white;
+    padding: 24px;
+    margin-bottom: 22px;
+    border-radius: 9px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+h2 {
+    color: #174ea6;
+    margin-top: 0;
+    border-bottom: 2px solid #e5edf8;
+    padding-bottom: 8px;
+}
+h3 { color: #245b9e; margin-top: 22px; }
+pre {
+    background: #172333;
+    color: #eaf2ff;
+    padding: 17px;
+    border-radius: 7px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.55;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7e0ec;
+    padding: 11px;
+    text-align: left;
+    vertical-align: top;
+}
+th { background: #e8f0fc; color: #174ea6; }
+.diagram {
+    background: #f1f6ff;
+    border: 1px solid #c9dcf7;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    margin: 18px 0;
+}
+.diagram-box {
+    display: inline-block;
+    background: white;
+    border: 2px solid #2878d7;
+    border-radius: 7px;
+    padding: 12px 17px;
+    margin: 6px;
+    font-weight: bold;
+}
+.arrow { color: #174ea6; font-weight: bold; font-size: 20px; }
+.note {
+    background: #fff8e5;
+    border-left: 5px solid #e6a700;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.important {
+    background: #eaf7ef;
+    border-left: 5px solid #269653;
+    padding: 14px 17px;
+    margin: 15px 0;
+    border-radius: 5px;
+}
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+.lesson-nav a:hover { background: #2878d7; }
+footer {
+    background: #123b80;
+    color: white;
+    text-align: center;
+    padding: 18px;
+    margin-top: 35px;
+}
+@media (max-width: 650px) {
+    header h1 { font-size: 23px; }
+    nav a { display: inline-block; margin: 5px 7px; }
+    .section { padding: 17px; }
+    table { display: block; overflow-x: auto; }
+    .lesson-nav { flex-direction: column; }
+    .lesson-nav a { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Critical Sections</h1>
+    <p>Linux Device Drivers – Chapter 13, Lesson 3</p>
+</header>
+
+<nav>
+    <a href="../../index.html">Home</a>
+    <a href="../ldd.html">LDD Course</a>
+    <a href="index.html">Chapter 13</a>
+</nav>
+
+<div class="container">
+
+<div class="lesson-info">
+    <strong>Lesson Information</strong>
+    <p><strong>Chapter:</strong> Synchronization and Concurrency</p>
+    <p><strong>Lesson:</strong> 3 – Critical Sections</p>
+    <p><strong>Prerequisites:</strong> Kernel synchronization, concurrency, race conditions and shared resources.</p>
+    <p><strong>Objective:</strong> Understand critical sections, mutual exclusion, protected code regions and their implementation in Linux device drivers.</p>
+</div>
+
+<section class="section">
+<h2>1. Introduction</h2>
+
+<p>A Linux device driver often contains code that accesses shared data structures, buffers, counters and device state.</p>
+
+<p>When multiple execution paths access the same data concurrently, the data may become inconsistent unless access is properly controlled.</p>
+
+<p>A <strong>critical section</strong> is a section of code that accesses shared resources and requires protection against unsafe concurrent access.</p>
+
+<p>Synchronization mechanisms such as mutexes, spinlocks and atomic operations are used to protect critical sections.</p>
+
+<div class="diagram">
+    <div class="diagram-box">Process A</div>
+    <div class="diagram-box">Process B</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Shared Resource</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Protected Critical Section</div>
+</div>
+</section>
+
+<section class="section">
+<h2>2. What Is a Critical Section?</h2>
+
+<p>A critical section is a portion of a program where shared data or resources are accessed or modified.</p>
+
+<p>Examples include:</p>
+
+<ul>
+    <li>Incrementing a shared device counter.</li>
+    <li>Updating a device status variable.</li>
+    <li>Reading or modifying a shared character-device buffer.</li>
+    <li>Adding or removing entries from a shared queue.</li>
+    <li>Updating driver-private data structures.</li>
+    <li>Managing shared hardware state.</li>
+</ul>
+
+<h3>Example</h3>
+
+<pre><code>static int device_counter;
+
+static void update_counter(void)
+{
+    device_counter++;
+}</code></pre>
+
+<p>The increment operation accesses shared data. If several execution paths call it concurrently, it may cause a lost update.</p>
+
+<p>The shared operation therefore needs suitable synchronization.</p>
+</section>
+
+<section class="section">
+<h2>3. Need for Critical Section Protection</h2>
+
+<p>Consider two processes accessing the same device buffer.</p>
+
+<ul>
+    <li>Process A writes new data.</li>
+    <li>Process B reads the same buffer.</li>
+    <li>Both operations overlap.</li>
+</ul>
+
+<p>Process B might read partially updated data if the driver does not coordinate access.</p>
+
+<h3>Problems Without Protection</h3>
+
+<ol>
+    <li>Race conditions.</li>
+    <li>Data corruption.</li>
+    <li>Lost updates.</li>
+    <li>Inconsistent device status.</li>
+    <li>Unexpected driver behavior.</li>
+    <li>Memory-management and object-lifetime errors.</li>
+</ol>
+
+<div class="important">
+    A critical section should be protected whenever concurrent access could violate the correctness of the shared data or operation.
+</div>
+</section>
+
+<section class="section">
+<h2>4. Critical Section Structure</h2>
+
+<p>A typical protected critical section follows three stages.</p>
+
+<ol>
+    <li>Acquire the synchronization mechanism.</li>
+    <li>Execute the protected code.</li>
+    <li>Release the synchronization mechanism.</li>
+</ol>
+
+<div class="diagram">
+    <div class="diagram-box">Acquire Lock</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Enter Critical Section</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Access Shared Resource</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Release Lock</div>
+</div>
+
+<p>The lock ensures that competing execution paths follow the required access discipline.</p>
+</section>
+
+<section class="section">
+<h2>5. Critical Section Without Synchronization</h2>
+
+<p>Consider a shared counter:</p>
+
+<pre><code>static int counter = 0;
+
+static void increment_counter(void)
+{
+    counter++;
+}</code></pre>
+
+<p>If two CPUs execute this function simultaneously, both may read the same old value and overwrite one another's updates.</p>
+
+<h3>Possible Result</h3>
+
+<table>
+<tr>
+    <th>Operation</th>
+    <th>Process A</th>
+    <th>Process B</th>
+    <th>Counter</th>
+</tr>
+<tr>
+    <td>1</td>
+    <td>Read 10</td>
+    <td>–</td>
+    <td>10</td>
+</tr>
+<tr>
+    <td>2</td>
+    <td>–</td>
+    <td>Read 10</td>
+    <td>10</td>
+</tr>
+<tr>
+    <td>3</td>
+    <td>Write 11</td>
+    <td>–</td>
+    <td>11</td>
+</tr>
+<tr>
+    <td>4</td>
+    <td>–</td>
+    <td>Write 11</td>
+    <td>11</td>
+</tr>
+</table>
+
+<p>Two increments were requested, but only one was reflected in the final value.</p>
+</section>
+
+<section class="section">
+<h2>6. Mutual Exclusion</h2>
+
+<p>Mutual exclusion ensures that only one execution path at a time can enter a protected region when using an exclusive lock.</p>
+
+<p>Linux provides mechanisms such as mutexes and spinlocks to implement mutual exclusion.</p>
+
+<h3>Conceptual Operation</h3>
+
+<div class="diagram">
+    <div class="diagram-box">Process A requests lock</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Lock acquired by A</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Process A enters critical section</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">A releases lock</div>
+    <div class="arrow">↓</div>
+    <div class="diagram-box">Process B can acquire lock</div>
+</div>
+
+<p>If Process B requests the same lock while A holds it, B must wait or spin depending on the synchronization mechanism.</p>
+</section>
+
+<section class="section">
+<h2>7. Critical Sections Using Mutexes</h2>
+
+<p>A mutex is a sleeping mutual-exclusion mechanism.</p>
+
+<p>It is suitable for protecting critical sections in process context when the calling code is allowed to sleep.</p>
+
+<h3>Example</h3>
+
+<pre><code>#include &lt;linux/mutex.h&gt;
+
+static DEFINE_MUTEX(counter_mutex);
+static int counter = 0;
+
+static void increment_counter(void)
+{
+    mutex_lock(&amp;counter_mutex);
+
+    counter++;
+
+    mutex_unlock(&amp;counter_mutex);
+}</code></pre>
+
+<h3>Explanation</h3>
+
+<ul>
+    <li><code>DEFINE_MUTEX()</code> defines and initializes a static mutex.</li>
+    <li><code>mutex_lock()</code> acquires the mutex.</li>
+    <li><code>counter++</code> executes inside the critical section.</li>
+    <li><code>mutex_unlock()</code> releases the mutex.</li>
+</ul>
+
+<div class="note">
+    Mutex acquisition may sleep. Do not use mutex_lock() in hard interrupt, softirq or other atomic contexts.
+</div>
+</section>
+
+<section class="section">
+<h2>8. Critical Sections Using Spinlocks</h2>
+
+<p>A spinlock protects a critical section without sleeping while waiting for the lock.</p>
+
+<p>It is useful for short critical sections that may be accessed from atomic contexts.</p>
+
+<h3>Example</h3>
+
+<pre><code>#include &lt;linux/spinlock.h&gt;
+
+static DEFINE_SPINLOCK(counter_lock);
+static int counter = 0;
+
+static void increment_counter(void)
+{
+    unsigned long flags;
+
+    spin_lock_irqsave(&amp;counter_lock, flags);
+
+    counter++;
+
+    spin_unlock_irqrestore(&amp;counter_lock, flags);
+}</code></pre>
+
+<h3>Explanation</h3>
+
+<ul>
+    <li><code>DEFINE_SPINLOCK()</code> defines a static spinlock.</li>
+    <li><code>spin_lock_irqsave()</code> acquires the lock and saves the local interrupt state.</li>
+    <li>The shared counter is updated inside the critical section.</li>
+    <li><code>spin_unlock_irqrestore()</code> releases the lock and restores the saved interrupt state.</li>
+</ul>
+
+<div class="important">
+    Never sleep, perform blocking I/O or call potentially sleeping functions while holding a spinlock.
+</div>
+</section>
+
+<section class="section">
+<h2>9. Choosing Between Mutex and Spinlock</h2>
+
+<table>
+<tr>
+    <th>Feature</th>
+    <th>Mutex</th>
+    <th>Spinlock</th>
+</tr>
+<tr>
+    <td>Waiting behavior</td>
+    <td>Task may sleep.</td>
+    <td>CPU spins while waiting.</td>
+</tr>
+<tr>
+    <td>Sleeping while held</td>
+    <td>Possible, where design permits.</td>
+    <td>Not allowed.</td>
+</tr>
+<tr>
+    <td>Hard IRQ context</td>
+    <td>Not suitable.</td>
+    <td>Can be used with correct IRQ-safe design.</td>
+</tr>
+<tr>
+    <td>Typical critical section</td>
+    <td>May be relatively longer.</td>
+    <td>Very short.</td>
+</tr>
+<tr>
+    <td>Typical application</td>
+    <td>Process-context driver operations.</td>
+    <td>Atomic-context shared-data protection.</td>
+</tr>
+</table>
+
+<p>The choice must be based on the execution context and the operations performed inside the critical section, not simply on which lock appears faster.</p>
+</section>
+
+<section class="section">
+<h2>10. Critical Sections and Interrupt Handling</h2>
+
+<p>Suppose a process and a hard interrupt handler access the same variable.</p>
+
+<p>A process may acquire a spinlock and then be interrupted locally. If the interrupt handler attempts to acquire the same lock, it can spin forever because the interrupted process cannot resume to release it.</p>
+
+<p>For this type of shared-data design, the process-context code may need to use an IRQ-safe locking operation such as:</p>
+
+<pre><code>unsigned long flags;
+
+spin_lock_irqsave(&amp;my_lock, flags);
+
+/* Short critical section */
+
+spin_unlock_irqrestore(&amp;my_lock, flags);</code></pre>
+
+<p>The interrupt handler uses the matching locking discipline appropriate to its context.</p>
+
+<div class="note">
+    IRQ disabling is local to the CPU. The spinlock provides cross-CPU exclusion. Disabling local interrupts alone is not a replacement for a spinlock when other CPUs can access the shared data.
+</div>
+</section>
+
+<section class="section">
+<h2>11. Critical Sections in Character Device Drivers</h2>
+
+<p>Consider a character driver that stores data in a shared buffer.</p>
+
+<h3>Device Structure</h3>
+
+<pre><code>#include &lt;linux/mutex.h&gt;
+
+struct my_device {
+    char buffer[1024];
+    size_t data_length;
+    struct mutex lock;
+};</code></pre>
+
+<h3>Conceptual Write Operation</h3>
+
+<pre><code>mutex_lock(&amp;dev-&gt;lock);
+
+/* Update shared buffer and length. */
+
+mutex_unlock(&amp;dev-&gt;lock);</code></pre>
+
+<h3>Conceptual Read Operation</h3>
+
+<pre><code>mutex_lock(&amp;dev-&gt;lock);
+
+/* Read consistent buffer data. */
+
+mutex_unlock(&amp;dev-&gt;lock);</code></pre>
+
+<p>This demonstrates the protection strategy, not a complete read/write callback. A real driver must also handle user-copy operations, file positions, partial transfers and error conditions.</p>
+
+<p>If an interrupt handler also accesses this buffer, the mutex-only design is insufficient. The driver must redesign the shared-data access and use synchronization suitable for both contexts.</p>
+</section>
+
+<section class="section">
+<h2>12. Rules for Designing Critical Sections</h2>
+
+<ol>
+    <li>Identify exactly which data must be protected.</li>
+    <li>Protect all relevant accesses, not just writes.</li>
+    <li>Use one consistent locking discipline for each shared resource.</li>
+    <li>Keep critical sections as short as possible.</li>
+    <li>Do not call sleeping functions while holding a spinlock.</li>
+    <li>Avoid unnecessary nested locks.</li>
+    <li>Maintain a consistent lock acquisition order.</li>
+    <li>Release locks on every applicable error path.</li>
+    <li>Do not assume a lock alone solves memory-lifetime problems.</li>
+    <li>Use lockdep during development where available.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>13. Common Mistakes</h2>
+
+<table>
+<tr>
+    <th>Mistake</th>
+    <th>Why It Is Incorrect</th>
+</tr>
+<tr>
+    <td>Using a mutex in a hard IRQ handler</td>
+    <td>Mutex acquisition may sleep.</td>
+</tr>
+<tr>
+    <td>Sleeping while holding a spinlock</td>
+    <td>Spinlocks must protect non-sleeping critical sections.</td>
+</tr>
+<tr>
+    <td>Protecting only some accesses</td>
+    <td>Unprotected paths can still race.</td>
+</tr>
+<tr>
+    <td>Holding a spinlock for too long</td>
+    <td>Other CPUs may waste time spinning.</td>
+</tr>
+<tr>
+    <td>Forgetting to unlock on an error path</td>
+    <td>Other execution paths may remain blocked.</td>
+</tr>
+<tr>
+    <td>Assuming local IRQ disabling protects other CPUs</td>
+    <td>Other CPUs can still access shared memory.</td>
+</tr>
+<tr>
+    <td>Freeing an object while it is still in use</td>
+    <td>Can cause use-after-free even if individual data accesses are locked.</td>
+</tr>
+</table>
+</section>
+
+<section class="section">
+<h2>14. Practical Exercise: Mutex-Protected Counter Module</h2>
+
+<p>Create a simple kernel module to demonstrate a protected critical section in process context.</p>
+
+<h3>Source File: critical_section_demo.c</h3>
+
+<pre><code>#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/mutex.h&gt;
+
+static DEFINE_MUTEX(counter_lock);
+static int counter;
+
+static void increment_counter(void)
+{
+    mutex_lock(&amp;counter_lock);
+
+    counter++;
+
+    mutex_unlock(&amp;counter_lock);
+}
+
+static int __init critical_demo_init(void)
+{
+    increment_counter();
+    increment_counter();
+    increment_counter();
+
+    pr_info("Protected counter = %d\n", counter);
+
+    return 0;
+}
+
+static void __exit critical_demo_exit(void)
+{
+    pr_info("Critical section demo removed\n");
+}
+
+module_init(critical_demo_init);
+module_exit(critical_demo_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Mutex protected critical section demo");
+MODULE_AUTHOR("NS Learning Hub");</code></pre>
+
+<h3>Makefile</h3>
+
+<pre><code>obj-m += critical_section_demo.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean</code></pre>
+
+<h3>Compile and Test in Ubuntu</h3>
+
+<pre><code>sudo apt update
+sudo apt install build-essential linux-headers-$(uname -r)
+
+make
+
+sudo insmod critical_section_demo.ko
+
+sudo dmesg | tail -n 20
+
+sudo rmmod critical_section_demo
+
+make clean</code></pre>
+
+<h3>Illustrative Output</h3>
+
+<pre><code>Protected counter = 3
+Critical section demo removed</code></pre>
+
+<p>This module demonstrates mutex usage, but its initialization function calls the increment function sequentially. It does not simulate competing threads. The mutex becomes important when multiple process-context execution paths access the shared counter concurrently.</p>
+</section>
+
+<section class="section">
+<h2>15. Lesson Summary</h2>
+
+<ul>
+    <li>A critical section is code that accesses shared resources and requires controlled access.</li>
+    <li>Race conditions can occur when critical sections are not protected.</li>
+    <li>Mutual exclusion prevents competing execution paths from entering an exclusive protected section simultaneously.</li>
+    <li>Mutexes are appropriate for sleepable process-context operations.</li>
+    <li>Spinlocks protect short critical sections in atomic contexts.</li>
+    <li>IRQ-safe spinlock variants help coordinate process and interrupt access.</li>
+    <li>All relevant accesses must follow a consistent synchronization strategy.</li>
+    <li>Locking does not automatically solve object-lifetime or memory-release problems.</li>
+</ul>
+</section>
+
+<section class="section">
+<h2>16. Practice Questions</h2>
+
+<h3>Short Answer Questions</h3>
+<ol>
+    <li>Define a critical section.</li>
+    <li>Why must critical sections be protected?</li>
+    <li>What is mutual exclusion?</li>
+    <li>What are the three stages of a protected critical section?</li>
+    <li>What is the purpose of mutex_lock()?</li>
+    <li>What is the purpose of spin_lock_irqsave()?</li>
+    <li>Why must spinlock critical sections remain short?</li>
+    <li>Can a mutex be acquired in hard interrupt context?</li>
+    <li>Why is local interrupt disabling insufficient for cross-CPU synchronization?</li>
+    <li>Why must all shared-data accesses follow the same locking discipline?</li>
+</ol>
+
+<h3>Long Answer Questions</h3>
+<ol>
+    <li>Explain critical sections with a suitable shared-counter example.</li>
+    <li>Describe the structure of a protected critical section.</li>
+    <li>Explain mutual exclusion and its importance in device drivers.</li>
+    <li>Compare mutex-based and spinlock-based critical-section protection.</li>
+    <li>Explain how process context and interrupt context can share protected data.</li>
+    <li>Discuss common mistakes in critical-section implementation.</li>
+</ol>
+
+<h3>Practical Exercises</h3>
+<ol>
+    <li>Write a kernel module using a mutex-protected counter.</li>
+    <li>Modify the example to use a spinlock.</li>
+    <li>Explain which version is appropriate for process-context callers.</li>
+    <li>Design a synchronization strategy for a shared character-device buffer.</li>
+    <li>Explain how an interrupt handler can safely access data also used by a process-context function.</li>
+</ol>
+</section>
+
+<section class="section">
+<h2>17. Expected Learning Outcome</h2>
+
+<p>After completing this lesson, you should be able to:</p>
+
+<ul>
+    <li>Identify critical sections in Linux device drivers.</li>
+    <li>Explain why shared resources require protection.</li>
+    <li>Understand mutual exclusion.</li>
+    <li>Use mutexes and spinlocks conceptually to protect shared data.</li>
+    <li>Recognize interrupt-related locking requirements.</li>
+    <li>Design basic protected sections for character drivers.</li>
+    <li>Avoid common synchronization mistakes.</li>
+</ul>
+</section>
+
+<div class="lesson-nav">
+    <a href="L02_Race_Conditions_in_Device_Drivers.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 13 Index</a>
+    <a href="L04_Atomic_Operations.html">Next Lesson →</a>
+</div>
+
+</div>
+
+<footer>
+    <p>NS Learning Hub | Linux Device Drivers</p>
+    <p>Chapter 13 – Synchronization and Concurrency</p>
+</footer>
+
+</body>
+</html>
