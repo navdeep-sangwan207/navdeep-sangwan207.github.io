@@ -1,1 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 20 - LIN Master and Slave Node Programming</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-header {
+    background: linear-gradient(135deg, #174ea6, #007bff);
+    color: white;
+    padding: 25px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+.lesson-section {
+    background: #fff;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.08);
+}
+.lesson-section h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e5eaf2;
+    padding-bottom: 8px;
+}
+.lesson-section h3 { color: #174ea6; }
+.info-box {
+    background: #eaf3ff;
+    border-left: 5px solid #007bff;
+    padding: 14px;
+    margin: 15px 0;
+}
+.warning-box {
+    background: #fff3cd;
+    border-left: 5px solid #e0a800;
+    padding: 14px;
+    margin: 15px 0;
+}
+pre {
+    background: #172033;
+    color: #e8f0ff;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    line-height: 1.5;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7deea;
+    padding: 10px;
+    text-align: left;
+}
+th { background: #eaf1fc; color: #174ea6; }
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+.lesson-nav a:hover { background: #007bff; }
+</style>
+</head>
+<body>
 
+<main class="container">
+
+<header class="lesson-header">
+    <h1>Lesson 20: LIN Master and Slave Node Programming</h1>
+    <p><strong>Chapter 16:</strong> LPC2129 SPI, CAN and LIN Communication</p>
+    <p><strong>Part C:</strong> LIN Communication</p>
+    <p>Understanding LIN master scheduling, slave response handling, protected identifiers, frame processing and embedded C programming.</p>
+</header>
+
+<section class="lesson-section">
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+    <li>Explain LIN master and slave node responsibilities.</li>
+    <li>Understand master and slave software architecture.</li>
+    <li>Implement protected identifier calculation.</li>
+    <li>Understand master frame scheduling.</li>
+    <li>Develop a basic LIN master program structure.</li>
+    <li>Develop a basic LIN slave response program structure.</li>
+    <li>Implement data and checksum processing.</li>
+    <li>Understand UART-based LIN firmware using LPC2129.</li>
+    <li>Identify common programming errors.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>2. Introduction to LIN Node Programming</h2>
+<p>A LIN network consists of one master node and one or more slave nodes. Each node contains a microcontroller or controller responsible for executing communication-related software.</p>
+
+<h3>Master Node Responsibilities</h3>
+<ul>
+    <li>Maintain the LIN schedule.</li>
+    <li>Initiate communication by transmitting frame headers.</li>
+    <li>Generate break and synchronization fields.</li>
+    <li>Transmit the protected identifier.</li>
+    <li>Receive or publish the frame response according to the schedule.</li>
+    <li>Monitor communication errors and timing.</li>
+</ul>
+
+<h3>Slave Node Responsibilities</h3>
+<ul>
+    <li>Monitor the LIN bus.</li>
+    <li>Recognize the break and synchronization fields.</li>
+    <li>Receive and validate the protected identifier.</li>
+    <li>Publish data when configured as the publisher.</li>
+    <li>Receive data when configured as a subscriber.</li>
+    <li>Check the received checksum.</li>
+</ul>
+
+<div class="info-box">
+The master initiates normal scheduled communication. The publisher of a particular frame may be either the master or a slave.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>3. LIN Master and Slave Architecture</h2>
+
+<pre>
+                 LIN NETWORK
+
+        +--------------------------+
+        |       MASTER NODE        |
+        |                          |
+        |  Microcontroller         |
+        |  UART / LIN Firmware     |
+        |  Schedule Management    |
+        +------------+-------------+
+                     |
+                LIN BUS
+          ===========+===========
+                     |
+             +-------+-------+
+             |               |
+      +------v------+  +-----v-------+
+      | SLAVE NODE 1|  | SLAVE NODE 2|
+      |             |  |             |
+      | MCU + UART  |  | MCU + UART  |
+      | LIN Firmware|  | LIN Firmware|
+      +-------------+  +-------------+
+</pre>
+
+<p>Each node uses a suitable LIN transceiver to connect its controller to the shared physical bus.</p>
+</section>
+
+<section class="lesson-section">
+<h2>4. Master Task and Slave Task</h2>
+
+<table>
+<thead>
+<tr><th>Master Task</th><th>Slave Task</th></tr>
+</thead>
+<tbody>
+<tr><td>Controls frame scheduling.</td><td>Waits for the master's header.</td></tr>
+<tr><td>Transmits break and sync.</td><td>Detects break and sync.</td></tr>
+<tr><td>Transmits the PID.</td><td>Receives and validates the PID.</td></tr>
+<tr><td>Controls the response timing.</td><td>Publishes or subscribes according to configuration.</td></tr>
+<tr><td>Monitors communication.</td><td>Checks received data and checksum.</td></tr>
+</tbody>
+</table>
+</section>
+
+<section class="lesson-section">
+<h2>5. LIN Protected Identifier Calculation</h2>
+<p>The protected identifier contains six identifier bits and two parity bits.</p>
+
+<pre>
++-----------------------------+
+| ID5 ID4 ID3 ID2 ID1 ID0 P1 P0 |
++-----------------------------+
+       6-bit ID       2 parity bits
+</pre>
+
+<p>The parity equations are:</p>
+
+<pre>
+P0 = ID0 XOR ID1 XOR ID2 XOR ID4
+
+P1 = NOT (ID1 XOR ID3 XOR ID4 XOR ID5)
+</pre>
+
+<h3>Embedded C Function</h3>
+
+<pre>
+unsigned char LIN_Calculate_PID(unsigned char id)
+{
+    unsigned char id0, id1, id2;
+    unsigned char id3, id4, id5;
+    unsigned char p0, p1;
+
+    id = id & 0x3F;
+
+    id0 = (id >> 0) & 1;
+    id1 = (id >> 1) & 1;
+    id2 = (id >> 2) & 1;
+    id3 = (id >> 3) & 1;
+    id4 = (id >> 4) & 1;
+    id5 = (id >> 5) & 1;
+
+    p0 = id0 ^ id1 ^ id2 ^ id4;
+
+    p1 = !(id1 ^ id3 ^ id4 ^ id5);
+
+    return (id | (p0 << 6) | (p1 << 7));
+}
+</pre>
+
+<h3>Example</h3>
+<p>For the six-bit identifier 0x12:</p>
+<ul>
+    <li>Identifier = 010010</li>
+    <li>P0 = 1</li>
+    <li>P1 = 0</li>
+    <li>PID = 0x52</li>
+</ul>
+
+<div class="info-box">
+The identifier is limited to six bits before parity calculation. The resulting PID is an eight-bit value.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>6. LIN Master Programming Flow</h2>
+
+<pre>
+          START
+            |
+            v
+      Initialize UART
+            |
+            v
+      Initialize LIN
+            |
+            v
+      Load Schedule Table
+            |
+            v
+      Select Next Frame
+            |
+            v
+      Generate BREAK
+            |
+            v
+      Transmit SYNC 0x55
+            |
+            v
+      Calculate and Send PID
+            |
+            v
+      Process Frame Response
+            |
+            v
+      Check Communication
+            |
+            v
+      Update Schedule
+            |
+            +------ Repeat
+</pre>
+
+<p>The master firmware executes the schedule table and initiates each frame at its configured time.</p>
+</section>
+
+<section class="lesson-section">
+<h2>7. LIN Slave Programming Flow</h2>
+
+<pre>
+          START
+            |
+            v
+      Initialize UART
+            |
+            v
+      Initialize LIN
+            |
+            v
+      Wait for BREAK
+            |
+            v
+      Receive SYNC
+            |
+            v
+      Receive PID
+            |
+            v
+      Validate PID
+            |
+            v
+      Identify Frame Role
+            |
+       +----+----+
+       |         |
+   Publisher  Subscriber
+       |         |
+       v         v
+   Send Data  Receive Data
+       |         |
+       +----+----+
+            |
+            v
+      Check Checksum
+            |
+            v
+      Wait for Next Frame
+</pre>
+</section>
+
+<section class="lesson-section">
+<h2>8. LIN Master Schedule Table</h2>
+<p>The schedule table defines the sequence of frames transmitted by the master.</p>
+
+<h3>Example Schedule</h3>
+<table>
+<thead>
+<tr><th>Slot</th><th>Frame</th><th>Publisher</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td>1</td><td>0x12</td><td>Slave 1</td><td>Door status</td></tr>
+<tr><td>2</td><td>0x15</td><td>Slave 2</td><td>Window position</td></tr>
+<tr><td>3</td><td>0x18</td><td>Master</td><td>Control command</td></tr>
+<tr><td>4</td><td>0x1A</td><td>Slave 1</td><td>Lock status</td></tr>
+</tbody>
+</table>
+
+<p>This is an illustrative schedule. Actual slot durations and frame assignments must be designed according to the network requirements.</p>
+</section>
+
+<section class="lesson-section">
+<h2>9. LIN Checksum Function</h2>
+<p>The checksum calculation uses an 8-bit accumulator with end-around carry, followed by inversion.</p>
+
+<h3>Embedded C Function</h3>
+
+<pre>
+unsigned char LIN_Checksum(
+    unsigned char *data,
+    unsigned char length,
+    unsigned char pid,
+    unsigned char enhanced)
+{
+    unsigned int sum = 0;
+    unsigned char i;
+
+    if (enhanced)
+    {
+        sum += pid;
+    }
+
+    for (i = 0; i < length; i++)
+    {
+        sum += data[i];
+
+        if (sum > 255)
+        {
+            sum = (sum & 0xFF) + 1;
+        }
+    }
+
+    return (unsigned char)(~sum);
+}
+</pre>
+
+<p>Use <code>enhanced = 0</code> for classic checksum and <code>enhanced = 1</code> for enhanced checksum. The PID is included only in the enhanced calculation.</p>
+
+<div class="warning-box">
+Diagnostic frames use classic checksum. Checksum selection must follow the LIN frame type and protocol version.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>10. Basic UART-Based LIN Master Program Structure</h2>
+<p>The following is an illustrative firmware structure. It shows the order of master operations; hardware-specific break generation, response timing, timeout handling and schedule execution must be implemented for the selected platform.</p>
+
+<pre>
+#include &lt;LPC21xx.h&gt;
+
+void UART0_Init(void);
+void UART0_Tx(unsigned char data);
+void LIN_Generate_Break(void);
+unsigned char LIN_Calculate_PID(unsigned char id);
+
+void LIN_Master_Send_Header(unsigned char id)
+{
+    unsigned char pid;
+
+    // Generate LIN break field
+    LIN_Generate_Break();
+
+    // Send synchronization byte
+    UART0_Tx(0x55);
+
+    // Calculate protected identifier
+    pid = LIN_Calculate_PID(id);
+
+    // Send protected identifier
+    UART0_Tx(pid);
+}
+
+int main(void)
+{
+    UART0_Init();
+
+    while (1)
+    {
+        // Send header for frame ID 0x12
+        LIN_Master_Send_Header(0x12);
+
+        // Response processing and schedule timing
+        // must be implemented here.
+    }
+}
+</pre>
+
+<p>The program is a structural example, not a complete standards-compliant LIN master. In a real master, frame scheduling, response transmission/reception and timing must be handled correctly.</p>
+</section>
+
+<section class="lesson-section">
+<h2>11. Basic UART-Based LIN Slave Program Structure</h2>
+<p>The slave waits for a header, validates the received identifier and then performs the configured publisher or subscriber action.</p>
+
+<pre>
+#include &lt;LPC21xx.h&gt;
+
+void UART0_Init(void);
+unsigned char UART0_Rx(void);
+void UART0_Tx(unsigned char data);
+
+#define SLAVE_FRAME_ID 0x12
+
+void LIN_Slave_Process(void)
+{
+    unsigned char pid;
+    unsigned char frame_id;
+
+    // Receive PID after break and sync
+    // have been detected and processed.
+    pid = UART0_Rx();
+
+    // Extract six-bit identifier
+    frame_id = pid & 0x3F;
+
+    if (frame_id == SLAVE_FRAME_ID)
+    {
+        // Validate PID parity before use.
+
+        // If this node is the publisher,
+        // transmit its configured response.
+
+        // If this node is a subscriber,
+        // receive and process the response.
+    }
+}
+
+int main(void)
+{
+    UART0_Init();
+
+    while (1)
+    {
+        LIN_Slave_Process();
+    }
+}
+</pre>
+
+<div class="warning-box">
+This is a software-structure example only. A production slave must detect the break field, synchronize, validate PID parity, respect response timing and distinguish publisher from subscriber behavior.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>12. Publisher and Subscriber Programming</h2>
+<p>Each LIN frame has a configured publisher and may have multiple subscribers.</p>
+
+<h3>Publisher</h3>
+<ul>
+    <li>Provides the response data.</li>
+    <li>Transmits the configured data bytes.</li>
+    <li>Transmits the checksum.</li>
+</ul>
+
+<h3>Subscriber</h3>
+<ul>
+    <li>Receives the response.</li>
+    <li>Processes the received data.</li>
+    <li>Checks the checksum.</li>
+    <li>Updates application variables.</li>
+</ul>
+
+<pre>
+          MASTER HEADER
+                |
+                v
+          PUBLISHER NODE
+                |
+          DATA + CHECKSUM
+                |
+                v
+          SUBSCRIBER NODES
+                |
+          Process Received Data
+</pre>
+</section>
+
+<section class="lesson-section">
+<h2>13. Error Handling in LIN Programming</h2>
+<p>Reliable LIN firmware should detect and handle communication errors.</p>
+
+<table>
+<thead>
+<tr><th>Error</th><th>Possible Cause</th><th>Handling</th></tr>
+</thead>
+<tbody>
+<tr><td>PID Parity Error</td><td>Incorrect identifier parity or corrupted data.</td><td>Reject the header.</td></tr>
+<tr><td>Checksum Error</td><td>Incorrect or corrupted response data.</td><td>Reject or flag the response.</td></tr>
+<tr><td>Timeout</td><td>Expected response not received.</td><td>Record timeout and follow application recovery policy.</td></tr>
+<tr><td>Framing Error</td><td>Incorrect UART timing or signal disturbance.</td><td>Check baud rate and physical interface.</td></tr>
+<tr><td>Synchronization Error</td><td>Invalid sync timing or break handling.</td><td>Re-synchronize at a subsequent frame.</td></tr>
+</tbody>
+</table>
+</section>
+
+<section class="lesson-section">
+<h2>14. LPC2129 Implementation Considerations</h2>
+<p>The LPC2129 can be used for a UART-based LIN implementation with an external LIN transceiver.</p>
+
+<table>
+<tr><th>Signal</th><th>LPC2129 Pin</th></tr>
+<tr><td>UART0 TXD0</td><td>P0.0</td></tr>
+<tr><td>UART0 RXD0</td><td>P0.1</td></tr>
+</table>
+
+<h3>Course Clock Configuration</h3>
+<ul>
+    <li>FOSC = 12 MHz</li>
+    <li>CCLK = 60 MHz</li>
+    <li>PCLK = 15 MHz</li>
+</ul>
+
+<h3>Implementation Tasks</h3>
+<ol>
+    <li>Configure UART0 pins and baud rate.</li>
+    <li>Develop UART transmit and receive functions.</li>
+    <li>Implement break generation and detection.</li>
+    <li>Implement PID calculation and validation.</li>
+    <li>Implement checksum calculation and validation.</li>
+    <li>Develop master scheduling or slave response logic.</li>
+    <li>Interface the UART with an external LIN transceiver.</li>
+</ol>
+
+<div class="info-box">
+The LPC2129 does not contain a dedicated LIN controller. LIN protocol functionality must be implemented in firmware using the UART and suitable external hardware.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>15. Practical Project: LIN Master and Slave Communication</h2>
+
+<h3>Project Objective</h3>
+<p>Develop a simple LIN network consisting of one master and one slave node.</p>
+
+<h3>Required Hardware</h3>
+<ul>
+    <li>Two microcontroller boards.</li>
+    <li>Two suitable LIN transceivers.</li>
+    <li>Power supply.</li>
+    <li>LIN bus wiring.</li>
+    <li>Oscilloscope or LIN analyzer for testing.</li>
+</ul>
+
+<h3>Project Operation</h3>
+<ol>
+    <li>Configure one microcontroller as the master.</li>
+    <li>Configure the second microcontroller as a slave.</li>
+    <li>Connect both nodes through their LIN transceivers.</li>
+    <li>Configure a frame identifier.</li>
+    <li>Master sends break, sync and PID.</li>
+    <li>Slave recognizes its configured frame.</li>
+    <li>Slave publishes response data.</li>
+    <li>Master receives and verifies the response.</li>
+</ol>
+
+<h3>Expected Result</h3>
+<p>The master initiates a LIN frame and the configured slave responds with data and checksum. The master verifies the received response.</p>
+
+<div class="warning-box">
+The complete physical project requires actual LIN hardware. Keil simulation alone cannot validate the transceiver and bus operation.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>16. Common Programming Mistakes</h2>
+<ul>
+    <li>Using an ordinary UART byte instead of a correctly timed LIN break.</li>
+    <li>Incorrect synchronization byte.</li>
+    <li>Incorrect PID parity calculation.</li>
+    <li>Using the wrong checksum type.</li>
+    <li>Allowing a slave to transmit without being the configured publisher.</li>
+    <li>Ignoring the master's schedule.</li>
+    <li>Using incorrect baud-rate settings.</li>
+    <li>Failing to handle response timeouts.</li>
+    <li>Connecting UART pins directly to the LIN bus.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>17. Practical Exercises</h2>
+
+<h3>Exercise 1: PID Generation</h3>
+<p>Write an embedded C function to calculate a protected identifier for a six-bit LIN frame identifier.</p>
+<p><strong>Expected Result:</strong> An eight-bit PID containing identifier and parity bits.</p>
+
+<h3>Exercise 2: Master Header</h3>
+<p>Write a master routine to generate a break, transmit 0x55 and send the PID.</p>
+<p><strong>Expected Result:</strong> A correctly ordered conceptual LIN header transmission.</p>
+
+<h3>Exercise 3: Slave PID Validation</h3>
+<p>Write a function to extract the six-bit identifier and verify the parity bits.</p>
+<p><strong>Expected Result:</strong> The firmware accepts valid PIDs and rejects invalid ones.</p>
+
+<h3>Exercise 4: Checksum Validation</h3>
+<p>Write a routine to calculate and compare a LIN response checksum.</p>
+<p><strong>Expected Result:</strong> The firmware detects a checksum mismatch.</p>
+
+<h3>Exercise 5: Master-Slave Project</h3>
+<p>Prepare a master and slave flowchart showing frame initiation, response handling and error checking.</p>
+<p><strong>Expected Result:</strong> A complete conceptual master-slave communication design.</p>
+</section>
+
+<section class="lesson-section">
+<h2>18. Review Questions</h2>
+<ol>
+    <li>What is the role of the LIN master?</li>
+    <li>What is the role of a LIN slave?</li>
+    <li>What is a master task?</li>
+    <li>What is a slave task?</li>
+    <li>What is a protected identifier?</li>
+    <li>How are the PID parity bits calculated?</li>
+    <li>What is a LIN schedule table?</li>
+    <li>What is the difference between a publisher and a subscriber?</li>
+    <li>What is the purpose of checksum validation?</li>
+    <li>How is a PID parity error handled?</li>
+    <li>Can a slave initiate normal scheduled LIN communication?</li>
+    <li>How can LPC2129 be used for LIN programming?</li>
+</ol>
+</section>
+
+<section class="lesson-section">
+<h2>19. Interview Questions and Answers</h2>
+
+<h3>Q1. What is the main responsibility of a LIN master?</h3>
+<p><strong>Answer:</strong> The master manages the schedule and initiates normal communication by transmitting frame headers.</p>
+
+<h3>Q2. Can a slave node transmit data?</h3>
+<p><strong>Answer:</strong> Yes. A slave transmits data when it is the configured publisher for the frame initiated by the master.</p>
+
+<h3>Q3. What is a protected identifier?</h3>
+<p><strong>Answer:</strong> It is an eight-bit field containing a six-bit frame identifier and two parity bits.</p>
+
+<h3>Q4. What is a schedule table?</h3>
+<p><strong>Answer:</strong> It defines the order and timing of frames initiated by the LIN master.</p>
+
+<h3>Q5. What is the difference between publisher and subscriber?</h3>
+<p><strong>Answer:</strong> The publisher supplies the response data, while subscribers receive and process it.</p>
+
+<h3>Q6. Why is PID validation important?</h3>
+<p><strong>Answer:</strong> It detects invalid or corrupted protected identifiers before the node processes the frame.</p>
+
+<h3>Q7. What happens if the checksum is incorrect?</h3>
+<p><strong>Answer:</strong> The receiving node detects an invalid response and can reject or flag it according to the application error-handling policy.</p>
+
+<h3>Q8. Can LPC2129 act as a LIN master?</h3>
+<p><strong>Answer:</strong> Yes, using UART-based firmware and an external LIN transceiver. The firmware must implement the LIN master functions.</p>
+
+<h3>Q9. Can LPC2129 act as a LIN slave?</h3>
+<p><strong>Answer:</strong> Yes, using UART-based firmware, an external LIN transceiver and suitable break, synchronization, PID and response handling.</p>
+
+<h3>Q10. Why is timing important in LIN?</h3>
+<p><strong>Answer:</strong> LIN is master-scheduled communication. Correct timing is necessary for synchronization, frame slots and response transmission.</p>
+</section>
+
+<section class="lesson-section">
+<h2>20. Lesson Summary</h2>
+<ul>
+    <li>A LIN network contains one master and one or more slave nodes.</li>
+    <li>The master controls the communication schedule.</li>
+    <li>The master initiates normal scheduled frames.</li>
+    <li>The publisher may be the master or a slave.</li>
+    <li>The PID contains six identifier bits and two parity bits.</li>
+    <li>Checksum calculation detects response errors.</li>
+    <li>Master firmware handles scheduling and header transmission.</li>
+    <li>Slave firmware handles header recognition and configured response behavior.</li>
+    <li>LPC2129 can implement LIN using UART and an external transceiver.</li>
+    <li>Real hardware testing is required to validate physical LIN communication.</li>
+</ul>
+
+<div class="info-box">
+<strong>Next Lesson:</strong> LIN Diagnostics and Configuration.
+</div>
+</section>
+
+<nav class="lesson-nav">
+    <a href="L19_LIN_Communication_Using_UART.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 16 Index</a>
+    <a href="L21_LIN_Diagnostics_and_Configuration.html">Next Lesson →</a>
+</nav>
+
+</main>
+</body>
+</html>
