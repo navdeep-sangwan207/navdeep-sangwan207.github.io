@@ -1,1 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 16 - LIN Schedule Tables and Message Scheduling</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-header {
+    background: linear-gradient(135deg, #174ea6, #007bff);
+    color: white;
+    padding: 25px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+.lesson-header h1 { margin: 0 0 10px; }
+.lesson-section {
+    background: #fff;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.08);
+}
+.lesson-section h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e5eaf2;
+    padding-bottom: 8px;
+}
+.lesson-section h3 { color: #174ea6; }
+.info-box {
+    background: #eaf3ff;
+    border-left: 5px solid #007bff;
+    padding: 14px;
+    margin: 15px 0;
+}
+.warning-box {
+    background: #fff3cd;
+    border-left: 5px solid #e0a800;
+    padding: 14px;
+    margin: 15px 0;
+}
+pre {
+    background: #172033;
+    color: #e8f0ff;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    line-height: 1.5;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7deea;
+    padding: 10px;
+    text-align: left;
+}
+th { background: #eaf1fc; color: #174ea6; }
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+.lesson-nav a:hover { background: #007bff; }
+</style>
+</head>
+<body>
 
+<main class="container">
+
+<header class="lesson-header">
+    <h1>Lesson 16: LIN Schedule Tables and Message Scheduling</h1>
+    <p><strong>Chapter 16:</strong> LPC2129 SPI, CAN and LIN Communication</p>
+    <p><strong>Part C:</strong> LIN Communication</p>
+    <p>Understanding master-controlled scheduling, schedule tables, frame slots and schedule management.</p>
+</header>
+
+<section class="lesson-section">
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+    <li>Explain the purpose of scheduling in LIN.</li>
+    <li>Understand the role of the LIN master task.</li>
+    <li>Describe a LIN schedule table.</li>
+    <li>Understand frame slots and slot durations.</li>
+    <li>Differentiate unconditional, sporadic and event-triggered frames.</li>
+    <li>Explain schedule table switching.</li>
+    <li>Understand how scheduling supports automotive applications.</li>
+    <li>Design a basic conceptual LIN schedule.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>2. Introduction to LIN Message Scheduling</h2>
+<p>LIN is a master-controlled communication protocol. Slave nodes do not normally initiate scheduled communication independently.</p>
+
+<p>The master decides:</p>
+<ul>
+    <li>Which frame should be transmitted.</li>
+    <li>When a frame should be transmitted.</li>
+    <li>How frequently a frame should appear.</li>
+    <li>Which schedule table should be active.</li>
+</ul>
+
+<p>This organized communication process is called <strong>message scheduling</strong>.</p>
+
+<div class="info-box">
+<strong>Key concept:</strong> The LIN master controls frame initiation according to a predefined schedule. This makes communication predictable and avoids normal bus-access collisions.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>3. What Is a LIN Schedule Table?</h2>
+<p>A LIN schedule table is an ordered list of frame transmissions and their associated time slots. The master follows this table to determine when to send each frame header.</p>
+
+<h3>Example</h3>
+<pre>
+LIN SCHEDULE TABLE
+
+Slot 1  -> Door Status Frame
+Slot 2  -> Window Control Frame
+Slot 3  -> Mirror Position Frame
+Slot 4  -> Lighting Status Frame
+Slot 5  -> Door Status Frame
+              |
+              v
+          Repeat Cycle
+</pre>
+
+<p>Each entry identifies a frame to be initiated by the master at the corresponding point in the schedule.</p>
+
+<h3>Purpose of Schedule Tables</h3>
+<ul>
+    <li>Organize communication between nodes.</li>
+    <li>Provide predictable message timing.</li>
+    <li>Control the order of frame transmission.</li>
+    <li>Support periodic data updates.</li>
+    <li>Reduce unnecessary bus traffic.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>4. Role of the Master Task in Scheduling</h2>
+<p>The master node contains the master task, which controls the communication schedule.</p>
+
+<h3>Master Task Responsibilities</h3>
+<ol>
+    <li>Select the active schedule table.</li>
+    <li>Determine the next scheduled frame.</li>
+    <li>Wait for the required frame slot.</li>
+    <li>Transmit the frame header.</li>
+    <li>Allow the designated publisher to transmit the response.</li>
+    <li>Move to the next schedule entry.</li>
+</ol>
+
+<pre>
+        MASTER TASK
+             |
+             v
+    Select Schedule Table
+             |
+             v
+    Select Next Frame Entry
+             |
+             v
+     Wait for Frame Slot
+             |
+             v
+      Transmit Header
+             |
+             v
+     Receive Response
+             |
+             v
+     Advance Schedule
+             |
+             +------> Repeat
+</pre>
+
+<div class="info-box">
+The master task schedules the frame. The slave task associated with a particular frame may publish its response when that frame is requested.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>5. Frame Slots and Slot Duration</h2>
+<p>A frame slot is the time allocated in the schedule for a particular frame transmission.</p>
+
+<p>Slot duration must be sufficient for the expected frame transmission and the required protocol timing margins.</p>
+
+<h3>Factors Affecting Slot Duration</h3>
+<ul>
+    <li>LIN baud rate.</li>
+    <li>Number of data bytes in the response.</li>
+    <li>Break and delimiter timing.</li>
+    <li>Header and response transmission time.</li>
+    <li>Inter-byte and scheduling margins.</li>
+</ul>
+
+<h3>Conceptual Slot Diagram</h3>
+<pre>
+Time ---------------------------------------------------->
+
+|----------- Slot 1 -----------|
+|----------- Slot 2 -----------|
+|----------- Slot 3 -----------|
+|----------- Slot 4 -----------|
+
+    Frame 1      Frame 2
+      |             |
+      v             v
+   Header         Header
+   Response       Response
+</pre>
+
+<p>Slots are arranged so that the next scheduled frame can begin at the correct time without overlapping the previous frame.</p>
+</section>
+
+<section class="lesson-section">
+<h2>6. Unconditional Frames</h2>
+<p>An unconditional frame is transmitted according to its scheduled slot. Its publisher sends the response whenever the master requests that frame.</p>
+
+<h3>Characteristics</h3>
+<ul>
+    <li>Has a predefined frame identifier.</li>
+    <li>Has a designated publisher.</li>
+    <li>Is transmitted according to the schedule.</li>
+    <li>Can carry periodic information such as sensor values or switch status.</li>
+</ul>
+
+<h3>Example</h3>
+<p>A door-control module periodically publishes door status.</p>
+
+<pre>
+Master sends Door Status Header
+              |
+              v
+Door Module publishes response
+              |
+              v
+Other nodes receive door status
+</pre>
+</section>
+
+<section class="lesson-section">
+<h2>7. Sporadic Frames</h2>
+<p>A sporadic frame is used to transmit information that does not need to be sent during every repetition of the schedule.</p>
+
+<p>The master checks whether the associated publisher has updated data. If suitable data is pending, the master schedules the corresponding frame transmission.</p>
+
+<h3>Characteristics</h3>
+<ul>
+    <li>Supports less frequently changing information.</li>
+    <li>Can reduce unnecessary bus traffic.</li>
+    <li>Is managed by the master schedule.</li>
+    <li>Requires defined conditions for deciding when to transmit.</li>
+</ul>
+
+<h3>Example</h3>
+<p>A vehicle lighting controller may report a change in a less frequently updated status value.</p>
+
+<div class="info-box">
+A sporadic frame is not an independently initiated slave transmission. The master still controls when its header is sent.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>8. Event-Triggered Frames</h2>
+<p>An event-triggered frame allows multiple slave nodes to share a frame identifier when their data is associated with the same type of event.</p>
+
+<p>The master sends the event-triggered header. A slave with relevant updated data may respond.</p>
+
+<h3>Collision Situation</h3>
+<p>If more than one slave responds at the same time, a response collision can occur. The master may detect an invalid response and use associated unconditional frames to identify which slave has pending data.</p>
+
+<h3>Conceptual Example</h3>
+<pre>
+             MASTER
+                |
+                | Event-triggered header
+                v
+         +------+------+
+         |             |
+         v             v
+      Slave A       Slave B
+      Has data      Has data
+         |             |
+         +------X------+
+             Collision
+                |
+                v
+       Master polls associated
+        unconditional frames
+</pre>
+
+<p>Event-triggered frames are useful when events are not always present and multiple nodes may share a response opportunity.</p>
+
+<div class="warning-box">
+Event-triggered frames require carefully configured identifiers and associated unconditional frames. They are not simply ordinary frames with multiple publishers transmitting simultaneously.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>9. Diagnostic Frames and Scheduling</h2>
+<p>LIN also defines diagnostic communication using specific frame identifiers.</p>
+
+<table>
+<tr><th>Frame Identifier</th><th>Purpose</th></tr>
+<tr><td>0x3C</td><td>Master request frame</td></tr>
+<tr><td>0x3D</td><td>Slave response frame</td></tr>
+</table>
+
+<p>These diagnostic frames are used for diagnostic requests and responses between the master and slave nodes.</p>
+
+<h3>Examples of Diagnostic Information</h3>
+<ul>
+    <li>Read diagnostic information.</li>
+    <li>Retrieve fault information.</li>
+    <li>Perform node configuration operations.</li>
+    <li>Support diagnostic services defined for the network.</li>
+</ul>
+
+<div class="info-box">
+Diagnostic frames use the classic checksum. Diagnostic communication must be scheduled by the master.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>10. Schedule Table Switching</h2>
+<p>A LIN master may use different schedule tables for different operating conditions.</p>
+
+<h3>Example: Vehicle Operating Modes</h3>
+<table>
+<tr><th>Operating Mode</th><th>Schedule Example</th></tr>
+<tr><td>Normal operation</td><td>Door, window, mirror and lighting status.</td></tr>
+<tr><td>Diagnostic mode</td><td>Diagnostic request and response frames.</td></tr>
+<tr><td>Low-power mode</td><td>Reduced communication activity.</td></tr>
+<tr><td>Configuration mode</td><td>Node configuration-related communication.</td></tr>
+</table>
+
+<p>The master can switch between schedules according to the network's application requirements and defined timing rules.</p>
+</section>
+
+<section class="lesson-section">
+<h2>11. LIN Schedule Table Example</h2>
+<p>Consider a simple vehicle door-control LIN network.</p>
+
+<table>
+<thead>
+<tr><th>Schedule Entry</th><th>Frame</th><th>Publisher</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td>1</td><td>Door_Status</td><td>Door Module</td><td>Door open/closed status</td></tr>
+<tr><td>2</td><td>Window_Command</td><td>Master</td><td>Window movement command</td></tr>
+<tr><td>3</td><td>Mirror_Position</td><td>Mirror Module</td><td>Mirror position feedback</td></tr>
+<tr><td>4</td><td>Light_Status</td><td>Lighting Module</td><td>Lighting status</td></tr>
+<tr><td>5</td><td>Door_Status</td><td>Door Module</td><td>Periodic status update</td></tr>
+</tbody>
+</table>
+
+<h3>Schedule Execution</h3>
+<pre>
+START
+  |
+  v
+Door_Status
+  |
+  v
+Window_Command
+  |
+  v
+Mirror_Position
+  |
+  v
+Light_Status
+  |
+  v
+Door_Status
+  |
+  v
+REPEAT SCHEDULE
+</pre>
+</section>
+
+<section class="lesson-section">
+<h2>12. LIN Description File (LDF)</h2>
+<p>The LIN Description File (LDF) is used to describe the configuration of a LIN network.</p>
+
+<h3>Information Defined in an LDF</h3>
+<ul>
+    <li>LIN protocol version and baud rate.</li>
+    <li>Master and slave node information.</li>
+    <li>Frame identifiers and publishers.</li>
+    <li>Signals and their definitions.</li>
+    <li>Schedule tables.</li>
+    <li>Signal-to-frame mapping.</li>
+</ul>
+
+<p>Engineering tools can use the LDF to configure and analyze LIN networks.</p>
+
+<div class="info-box">
+The LDF is a network description and configuration artifact. It is not itself the runtime schedule executing inside the microcontroller.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>13. Scheduling Advantages</h2>
+<ul>
+    <li>Predictable communication timing.</li>
+    <li>Controlled bus access.</li>
+    <li>Reduced communication collisions during normal scheduled operation.</li>
+    <li>Efficient handling of periodic messages.</li>
+    <li>Support for different operating modes.</li>
+    <li>Suitable for low-cost automotive networks.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>14. LPC2129-Based LIN Scheduling Concept</h2>
+<p>The LPC2129 has no dedicated LIN controller. A firmware-based LIN master can use a UART and an external LIN transceiver to implement the communication process.</p>
+
+<h3>Firmware Responsibilities</h3>
+<ul>
+    <li>Maintain a schedule table in program memory or RAM.</li>
+    <li>Track the active schedule entry.</li>
+    <li>Generate the appropriate frame header.</li>
+    <li>Receive or transmit the response as required.</li>
+    <li>Validate the checksum.</li>
+    <li>Advance to the next schedule entry.</li>
+</ul>
+
+<h3>Conceptual C Schedule Table</h3>
+<pre>
+#include &lt;stdint.h&gt;
+
+typedef struct
+{
+    uint8_t frame_id;
+    uint16_t slot_time_ms;
+} LIN_ScheduleEntry;
+
+LIN_ScheduleEntry schedule[] =
+{
+    {0x10, 10},  // Door status
+    {0x11, 20},  // Window command
+    {0x12, 20},  // Mirror position
+    {0x13, 50}   // Lighting status
+};
+
+#define SCHEDULE_COUNT \
+    (sizeof(schedule) / sizeof(schedule[0]))
+</pre>
+
+<p>This code only represents a conceptual schedule data structure. A complete implementation also needs timing control, LIN header generation, response handling and checksum processing.</p>
+
+<div class="warning-box">
+The code above is not a complete LIN driver. Keil simulation can test schedule-table logic, but physical LIN communication requires a suitable transceiver and hardware setup.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>15. Practical Learning Exercise</h2>
+
+<h3>Exercise 1: Design a Schedule Table</h3>
+<p>Design a schedule for a vehicle door-control network with these frames:</p>
+<ul>
+    <li>Door status.</li>
+    <li>Window command.</li>
+    <li>Mirror position.</li>
+    <li>Lighting status.</li>
+</ul>
+
+<p><strong>Expected Result:</strong> A table that defines the frame order, publisher and purpose of each entry.</p>
+
+<h3>Exercise 2: Identify Frame Types</h3>
+<p>Classify the following communication requirements:</p>
+<ol>
+    <li>A frame sent periodically at every schedule cycle.</li>
+    <li>A frame sent only when the master detects pending updated data.</li>
+    <li>A frame that permits multiple configured slave nodes to share an event-triggered response opportunity.</li>
+</ol>
+
+<p><strong>Expected Result:</strong></p>
+<ol>
+    <li>Unconditional frame.</li>
+    <li>Sporadic frame.</li>
+    <li>Event-triggered frame.</li>
+</ol>
+
+<h3>Exercise 3: Schedule Table Programming</h3>
+<p>Write a C program that stores four frame identifiers and moves through the entries sequentially. Display the current frame identifier for each entry.</p>
+
+<p><strong>Expected Result:</strong> The program should display the frame identifiers in the configured schedule order. This exercise tests scheduling logic only, not physical LIN transmission.</p>
+</section>
+
+<section class="lesson-section">
+<h2>16. Review Questions</h2>
+<ol>
+    <li>What is message scheduling in LIN?</li>
+    <li>What is a LIN schedule table?</li>
+    <li>What is the role of the master task?</li>
+    <li>What is a frame slot?</li>
+    <li>Which factors affect slot duration?</li>
+    <li>What is an unconditional frame?</li>
+    <li>What is a sporadic frame?</li>
+    <li>What is an event-triggered frame?</li>
+    <li>What happens if multiple slaves respond to an event-triggered frame?</li>
+    <li>What are the diagnostic frame identifiers?</li>
+    <li>What is schedule table switching?</li>
+    <li>What information is stored in an LDF?</li>
+    <li>How can LPC2129 implement a conceptual LIN schedule?</li>
+</ol>
+</section>
+
+<section class="lesson-section">
+<h2>17. Interview Questions and Answers</h2>
+
+<h3>Q1. What is a LIN schedule table?</h3>
+<p><strong>Answer:</strong> It is an ordered list of frame transmissions followed by the master to control LIN communication timing.</p>
+
+<h3>Q2. Who controls LIN message scheduling?</h3>
+<p><strong>Answer:</strong> The LIN master task.</p>
+
+<h3>Q3. What is a frame slot?</h3>
+<p><strong>Answer:</strong> It is the allocated time interval for a scheduled frame transmission.</p>
+
+<h3>Q4. What is an unconditional frame?</h3>
+<p><strong>Answer:</strong> A frame transmitted according to its schedule, with a predefined publisher.</p>
+
+<h3>Q5. What is a sporadic frame?</h3>
+<p><strong>Answer:</strong> A frame scheduled by the master when relevant updated data is pending.</p>
+
+<h3>Q6. What is an event-triggered frame?</h3>
+<p><strong>Answer:</strong> A frame that allows multiple configured slave nodes to share a response opportunity associated with an event.</p>
+
+<h3>Q7. What happens when two slaves respond to an event-triggered frame?</h3>
+<p><strong>Answer:</strong> A response collision may occur. The master can then use associated unconditional frames to identify the responding node or nodes.</p>
+
+<h3>Q8. What is an LDF?</h3>
+<p><strong>Answer:</strong> A LIN Description File that defines network configuration, nodes, frames, signals and schedule tables.</p>
+
+<h3>Q9. Why are multiple schedule tables useful?</h3>
+<p><strong>Answer:</strong> They allow the master to organize communication differently for operating conditions such as normal operation and diagnostics.</p>
+
+<h3>Q10. Does a LIN slave control the schedule?</h3>
+<p><strong>Answer:</strong> No. The master controls the schedule and initiates normal frame communication.</p>
+</section>
+
+<section class="lesson-section">
+<h2>18. Lesson Summary</h2>
+<ul>
+    <li>LIN uses master-controlled message scheduling.</li>
+    <li>A schedule table defines the order and timing of frame transmissions.</li>
+    <li>The master task initiates each scheduled frame.</li>
+    <li>A frame slot is the time allocated for a frame.</li>
+    <li>LIN supports unconditional, sporadic and event-triggered frame types.</li>
+    <li>Diagnostic communication uses dedicated frame identifiers.</li>
+    <li>Schedule table switching supports different operating modes.</li>
+    <li>The LDF describes the LIN network configuration.</li>
+    <li>LPC2129 can implement schedule logic using firmware, UART and an external LIN transceiver.</li>
+</ul>
+
+<div class="info-box">
+<strong>Next Lesson:</strong> LIN Protocol Timing, Baud Rate and Checksum.
+</div>
+</section>
+
+<nav class="lesson-nav">
+    <a href="L15_LIN_Synchronization_Header_and_Response_Fields.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 16 Index</a>
+    <a href="L17_LIN_Protocol_Timing_Baud_Rate_and_Checksum.html">Next Lesson →</a>
+</nav>
+
+</main>
+</body>
+</html>
