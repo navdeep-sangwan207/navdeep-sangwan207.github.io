@@ -1,1 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 15 - LIN Synchronization, Header and Response Fields</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+.lesson-header {
+    background: linear-gradient(135deg, #174ea6, #007bff);
+    color: white;
+    padding: 25px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+.lesson-header h1 { margin: 0 0 10px; }
+.lesson-section {
+    background: #fff;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 7px rgba(0,0,0,0.08);
+}
+.lesson-section h2 {
+    color: #174ea6;
+    border-bottom: 2px solid #e5eaf2;
+    padding-bottom: 8px;
+}
+.lesson-section h3 { color: #174ea6; }
+.info-box {
+    background: #eaf3ff;
+    border-left: 5px solid #007bff;
+    padding: 14px;
+    margin: 15px 0;
+}
+.warning-box {
+    background: #fff3cd;
+    border-left: 5px solid #e0a800;
+    padding: 14px;
+    margin: 15px 0;
+}
+pre {
+    background: #172033;
+    color: #e8f0ff;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    line-height: 1.5;
+}
+code { font-family: Consolas, monospace; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    border: 1px solid #d7deea;
+    padding: 10px;
+    text-align: left;
+}
+th { background: #eaf1fc; color: #174ea6; }
+.lesson-nav {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 25px 0;
+}
+.lesson-nav a {
+    display: inline-block;
+    background: #174ea6;
+    color: white;
+    padding: 11px 17px;
+    border-radius: 6px;
+    text-decoration: none;
+}
+.lesson-nav a:hover { background: #007bff; }
+</style>
+</head>
+<body>
 
+<main class="container">
+
+<header class="lesson-header">
+    <h1>Lesson 15: LIN Synchronization, Header and Response Fields</h1>
+    <p><strong>Chapter 16:</strong> LPC2129 SPI, CAN and LIN Communication</p>
+    <p><strong>Part C:</strong> LIN Communication</p>
+    <p>Understanding LIN timing synchronization and the detailed operation of header and response fields.</p>
+</header>
+
+<section class="lesson-section">
+<h2>1. Learning Objectives</h2>
+<p>After completing this lesson, you will be able to:</p>
+<ul>
+    <li>Explain the need for synchronization in LIN communication.</li>
+    <li>Understand the LIN bit-time concept.</li>
+    <li>Explain the break field and break delimiter.</li>
+    <li>Describe the sync field and its 0x55 pattern.</li>
+    <li>Understand the protected identifier field.</li>
+    <li>Explain the response field and its timing.</li>
+    <li>Understand the role of the master and slave nodes during frame transmission.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>2. Why Synchronization Is Required</h2>
+<p>LIN communication uses asynchronous serial transmission. The master and slave nodes have their own clock sources, and their clock frequencies may differ slightly.</p>
+
+<p>Synchronization helps slave nodes determine the timing of the incoming communication so that they can correctly receive the transmitted bits.</p>
+
+<h3>Reasons for Synchronization</h3>
+<ul>
+    <li>Microcontrollers may use different clock sources.</li>
+    <li>Oscillator frequencies have tolerances.</li>
+    <li>Clock drift can affect serial data reception.</li>
+    <li>Correct bit timing is required to identify data bits accurately.</li>
+</ul>
+
+<div class="info-box">
+<strong>Key concept:</strong> The LIN sync field allows a slave node to estimate the bit time from the master transmission.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>3. LIN Bit Time and Baud Rate</h2>
+<p>Bit time is the time required to transmit one bit on the LIN bus.</p>
+
+<p>The relationship between baud rate and bit time is:</p>
+
+<pre>
+Bit Time = 1 / Baud Rate
+</pre>
+
+<h3>Example</h3>
+<p>Assume a LIN communication speed of 19,200 bits per second.</p>
+
+<pre>
+Baud Rate = 19,200 bits/second
+
+Bit Time = 1 / 19,200
+
+         = 0.00005208 seconds
+
+         = 52.08 microseconds (approximately)
+</pre>
+
+<table>
+<tr><th>Baud Rate</th><th>Approximate Bit Time</th></tr>
+<tr><td>9,600 bps</td><td>104.17 µs</td></tr>
+<tr><td>19,200 bps</td><td>52.08 µs</td></tr>
+<tr><td>20,000 bps</td><td>50 µs</td></tr>
+</table>
+
+<p>LIN supports communication rates up to 20 kbit/s.</p>
+</section>
+
+<section class="lesson-section">
+<h2>4. LIN Header Overview</h2>
+<p>The header is transmitted by the master task at the beginning of every scheduled frame.</p>
+
+<p>It contains three fields:</p>
+
+<pre>
++-------------+-------------+------------------+
+| Break Field | Sync Field  | Protected ID     |
++-------------+-------------+------------------+
+                    HEADER
+</pre>
+
+<table>
+<tr><th>Field</th><th>Function</th></tr>
+<tr><td>Break</td><td>Indicates the beginning of a frame.</td></tr>
+<tr><td>Sync</td><td>Provides timing information for synchronization.</td></tr>
+<tr><td>Protected ID</td><td>Identifies the frame and includes parity protection.</td></tr>
+</table>
+</section>
+
+<section class="lesson-section">
+<h2>5. Break Field and Break Delimiter</h2>
+<p>The break field is a special dominant-level signal transmitted by the master before the sync field.</p>
+
+<h3>Functions</h3>
+<ul>
+    <li>Indicates the beginning of a LIN frame.</li>
+    <li>Allows slave nodes to detect a new frame.</li>
+    <li>Separates frame-level communication from normal UART character reception.</li>
+</ul>
+
+<h3>Break Delimiter</h3>
+<p>The break delimiter is the recessive-level interval that follows the dominant break field. It separates the break from the sync byte.</p>
+
+<pre>
+LIN BUS SIGNAL (CONCEPTUAL)
+
+Dominant level
+     |
+     |<------ BREAK ------>|
+     ______________________
+                           |
+                           |  Delimiter
+                           |___________
+                                       |
+                                       | Sync field
+</pre>
+
+<div class="info-box">
+In LIN, the break field is longer than a normal UART character. Its minimum length and delimiter timing are specified by the LIN protocol.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>6. Sync Field and Baud-Rate Synchronization</h2>
+<p>The sync field is an 8-bit byte with a fixed value of 0x55.</p>
+
+<pre>
+Hexadecimal: 0x55
+
+Binary:      01010101
+</pre>
+
+<h3>Why Is 0x55 Used?</h3>
+<p>The alternating pattern creates regular transitions on the bus. Slave nodes can measure the timing between transitions to estimate the master bit time.</p>
+
+<h3>Synchronization Process</h3>
+<ol>
+    <li>The master transmits the break field.</li>
+    <li>The master transmits the sync byte 0x55.</li>
+    <li>The slave detects the transitions in the sync pattern.</li>
+    <li>The slave measures the timing of the received signal.</li>
+    <li>The slave adjusts its receive timing as supported by its LIN implementation.</li>
+</ol>
+
+<pre>
+Sync Byte: 0 1 0 1 0 1 0 1
+           | | | | | | | |
+           Transitions provide timing information
+</pre>
+</section>
+
+<section class="lesson-section">
+<h2>7. Protected Identifier Field</h2>
+<p>The protected identifier follows the sync field. It tells the nodes which frame is being transmitted.</p>
+
+<pre>
++--------------------------------+
+| ID5 ID4 ID3 ID2 ID1 ID0 | P1 P0 |
++--------------------------------+
+          6-bit ID          2 parity bits
+</pre>
+
+<h3>Identifier Information</h3>
+<ul>
+    <li>The frame identifier contains six bits.</li>
+    <li>Two parity bits protect the identifier.</li>
+    <li>The complete protected identifier is eight bits.</li>
+    <li>Nodes use the identifier to determine the meaning and handling of the frame.</li>
+</ul>
+
+<h3>Parity Equations</h3>
+<pre>
+P0 = ID0 XOR ID1 XOR ID2 XOR ID4
+
+P1 = NOT (ID1 XOR ID3 XOR ID4 XOR ID5)
+</pre>
+
+<p>The protected identifier is transmitted as part of the master header.</p>
+
+<div class="warning-box">
+The protected identifier is not the same as a CAN identifier. LIN uses a 6-bit frame ID with two parity bits in the PID.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>8. LIN Response Field</h2>
+<p>After the master transmits the header, the response section is transmitted by the designated publisher.</p>
+
+<p>The response contains:</p>
+<ol>
+    <li>Data field.</li>
+    <li>Checksum field.</li>
+</ol>
+
+<pre>
++--------------------------------+
+|          DATA FIELD            |
++--------------------------------+
+|          CHECKSUM              |
++--------------------------------+
+             RESPONSE
+</pre>
+
+<h3>Response Characteristics</h3>
+<ul>
+    <li>The publisher is defined for each frame in the network configuration.</li>
+    <li>The publisher can be the master or a slave node.</li>
+    <li>Subscribers receive the response from the LIN bus.</li>
+    <li>The response contains up to eight data bytes in LIN 2.x.</li>
+    <li>The checksum is used for error detection.</li>
+</ul>
+</section>
+
+<section class="lesson-section">
+<h2>9. Data Field Timing and Transmission</h2>
+<p>The data field consists of UART-style serial data bytes transmitted by the publisher.</p>
+
+<p>Each data byte contains eight data bits and is transmitted using the configured LIN serial format.</p>
+
+<h3>Example</h3>
+<p>Suppose a vehicle door-control node publishes three bytes:</p>
+
+<table>
+<tr><th>Byte</th><th>Value</th><th>Example Meaning</th></tr>
+<tr><td>Data 1</td><td>0x01</td><td>Door open status</td></tr>
+<tr><td>Data 2</td><td>0x00</td><td>Window motor stopped</td></tr>
+<tr><td>Data 3</td><td>0x64</td><td>Motor command value</td></tr>
+</table>
+
+<p>The receiving nodes interpret these bytes according to the signal definitions in the LIN network configuration.</p>
+</section>
+
+<section class="lesson-section">
+<h2>10. Checksum Field Timing and Validation</h2>
+<p>The checksum is the final field of the LIN response.</p>
+
+<h3>Checksum Functions</h3>
+<ul>
+    <li>Provides error detection for received data.</li>
+    <li>Allows receiving nodes to validate the response.</li>
+    <li>Helps identify corrupted transmissions.</li>
+</ul>
+
+<h3>Checksum Types</h3>
+<table>
+<tr><th>Type</th><th>Coverage</th></tr>
+<tr><td>Classic</td><td>Data bytes only.</td></tr>
+<tr><td>Enhanced</td><td>Protected identifier and data bytes.</td></tr>
+</table>
+
+<p>Diagnostic frames use classic checksum. The detailed calculation method is covered in Lesson 17.</p>
+</section>
+
+<section class="lesson-section">
+<h2>11. Complete Header and Response Sequence</h2>
+<pre>
+MASTER NODE             PUBLISHER             SUBSCRIBERS
+    |                       |                       |
+    |------ BREAK --------->|---------------------->|
+    |------ SYNC ---------->|---------------------->|
+    |------ PID ----------->|---------------------->|
+    |                       |                       |
+    |                       |                       |
+    |<----- DATA -----------|                       |
+    |<----- CHECKSUM -------|                       |
+    |                       |                       |
+    |                 FRAME COMPLETE                |
+</pre>
+
+<p>The master controls when the frame begins, while the designated publisher provides the response. All connected nodes observe the bus communication.</p>
+</section>
+
+<section class="lesson-section">
+<h2>12. LIN Timing Example</h2>
+<p>Consider a LIN bus operating at 19.2 kbit/s.</p>
+
+<pre>
+Baud Rate = 19,200 bits/s
+
+Bit Time = 1 / 19,200
+
+         ≈ 52.08 µs
+
+One 8-bit UART character:
+8 data bits + start bit + stop bit
+
+Total = 10 bit times
+
+Character time ≈ 10 × 52.08 µs
+
+               ≈ 520.8 µs
+</pre>
+
+<p>This example illustrates the approximate duration of one 8N1 UART character, excluding any additional protocol-specific timing.</p>
+
+<div class="warning-box">
+Actual LIN frame duration also depends on break timing, delimiter timing, number of response bytes, inter-byte spacing and protocol timing requirements.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>13. LPC2129 UART-Based LIN Synchronization</h2>
+<p>The LPC2129 does not have a dedicated LIN controller. Its UART can be used in a firmware-based LIN implementation with an external LIN transceiver.</p>
+
+<h3>Firmware Tasks</h3>
+<ul>
+    <li>Configure the UART baud rate.</li>
+    <li>Generate or detect the break field.</li>
+    <li>Transmit or receive the 0x55 sync byte.</li>
+    <li>Receive and validate the protected identifier.</li>
+    <li>Transmit or receive response data.</li>
+    <li>Calculate and validate the checksum.</li>
+</ul>
+
+<pre>
+             LPC2129
+        +----------------+
+        |                |
+        |    UART TX     |------ TXD
+        |                |
+        |    UART RX     |------ RXD
+        |                |
+        +----------------+
+                 |
+                 v
+        +------------------+
+        | LIN Transceiver  |
+        +------------------+
+                 |
+                 v
+              LIN BUS
+</pre>
+
+<div class="info-box">
+Keil simulation can be used to test UART-related firmware logic. Actual LIN electrical signaling and transceiver operation require suitable hardware.
+</div>
+</section>
+
+<section class="lesson-section">
+<h2>14. Practical Learning Exercise</h2>
+
+<h3>Exercise 1: Calculate Bit Time</h3>
+<p>Calculate the bit time for a LIN bus operating at 9,600 bps.</p>
+
+<p><strong>Expected Result:</strong></p>
+<pre>
+Bit Time = 1 / 9600
+
+         ≈ 104.17 microseconds
+</pre>
+
+<h3>Exercise 2: Identify Header Fields</h3>
+<p>Identify the fields in the following header:</p>
+<pre>
+BREAK | 0x55 | PID
+</pre>
+
+<p><strong>Expected Result:</strong></p>
+<ul>
+    <li>BREAK: Frame start indication.</li>
+    <li>0x55: Synchronization byte.</li>
+    <li>PID: Protected frame identifier.</li>
+</ul>
+
+<h3>Exercise 3: Identify Response Fields</h3>
+<p>Identify the fields in the following response:</p>
+<pre>
+DATA 1 | DATA 2 | DATA 3 | CHECKSUM
+</pre>
+
+<p><strong>Expected Result:</strong> Three data bytes followed by the checksum.</p>
+</section>
+
+<section class="lesson-section">
+<h2>15. Review Questions</h2>
+<ol>
+    <li>Why is synchronization required in LIN communication?</li>
+    <li>What is bit time?</li>
+    <li>What is the relationship between baud rate and bit time?</li>
+    <li>What are the three fields of the LIN header?</li>
+    <li>What is the purpose of the break delimiter?</li>
+    <li>Why is 0x55 used as the sync byte?</li>
+    <li>How does a slave use the sync field?</li>
+    <li>What information is contained in the protected identifier?</li>
+    <li>What are the two fields of the LIN response?</li>
+    <li>Who transmits the response field?</li>
+    <li>What is the purpose of the checksum?</li>
+    <li>What hardware is required to connect LPC2129 to a physical LIN bus?</li>
+</ol>
+</section>
+
+<section class="lesson-section">
+<h2>16. Interview Questions and Answers</h2>
+
+<h3>Q1. Why does LIN require synchronization?</h3>
+<p><strong>Answer:</strong> Synchronization helps slave nodes determine the master's bit timing and receive serial data reliably.</p>
+
+<h3>Q2. What is the LIN sync byte?</h3>
+<p><strong>Answer:</strong> The sync byte is 0x55, which has an alternating bit pattern.</p>
+
+<h3>Q3. What is the function of the break field?</h3>
+<p><strong>Answer:</strong> It indicates the start of a new LIN frame.</p>
+
+<h3>Q4. What is a break delimiter?</h3>
+<p><strong>Answer:</strong> It is the recessive-level interval following the dominant break field and preceding the sync field.</p>
+
+<h3>Q5. What are the fields of the LIN header?</h3>
+<p><strong>Answer:</strong> Break, sync and protected identifier.</p>
+
+<h3>Q6. What are the fields of the LIN response?</h3>
+<p><strong>Answer:</strong> Data and checksum.</p>
+
+<h3>Q7. What is the maximum LIN communication speed?</h3>
+<p><strong>Answer:</strong> The commonly specified maximum LIN bit rate is 20 kbit/s.</p>
+
+<h3>Q8. Who controls LIN frame timing?</h3>
+<p><strong>Answer:</strong> The master task controls frame initiation and scheduling.</p>
+
+<h3>Q9. Can the slave transmit whenever it wants?</h3>
+<p><strong>Answer:</strong> In normal scheduled LIN communication, a slave transmits its response only when the master sends the corresponding header.</p>
+
+<h3>Q10. Can UART alone connect an LPC2129 to the LIN bus?</h3>
+<p><strong>Answer:</strong> No. An external LIN transceiver is required for physical bus interfacing.</p>
+</section>
+
+<section class="lesson-section">
+<h2>17. Lesson Summary</h2>
+<ul>
+    <li>LIN synchronization supports reliable serial communication.</li>
+    <li>Bit time is the reciprocal of baud rate.</li>
+    <li>The master transmits the header.</li>
+    <li>The header contains break, sync and protected identifier fields.</li>
+    <li>The sync byte is 0x55.</li>
+    <li>The protected identifier contains six ID bits and two parity bits.</li>
+    <li>The response contains data and checksum fields.</li>
+    <li>The publisher may be the master or a slave node.</li>
+    <li>LPC2129 requires UART-based firmware and an external LIN transceiver for a LIN implementation.</li>
+</ul>
+
+<div class="info-box">
+<strong>Next Lesson:</strong> LIN Schedule Tables and Message Scheduling.
+</div>
+</section>
+
+<nav class="lesson-nav">
+    <a href="L14_LIN_Frame_Structure_and_Message_Format.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 16 Index</a>
+    <a href="L16_LIN_Schedule_Tables_and_Message_Scheduling.html">Next Lesson →</a>
+</nav>
+
+</main>
+</body>
+</html>
