@@ -1,1 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 4: Queues, Semaphores and Mutexes</title>
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
 
+<header class="lesson-header">
+    <h1>Lesson 4: Queues, Semaphores and Mutexes</h1>
+    <p>STM32 RTOS and FreeRTOS Fundamentals</p>
+</header>
+
+<main class="lesson-container">
+
+    <section>
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand inter-task communication in FreeRTOS.</li>
+            <li>Learn queue creation, sending and receiving.</li>
+            <li>Understand binary and counting semaphores.</li>
+            <li>Learn mutexes and shared-resource protection.</li>
+            <li>Understand priority inversion and priority inheritance.</li>
+            <li>Implement communication and synchronization on STM32.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>2. Inter-Task Communication</h2>
+        <p>
+            In an RTOS-based embedded system, multiple tasks execute
+            independently. They often need to exchange information and
+            coordinate access to shared resources.
+        </p>
+
+        <p>FreeRTOS provides several mechanisms:</p>
+        <ul>
+            <li>Queues</li>
+            <li>Binary semaphores</li>
+            <li>Counting semaphores</li>
+            <li>Mutexes</li>
+            <li>Recursive mutexes</li>
+            <li>Direct-to-task notifications</li>
+            <li>Event groups</li>
+        </ul>
+
+        <pre>
++------------------+        +------------------+
+|   Sensor Task    |        |   Display Task   |
++------------------+        +------------------+
+         |                           ^
+         | Send data                 | Receive data
+         v                           |
+       +--------------------------------+
+       |           FreeRTOS Queue        |
+       +--------------------------------+
+        </pre>
+    </section>
+
+    <section>
+        <h2>3. Queue in FreeRTOS</h2>
+
+        <p>
+            A queue is a kernel-managed communication object that transfers
+            data between tasks and, through ISR-safe APIs, between interrupt
+            service routines and tasks.
+        </p>
+
+        <h3>Queue Characteristics</h3>
+        <ul>
+            <li>Stores a fixed number of items.</li>
+            <li>Each item has a configured fixed size.</li>
+            <li>Normally uses FIFO ordering.</li>
+            <li>Supports blocking send and receive operations.</li>
+            <li>Copies item data into and out of queue storage.</li>
+        </ul>
+
+        <h3>Queue Working</h3>
+        <pre>
++-------------+       Send data
+| Sensor Task | -------------------+
++-------------+                   |
+                                  v
+                         +----------------+
+                         |  FreeRTOS      |
+                         |    Queue       |
+                         +----------------+
+                                  |
+                                  | Receive data
+                                  v
+                         +----------------+
+                         | Display Task   |
+                         +----------------+
+        </pre>
+    </section>
+
+    <section>
+        <h2>4. Queue APIs</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>API</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>xQueueCreate()</code></td>
+                    <td>Create a queue dynamically.</td>
+                </tr>
+                <tr>
+                    <td><code>xQueueSend()</code></td>
+                    <td>Send data to the back of a queue.</td>
+                </tr>
+                <tr>
+                    <td><code>xQueueSendToFront()</code></td>
+                    <td>Send data to the front of a queue.</td>
+                </tr>
+                <tr>
+                    <td><code>xQueueReceive()</code></td>
+                    <td>Receive data from a queue.</td>
+                </tr>
+                <tr>
+                    <td><code>uxQueueMessagesWaiting()</code></td>
+                    <td>Get the number of queued items.</td>
+                </tr>
+                <tr>
+                    <td><code>vQueueDelete()</code></td>
+                    <td>Delete a queue.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Queue Creation Syntax</h3>
+        <pre><code>
+QueueHandle_t xQueueCreate(
+    UBaseType_t uxQueueLength,
+    UBaseType_t uxItemSize
+);
+        </code></pre>
+
+        <p>
+            <code>uxQueueLength</code> specifies the number of items and
+            <code>uxItemSize</code> specifies the size of each item in bytes.
+        </p>
+    </section>
+
+    <section>
+        <h2>5. Queue Programming Example</h2>
+
+        <p>
+            A sensor task sends a temperature value to a display task.
+        </p>
+
+        <pre><code>
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+QueueHandle_t temperatureQueue;
+
+void Sensor_Task(void *argument)
+{
+    float temperature = 25.5f;
+
+    for (;;)
+    {
+        temperature += 0.1f;
+
+        if (xQueueSend(
+                temperatureQueue,
+                &temperature,
+                pdMS_TO_TICKS(100)
+            ) != pdPASS)
+        {
+            /* Handle queue-full condition. */
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void Display_Task(void *argument)
+{
+    float receivedTemperature;
+
+    for (;;)
+    {
+        if (xQueueReceive(
+                temperatureQueue,
+                &receivedTemperature,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Display or process received temperature. */
+        }
+    }
+}
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    temperatureQueue = xQueueCreate(5, sizeof(float));
+
+    if (temperatureQueue == NULL)
+    {
+        Error_Handler();
+    }
+
+    if (xTaskCreate(
+            Sensor_Task, "Sensor", 256, NULL, 2, NULL
+        ) != pdPASS)
+    {
+        Error_Handler();
+    }
+
+    if (xTaskCreate(
+            Display_Task, "Display", 256, NULL, 1, NULL
+        ) != pdPASS)
+    {
+        Error_Handler();
+    }
+
+    vTaskStartScheduler();
+
+    Error_Handler();
+
+    while (1)
+    {
+    }
+}
+        </code></pre>
+
+        <h3>Program Explanation</h3>
+        <ol>
+            <li>A queue is created with five floating-point entries.</li>
+            <li>The sensor task generates a temperature value.</li>
+            <li>The sensor task sends the value into the queue.</li>
+            <li>The display task waits for queue data.</li>
+            <li>When data arrives, the display task receives and processes it.</li>
+        </ol>
+
+        <p>
+            Queue operations copy the item bytes. The example is illustrative;
+            production sensor code should send a measured value and handle
+            queue-full conditions according to the application's data policy.
+        </p>
+    </section>
+
+    <section>
+        <h2>6. Binary Semaphore</h2>
+
+        <p>
+            A binary semaphore has two logical states: available and
+            unavailable. It is commonly used for synchronization between
+            tasks or between an ISR and a task.
+        </p>
+
+        <h3>Common Applications</h3>
+        <ul>
+            <li>Signaling that an interrupt event occurred.</li>
+            <li>Waking a task when a peripheral operation completes.</li>
+            <li>Synchronizing producer and consumer operations.</li>
+        </ul>
+
+        <h3>Binary Semaphore APIs</h3>
+        <pre><code>
+SemaphoreHandle_t xSemaphoreCreateBinary();
+
+BaseType_t xSemaphoreGive(
+    SemaphoreHandle_t xSemaphore
+);
+
+BaseType_t xSemaphoreTake(
+    SemaphoreHandle_t xSemaphore,
+    TickType_t xTicksToWait
+);
+        </code></pre>
+
+        <p>
+            A newly created binary semaphore is initially empty. A task
+            or ISR must give it before a successful take can occur.
+        </p>
+    </section>
+
+    <section>
+        <h2>7. Binary Semaphore Example</h2>
+
+        <p>
+            A task waits until another task signals that an event has occurred.
+        </p>
+
+        <pre><code>
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t eventSemaphore;
+
+void Event_Task(void *argument)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                eventSemaphore,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Process the signaled event. */
+        }
+    }
+}
+
+void Signal_Task(void *argument)
+{
+    for (;;)
+    {
+        vTaskDelay(pdMS_TO_TICKS(2000));
+
+        xSemaphoreGive(eventSemaphore);
+    }
+}
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    eventSemaphore = xSemaphoreCreateBinary();
+
+    if (eventSemaphore == NULL)
+    {
+        Error_Handler();
+    }
+
+    xTaskCreate(Event_Task, "Event", 256, NULL, 2, NULL);
+    xTaskCreate(Signal_Task, "Signal", 256, NULL, 1, NULL);
+
+    vTaskStartScheduler();
+
+    Error_Handler();
+
+    while (1)
+    {
+    }
+}
+        </code></pre>
+
+        <p>
+            A binary semaphore can represent that an event occurred, but
+            repeated gives may coalesce while the semaphore is already
+            available. Use a queue or counting mechanism if every event
+            must be preserved.
+        </p>
+    </section>
+
+    <section>
+        <h2>8. Counting Semaphore</h2>
+
+        <p>
+            A counting semaphore maintains a count rather than only two
+            states. It is useful for tracking multiple available resources
+            or counting events.
+        </p>
+
+        <h3>Example</h3>
+        <p>
+            Suppose an embedded system has three identical communication
+            buffers. A counting semaphore initialized to three can track
+            how many buffers are available.
+        </p>
+
+        <h3>Counting Semaphore API</h3>
+        <pre><code>
+SemaphoreHandle_t xSemaphoreCreateCounting(
+    UBaseType_t uxMaxCount,
+    UBaseType_t uxInitialCount
+);
+        </code></pre>
+
+        <h3>Example Usage</h3>
+        <pre><code>
+SemaphoreHandle_t bufferSemaphore;
+
+void Buffer_Task(void *argument)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                bufferSemaphore,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Use one available buffer. */
+
+            /* Return the buffer when finished. */
+            xSemaphoreGive(bufferSemaphore);
+        }
+    }
+}
+
+int main(void)
+{
+    bufferSemaphore = xSemaphoreCreateCounting(3, 3);
+
+    if (bufferSemaphore == NULL)
+    {
+        Error_Handler();
+    }
+
+    /* Create tasks and start the scheduler. */
+}
+        </code></pre>
+
+        <p>
+            This example demonstrates counting only. Real buffer management
+            must also identify which buffer is allocated and ensure that
+            the same buffer is not returned more than once.
+        </p>
+    </section>
+
+    <section>
+        <h2>9. Mutex in FreeRTOS</h2>
+
+        <p>
+            A mutex, or mutual exclusion semaphore, protects a shared
+            resource from simultaneous access by multiple tasks.
+        </p>
+
+        <h3>Example Shared Resources</h3>
+        <ul>
+            <li>UART communication peripheral.</li>
+            <li>Shared I2C bus.</li>
+            <li>Shared data structure.</li>
+            <li>Common logging interface.</li>
+            <li>Shared memory buffer.</li>
+        </ul>
+
+        <h3>Mutex APIs</h3>
+        <pre><code>
+SemaphoreHandle_t xSemaphoreCreateMutex();
+
+BaseType_t xSemaphoreTake(
+    SemaphoreHandle_t xMutex,
+    TickType_t xTicksToWait
+);
+
+BaseType_t xSemaphoreGive(
+    SemaphoreHandle_t xMutex
+);
+        </code></pre>
+
+        <p>
+            A mutex has ownership: the task that successfully takes it
+            must release it. Mutexes should not be used from an ISR.
+        </p>
+    </section>
+
+    <section>
+        <h2>10. Mutex Programming Example</h2>
+
+        <p>
+            Two tasks share a UART resource. A mutex prevents them from
+            using the protected UART operation simultaneously.
+        </p>
+
+        <pre><code>
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t uartMutex;
+
+void UART_Task1(void *argument)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                uartMutex,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Perform UART operation. */
+
+            xSemaphoreGive(uartMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void UART_Task2(void *argument)
+{
+    for (;;)
+    {
+        if (xSemaphoreTake(
+                uartMutex,
+                portMAX_DELAY
+            ) == pdPASS)
+        {
+            /* Perform another UART operation. */
+
+            xSemaphoreGive(uartMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_USART2_UART_Init();
+
+    uartMutex = xSemaphoreCreateMutex();
+
+    if (uartMutex == NULL)
+    {
+        Error_Handler();
+    }
+
+    xTaskCreate(UART_Task1, "UART1", 256, NULL, 2, NULL);
+    xTaskCreate(UART_Task2, "UART2", 256, NULL, 1, NULL);
+
+    vTaskStartScheduler();
+
+    Error_Handler();
+
+    while (1)
+    {
+    }
+}
+        </code></pre>
+
+        <p>
+            In production code, keep the mutex held only while the shared
+            resource is actually in use. Check the return value of every
+            task-creation operation.
+        </p>
+    </section>
+
+    <section>
+        <h2>11. Priority Inversion</h2>
+
+        <p>
+            Priority inversion occurs when a high-priority task is blocked
+            because a lower-priority task holds a resource that the
+            high-priority task needs.
+        </p>
+
+        <h3>Example</h3>
+        <ol>
+            <li>Low-priority Task L acquires a mutex.</li>
+            <li>High-priority Task H becomes ready and needs the same mutex.</li>
+            <li>Task H blocks because Task L owns the mutex.</li>
+            <li>Medium-priority Task M becomes ready and executes.</li>
+            <li>Task L cannot run to release the mutex, delaying Task H.</li>
+        </ol>
+
+        <h3>Priority Inheritance</h3>
+        <p>
+            FreeRTOS mutexes support priority inheritance. When a higher
+            priority task blocks on a mutex held by a lower-priority task,
+            the holder can temporarily inherit the higher priority so
+            it can finish its critical section and release the mutex.
+        </p>
+
+        <p>
+            Priority inheritance reduces some priority inversion problems,
+            but it does not eliminate every possible scheduling or
+            resource-contention problem.
+        </p>
+    </section>
+
+    <section>
+        <h2>12. Difference Between Queue, Semaphore and Mutex</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Feature</th>
+                    <th>Queue</th>
+                    <th>Semaphore</th>
+                    <th>Mutex</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Main purpose</td>
+                    <td>Data communication</td>
+                    <td>Synchronization</td>
+                    <td>Resource protection</td>
+                </tr>
+                <tr>
+                    <td>Stores data items</td>
+                    <td>Yes</td>
+                    <td>No application data payload</td>
+                    <td>No application data payload</td>
+                </tr>
+                <tr>
+                    <td>Ownership</td>
+                    <td>No</td>
+                    <td>No</td>
+                    <td>Yes</td>
+                </tr>
+                <tr>
+                    <td>ISR use</td>
+                    <td>ISR-safe queue APIs</td>
+                    <td>ISR-safe give APIs</td>
+                    <td>No</td>
+                </tr>
+                <tr>
+                    <td>Typical application</td>
+                    <td>Send sensor readings</td>
+                    <td>Signal an event</td>
+                    <td>Protect shared UART</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>13. ISR Communication with Queues and Semaphores</h2>
+
+        <p>
+            Interrupt service routines must use the ISR-specific FreeRTOS
+            APIs. Normal task APIs should not be called from an ISR.
+        </p>
+
+        <h3>Queue Send from ISR</h3>
+        <pre><code>
+void USART2_IRQHandler(void)
+{
+    BaseType_t higherPriorityTaskWoken = pdFALSE;
+    uint8_t receivedByte = 0;
+
+    /* Obtain receivedByte from the peripheral using
+       the device-specific interrupt handling method. */
+
+    xQueueSendFromISR(
+        uartQueue,
+        &receivedByte,
+        &higherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(higherPriorityTaskWoken);
+}
+        </code></pre>
+
+        <h3>Semaphore Give from ISR</h3>
+        <pre><code>
+void EXTI0_IRQHandler(void)
+{
+    BaseType_t higherPriorityTaskWoken = pdFALSE;
+
+    /* Clear or acknowledge the EXTI source as required. */
+
+    xSemaphoreGiveFromISR(
+        eventSemaphore,
+        &higherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(higherPriorityTaskWoken);
+}
+        </code></pre>
+
+        <p>
+            These are conceptual patterns, not complete STM32 IRQ handlers.
+            The peripheral interrupt must be serviced and cleared correctly.
+            The exact yield macro and interrupt-priority restrictions depend
+            on the selected FreeRTOS port. Cortex-M ports commonly restrict
+            which NVIC priorities may call FreeRTOS ISR APIs.
+        </p>
+    </section>
+
+    <section>
+        <h2>14. Common Programming Mistakes</h2>
+        <ul>
+            <li>Using a normal queue or semaphore API inside an ISR.</li>
+            <li>Using a mutex inside an ISR.</li>
+            <li>Forgetting to check whether an object was created successfully.</li>
+            <li>Ignoring queue-full or queue-empty conditions.</li>
+            <li>Holding a mutex for too long.</li>
+            <li>Giving a mutex from a task that does not own it.</li>
+            <li>Using a binary semaphore when every event must be counted.</li>
+            <li>Configuring an interrupt priority that violates FreeRTOS port rules.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>15. Placement-Oriented Interview Questions and Answers</h2>
+
+        <h3>Q1. What is a queue in FreeRTOS?</h3>
+        <p>A queue is a kernel-managed object used to transfer data between tasks and compatible ISRs.</p>
+
+        <h3>Q2. What is a binary semaphore?</h3>
+        <p>A binary semaphore is a synchronization object with two logical states: available and unavailable.</p>
+
+        <h3>Q3. What is a counting semaphore?</h3>
+        <p>A counting semaphore maintains a count and can represent multiple available resources or pending events.</p>
+
+        <h3>Q4. What is a mutex?</h3>
+        <p>A mutex provides mutual exclusion to protect a shared resource from concurrent task access.</p>
+
+        <h3>Q5. What is the main difference between a mutex and a binary semaphore?</h3>
+        <p>A mutex has ownership and supports priority inheritance in FreeRTOS. A binary semaphore is primarily a synchronization mechanism and has no ownership.</p>
+
+        <h3>Q6. Can a mutex be used inside an ISR?</h3>
+        <p>No. Mutexes are task-level synchronization objects and must not be taken or given from an ISR.</p>
+
+        <h3>Q7. What is priority inversion?</h3>
+        <p>It occurs when a high-priority task is delayed by a lower-priority task holding a required resource.</p>
+
+        <h3>Q8. What is priority inheritance?</h3>
+        <p>It temporarily raises the priority of a mutex holder when a higher-priority task is blocked waiting for that mutex.</p>
+
+        <h3>Q9. What is xQueueSendFromISR()?</h3>
+        <p>It is an ISR-safe API used to send an item to a queue from an interrupt service routine.</p>
+
+        <h3>Q10. What is the purpose of xSemaphoreGiveFromISR()?</h3>
+        <p>It gives a semaphore from an ISR and can request a context switch when a higher-priority task is unblocked.</p>
+
+        <h3>Q11. Why are queues useful in sensor applications?</h3>
+        <p>They allow a sensor task to transfer readings to another task without requiring both tasks to execute simultaneously.</p>
+
+        <h3>Q12. When should a queue be preferred over a binary semaphore?</h3>
+        <p>Use a queue when actual data must be transferred or when multiple events must be retained as separate entries.</p>
+    </section>
+
+    <section>
+        <h2>16. Practical Exercises</h2>
+        <ol>
+            <li>Create a queue to transfer ADC readings between two tasks.</li>
+            <li>Implement a binary semaphore for task synchronization.</li>
+            <li>Implement a counting semaphore to track available buffers.</li>
+            <li>Protect a shared UART resource using a mutex.</li>
+            <li>Demonstrate priority inversion using three tasks.</li>
+            <li>Use an ISR-safe API to signal a task from a GPIO interrupt.</li>
+            <li>Compare queues, binary semaphores, counting semaphores and mutexes.</li>
+            <li>Investigate queue-full and semaphore-timeout conditions.</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>17. Lesson Summary</h2>
+        <ul>
+            <li>Queues transfer data between tasks and compatible ISRs.</li>
+            <li>Binary semaphores synchronize events.</li>
+            <li>Counting semaphores track counts of events or available resources.</li>
+            <li>Mutexes protect shared resources between tasks.</li>
+            <li>FreeRTOS mutexes support priority inheritance.</li>
+            <li>ISRs must use ISR-safe APIs.</li>
+            <li>Correct synchronization is essential for reliable embedded applications.</li>
+        </ul>
+    </section>
+
+    <section class="lesson-navigation">
+        <a href="L03_Tasks_and_Task_Scheduling.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L05_Task_Notifications_and_Interrupt_Integration.html">Next Lesson →</a>
+    </section>
+
+</main>
+
+</body>
+</html>
