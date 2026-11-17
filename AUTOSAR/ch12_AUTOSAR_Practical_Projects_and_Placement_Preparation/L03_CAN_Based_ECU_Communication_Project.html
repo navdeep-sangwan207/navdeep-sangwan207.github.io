@@ -1,1 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 3 - CAN-Based ECU Communication Project</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-header {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .lesson-content { line-height: 1.7; }
+        .lesson-content h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #dce6f5;
+            padding-bottom: 6px;
+            margin-top: 30px;
+        }
+        .lesson-content h3 { color: #1765ad; }
+        .lesson-content pre {
+            background: #17212f;
+            color: #e8f0fe;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        .lesson-content code { font-family: Consolas, monospace; }
+        .note {
+            background: #eef5ff;
+            border-left: 4px solid #174ea6;
+            padding: 12px 16px;
+            margin: 15px 0;
+        }
+        .question {
+            background: #f5f7fa;
+            padding: 14px;
+            border-radius: 8px;
+            margin: 12px 0;
+        }
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 35px;
+        }
+        .navigation a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 17px;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
 
+<div class="lesson-header">
+    <h1>Lesson 3: CAN-Based ECU Communication Project</h1>
+    <p>Chapter 12: AUTOSAR Practical Projects and Placement Preparation</p>
+    <p>Automotive Communication | CAN | AUTOSAR Classic</p>
+</div>
+
+<div class="lesson-content">
+
+<h2>1. Project Introduction</h2>
+
+<p>
+Modern vehicles contain multiple Electronic Control Units (ECUs).
+These ECUs exchange information to coordinate functions such as
+engine control, body electronics, instrument clusters, cooling
+systems and vehicle diagnostics.
+</p>
+
+<p>
+Controller Area Network (CAN) is a widely used communication
+protocol in automotive systems. In this project, we will study
+how two ECUs exchange temperature information using CAN and
+the AUTOSAR Classic communication stack.
+</p>
+
+<h3>1.1 Project Objective</h3>
+
+<ul>
+    <li>Understand CAN-based communication between ECUs.</li>
+    <li>Study CAN frames and message identifiers.</li>
+    <li>Understand the AUTOSAR communication stack.</li>
+    <li>Study COM, PduR, CanIf and CAN Driver responsibilities.</li>
+    <li>Understand signal packing and unpacking.</li>
+    <li>Develop a simplified sender and receiver example.</li>
+    <li>Study CAN communication testing using CANoe.</li>
+</ul>
+
+<h2>2. Project Scenario</h2>
+
+<p>
+Consider two ECUs connected through a CAN bus:
+</p>
+
+<ul>
+    <li>ECU 1: Temperature Monitoring ECU.</li>
+    <li>ECU 2: Cooling Fan Control ECU.</li>
+</ul>
+
+<p>
+ECU 1 measures temperature and transmits the value through
+a CAN message. ECU 2 receives the message, extracts the
+temperature signal and determines the required fan state.
+</p>
+
+<h3>2.1 System Block Diagram</h3>
+
+<pre>
++--------------------------+
+| ECU 1                    |
+| Temperature Monitoring  |
+|                          |
+| Temperature Sensor       |
+| Application SWC          |
+| COM                      |
++------------+-------------+
+             |
+             v
+       AUTOSAR CAN Stack
+             |
+             v
+       CAN Transceiver
+             |
+============= CAN BUS =============
+             |
+             v
+       CAN Transceiver
+             |
+             v
+       AUTOSAR CAN Stack
+             |
++------------+-------------+
+| ECU 2                    |
+| Cooling Fan Control      |
+|                          |
+| COM                      |
+| Application SWC          |
+| Fan Control              |
++--------------------------+
+</pre>
+
+<h2>3. CAN Fundamentals</h2>
+
+<p>
+CAN is a multi-master, message-oriented serial communication
+protocol. Nodes transmit messages identified by CAN identifiers.
+The identifier participates in bus arbitration and determines
+message priority.
+</p>
+
+<h3>3.1 CAN Features</h3>
+
+<ul>
+    <li>Multi-master communication.</li>
+    <li>Message-based communication.</li>
+    <li>Priority-based arbitration.</li>
+    <li>Error detection and fault confinement.</li>
+    <li>Broadcast communication.</li>
+    <li>Robust communication for automotive applications.</li>
+</ul>
+
+<h3>3.2 CAN Classical and CAN FD</h3>
+
+<table border="1" cellpadding="9" cellspacing="0" width="100%">
+    <tr>
+        <th>Feature</th>
+        <th>Classical CAN</th>
+        <th>CAN FD</th>
+    </tr>
+    <tr>
+        <td>Standard Identifier</td>
+        <td>11 bits</td>
+        <td>11 bits</td>
+    </tr>
+    <tr>
+        <td>Extended Identifier</td>
+        <td>29 bits</td>
+        <td>29 bits</td>
+    </tr>
+    <tr>
+        <td>Maximum Data Payload</td>
+        <td>8 bytes</td>
+        <td>64 bytes</td>
+    </tr>
+    <tr>
+        <td>Data Phase Bit Rate</td>
+        <td>Same nominal bit rate</td>
+        <td>Can be faster with bit-rate switching</td>
+    </tr>
+</table>
+
+<h3>3.3 CAN Frame Types</h3>
+
+<ul>
+    <li>Data Frame – Carries application data.</li>
+    <li>Remote Frame – Requests data in Classical CAN.</li>
+    <li>Error Frame – Indicates a detected communication error.</li>
+    <li>Overload Frame – Provides additional delay in applicable Classical CAN operation.</li>
+</ul>
+
+<div class="note">
+<strong>Important:</strong> CAN identifiers identify messages,
+not individual ECUs. CAN is broadcast-oriented: nodes decide
+which received messages are relevant to them.
+</div>
+
+<h2>4. Project Communication Requirements</h2>
+
+<table border="1" cellpadding="9" cellspacing="0" width="100%">
+    <tr>
+        <th>Parameter</th>
+        <th>Specification</th>
+    </tr>
+    <tr>
+        <td>Communication Protocol</td>
+        <td>Classical CAN</td>
+    </tr>
+    <tr>
+        <td>Sender ECU</td>
+        <td>Temperature Monitoring ECU</td>
+    </tr>
+    <tr>
+        <td>Receiver ECU</td>
+        <td>Cooling Fan Control ECU</td>
+    </tr>
+    <tr>
+        <td>CAN Identifier</td>
+        <td>0x180 (illustrative)</td>
+    </tr>
+    <tr>
+        <td>Frame Type</td>
+        <td>Standard CAN Data Frame</td>
+    </tr>
+    <tr>
+        <td>Payload Length</td>
+        <td>2 bytes</td>
+    </tr>
+    <tr>
+        <td>Signal</td>
+        <td>Temperature</td>
+    </tr>
+    <tr>
+        <td>Example Transmission Period</td>
+        <td>100 ms</td>
+    </tr>
+</table>
+
+<h2>5. CAN Message and Signal Design</h2>
+
+<p>
+The sender transmits a two-byte temperature value. For this
+simplified project, temperature is encoded as an unsigned
+16-bit integer in little-endian byte order, with a resolution
+of 1°C per bit and an offset of 0°C.
+</p>
+
+<h3>5.1 CAN Message Definition</h3>
+
+<table border="1" cellpadding="9" cellspacing="0" width="100%">
+    <tr>
+        <th>Parameter</th>
+        <th>Value</th>
+    </tr>
+    <tr>
+        <td>Message Name</td>
+        <td>TemperatureMessage</td>
+    </tr>
+    <tr>
+        <td>CAN ID</td>
+        <td>0x180</td>
+    </tr>
+    <tr>
+        <td>DLC</td>
+        <td>2</td>
+    </tr>
+    <tr>
+        <td>Signal Name</td>
+        <td>Temperature</td>
+    </tr>
+    <tr>
+        <td>Signal Length</td>
+        <td>16 bits</td>
+    </tr>
+    <tr>
+        <td>Byte Order</td>
+        <td>Little-endian</td>
+    </tr>
+    <tr>
+        <td>Resolution</td>
+        <td>1°C/bit</td>
+    </tr>
+    <tr>
+        <td>Offset</td>
+        <td>0°C</td>
+    </tr>
+</table>
+
+<h3>5.2 Example Data Encoding</h3>
+
+<p>
+If the temperature is 85°C:
+</p>
+
+<pre>
+Temperature = 85
+
+Decimal = 85
+Hexadecimal = 0x0055
+
+Byte 0 = 0x55
+Byte 1 = 0x00
+
+CAN ID = 0x180
+DLC    = 2
+DATA   = 55 00
+</pre>
+
+<h2>6. AUTOSAR Communication Stack</h2>
+
+<p>
+AUTOSAR Classic provides a layered communication stack that
+separates application communication from CAN hardware access.
+</p>
+
+<h3>6.1 Communication Stack Architecture</h3>
+
+<pre>
++----------------------------------+
+|       Application SWC            |
++----------------|-----------------+
+                 |
+                 v
++----------------------------------+
+|       Runtime Environment        |
+|              RTE                 |
++----------------|-----------------+
+                 |
+                 v
++----------------------------------+
+|       COM Module                 |
+|  Signal Packing / Unpacking      |
++----------------|-----------------+
+                 |
+                 v
++----------------------------------+
+|       PDU Router (PduR)          |
+|       PDU Routing                |
++----------------|-----------------+
+                 |
+                 v
++----------------------------------+
+|       CAN Interface (CanIf)      |
++----------------|-----------------+
+                 |
+                 v
++----------------------------------+
+|       CAN Driver (MCAL)          |
++----------------|-----------------+
+                 |
+                 v
++----------------------------------+
+|       CAN Controller             |
++----------------------------------+
+</pre>
+
+<h3>6.2 Responsibilities of Modules</h3>
+
+<table border="1" cellpadding="9" cellspacing="0" width="100%">
+    <tr>
+        <th>Module</th>
+        <th>Responsibility</th>
+    </tr>
+    <tr>
+        <td>RTE</td>
+        <td>Provides configured communication between application components and BSW.</td>
+    </tr>
+    <tr>
+        <td>COM</td>
+        <td>Packs and unpacks signals into and from I-PDUs.</td>
+    </tr>
+    <tr>
+        <td>PduR</td>
+        <td>Routes PDUs between configured communication modules.</td>
+    </tr>
+    <tr>
+        <td>CanIf</td>
+        <td>Provides a standardized interface to the CAN driver and related lower-layer modules.</td>
+    </tr>
+    <tr>
+        <td>CAN Driver</td>
+        <td>Controls the configured CAN controller hardware.</td>
+    </tr>
+    <tr>
+        <td>CAN Transceiver Driver</td>
+        <td>Controls the physical CAN transceiver where configured.</td>
+    </tr>
+</table>
+
+<div class="note">
+<strong>Important:</strong> The transceiver driver is separate
+from the CAN controller driver. The CAN controller handles
+frame transmission and reception, while the transceiver
+interfaces the controller signals with the physical CAN bus.
+</div>
+
+<h2>7. Sender ECU Implementation</h2>
+
+<p>
+The sender ECU obtains a temperature value and makes it
+available through the configured application and communication
+interfaces.
+</p>
+
+<h3>7.1 Application Logic</h3>
+
+<pre>
+Temperature = ReadSensor();
+
+PublishTemperature(Temperature);
+</pre>
+
+<h3>7.2 Simplified RTE/COM Concept</h3>
+
+<p>
+The application may use an RTE sender-receiver API to provide
+the temperature value. The configured RTE and COM integration
+then handles the communication path.
+</p>
+
+<pre>
+void TemperatureRunnable(void)
+{
+    uint16 temperature;
+
+    temperature = ReadTemperatureSensor();
+
+    Rte_Write_TemperaturePort_Temperature(temperature);
+}
+</pre>
+
+<p>
+The API name is illustrative. The generated name and type
+depend on the SWC model and configuration.
+</p>
+
+<h2>8. Receiver ECU Implementation</h2>
+
+<p>
+The receiver ECU obtains the temperature signal and calculates
+the required cooling fan state.
+</p>
+
+<h3>8.1 Application Logic</h3>
+
+<pre>
+void FanControlRunnable(void)
+{
+    uint16 temperature;
+
+    if (Rte_Read_TemperaturePort_Temperature(&amp;temperature)
+        == RTE_E_OK)
+    {
+        if (temperature >= 80U)
+        {
+            /* Request fan ON */
+        }
+        else
+        {
+            /* Request fan OFF */
+        }
+    }
+}
+</pre>
+
+<p>
+This is illustrative RTE application code. Actual generated
+API names, data types and return values must be taken from
+the generated RTE headers.
+</p>
+
+<h2>9. Standalone CAN Sender and Receiver Example</h2>
+
+<p>
+The following C program demonstrates the payload encoding
+and decoding logic. It simulates message transfer in software;
+it does not access a physical CAN controller or implement
+the AUTOSAR communication stack.
+</p>
+
+<h3>9.1 Sender and Receiver Demonstration</h3>
+
+<pre>
+#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+#define CAN_ID_TEMPERATURE  0x180U
+
+int main(void)
+{
+    uint16_t temperature = 85U;
+
+    uint8_t data[2];
+
+    uint16_t receivedTemperature;
+
+    /* Sender: encode temperature */
+    data[0] = (uint8_t)(temperature &amp; 0xFFU);
+    data[1] = (uint8_t)((temperature &gt;&gt; 8U) &amp; 0xFFU);
+
+    printf("CAN ID: 0x%03X\n", CAN_ID_TEMPERATURE);
+    printf("DLC: 2\n");
+
+    printf("Transmitted Data: %02X %02X\n",
+           data[0], data[1]);
+
+    /* Receiver: decode temperature */
+    receivedTemperature =
+        (uint16_t)data[0] |
+        ((uint16_t)data[1] &lt;&lt; 8U);
+
+    printf("Received Temperature: %u C\n",
+           (unsigned int)receivedTemperature);
+
+    if (receivedTemperature &gt;= 80U)
+    {
+        printf("Cooling Fan: ON\n");
+    }
+    else
+    {
+        printf("Cooling Fan: OFF\n");
+    }
+
+    return 0;
+}
+</pre>
+
+<h2>10. Expected Output</h2>
+
+<pre>
+CAN ID: 0x180
+DLC: 2
+Transmitted Data: 55 00
+Received Temperature: 85 C
+Cooling Fan: ON
+</pre>
+
+<h2>11. CAN Physical Layer Basics</h2>
+
+<p>
+CAN communication normally uses a differential pair:
+CAN_H and CAN_L.
+</p>
+
+<h3>11.1 CAN Bus Connection</h3>
+
+<pre>
+ECU 1                         ECU 2
++--------+                    +--------+
+| CAN    |                    | CAN    |
+| Trans- |                    | Trans- |
+| ceiver |                    | ceiver |
++---+----+                    +----+---+
+    |                              |
+    +========== CAN_H =============+
+    +========== CAN_L =============+
+          |                  |
+        120 ohm            120 ohm
+       Terminator         Terminator
+</pre>
+
+<p>
+A properly terminated high-speed CAN bus normally has a
+120-ohm termination resistor at each physical end of the bus.
+With two terminators and no other significant parallel paths,
+the resistance measured across CAN_H and CAN_L with the
+network powered down is approximately 60 ohms.
+</p>
+
+<h3>11.2 Physical Layer Checks</h3>
+
+<ul>
+    <li>Check CAN_H and CAN_L wiring.</li>
+    <li>Verify common ground and transceiver supply requirements.</li>
+    <li>Check the configured nominal bit rate.</li>
+    <li>Verify termination resistance.</li>
+    <li>Inspect CAN controller error counters and bus state.</li>
+</ul>
+
+<h2>12. CANoe Testing</h2>
+
+<p>
+Vector CANoe is used in automotive development for network
+simulation, analysis and testing.
+</p>
+
+<h3>12.1 Typical CANoe Activities</h3>
+
+<ol>
+    <li>Create or open a CANoe configuration.</li>
+    <li>Select the required CAN network and hardware interface.</li>
+    <li>Load the applicable DBC database.</li>
+    <li>Configure the network channel and bit rate.</li>
+    <li>Start measurement.</li>
+    <li>Transmit or simulate the temperature message.</li>
+    <li>Observe the message in the Trace Window.</li>
+    <li>Verify signal decoding in the Graphics or Data Window.</li>
+</ol>
+
+<h3>12.2 Example Test Message</h3>
+
+<pre>
+CAN ID: 0x180
+DLC: 2
+Data: 55 00
+
+Decoded Signal:
+Temperature = 85 C
+Expected Fan State = ON
+</pre>
+
+<h3>12.3 CAPL Example</h3>
+
+<p>
+The following illustrative CAPL example periodically transmits
+the temperature message. The message and signal names must
+match the loaded CANoe database.
+</p>
+
+<pre>
+variables
+{
+    message TemperatureMessage txMsg;
+    msTimer sendTimer;
+}
+
+on start
+{
+    setTimer(sendTimer, 100);
+}
+
+on timer sendTimer
+{
+    txMsg.Temperature = 85;
+    output(txMsg);
+
+    setTimer(sendTimer, 100);
+}
+</pre>
+
+<div class="note">
+CAPL syntax and database symbol names can vary with CANoe
+configuration and version. Verify the message definition,
+signal scaling and channel mapping in the actual project.
+</div>
+
+<h2>13. CAN Communication Test Cases</h2>
+
+<table border="1" cellpadding="9" cellspacing="0" width="100%">
+    <tr>
+        <th>Test Case</th>
+        <th>Input</th>
+        <th>Expected Result</th>
+    </tr>
+    <tr>
+        <td>TC01</td>
+        <td>Temperature 25°C</td>
+        <td>Message received; fan OFF</td>
+    </tr>
+    <tr>
+        <td>TC02</td>
+        <td>Temperature 65°C</td>
+        <td>Message received; fan OFF</td>
+    </tr>
+    <tr>
+        <td>TC03</td>
+        <td>Temperature 85°C</td>
+        <td>Message received; fan ON</td>
+    </tr>
+    <tr>
+        <td>TC04</td>
+        <td>Incorrect CAN ID</td>
+        <td>Expected message not accepted by configured reception path</td>
+    </tr>
+    <tr>
+        <td>TC05</td>
+        <td>Incorrect payload length</td>
+        <td>Frame or signal handling follows configured validation behavior</td>
+    </tr>
+    <tr>
+        <td>TC06</td>
+        <td>Message timeout</td>
+        <td>Configured timeout handling is activated, if enabled</td>
+    </tr>
+</table>
+
+<h2>14. Common CAN Communication Problems</h2>
+
+<table border="1" cellpadding="9" cellspacing="0" width="100%">
+    <tr>
+        <th>Problem</th>
+        <th>Possible Cause</th>
+        <th>Solution</th>
+    </tr>
+    <tr>
+        <td>No CAN messages</td>
+        <td>Incorrect bit rate or controller configuration</td>
+        <td>Check controller setup and network parameters.</td>
+    </tr>
+    <tr>
+        <td>Incorrect signal value</td>
+        <td>Wrong byte order, start bit or scaling</td>
+        <td>Verify DBC and COM signal configuration.</td>
+    </tr>
+    <tr>
+        <td>Message not received</td>
+        <td>Incorrect CAN ID or filtering</td>
+        <td>Check CanIf and controller configuration.</td>
+    </tr>
+    <tr>
+        <td>CAN bus errors</td>
+        <td>Wiring, termination or bit timing issue</td>
+        <td>Inspect physical network and controller diagnostics.</td>
+    </tr>
+    <tr>
+        <td>Message timeout</td>
+        <td>Sender stopped transmitting</td>
+        <td>Check transmission scheduling and timeout configuration.</td>
+    </tr>
+    <tr>
+        <td>Bus-off</td>
+        <td>Transmit error counter reached the bus-off condition</td>
+        <td>Investigate physical and protocol errors, then follow configured recovery behavior.</td>
+    </tr>
+</table>
+
+<h2>15. Important Technical Points</h2>
+
+<ul>
+    <li>CAN is message-oriented and uses identifier-based arbitration.</li>
+    <li>CAN Classical supports up to 8 data bytes.</li>
+    <li>CAN FD supports up to 64 data bytes.</li>
+    <li>COM handles signal packing and unpacking.</li>
+    <li>PduR routes configured PDUs.</li>
+    <li>CanIf provides an interface to the CAN driver.</li>
+    <li>The CAN Driver controls the CAN controller.</li>
+    <li>The CAN transceiver connects controller signals to the physical bus.</li>
+    <li>DBC files describe message and signal layouts; they do not guarantee that the ECU implementation matches the database.</li>
+    <li>CANoe supports simulation, monitoring and test automation.</li>
+</ul>
+
+<h2>16. Placement Interview Questions and Answers</h2>
+
+<div class="question">
+<strong>Q1. What is CAN?</strong>
+<p>
+CAN stands for Controller Area Network. It is a serial,
+message-oriented communication protocol widely used in
+automotive systems.
+</p>
+</div>
+
+<div class="question">
+<strong>Q2. What is a CAN identifier?</strong>
+<p>
+It identifies a CAN message and participates in arbitration.
+A lower numerical identifier generally has higher priority
+when competing standard-format messages are compared.
+</p>
+</div>
+
+<div class="question">
+<strong>Q3. What is the maximum Classical CAN payload?</strong>
+<p>Eight bytes.</p>
+</div>
+
+<div class="question">
+<strong>Q4. What is the maximum CAN FD payload?</strong>
+<p>Sixty-four bytes.</p>
+</div>
+
+<div class="question">
+<strong>Q5. What is the function of COM?</strong>
+<p>
+COM packs signals into I-PDUs for transmission and unpacks
+received I-PDUs into signals.
+</p>
+</div>
+
+<div class="question">
+<strong>Q6. What is PduR?</strong>
+<p>
+PduR stands for PDU Router. It routes configured protocol
+data units between communication modules.
+</p>
+</div>
+
+<div class="question">
+<strong>Q7. What is CanIf?</strong>
+<p>
+CanIf provides a standardized interface between upper
+communication modules and the CAN driver.
+</p>
+</div>
+
+<div class="question">
+<strong>Q8. What is the role of the CAN transceiver?</strong>
+<p>
+It interfaces the CAN controller's transmit and receive
+signals with the physical CAN_H and CAN_L bus.
+</p>
+</div>
+
+<div class="question">
+<strong>Q9. Why are termination resistors used?</strong>
+<p>
+They reduce signal reflections on the CAN bus. High-speed
+CAN networks normally use 120-ohm termination at both
+physical ends.
+</p>
+</div>
+
+<div class="question">
+<strong>Q10. What is CAN bus-off?</strong>
+<p>
+Bus-off is an error-confinement state in which a CAN controller
+stops participating in bus communication after its transmit
+error counter reaches the specified bus-off condition.
+</p>
+</div>
+
+<div class="question">
+<strong>Q11. What is a DBC file?</strong>
+<p>
+A DBC file describes CAN messages, identifiers, signals,
+their positions, scaling and related metadata.
+</p>
+</div>
+
+<div class="question">
+<strong>Q12. What is CANoe?</strong>
+<p>
+CANoe is a Vector tool used for automotive network simulation,
+analysis, testing and test automation.
+</p>
+</div>
+
+<h2>17. Quick Assessment</h2>
+
+<div class="question">
+<strong>1. Which module packs and unpacks CAN signals?</strong>
+<p>A. COM &nbsp; B. DCM &nbsp; C. DEM</p>
+</div>
+
+<div class="question">
+<strong>2. Which module routes PDUs?</strong>
+<p>A. CanIf &nbsp; B. PduR &nbsp; C. PORT</p>
+</div>
+
+<div class="question">
+<strong>3. What is the maximum Classical CAN payload?</strong>
+<p>A. 4 bytes &nbsp; B. 8 bytes &nbsp; C. 64 bytes</p>
+</div>
+
+<div class="question">
+<strong>4. What is the standard high-speed CAN termination resistance at each bus end?</strong>
+<p>A. 10 ohms &nbsp; B. 60 ohms &nbsp; C. 120 ohms</p>
+</div>
+
+<div class="question">
+<strong>5. Which tool is commonly used for automotive CAN simulation and testing?</strong>
+<p>A. CANoe &nbsp; B. Word &nbsp; C. PowerPoint</p>
+</div>
+
+<h3>Answers</h3>
+
+<p>
+1. A — COM<br>
+2. B — PduR<br>
+3. B — 8 bytes<br>
+4. C — 120 ohms<br>
+5. A — CANoe
+</p>
+
+<h2>18. Lesson Summary</h2>
+
+<ul>
+    <li>Studied CAN communication between two automotive ECUs.</li>
+    <li>Understood CAN identifiers, frames and payloads.</li>
+    <li>Learned the AUTOSAR communication stack.</li>
+    <li>Studied COM, PduR, CanIf and CAN Driver responsibilities.</li>
+    <li>Reviewed temperature signal encoding and decoding.</li>
+    <li>Developed a standalone C demonstration.</li>
+    <li>Studied CAN physical-layer checks and termination.</li>
+    <li>Reviewed CANoe testing and common communication faults.</li>
+</ul>
+
+<div class="note">
+<strong>Practical Learning Outcome:</strong>
+You should be able to explain how a temperature signal travels
+from a sender SWC through the AUTOSAR communication stack,
+across the CAN bus, and into a receiver ECU application.
+</div>
+
+<div class="navigation">
+    <a href="index.html">← Chapter Index</a>
+    <a href="L02_GPIO_Control_Using_AUTOSAR_Architecture.html">← Previous Lesson</a>
+    <a href="L04_Diagnostic_DTC_and_UDS_Project.html">Next Lesson →</a>
+</div>
+
+</div>
+</body>
+</html>
