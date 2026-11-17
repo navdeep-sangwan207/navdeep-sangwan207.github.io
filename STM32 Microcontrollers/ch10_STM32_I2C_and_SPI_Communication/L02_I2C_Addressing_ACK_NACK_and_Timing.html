@@ -1,1 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 2 - I2C Addressing, ACK/NACK and Timing</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dce5f0;
+            border-radius: 9px;
+        }
+        h2, h3 { color: #174ea6; }
+        .info-box {
+            background: #eef6ff;
+            border-left: 5px solid #174ea6;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 5px solid #e09b24;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        pre {
+            background: #172033;
+            color: #e8f0ff;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 16px;
+            border-radius: 6px;
+        }
+        .lesson-nav a:hover { background: #007bff; }
+    </style>
+</head>
+
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 2: I2C Addressing, ACK/NACK and Timing</h1>
+        <p>STM32 Microcontrollers – Chapter 10</p>
+        <p>Understand I2C address formats, acknowledgement signals and bus timing.</p>
+    </header>
+
+    <p><a href="index.html">← Back to Chapter 10</a></p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand 7-bit and 10-bit I2C addressing.</li>
+            <li>Explain the I2C read/write bit.</li>
+            <li>Understand ACK and NACK conditions.</li>
+            <li>Identify START, STOP and repeated START conditions.</li>
+            <li>Understand I2C data transfer timing.</li>
+            <li>Calculate basic I2C clock timing.</li>
+            <li>Understand clock stretching and bus arbitration.</li>
+            <li>Configure I2C addressing and timing in STM32.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. I2C Addressing</h2>
+
+        <p>
+            I2C uses device addresses to identify the slave
+            that should respond to a master transaction.
+            Most commonly used I2C devices have a 7-bit address.
+        </p>
+
+        <h3>7-Bit Address Format</h3>
+        <pre><code>+-----------------------------+
+| A6 | A5 | A4 | A3 | A2 | A1 | A0 | R/W |
++-----------------------------+
+       7-Bit Address             1 Bit</code></pre>
+
+        <p>
+            The first seven bits represent the slave address.
+            The eighth bit specifies the direction of transfer.
+        </p>
+
+        <table>
+            <tr><th>R/W Bit</th><th>Operation</th></tr>
+            <tr><td>0</td><td>Master writes to slave.</td></tr>
+            <tr><td>1</td><td>Master reads from slave.</td></tr>
+        </table>
+
+        <div class="info-box">
+            The R/W bit is not part of the 7-bit slave address.
+            It is transmitted as part of the address byte on
+            the bus.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Example of 7-Bit Addressing</h2>
+
+        <p>
+            Consider an I2C slave with a 7-bit address of
+            <code>0x48</code>.
+        </p>
+
+        <pre><code>7-Bit Address = 0x48
+Binary         = 1001000
+
+Write Address Byte:
+10010000 = 0x90
+
+Read Address Byte:
+10010001 = 0x91</code></pre>
+
+        <p>
+            The address byte is formed by shifting the
+            7-bit address left by one bit and placing the
+            R/W bit in bit position zero.
+        </p>
+
+        <pre><code>Address Byte = (7-Bit Address &lt;&lt; 1) | R/W
+
+Write:
+(0x48 &lt;&lt; 1) | 0 = 0x90
+
+Read:
+(0x48 &lt;&lt; 1) | 1 = 0x91</code></pre>
+
+        <div class="warning-box">
+            STM32 HAL master APIs commonly expect the 7-bit
+            address shifted left by one bit, such as
+            <code>(0x48 &lt;&lt; 1)</code>. The HAL handles the
+            read/write direction internally for those APIs.
+            Always check the exact API documentation.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Ten-Bit I2C Addressing</h2>
+
+        <p>
+            I2C also supports 10-bit addressing. It allows
+            a larger address space than the standard 7-bit
+            addressing scheme.
+        </p>
+
+        <h3>10-Bit Address Structure</h3>
+        <pre><code>First Address Byte:
+11110 A9 A8 R/W
+
+Second Address Byte:
+A7 A6 A5 A4 A3 A2 A1 A0</code></pre>
+
+        <p>
+            The first byte contains a reserved prefix and
+            the two most significant address bits. The
+            second byte carries the remaining eight bits.
+        </p>
+
+        <ul>
+            <li>10-bit addressing uses two address bytes.</li>
+            <li>It supports more possible slave addresses.</li>
+            <li>It requires the corresponding transaction sequence.</li>
+            <li>Support depends on the STM32 peripheral and HAL configuration.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>5. ACK – Acknowledge</h2>
+
+        <p>
+            ACK stands for Acknowledge. It indicates that
+            the receiving device has accepted the transmitted
+            byte at the protocol level.
+        </p>
+
+        <h3>ACK Condition</h3>
+        <ul>
+            <li>The transmitter releases SDA after sending eight bits.</li>
+            <li>The receiver pulls SDA LOW during the ninth clock pulse.</li>
+            <li>The LOW level represents ACK.</li>
+        </ul>
+
+        <pre><code>Data Bits:  D7 D6 D5 D4 D3 D2 D1 D0
+Clock:      1  2  3  4  5  6  7  8  9
+
+ACK:
+SDA = LOW during the ninth clock pulse</code></pre>
+
+        <div class="info-box">
+            ACK indicates that the receiving device
+            acknowledged the byte. It does not guarantee
+            that the application-level operation succeeded.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. NACK – Not Acknowledge</h2>
+
+        <p>
+            NACK indicates that the receiver did not
+            acknowledge the transmitted byte.
+        </p>
+
+        <h3>NACK Condition</h3>
+        <ul>
+            <li>The receiver leaves SDA HIGH during the ninth clock pulse.</li>
+            <li>The transmitter interprets this as NACK.</li>
+            <li>The master may terminate the transaction or take recovery action.</li>
+        </ul>
+
+        <table>
+            <tr><th>Condition</th><th>SDA at Ninth Clock</th></tr>
+            <tr><td>ACK</td><td>LOW</td></tr>
+            <tr><td>NACK</td><td>HIGH</td></tr>
+        </table>
+
+        <h3>Possible Reasons for NACK</h3>
+        <ul>
+            <li>Incorrect slave address.</li>
+            <li>Slave device is not powered.</li>
+            <li>Device is busy or not ready.</li>
+            <li>Incorrect wiring.</li>
+            <li>Device does not support the requested operation.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>7. ACK and NACK During Read Operations</h2>
+
+        <p>
+            During a master read operation, the slave transmits
+            data and the master receiver controls the
+            acknowledgement after each byte.
+        </p>
+
+        <ul>
+            <li>The master sends ACK when it wants another byte.</li>
+            <li>The master normally sends NACK after the final byte.</li>
+            <li>The master then issues STOP or a repeated START as required.</li>
+        </ul>
+
+        <pre><code>Slave sends Byte 1
+        |
+Master sends ACK
+        |
+Slave sends Byte 2
+        |
+Master sends ACK
+        |
+Slave sends Byte 3
+        |
+Master sends NACK
+        |
+Master sends STOP</code></pre>
+
+        <div class="info-box">
+            The final NACK informs the slave that the master
+            has finished receiving data.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. START, STOP and Repeated START</h2>
+
+        <table>
+            <tr><th>Condition</th><th>Description</th></tr>
+            <tr>
+                <td>START</td>
+                <td>SDA transitions HIGH to LOW while SCL is HIGH.</td>
+            </tr>
+            <tr>
+                <td>STOP</td>
+                <td>SDA transitions LOW to HIGH while SCL is HIGH.</td>
+            </tr>
+            <tr>
+                <td>Repeated START</td>
+                <td>A new START condition without first issuing STOP.</td>
+            </tr>
+        </table>
+
+        <h3>Register Read Transaction</h3>
+        <pre><code>START
+  |
+Slave Address + Write
+  |
+ACK
+  |
+Register Address
+  |
+ACK
+  |
+Repeated START
+  |
+Slave Address + Read
+  |
+ACK
+  |
+Slave Sends Data
+  |
+Master Sends NACK
+  |
+STOP</code></pre>
+
+        <p>
+            This sequence is common when reading a register
+            from an I2C sensor or peripheral.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>9. I2C Clock and Timing</h2>
+
+        <p>
+            The master generates SCL clock pulses to
+            synchronize communication.
+        </p>
+
+        <h3>Common I2C Clock Modes</h3>
+        <table>
+            <tr><th>Mode</th><th>Maximum Clock Frequency</th></tr>
+            <tr><td>Standard Mode</td><td>100 kHz</td></tr>
+            <tr><td>Fast Mode</td><td>400 kHz</td></tr>
+            <tr><td>Fast Mode Plus</td><td>1 MHz</td></tr>
+            <tr><td>High-Speed Mode</td><td>3.4 MHz</td></tr>
+        </table>
+
+        <p>
+            These are standardized mode limits. A particular
+            STM32 and its connected devices may support only
+            a subset of them.
+        </p>
+
+        <h3>Clock Period</h3>
+        <pre><code>Clock Period = 1 / Clock Frequency
+
+At 100 kHz:
+
+T = 1 / 100000
+  = 10 microseconds
+
+At 400 kHz:
+
+T = 1 / 400000
+  = 2.5 microseconds</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>10. I2C Data Transfer Timing</h2>
+
+        <p>
+            I2C data is normally stable while SCL is HIGH.
+            Data changes while SCL is LOW, except for
+            START and STOP condition generation.
+        </p>
+
+        <pre><code>             ____      ____      ____
+SCL  _______|    |____|    |____|    |____
+
+SDA  ----< Data Bit >----< Data Bit >----</code></pre>
+
+        <h3>Important Timing Parameters</h3>
+        <ul>
+            <li>Clock HIGH time (tHIGH).</li>
+            <li>Clock LOW time (tLOW).</li>
+            <li>Data setup time (tSU;DAT).</li>
+            <li>Data hold time (tHD;DAT).</li>
+            <li>START setup and hold times.</li>
+            <li>STOP setup time.</li>
+            <li>Bus free time between STOP and START.</li>
+        </ul>
+
+        <div class="warning-box">
+            Timing limits differ by I2C speed mode. Always
+            use the I2C specification and the selected
+            device datasheet when calculating timing.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Clock Stretching</h2>
+
+        <p>
+            Clock stretching allows a slave to hold SCL LOW
+            to delay the next clock pulse while it prepares
+            data or completes an operation.
+        </p>
+
+        <h3>Working</h3>
+        <ol>
+            <li>The master releases SCL HIGH.</li>
+            <li>The slave holds SCL LOW.</li>
+            <li>The master waits while SCL remains LOW.</li>
+            <li>The slave releases SCL when ready.</li>
+            <li>The bus continues when SCL reaches HIGH.</li>
+        </ol>
+
+        <div class="info-box">
+            Clock stretching is supported by many I2C devices,
+            but the actual behavior and timeout requirements
+            must be checked for the connected slave and STM32.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>12. I2C Multi-Master Arbitration</h2>
+
+        <p>
+            I2C supports multiple masters. If two masters
+            attempt to control the bus at the same time,
+            arbitration determines which master continues.
+        </p>
+
+        <p>
+            Because the bus uses wired-AND signaling,
+            a master that releases SDA HIGH but observes
+            SDA LOW during arbitration loses arbitration
+            and must stop transmitting.
+        </p>
+
+        <ul>
+            <li>Arbitration prevents conflicting master transmissions.</li>
+            <li>The winning master continues the transaction.</li>
+            <li>The losing master releases the bus.</li>
+            <li>Multi-master behavior must be supported by the hardware and firmware design.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>13. I2C Timing Configuration in STM32</h2>
+
+        <p>
+            STM32 I2C timing configuration depends on the
+            peripheral generation and selected device.
+        </p>
+
+        <h3>Older I2C Peripheral Example</h3>
+        <pre><code>hi2c1.Init.ClockSpeed = 100000;
+hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;</code></pre>
+
+        <p>
+            This style is used by some older STM32 HAL
+            I2C peripheral implementations.
+        </p>
+
+        <h3>Newer I2C Peripheral Example</h3>
+        <pre><code>hi2c1.Init.Timing = DEVICE_SPECIFIC_I2C_TIMING;
+hi2c1.Init.OwnAddress1 = 0;
+hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+hi2c1.Init.OwnAddress2 = 0;
+hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;</code></pre>
+
+        <div class="warning-box">
+            These examples illustrate different HAL configuration
+            styles, not interchangeable code. The timing value
+            must be calculated or generated for the exact STM32
+            peripheral clock, I2C kernel clock and required
+            electrical timing. Use CubeMX or the ST timing
+            calculation guidance for the selected MCU.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>14. I2C Address Scanning</h2>
+
+        <p>
+            An address scan checks which 7-bit addresses
+            acknowledge on the I2C bus.
+        </p>
+
+        <h3>HAL Example</h3>
+        <pre><code>#include "main.h"
+
+extern I2C_HandleTypeDef hi2c1;
+
+void I2C_Scan_Bus(void)
+{
+    uint16_t address;
+
+    for (address = 1; address &lt; 128; address++)
+    {
+        HAL_StatusTypeDef status;
+
+        status = HAL_I2C_IsDeviceReady(
+            &amp;hi2c1,
+            (uint16_t)(address &lt;&lt; 1),
+            2,
+            10
+        );
+
+        if (status == HAL_OK)
+        {
+            // A device acknowledged this address.
+            // Record the 7-bit address.
+        }
+    }
+}</code></pre>
+
+        <p>
+            The scan checks address acknowledgement. It does
+            not identify the device type or guarantee that
+            its application-level functions are working.
+        </p>
+
+        <div class="warning-box">
+            Reserved addresses should not be treated as ordinary
+            general-purpose slave addresses. Scan only when the
+            bus is idle and the connected devices permit it.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Common I2C Addressing and Timing Problems</h2>
+
+        <table>
+            <tr><th>Problem</th><th>Possible Cause</th></tr>
+            <tr>
+                <td>Address NACK</td>
+                <td>Wrong address, unpowered slave or wiring issue.</td>
+            </tr>
+            <tr>
+                <td>Incorrect device address</td>
+                <td>Confusion between 7-bit address and shifted address byte.</td>
+            </tr>
+            <tr>
+                <td>Communication timeout</td>
+                <td>Bus stuck LOW, clock stretching or incorrect timing.</td>
+            </tr>
+            <tr>
+                <td>Unstable communication</td>
+                <td>Incorrect pull-ups, excessive bus capacitance or noise.</td>
+            </tr>
+            <tr>
+                <td>Data corruption</td>
+                <td>Timing violations or electrical signal problems.</td>
+            </tr>
+            <tr>
+                <td>Device does not respond</td>
+                <td>Wrong address pins, power supply or bus configuration.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Placement Interview Questions and Answers</h2>
+
+        <h3>Q1. What is a 7-bit I2C address?</h3>
+        <p>
+            It is a seven-bit identifier used by the master
+            to select an I2C slave device.
+        </p>
+
+        <h3>Q2. What is the R/W bit?</h3>
+        <p>
+            It is the direction bit in the address byte.
+            Zero indicates write and one indicates read.
+        </p>
+
+        <h3>Q3. What is ACK?</h3>
+        <p>
+            ACK is a LOW level on SDA during the ninth
+            clock pulse, indicating acknowledgement.
+        </p>
+
+        <h3>Q4. What is NACK?</h3>
+        <p>
+            NACK is a HIGH level on SDA during the ninth
+            clock pulse, indicating no acknowledgement.
+        </p>
+
+        <h3>Q5. Who sends ACK during an I2C read?</h3>
+        <p>
+            The master receiver sends ACK when it wants
+            additional data from the slave.
+        </p>
+
+        <h3>Q6. Why does the master send NACK after the final byte?</h3>
+        <p>
+            It indicates that the master has finished
+            receiving data.
+        </p>
+
+        <h3>Q7. What is repeated START?</h3>
+        <p>
+            It is a new START condition generated without
+            first issuing a STOP condition.
+        </p>
+
+        <h3>Q8. What is clock stretching?</h3>
+        <p>
+            It is a mechanism in which a device holds SCL
+            LOW to delay further communication.
+        </p>
+
+        <h3>Q9. What is I2C arbitration?</h3>
+        <p>
+            It is the mechanism that resolves simultaneous
+            attempts by multiple masters to use the bus.
+        </p>
+
+        <h3>Q10. What is the standard I2C clock frequency?</h3>
+        <p>
+            Standard Mode supports up to 100 kbit/s.
+        </p>
+
+        <h3>Q11. What is the difference between 7-bit and 10-bit addressing?</h3>
+        <p>
+            Seven-bit addressing uses one address byte with
+            the R/W bit, while 10-bit addressing uses a
+            two-byte addressing sequence.
+        </p>
+
+        <h3>Q12. Why is I2C timing configuration important?</h3>
+        <p>
+            Correct timing ensures reliable communication
+            within the electrical and timing limits of
+            the connected devices.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Practical Exercises</h2>
+        <ol>
+            <li>Convert a 7-bit I2C address into its write and read address bytes.</li>
+            <li>Explain the difference between ACK and NACK.</li>
+            <li>Draw an I2C register-read transaction.</li>
+            <li>Calculate the clock period at 100 kHz and 400 kHz.</li>
+            <li>Explain clock stretching with an example.</li>
+            <li>Explain multi-master arbitration.</li>
+            <li>Configure I2C timing using STM32CubeMX.</li>
+            <li>Write an I2C address-scanning program.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>18. Lesson Summary</h2>
+        <ul>
+            <li>I2C commonly uses 7-bit slave addressing.</li>
+            <li>The R/W bit selects read or write direction.</li>
+            <li>ACK is represented by SDA LOW during the ninth clock.</li>
+            <li>NACK is represented by SDA HIGH during the ninth clock.</li>
+            <li>The master normally sends NACK after the final read byte.</li>
+            <li>START, STOP and repeated START control bus transactions.</li>
+            <li>I2C timing determines reliable data transfer.</li>
+            <li>Clock stretching allows a device to delay communication.</li>
+            <li>Arbitration supports multiple-master bus operation.</li>
+            <li>STM32 I2C timing configuration is peripheral-specific.</li>
+        </ul>
+    </section>
+
+    <nav class="lesson-nav">
+        <a href="L01_I2C_Protocol_and_STM32_Interfacing.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L03_I2C_Programming_and_Sensor_Interfacing.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
