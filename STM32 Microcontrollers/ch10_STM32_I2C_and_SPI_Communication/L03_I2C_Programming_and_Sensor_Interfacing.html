@@ -1,1 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 3 - I2C Programming and Sensor Interfacing</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dce5f0;
+            border-radius: 9px;
+        }
+        h2, h3 { color: #174ea6; }
+        .info-box {
+            background: #eef6ff;
+            border-left: 5px solid #174ea6;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 5px solid #e09b24;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        pre {
+            background: #172033;
+            color: #e8f0ff;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 16px;
+            border-radius: 6px;
+        }
+        .lesson-nav a:hover { background: #007bff; }
+    </style>
+</head>
+
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 3: I2C Programming and Sensor Interfacing</h1>
+        <p>STM32 Microcontrollers – Chapter 10</p>
+        <p>Use STM32 HAL to communicate with I2C sensors and peripheral devices.</p>
+    </header>
+
+    <p><a href="index.html">← Back to Chapter 10</a></p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand STM32 I2C master communication.</li>
+            <li>Use STM32 HAL I2C functions.</li>
+            <li>Transmit and receive data from slave devices.</li>
+            <li>Read and write sensor registers.</li>
+            <li>Understand register-based sensor communication.</li>
+            <li>Interface an I2C sensor with STM32.</li>
+            <li>Identify common I2C communication errors.</li>
+            <li>Implement practical I2C applications.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. I2C Communication in STM32</h2>
+
+        <p>
+            STM32 microcontrollers provide dedicated I2C
+            peripherals that allow communication with
+            external sensors, memory devices and controllers.
+        </p>
+
+        <p>
+            The STM32 can operate as an I2C master or slave.
+            In common embedded applications, STM32 is
+            configured as the master and communicates with
+            one or more peripheral devices.
+        </p>
+
+        <h3>Typical Connection</h3>
+        <pre><code>       STM32                         I2C Sensor
+   +-------------+                +-------------+
+   |             |                |             |
+   | I2C_SCL ----+----------------+---- SCL      |
+   |             |                |             |
+   | I2C_SDA ----+----------------+---- SDA      |
+   |             |                |             |
+   | GND --------+----------------+---- GND      |
+   +-------------+                +-------------+
+
+         SDA and SCL require suitable pull-ups
+         to a compatible bus voltage.</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>3. STM32 I2C HAL API</h2>
+
+        <p>
+            STM32 HAL provides functions for blocking,
+            interrupt-based and DMA-based I2C communication.
+        </p>
+
+        <table>
+            <tr>
+                <th>Function</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>HAL_I2C_Master_Transmit()</td>
+                <td>Transmit data to an I2C slave.</td>
+            </tr>
+            <tr>
+                <td>HAL_I2C_Master_Receive()</td>
+                <td>Receive data from an I2C slave.</td>
+            </tr>
+            <tr>
+                <td>HAL_I2C_Mem_Write()</td>
+                <td>Write to a slave memory/register address.</td>
+            </tr>
+            <tr>
+                <td>HAL_I2C_Mem_Read()</td>
+                <td>Read from a slave memory/register address.</td>
+            </tr>
+            <tr>
+                <td>HAL_I2C_IsDeviceReady()</td>
+                <td>Check whether a slave acknowledges its address.</td>
+            </tr>
+        </table>
+
+        <h3>I2C Handle</h3>
+        <pre><code>I2C_HandleTypeDef hi2c1;</code></pre>
+
+        <p>
+            The handle identifies the I2C peripheral and
+            contains its configuration and runtime state.
+            CubeMX normally generates the handle and
+            initialization function.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Checking Whether a Device Is Connected</h2>
+
+        <p>
+            Before transferring data, firmware can check
+            whether a device responds to its address.
+        </p>
+
+        <pre><code>#include "main.h"
+
+extern I2C_HandleTypeDef hi2c1;
+
+#define SENSOR_ADDR (0x48U &lt;&lt; 1)
+
+HAL_StatusTypeDef Check_I2C_Device(void)
+{
+    return HAL_I2C_IsDeviceReady(
+        &amp;hi2c1,
+        SENSOR_ADDR,
+        3,
+        100
+    );
+}</code></pre>
+
+        <h3>Function Parameters</h3>
+        <ul>
+            <li><code>&amp;hi2c1</code>: I2C peripheral handle.</li>
+            <li><code>SENSOR_ADDR</code>: shifted address used by the HAL API.</li>
+            <li><code>3</code>: number of trials.</li>
+            <li><code>100</code>: timeout in milliseconds.</li>
+        </ul>
+
+        <div class="info-box">
+            HAL_OK indicates that the device acknowledged
+            the address. It does not verify the sensor's
+            identity or data correctness.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Master Data Transmission</h2>
+
+        <p>
+            The STM32 master can send one or more bytes
+            to a slave device using
+            <code>HAL_I2C_Master_Transmit()</code>.
+        </p>
+
+        <pre><code>#include "main.h"
+
+extern I2C_HandleTypeDef hi2c1;
+
+#define SENSOR_ADDR (0x48U &lt;&lt; 1)
+
+void I2C_Send_Data(void)
+{
+    uint8_t tx_data[2];
+
+    tx_data[0] = 0x01;
+    tx_data[1] = 0x55;
+
+    HAL_StatusTypeDef status;
+
+    status = HAL_I2C_Master_Transmit(
+        &amp;hi2c1,
+        SENSOR_ADDR,
+        tx_data,
+        sizeof(tx_data),
+        1000
+    );
+
+    if (status == HAL_OK)
+    {
+        // Data transmitted successfully.
+    }
+    else
+    {
+        // Handle transmission error.
+    }
+}</code></pre>
+
+        <h3>Explanation</h3>
+        <ul>
+            <li><code>tx_data</code> stores the bytes to transmit.</li>
+            <li>The first byte may represent a command or register, depending on the slave protocol.</li>
+            <li>The second byte is example data.</li>
+            <li><code>sizeof(tx_data)</code> gives the number of bytes.</li>
+            <li>The slave must support the exact transaction format.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Master Data Reception</h2>
+
+        <p>
+            The STM32 can receive data from an addressed
+            slave using <code>HAL_I2C_Master_Receive()</code>.
+        </p>
+
+        <pre><code>#include "main.h"
+
+extern I2C_HandleTypeDef hi2c1;
+
+#define SENSOR_ADDR (0x48U &lt;&lt; 1)
+
+uint8_t rx_data[2];
+
+HAL_StatusTypeDef I2C_Receive_Data(void)
+{
+    return HAL_I2C_Master_Receive(
+        &amp;hi2c1,
+        SENSOR_ADDR,
+        rx_data,
+        sizeof(rx_data),
+        1000
+    );
+}</code></pre>
+
+        <p>
+            This example requests two bytes from the slave.
+            The exact meaning of the returned bytes depends
+            on the connected device's protocol.
+        </p>
+
+        <div class="warning-box">
+            A sensor may require a register address or command
+            before returning data. In that case, use the
+            device's specified transaction sequence rather
+            than assuming a direct read will work.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Register-Based I2C Communication</h2>
+
+        <p>
+            Many sensors contain internal registers.
+            The master writes a register address to select
+            the required data or configuration register.
+        </p>
+
+        <h3>Typical Register Read Sequence</h3>
+        <pre><code>START
+  |
+Slave Address + Write
+  |
+Register Address
+  |
+Repeated START
+  |
+Slave Address + Read
+  |
+Receive Data
+  |
+NACK
+  |
+STOP</code></pre>
+
+        <p>
+            STM32 HAL provides memory read and write
+            functions for common register-based devices.
+        </p>
+
+        <h3>Reading a Register</h3>
+        <pre><code>#include "main.h"
+
+extern I2C_HandleTypeDef hi2c1;
+
+#define SENSOR_ADDR (0x48U &lt;&lt; 1)
+
+uint8_t Read_Sensor_Register(uint8_t reg)
+{
+    uint8_t data = 0;
+
+    HAL_StatusTypeDef status;
+
+    status = HAL_I2C_Mem_Read(
+        &amp;hi2c1,
+        SENSOR_ADDR,
+        reg,
+        I2C_MEMADD_SIZE_8BIT,
+        &amp;data,
+        1,
+        1000
+    );
+
+    if (status != HAL_OK)
+    {
+        return 0;
+    }
+
+    return data;
+}</code></pre>
+
+        <h3>Writing a Register</h3>
+        <pre><code>HAL_StatusTypeDef Write_Sensor_Register(
+    uint8_t reg,
+    uint8_t value)
+{
+    return HAL_I2C_Mem_Write(
+        &amp;hi2c1,
+        SENSOR_ADDR,
+        reg,
+        I2C_MEMADD_SIZE_8BIT,
+        &amp;value,
+        1,
+        1000
+    );
+}</code></pre>
+
+        <div class="warning-box">
+            Returning zero on a read error can be ambiguous
+            because zero may be valid sensor data. Production
+            code should return a HAL status separately and
+            place the received value in an output parameter.
+            Also confirm the sensor's register width and
+            byte order from its datasheet.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Improved Register Read with Error Handling</h2>
+
+        <p>
+            A more robust function separates communication
+            status from the returned sensor value.
+        </p>
+
+        <pre><code>HAL_StatusTypeDef Read_Sensor_Register(
+    uint8_t reg,
+    uint8_t *value)
+{
+    if (value == NULL)
+    {
+        return HAL_ERROR;
+    }
+
+    return HAL_I2C_Mem_Read(
+        &amp;hi2c1,
+        SENSOR_ADDR,
+        reg,
+        I2C_MEMADD_SIZE_8BIT,
+        value,
+        1,
+        1000
+    );
+}</code></pre>
+
+        <h3>Calling the Function</h3>
+        <pre><code>uint8_t sensor_value = 0;
+
+if (Read_Sensor_Register(0x00, &amp;sensor_value) == HAL_OK)
+{
+    // Use sensor_value.
+}
+else
+{
+    // Handle I2C error.
+}</code></pre>
+
+        <p>
+            This approach avoids confusing a valid zero
+            reading with a communication failure.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Practical Example: I2C Temperature Sensor</h2>
+
+        <p>
+            Consider a temperature sensor that provides
+            a temperature register over I2C.
+        </p>
+
+        <h3>Block Diagram</h3>
+        <pre><code>       STM32 Microcontroller
+       +-------------------+
+       |                   |
+       | I2C_SCL           |
+       | I2C_SDA           |
+       |                   |
+       +----+---------+----+
+            |         |
+            |         |
+       +----+---------+----+
+       | I2C Temperature   |
+       | Sensor            |
+       |                   |
+       | Temperature Reg.  |
+       +-------------------+</code></pre>
+
+        <h3>Example Register Read</h3>
+        <pre><code>#define TEMP_REG 0x00
+
+uint8_t raw_temperature = 0;
+
+void Read_Temperature_Sensor(void)
+{
+    HAL_StatusTypeDef status;
+
+    status = Read_Sensor_Register(
+        TEMP_REG,
+        &amp;raw_temperature
+    );
+
+    if (status == HAL_OK)
+    {
+        // Convert raw data according to sensor datasheet.
+    }
+    else
+    {
+        // Handle sensor communication error.
+    }
+}</code></pre>
+
+        <div class="warning-box">
+            This is a generic register-read example.
+            Actual temperature sensors may return 12-bit,
+            16-bit or other formats, sometimes with signed
+            values and fractional resolution. Use the
+            manufacturer's conversion formula.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Example: Reading a 16-Bit Sensor Register</h2>
+
+        <p>
+            Some sensors return a 16-bit value in two bytes.
+            The byte order must be checked in the datasheet.
+        </p>
+
+        <pre><code>uint8_t data[2];
+
+HAL_StatusTypeDef Read_16Bit_Register(uint8_t reg,
+                                      uint16_t *result)
+{
+    HAL_StatusTypeDef status;
+
+    if (result == NULL)
+    {
+        return HAL_ERROR;
+    }
+
+    status = HAL_I2C_Mem_Read(
+        &amp;hi2c1,
+        SENSOR_ADDR,
+        reg,
+        I2C_MEMADD_SIZE_8BIT,
+        data,
+        2,
+        1000
+    );
+
+    if (status == HAL_OK)
+    {
+        // Example: Most significant byte first.
+        *result = ((uint16_t)data[0] &lt;&lt; 8)
+                | (uint16_t)data[1];
+    }
+
+    return status;
+}</code></pre>
+
+        <p>
+            This example assumes big-endian register data.
+            If the sensor uses little-endian order, the
+            byte combination must be reversed.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Interfacing an I2C EEPROM</h2>
+
+        <p>
+            EEPROM devices store non-volatile data and
+            commonly use I2C for communication.
+        </p>
+
+        <h3>Typical Applications</h3>
+        <ul>
+            <li>Storing device configuration.</li>
+            <li>Saving calibration values.</li>
+            <li>Maintaining user settings.</li>
+            <li>Storing small data records.</li>
+        </ul>
+
+        <h3>EEPROM Write Process</h3>
+        <ol>
+            <li>Send the EEPROM device address.</li>
+            <li>Send the memory address.</li>
+            <li>Send the data byte or page.</li>
+            <li>Wait for the internal write cycle.</li>
+            <li>Check device readiness before the next operation.</li>
+        </ol>
+
+        <div class="info-box">
+            EEPROM page size, address width, write-cycle time
+            and page-boundary behavior vary by device. Follow
+            the exact EEPROM datasheet.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>12. STM32 I2C Interrupt-Based Communication</h2>
+
+        <p>
+            Blocking HAL functions wait for communication
+            to complete. Interrupt-based APIs allow the
+            CPU to perform other work while the transfer
+            progresses.
+        </p>
+
+        <h3>Transmit Using Interrupt</h3>
+        <pre><code>uint8_t tx_buffer[] = {0x01, 0x55};
+
+HAL_I2C_Master_Transmit_IT(
+    &amp;hi2c1,
+    SENSOR_ADDR,
+    tx_buffer,
+    sizeof(tx_buffer)
+);</code></pre>
+
+        <h3>Completion Callback</h3>
+        <pre><code>void HAL_I2C_MasterTxCpltCallback(
+    I2C_HandleTypeDef *hi2c)
+{
+    if (hi2c-&gt;Instance == I2C1)
+    {
+        // Transmission completed.
+    }
+}</code></pre>
+
+        <h3>Receive Using Interrupt</h3>
+        <pre><code>uint8_t rx_buffer[2];
+
+HAL_I2C_Master_Receive_IT(
+    &amp;hi2c1,
+    SENSOR_ADDR,
+    rx_buffer,
+    sizeof(rx_buffer)
+);</code></pre>
+
+        <div class="warning-box">
+            Interrupt-based transfers require the correct
+            I2C event/error IRQ configuration and HAL IRQ
+            handler forwarding. Buffers must remain valid
+            until completion. Do not start a conflicting
+            transfer on the same handle while it is busy.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>13. STM32 I2C DMA Communication</h2>
+
+        <p>
+            DMA transfers data between memory and the
+            I2C peripheral with reduced CPU involvement.
+        </p>
+
+        <h3>Transmit Using DMA</h3>
+        <pre><code>uint8_t tx_buffer[] = {0x01, 0x55};
+
+HAL_I2C_Master_Transmit_DMA(
+    &amp;hi2c1,
+    SENSOR_ADDR,
+    tx_buffer,
+    sizeof(tx_buffer)
+);</code></pre>
+
+        <h3>Receive Using DMA</h3>
+        <pre><code>uint8_t rx_buffer[4];
+
+HAL_I2C_Master_Receive_DMA(
+    &amp;hi2c1,
+    SENSOR_ADDR,
+    rx_buffer,
+    sizeof(rx_buffer)
+);</code></pre>
+
+        <ul>
+            <li>DMA is useful for larger or repeated transfers.</li>
+            <li>It reduces CPU involvement during data movement.</li>
+            <li>DMA requests and channel mappings vary by STM32 family.</li>
+            <li>Buffers must remain accessible and valid throughout the transfer.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Common I2C Troubleshooting</h2>
+
+        <table>
+            <tr>
+                <th>Problem</th>
+                <th>Possible Cause</th>
+                <th>Recommended Check</th>
+            </tr>
+            <tr>
+                <td>HAL_ERROR or NACK</td>
+                <td>Incorrect slave address.</td>
+                <td>Verify the 7-bit address and HAL address format.</td>
+            </tr>
+            <tr>
+                <td>HAL_TIMEOUT</td>
+                <td>Bus stuck or timing issue.</td>
+                <td>Check SDA, SCL and clock configuration.</td>
+            </tr>
+            <tr>
+                <td>No device response</td>
+                <td>Power or wiring issue.</td>
+                <td>Check supply, ground and connections.</td>
+            </tr>
+            <tr>
+                <td>Incorrect data</td>
+                <td>Wrong register or byte order.</td>
+                <td>Read the sensor datasheet.</td>
+            </tr>
+            <tr>
+                <td>Intermittent errors</td>
+                <td>Pull-up or signal integrity issue.</td>
+                <td>Inspect waveforms and bus capacitance.</td>
+            </tr>
+            <tr>
+                <td>Interrupt never completes</td>
+                <td>IRQ handler or NVIC not configured.</td>
+                <td>Check interrupt setup and callback flow.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Placement Interview Questions and Answers</h2>
+
+        <h3>Q1. Which HAL function is used to transmit I2C data?</h3>
+        <p>HAL_I2C_Master_Transmit().</p>
+
+        <h3>Q2. Which HAL function is used to receive I2C data?</h3>
+        <p>HAL_I2C_Master_Receive().</p>
+
+        <h3>Q3. What is register-based communication?</h3>
+        <p>
+            It is communication in which the master selects
+            an internal register address before reading
+            or writing device data.
+        </p>
+
+        <h3>Q4. What is the purpose of HAL_I2C_Mem_Read()?</h3>
+        <p>
+            It reads data from a specified memory or
+            register address of an I2C slave.
+        </p>
+
+        <h3>Q5. What is the purpose of HAL_I2C_IsDeviceReady()?</h3>
+        <p>
+            It checks whether a slave responds to its
+            address with an acknowledgement.
+        </p>
+
+        <h3>Q6. What is the difference between blocking and interrupt-based I2C?</h3>
+        <p>
+            Blocking functions wait for completion, while
+            interrupt-based functions allow the CPU to
+            execute other work during a transfer.
+        </p>
+
+        <h3>Q7. What is the role of DMA in I2C?</h3>
+        <p>
+            DMA transfers data between memory and the
+            peripheral with reduced CPU involvement.
+        </p>
+
+        <h3>Q8. Why should sensor datasheets be checked?</h3>
+        <p>
+            They specify addresses, register maps, data
+            formats, timing requirements and conversion
+            formulas.
+        </p>
+
+        <h3>Q9. What causes an I2C NACK?</h3>
+        <p>
+            Common causes include an incorrect address,
+            an unpowered device, wiring faults or a
+            device that is not ready.
+        </p>
+
+        <h3>Q10. Why is byte order important?</h3>
+        <p>
+            It determines how multiple received bytes
+            are combined into a numerical value.
+        </p>
+
+        <h3>Q11. Why should an interrupt transfer buffer remain valid?</h3>
+        <p>
+            The HAL continues accessing the buffer after
+            the function returns and until the transfer
+            completes.
+        </p>
+
+        <h3>Q12. Can STM32 communicate with multiple I2C sensors?</h3>
+        <p>
+            Yes. Multiple devices can share the bus if
+            their addresses do not conflict and the
+            electrical requirements are satisfied.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Practical Exercises</h2>
+        <ol>
+            <li>Configure I2C1 in STM32CubeMX.</li>
+            <li>Write code to check whether a sensor responds.</li>
+            <li>Transmit two bytes to an I2C slave.</li>
+            <li>Receive two bytes from an I2C slave.</li>
+            <li>Read an 8-bit sensor register.</li>
+            <li>Read a 16-bit sensor register and combine its bytes.</li>
+            <li>Interface an I2C temperature sensor.</li>
+            <li>Implement an interrupt-based I2C transfer.</li>
+            <li>Explain how DMA improves I2C data transfer.</li>
+            <li>Debug an I2C NACK and timeout condition.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Lesson Summary</h2>
+        <ul>
+            <li>STM32 uses dedicated I2C hardware for communication.</li>
+            <li>HAL provides blocking, interrupt and DMA APIs.</li>
+            <li>Master transmit and receive functions transfer data.</li>
+            <li>Memory APIs simplify register-based communication.</li>
+            <li>Sensors commonly expose configuration and data registers.</li>
+            <li>Datasheets define register formats and conversion formulas.</li>
+            <li>Interrupts and DMA reduce CPU involvement.</li>
+            <li>Correct addressing, timing and wiring are essential.</li>
+        </ul>
+    </section>
+
+    <nav class="lesson-nav">
+        <a href="L02_I2C_Addressing_ACK_NACK_and_Timing.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L04_SPI_Protocol_and_Communication_Modes.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
