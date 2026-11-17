@@ -1,1 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 2 - Timer Prescaler and Auto-Reload | NS Learning Hub</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+
+        .content-section {
+            background: #fff;
+            border: 1px solid #e0e6ef;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 18px 0;
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #e5edf8;
+            padding-bottom: 8px;
+        }
+
+        h3 { color: #1769aa; }
+
+        pre {
+            background: #17212f;
+            color: #e8f1ff;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e0a000;
+            padding: 12px;
+            margin: 15px 0;
+        }
+
+        .example {
+            background: #eef6ff;
+            border-left: 5px solid #007bff;
+            padding: 12px;
+            margin: 15px 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th { background: #eaf2ff; }
+
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+
+        .navigation a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 17px;
+            border-radius: 6px;
+        }
+
+        .navigation a:hover { background: #007bff; }
+    </style>
+</head>
+
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 2: Timer Prescaler, Auto-Reload and Update Event</h1>
+        <p>
+            Learn timer clock division, counter period calculations,
+            prescaler configuration, auto-reload operation and
+            update event generation in STM32.
+        </p>
+    </header>
+
+    <p>
+        <a href="index.html">← Back to Chapter 8</a> |
+        <a href="../stm32-microcontrollers.html">STM32 Course Home</a>
+    </p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand the timer prescaler register.</li>
+            <li>Understand the auto-reload register.</li>
+            <li>Learn the counter clock frequency formula.</li>
+            <li>Calculate timer update frequency and period.</li>
+            <li>Understand timer overflow and update events.</li>
+            <li>Learn timer configuration using STM32 HAL.</li>
+            <li>Solve placement-oriented timer calculations.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. Timer Clock and Counter Operation</h2>
+
+        <p>
+            An STM32 timer receives a clock from its selected
+            timer clock source. The prescaler divides this
+            clock before it reaches the counter.
+        </p>
+
+        <pre><code>
+        Timer Input Clock
+              |
+              v
+        Prescaler (PSC)
+              |
+              v
+         Counter Clock
+              |
+              v
+          CNT Register
+              |
+              v
+         ARR Register
+              |
+              v
+         Update Event
+        </code></pre>
+
+        <p>
+            The prescaler controls how quickly the counter
+            increments or decrements.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Prescaler Register (PSC)</h2>
+
+        <p>
+            The prescaler divides the timer input clock
+            before it is applied to the counter.
+        </p>
+
+        <p>
+            For the common STM32 timer prescaler implementation,
+            the division factor is PSC + 1.
+        </p>
+
+        <h3>Counter Clock Formula</h3>
+
+        <p><strong>Counter frequency = Timer clock / (PSC + 1)</strong></p>
+
+        <div class="example">
+            <strong>Example:</strong>
+            <p>Timer clock = 84 MHz</p>
+            <p>PSC = 83</p>
+            <p>
+                Counter frequency = 84,000,000 / (83 + 1)
+            </p>
+            <p><strong>Counter frequency = 1 MHz</strong></p>
+            <p>
+                One counter increment therefore takes 1 microsecond.
+            </p>
+        </div>
+
+        <h3>Prescaler Values</h3>
+
+        <table>
+            <tr>
+                <th>PSC Value</th>
+                <th>Division Factor</th>
+                <th>Counter Frequency for 84 MHz Input</th>
+            </tr>
+            <tr>
+                <td>0</td>
+                <td>1</td>
+                <td>84 MHz</td>
+            </tr>
+            <tr>
+                <td>7</td>
+                <td>8</td>
+                <td>10.5 MHz</td>
+            </tr>
+            <tr>
+                <td>83</td>
+                <td>84</td>
+                <td>1 MHz</td>
+            </tr>
+            <tr>
+                <td>839</td>
+                <td>840</td>
+                <td>100 kHz</td>
+            </tr>
+            <tr>
+                <td>8399</td>
+                <td>8400</td>
+                <td>10 kHz</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            The prescaler register is buffered on many STM32
+            timers. A newly written prescaler value may take
+            effect after an update event. Initialization and
+            preload behavior should be checked for the selected
+            timer and device.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Auto-Reload Register (ARR)</h2>
+
+        <p>
+            The auto-reload register defines the counter's
+            terminal value in the common up-counting mode.
+        </p>
+
+        <p>
+            When the counter reaches the configured limit,
+            an update event is generated under the applicable
+            timer configuration and the counter restarts.
+        </p>
+
+        <h3>Example</h3>
+
+        <p>ARR = 4</p>
+
+        <pre><code>
+CNT = 0
+CNT = 1
+CNT = 2
+CNT = 3
+CNT = 4
+    |
+    v
+Update Event
+    |
+    v
+CNT restarts from 0
+        </code></pre>
+
+        <p>
+            Since the counter includes zero, the number of
+            counter ticks in an up-counting period is ARR + 1.
+        </p>
+
+        <h3>Counter Period Formula</h3>
+
+        <p><strong>Counter ticks per period = ARR + 1</strong></p>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Timer Update Frequency Formula</h2>
+
+        <p>
+            The timer update frequency depends on the timer
+            input clock, prescaler and auto-reload value.
+        </p>
+
+        <p><strong>
+            Update frequency = Timer clock /
+            [(PSC + 1) × (ARR + 1)]
+        </strong></p>
+
+        <p><strong>
+            Update period = 1 / Update frequency
+        </strong></p>
+
+        <div class="example">
+            <h3>Example 1: Generate a 1 kHz Update Event</h3>
+
+            <p>Timer clock = 84 MHz</p>
+            <p>PSC = 83</p>
+            <p>ARR = 999</p>
+
+            <p>
+                Update frequency =
+                84,000,000 / [84 × 1000]
+            </p>
+
+            <p><strong>Update frequency = 1000 Hz</strong></p>
+            <p><strong>Update period = 1 ms</strong></p>
+        </div>
+
+        <div class="example">
+            <h3>Example 2: Generate a 1 Hz Update Event</h3>
+
+            <p>Timer clock = 84 MHz</p>
+            <p>PSC = 8399</p>
+            <p>ARR = 9999</p>
+
+            <p>
+                Update frequency =
+                84,000,000 / [8400 × 10000]
+            </p>
+
+            <p><strong>Update frequency = 1 Hz</strong></p>
+            <p><strong>Update period = 1 second</strong></p>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Step-by-Step Timer Calculation</h2>
+
+        <p>
+            Suppose an STM32 timer has an input clock of
+            72 MHz and you need an update event every 10 ms.
+        </p>
+
+        <h3>Step 1: Select Counter Frequency</h3>
+        <p>
+            Choose a counter frequency of 10 kHz.
+        </p>
+
+        <h3>Step 2: Calculate Prescaler</h3>
+        <p>
+            PSC = (Timer clock / Counter frequency) - 1
+        </p>
+
+        <p>
+            PSC = (72,000,000 / 10,000) - 1
+        </p>
+
+        <p><strong>PSC = 7199</strong></p>
+
+        <h3>Step 3: Calculate Counter Ticks</h3>
+        <p>
+            Required period = 10 ms = 0.01 seconds.
+        </p>
+
+        <p>
+            Counter ticks = 10,000 × 0.01 = 100
+        </p>
+
+        <h3>Step 4: Calculate ARR</h3>
+        <p>
+            ARR = Counter ticks - 1
+        </p>
+
+        <p><strong>ARR = 99</strong></p>
+
+        <h3>Final Configuration</h3>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Value</th>
+            </tr>
+            <tr>
+                <td>Timer clock</td>
+                <td>72 MHz</td>
+            </tr>
+            <tr>
+                <td>PSC</td>
+                <td>7199</td>
+            </tr>
+            <tr>
+                <td>Counter frequency</td>
+                <td>10 kHz</td>
+            </tr>
+            <tr>
+                <td>ARR</td>
+                <td>99</td>
+            </tr>
+            <tr>
+                <td>Update frequency</td>
+                <td>100 Hz</td>
+            </tr>
+            <tr>
+                <td>Update period</td>
+                <td>10 ms</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Update Event and Overflow</h2>
+
+        <p>
+            An update event is a timer event associated with
+            counter overflow or underflow and update operations.
+            Its exact behavior depends on timer configuration.
+        </p>
+
+        <h3>Typical Up-Counting Sequence</h3>
+
+        <pre><code>
+CNT = 0
+CNT = 1
+CNT = 2
+CNT = 3
+...
+CNT = ARR
+    |
+    v
+Overflow / Update Event
+    |
+    v
+Counter restarts
+        </code></pre>
+
+        <h3>Update Event Uses</h3>
+        <ul>
+            <li>Generate periodic interrupts.</li>
+            <li>Update buffered timer registers.</li>
+            <li>Trigger DMA requests where supported and configured.</li>
+            <li>Synchronize timer operations.</li>
+            <li>Provide periodic timing for firmware.</li>
+        </ul>
+
+        <div class="note">
+            An update event and an update interrupt are not
+            identical. The update event can occur without
+            the CPU executing an ISR. The update interrupt
+            must be enabled separately.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Update Interrupt Enable</h2>
+
+        <p>
+            The timer update interrupt is commonly controlled
+            by the update interrupt enable bit (UIE) in the
+            DIER register.
+        </p>
+
+        <p>
+            The update interrupt flag (UIF) in the SR register
+            indicates an update condition on many STM32 timer
+            implementations.
+        </p>
+
+        <h3>Conceptual Register Configuration</h3>
+
+        <pre><code>
+TIMx->DIER |= TIM_DIER_UIE;
+        </code></pre>
+
+        <p>
+            This enables the timer's update interrupt source.
+            The corresponding NVIC interrupt must also be
+            configured for the CPU to execute its handler.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>9. STM32 HAL Timer Configuration Example</h2>
+
+        <p>
+            The following example configures a timer to
+            generate a 1 kHz update event using a timer
+            clock of 84 MHz.
+        </p>
+
+        <pre><code>#include "main.h"
+
+TIM_HandleTypeDef htim2;
+
+void MX_TIM2_Init(void)
+{
+    htim2.Instance = TIM2;
+
+    /* 84 MHz / (83 + 1) = 1 MHz */
+    htim2.Init.Prescaler = 83;
+
+    htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+
+    /* 1 MHz / (999 + 1) = 1 kHz */
+    htim2.Init.Period = 999;
+
+    htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+
+    htim2.Init.AutoReloadPreload =
+        TIM_AUTORELOAD_PRELOAD_DISABLE;
+
+    if (HAL_TIM_Base_Init(&amp;htim2) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}</code></pre>
+
+        <h3>Start Timer Without Interrupt</h3>
+
+        <pre><code>HAL_TIM_Base_Start(&amp;htim2);</code></pre>
+
+        <h3>Start Timer With Interrupt</h3>
+
+        <pre><code>HAL_TIM_Base_Start_IT(&amp;htim2);</code></pre>
+
+        <h3>Update Callback</h3>
+
+        <pre><code>void HAL_TIM_PeriodElapsedCallback(
+    TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM2)
+    {
+        /* Runs when TIM2 update interrupt is handled */
+    }
+}</code></pre>
+
+        <div class="note">
+            The timer clock must actually be 84 MHz for
+            these values to produce 1 kHz. Configure the
+            peripheral clock, timer interrupt vector and
+            NVIC according to the selected STM32 device.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Important Timer Configuration Parameters</h2>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>Prescaler</td>
+                <td>Divides the timer input clock.</td>
+            </tr>
+            <tr>
+                <td>Counter Mode</td>
+                <td>Selects up, down or center-aligned counting.</td>
+            </tr>
+            <tr>
+                <td>Period</td>
+                <td>Sets the auto-reload value through ARR.</td>
+            </tr>
+            <tr>
+                <td>Clock Division</td>
+                <td>Controls the timer sampling clock division where applicable.</td>
+            </tr>
+            <tr>
+                <td>Auto-Reload Preload</td>
+                <td>Controls buffering of ARR updates.</td>
+            </tr>
+        </table>
+
+        <p>
+            Note that the timer's Clock Division configuration
+            is not the same as the PSC counter-clock division.
+            It is used for timer sampling-clock functions on
+            supported timer implementations.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Common Timer Calculation Mistakes</h2>
+
+        <ul>
+            <li>Using PSC instead of PSC + 1.</li>
+            <li>Using ARR instead of ARR + 1 for up-counting periods.</li>
+            <li>Assuming PCLK is always equal to the timer clock.</li>
+            <li>Ignoring APB prescaler effects.</li>
+            <li>Using an incorrect timer clock frequency.</li>
+            <li>Forgetting to enable the timer peripheral clock.</li>
+            <li>Confusing an update event with an update interrupt.</li>
+            <li>Ignoring timer counter width and register limits.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Placement-Oriented Interview Questions</h2>
+
+        <h3>Q1. What is a prescaler?</h3>
+        <p>
+            A prescaler divides the timer input clock before
+            it reaches the counter.
+        </p>
+
+        <h3>Q2. What is the PSC + 1 rule?</h3>
+        <p>
+            For the common STM32 timer prescaler, the division
+            factor is the programmed PSC value plus one.
+        </p>
+
+        <h3>Q3. What is ARR?</h3>
+        <p>
+            ARR is the auto-reload register that defines
+            the counter's terminal value.
+        </p>
+
+        <h3>Q4. Why do we use ARR + 1 in timer calculations?</h3>
+        <p>
+            In up-counting mode, the counter includes zero
+            and the terminal value, resulting in ARR + 1 ticks.
+        </p>
+
+        <h3>Q5. What is the timer update frequency formula?</h3>
+        <p>
+            Update frequency = Timer clock /
+            [(PSC + 1) × (ARR + 1)] for the usual up-counting
+            time-base configuration.
+        </p>
+
+        <h3>Q6. What is an update event?</h3>
+        <p>
+            It is a timer event associated with overflow,
+            underflow and update operations.
+        </p>
+
+        <h3>Q7. What is the difference between an update event and interrupt?</h3>
+        <p>
+            An update event is generated by the timer.
+            An update interrupt requests CPU service when
+            the interrupt source and NVIC are enabled.
+        </p>
+
+        <h3>Q8. What is the purpose of the UIF flag?</h3>
+        <p>
+            It indicates a timer update condition on timer
+            implementations that provide this status flag.
+        </p>
+
+        <h3>Q9. How can you generate a 1-second timer period?</h3>
+        <p>
+            Select PSC and ARR so their combined division
+            produces an update frequency of 1 Hz, while
+            respecting the timer's register limits.
+        </p>
+
+        <h3>Q10. What happens when ARR is changed?</h3>
+        <p>
+            The effect depends on the auto-reload preload
+            configuration. With preload enabled, the new
+            value generally takes effect at an update event.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Practical Exercises</h2>
+
+        <ol>
+            <li>Calculate the counter frequency for an 84 MHz timer clock and PSC = 83.</li>
+            <li>Calculate the update frequency when PSC = 839 and ARR = 999.</li>
+            <li>Configure a timer for a 1 ms update period using a 72 MHz timer clock.</li>
+            <li>Calculate PSC and ARR for a 10 ms period using a 48 MHz timer clock.</li>
+            <li>Explain why ARR + 1 is used in the period calculation.</li>
+            <li>Explain the difference between an update event and update interrupt.</li>
+            <li>Configure a timer using STM32CubeMX and STM32 HAL.</li>
+            <li>Verify the timer counter frequency by inspecting CNT during debugging.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Lesson Summary</h2>
+
+        <ul>
+            <li>PSC divides the timer input clock.</li>
+            <li>The counter frequency is Timer clock / (PSC + 1).</li>
+            <li>ARR defines the counter's auto-reload value.</li>
+            <li>Up-counting periods normally contain ARR + 1 ticks.</li>
+            <li>Update frequency depends on timer clock, PSC and ARR.</li>
+            <li>Update events can occur without CPU interrupt execution.</li>
+            <li>Update interrupt and NVIC configuration are separate steps.</li>
+            <li>Correct timer clock identification is essential for accurate timing.</li>
+        </ul>
+    </section>
+
+    <nav class="navigation">
+        <a href="L01_Timer_and_Counter_Architecture.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter 8 Index
+        </a>
+
+        <a href="L03_Timer_Interrupt_Programming.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
