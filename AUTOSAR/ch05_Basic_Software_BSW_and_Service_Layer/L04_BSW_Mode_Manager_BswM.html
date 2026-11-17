@@ -1,1 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BSW Mode Manager (BswM) - AUTOSAR</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .lesson-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+            box-shadow: 0 2px 7px rgba(0,0,0,0.08);
+        }
+        h2 { color: #174ea6; }
+        h3 { color: #007bff; }
+        pre {
+            background: #f4f6f9;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+            border-left: 4px solid #174ea6;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5dce5;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf1ff; }
+        .note {
+            background: #fff4d6;
+            border-left: 4px solid #e0a000;
+            padding: 12px;
+            margin: 15px 0;
+        }
+        .question {
+            background: #f0f5ff;
+            padding: 12px;
+            border-radius: 7px;
+            margin: 12px 0;
+        }
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 25px 0;
+        }
+        .navigation a {
+            display: inline-block;
+            background: #174ea6;
+            color: white;
+            padding: 11px 17px;
+            text-decoration: none;
+            border-radius: 6px;
+        }
+        .navigation a:hover { background: #007bff; }
+    </style>
+</head>
+<body>
 
+<main class="container">
+
+    <div class="lesson-banner">
+        <h1>Lesson 4: BSW Mode Manager (BswM)</h1>
+        <p>AUTOSAR Basic Software – Mode Arbitration, Rules and Action Lists</p>
+    </div>
+
+    <section class="lesson-section">
+        <h2>1. Introduction to BswM</h2>
+        <p>
+            BswM stands for <strong>BSW Mode Manager</strong>. It is an
+            AUTOSAR Basic Software module responsible for evaluating mode
+            requests and coordinating configured actions when specified
+            conditions are satisfied.
+        </p>
+        <p>
+            An automotive ECU operates in different modes depending on
+            vehicle conditions and software requirements. For example,
+            communication may need to be enabled during normal operation
+            and disabled or placed into a low-power mode when the vehicle
+            is parked.
+        </p>
+        <p>
+            BswM provides a configurable mechanism to manage these mode
+            transitions using mode requests, arbitration rules and
+            action lists.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>2. Position of BswM in AUTOSAR Architecture</h2>
+        <pre>
+        Application Software Components
+                     |
+                    RTE
+                     |
+        --------------------------------
+        |       BSW Services Layer     |
+        |                              |
+        |  EcuM - ECU State Manager    |
+        |  BswM - BSW Mode Manager     |
+        |  ComM - Communication Mgr    |
+        |  DEM - Diagnostic Event Mgr  |
+        |  DCM - Diagnostic Comm. Mgr  |
+        |  OS                           |
+        --------------------------------
+                     |
+             ECU Abstraction
+                     |
+                    MCAL
+                     |
+              Microcontroller
+        </pre>
+        <p>
+            BswM belongs to the BSW Services Layer. It coordinates configured
+            mode-dependent actions involving BSW modules and, where
+            configured, application-related mode behavior.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>3. Why is BswM Required?</h2>
+        <p>
+            Different ECU modules need to change their behavior according
+            to operating conditions. Without coordinated mode management,
+            individual modules could make inconsistent decisions.
+        </p>
+        <p>Examples include:</p>
+        <ul>
+            <li>Enabling communication when the ECU enters normal operation.</li>
+            <li>Changing communication behavior during vehicle sleep preparation.</li>
+            <li>Coordinating ECU mode transitions.</li>
+            <li>Responding to diagnostic session or application mode changes.</li>
+            <li>Coordinating configured actions after a mode request.</li>
+        </ul>
+    </section>
+
+    <section class="lesson-section">
+        <h2>4. Main Responsibilities of BswM</h2>
+
+        <h3>4.1 Mode Request Processing</h3>
+        <p>
+            BswM receives mode requests from configured software modules
+            and evaluates their current values.
+        </p>
+
+        <h3>4.2 Mode Arbitration</h3>
+        <p>
+            It evaluates configured conditions and determines which
+            arbitration rules are satisfied.
+        </p>
+
+        <h3>4.3 Rule Evaluation</h3>
+        <p>
+            Rules contain logical conditions based on mode requests and
+            other configured information. Their results determine which
+            actions should be executed.
+        </p>
+
+        <h3>4.4 Action List Execution</h3>
+        <p>
+            BswM executes configured action lists when the corresponding
+            rule conditions are satisfied.
+        </p>
+
+        <h3>4.5 Mode Coordination</h3>
+        <p>
+            It coordinates mode-dependent behavior across configured BSW
+            modules and application-related interfaces.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>5. BswM Architecture and Working Flow</h2>
+        <pre>
+        Mode Requests from Modules
+                   |
+                   v
+        +------------------------+
+        |          BswM          |
+        |                        |
+        |  Mode Request Handling |
+        |           |            |
+        |           v            |
+        |  Mode Arbitration     |
+        |           |            |
+        |           v            |
+        |    Rule Evaluation     |
+        |           |            |
+        |           v            |
+        |   Action List Selection|
+        +------------------------+
+                   |
+                   v
+        Configured BSW Actions
+                   |
+          -------------------
+          |        |        |
+         ComM     OS      Other BSW
+        </pre>
+
+        <p>Basic working sequence:</p>
+        <ol>
+            <li>A configured module reports a mode request.</li>
+            <li>BswM receives or evaluates the request.</li>
+            <li>Configured arbitration rules are evaluated.</li>
+            <li>The result determines the applicable action list.</li>
+            <li>Configured actions are executed.</li>
+        </ol>
+    </section>
+
+    <section class="lesson-section">
+        <h2>6. Mode Requests</h2>
+        <p>
+            A mode request communicates a requested operating mode to
+            BswM. The request may originate from different BSW modules
+            or configured application interfaces.
+        </p>
+
+        <table>
+            <tr>
+                <th>Request Source</th>
+                <th>Example Information</th>
+            </tr>
+            <tr>
+                <td>EcuM</td>
+                <td>ECU lifecycle-related state or shutdown coordination information.</td>
+            </tr>
+            <tr>
+                <td>ComM</td>
+                <td>Communication mode request or current communication mode information.</td>
+            </tr>
+            <tr>
+                <td>Application through RTE</td>
+                <td>Configured application mode request.</td>
+            </tr>
+            <tr>
+                <td>Diagnostic-related modules</td>
+                <td>Diagnostic mode or session-related information where configured.</td>
+            </tr>
+            <tr>
+                <td>Other BSW modules</td>
+                <td>Module-specific mode information supported by the configuration.</td>
+            </tr>
+        </table>
+
+        <p>
+            A request is an input to mode arbitration. It does not
+            automatically mean that a requested action has already
+            been completed.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>7. Mode Arbitration</h2>
+        <p>
+            Mode arbitration is the process of evaluating mode requests
+            and determining which configured rules or actions apply.
+        </p>
+
+        <h3>Example: Normal and Sleep Preparation</h3>
+        <table>
+            <tr>
+                <th>Condition</th>
+                <th>Possible Configured Result</th>
+            </tr>
+            <tr>
+                <td>ECU requests normal operation</td>
+                <td>Keep required communication and services active.</td>
+            </tr>
+            <tr>
+                <td>Sleep preparation requested</td>
+                <td>Coordinate communication shutdown and other preparation actions.</td>
+            </tr>
+            <tr>
+                <td>Diagnostic activity is active</td>
+                <td>Maintain the configured diagnostic communication behavior.</td>
+            </tr>
+        </table>
+
+        <p>
+            The actual result depends on the configured arbitration
+            rules, request priorities and action lists.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>8. Rules and Logical Conditions</h2>
+        <p>
+            A BswM rule evaluates one or more configured conditions.
+            These conditions can use mode requests and logical operators.
+        </p>
+
+        <h3>Example logical conditions</h3>
+        <pre>
+        IF ECU_MODE == RUN
+           AND COMMUNICATION_REQUEST == FULL_COMMUNICATION
+        THEN
+           Execute Normal Operation Actions
+        </pre>
+
+        <pre>
+        IF ECU_MODE == SLEEP_PREPARATION
+           AND NO_REQUIRED_RUN_REQUESTS
+        THEN
+           Execute Sleep Preparation Actions
+        </pre>
+
+        <p>
+            These are conceptual examples to explain rule evaluation.
+            Actual BswM rule expressions and available conditions are
+            defined by the AUTOSAR configuration.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>9. Action Lists</h2>
+        <p>
+            An action list contains configured actions that BswM executes
+            when the associated rule condition is satisfied.
+        </p>
+
+        <h3>Examples of configured actions</h3>
+        <ul>
+            <li>Request a communication mode change through ComM.</li>
+            <li>Trigger configured BSW mode transitions.</li>
+            <li>Execute configured function calls.</li>
+            <li>Coordinate selected ECU operating-mode activities.</li>
+            <li>Perform configured application-related mode actions.</li>
+        </ul>
+
+        <pre>
+        Rule Condition Satisfied
+                 |
+                 v
+        Select Action List
+                 |
+                 v
+        Execute Configured Actions
+                 |
+                 v
+        Relevant Modules Change Behavior
+        </pre>
+
+        <div class="note">
+            BswM does not directly perform every hardware or communication
+            operation. It coordinates configured actions, often by
+            requesting services from the responsible BSW modules.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>10. BswM and ComM Interaction</h2>
+        <p>
+            ComM stands for Communication Manager. It manages communication
+            modes for configured communication channels.
+        </p>
+        <p>
+            BswM can coordinate communication behavior through configured
+            mode requests and actions involving ComM.
+        </p>
+
+        <pre>
+        ECU or Application Mode Request
+                    |
+                    v
+                   BswM
+                    |
+             Rule Evaluation
+                    |
+                    v
+          Configured Communication Action
+                    |
+                    v
+                   ComM
+                    |
+                    v
+          Communication Stack Behavior
+        </pre>
+
+        <table>
+            <tr>
+                <th>Module</th>
+                <th>Main Responsibility</th>
+            </tr>
+            <tr>
+                <td>BswM</td>
+                <td>Mode arbitration and configured action coordination.</td>
+            </tr>
+            <tr>
+                <td>ComM</td>
+                <td>Management of communication modes and communication requests.</td>
+            </tr>
+            <tr>
+                <td>CanSM</td>
+                <td>CAN-specific communication state management.</td>
+            </tr>
+            <tr>
+                <td>CanIf</td>
+                <td>Interface between upper communication layers and CAN drivers.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="lesson-section">
+        <h2>11. BswM Configuration</h2>
+        <p>
+            BswM behavior is configured using AUTOSAR configuration
+            descriptions and tools. Important configuration elements
+            include:
+        </p>
+        <ul>
+            <li>Mode request sources.</li>
+            <li>Mode request values.</li>
+            <li>Arbitration rules.</li>
+            <li>Logical conditions.</li>
+            <li>Action lists.</li>
+            <li>Configured actions and their execution order.</li>
+            <li>Connections to relevant BSW modules and interfaces.</li>
+        </ul>
+
+        <h3>Typical configuration workflow</h3>
+        <ol>
+            <li>Identify the ECU operating modes.</li>
+            <li>Identify the modules that provide mode requests.</li>
+            <li>Configure mode request interfaces.</li>
+            <li>Define arbitration rules and conditions.</li>
+            <li>Configure action lists.</li>
+            <li>Generate the BSW configuration and source code.</li>
+            <li>Integrate and test the configured behavior.</li>
+        </ol>
+
+        <p>Common tools used in AUTOSAR projects include:</p>
+        <ul>
+            <li>Vector DaVinci Configurator</li>
+            <li>Elektrobit EB tresos</li>
+            <li>ETAS ISOLAR</li>
+        </ul>
+        <p>
+            Tool support and configuration workflows vary by vendor,
+            AUTOSAR release and project setup.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>12. BswM vs EcuM</h2>
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>BswM</th>
+                <th>EcuM</th>
+            </tr>
+            <tr>
+                <td>Full form</td>
+                <td>BSW Mode Manager</td>
+                <td>ECU State Manager</td>
+            </tr>
+            <tr>
+                <td>Main purpose</td>
+                <td>Mode arbitration and action coordination</td>
+                <td>ECU lifecycle management</td>
+            </tr>
+            <tr>
+                <td>Primary focus</td>
+                <td>Configured operating modes</td>
+                <td>Startup, shutdown and wakeup coordination</td>
+            </tr>
+            <tr>
+                <td>Typical activities</td>
+                <td>Evaluate rules and execute action lists</td>
+                <td>Coordinate ECU initialization and lifecycle transitions</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="lesson-section">
+        <h2>13. Common BswM Problems and Troubleshooting</h2>
+        <table>
+            <tr>
+                <th>Problem</th>
+                <th>Possible Check</th>
+            </tr>
+            <tr>
+                <td>Expected action is not executed</td>
+                <td>Check mode requests, rule conditions and action-list configuration.</td>
+            </tr>
+            <tr>
+                <td>Incorrect communication mode</td>
+                <td>Check BswM actions, ComM requests and channel configuration.</td>
+            </tr>
+            <tr>
+                <td>Unexpected mode transition</td>
+                <td>Review request sources and arbitration conditions.</td>
+            </tr>
+            <tr>
+                <td>Action list does not run</td>
+                <td>Verify rule evaluation and configured action-list association.</td>
+            </tr>
+            <tr>
+                <td>ECU shutdown coordination issue</td>
+                <td>Check EcuM interaction and configured shutdown-related rules.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="lesson-section">
+        <h2>14. Placement-Oriented Interview Questions</h2>
+
+        <div class="question">
+            <strong>Q1. What is BswM?</strong>
+            <p>
+                BswM is the AUTOSAR BSW Mode Manager. It evaluates configured
+                mode requests and coordinates actions based on arbitration
+                rules.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q2. What is mode arbitration?</strong>
+            <p>
+                It is the process of evaluating configured mode requests
+                and conditions to determine which rules and actions apply.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q3. What is an action list?</strong>
+            <p>
+                An action list is a configured sequence of actions that
+                BswM executes when its associated conditions are satisfied.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q4. What is the difference between EcuM and BswM?</strong>
+            <p>
+                EcuM coordinates ECU lifecycle activities such as startup
+                and shutdown. BswM evaluates mode requests and coordinates
+                configured BSW actions.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q5. How does BswM interact with ComM?</strong>
+            <p>
+                BswM can coordinate communication-related mode behavior
+                through configured actions involving ComM.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q6. What are BswM rules?</strong>
+            <p>
+                Rules are configured logical conditions that are evaluated
+                using mode requests and other configured information.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q7. Does BswM directly control CAN hardware?</strong>
+            <p>
+                No. BswM coordinates configured actions. CAN hardware
+                communication is handled by the relevant communication
+                stack and MCAL drivers.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q8. Why is BswM configuration important?</strong>
+            <p>
+                Correct configuration ensures that mode requests, rules
+                and action lists produce the intended ECU behavior.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q9. Can BswM manage application-related modes?</strong>
+            <p>
+                Yes. It can coordinate configured application-related
+                mode behavior through supported interfaces and actions.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q10. What should you check if a BswM action is not executed?</strong>
+            <p>
+                Check the incoming mode request, arbitration rule,
+                condition result, action-list association and relevant
+                module configuration.
+            </p>
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>15. Lesson Summary</h2>
+        <ul>
+            <li>BswM stands for BSW Mode Manager.</li>
+            <li>It is part of the AUTOSAR BSW Services Layer.</li>
+            <li>It receives or evaluates configured mode requests.</li>
+            <li>It performs mode arbitration and rule evaluation.</li>
+            <li>It executes configured action lists.</li>
+            <li>It coordinates with modules such as EcuM and ComM.</li>
+            <li>Its behavior is defined by ECU-specific configuration.</li>
+        </ul>
+
+        <p>
+            BswM is an important AUTOSAR module for BSW configuration,
+            ECU integration and automotive embedded software placement
+            interviews.
+        </p>
+    </section>
+
+    <div class="navigation">
+        <a href="L03_ECU_State_Manager_EcuM.html">← Previous Lesson</a>
+        <a href="index.html">Chapter 5 Index</a>
+        <a href="L05_Diagnostic_Event_Manager_DEM.html">Next Lesson →</a>
+    </div>
+
+    <div class="navigation">
+        <a href="../autosar.html">AUTOSAR Course Home</a>
+    </div>
+
+</main>
+
+</body>
+</html>
