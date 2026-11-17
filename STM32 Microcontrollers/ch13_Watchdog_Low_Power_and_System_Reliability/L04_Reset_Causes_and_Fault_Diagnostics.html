@@ -1,1 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 4 - Reset Causes and System Fault Diagnostics</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dce5f0;
+            border-radius: 9px;
+        }
+        h2, h3 { color: #174ea6; }
+        .info-box {
+            background: #eef6ff;
+            border-left: 5px solid #174ea6;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 5px solid #e09b24;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        pre {
+            background: #172033;
+            color: #e8f0ff;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 16px;
+            border-radius: 6px;
+        }
+        .lesson-nav a:hover { background: #007bff; }
+    </style>
+</head>
 
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 4: Reset Causes and System Fault Diagnostics</h1>
+        <p>STM32 Microcontrollers – Chapter 13</p>
+        <p>Learn reset sources, reset flags, HardFault analysis and practical firmware debugging.</p>
+    </header>
+
+    <p><a href="index.html">← Back to Chapter 13</a></p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand different STM32 reset sources.</li>
+            <li>Differentiate power-on, external and software resets.</li>
+            <li>Understand watchdog-generated resets.</li>
+            <li>Identify reset causes using status flags.</li>
+            <li>Understand Cortex-M fault exceptions.</li>
+            <li>Analyze HardFault conditions.</li>
+            <li>Use STM32CubeIDE debugging tools.</li>
+            <li>Develop a basic fault-diagnostic procedure.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Is a Microcontroller Reset?</h2>
+
+        <p>
+            A reset initializes the microcontroller
+            and places its execution environment into
+            a defined startup state. After reset,
+            the processor begins its startup sequence
+            and eventually executes the application.
+        </p>
+
+        <h3>Why Are Resets Required?</h3>
+        <ul>
+            <li>Power-up initialization.</li>
+            <li>Recovery from software lockups.</li>
+            <li>Recovery from watchdog timeout.</li>
+            <li>Restart after an external reset signal.</li>
+            <li>Recovery from selected system faults.</li>
+            <li>Applying a software-requested restart.</li>
+        </ul>
+
+        <pre><code>          RESET EVENT
+               |
+               v
+       PROCESSOR RESET STATE
+               |
+               v
+       LOAD INITIAL STACK POINTER
+               |
+               v
+          RESET HANDLER
+               |
+               v
+       INITIALIZE RUNTIME MEMORY
+               |
+               v
+        SYSTEM INITIALIZATION
+               |
+               v
+             main()
+               |
+               v
+       APPLICATION EXECUTION</code></pre>
+
+        <div class="info-box">
+            The exact reset and startup sequence depends
+            on the processor core, STM32 reset architecture,
+            startup code and development toolchain.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Types of STM32 Reset Sources</h2>
+
+        <h3>1. Power-On Reset (POR)</h3>
+        <p>
+            Power-On Reset occurs when the device is
+            powered up. It places the MCU into a
+            defined reset state while the supply
+            voltage becomes valid.
+        </p>
+
+        <h3>2. Power-Down Reset (PDR)</h3>
+        <p>
+            Power-Down Reset circuitry monitors the
+            supply voltage and helps keep the MCU
+            in reset when the supply is insufficient.
+        </p>
+
+        <h3>3. Brown-Out Reset (BOR)</h3>
+        <p>
+            Brown-Out Reset occurs when the supply
+            voltage falls below a configured or
+            device-defined threshold.
+        </p>
+
+        <h3>4. External Reset</h3>
+        <p>
+            An external reset can be generated through
+            the NRST pin or an external reset circuit.
+        </p>
+
+        <h3>5. Software Reset</h3>
+        <p>
+            Firmware can request a system reset using
+            the Cortex-M system control mechanism.
+        </p>
+
+        <h3>6. Independent Watchdog Reset</h3>
+        <p>
+            IWDG generates a reset when its counter
+            reaches the timeout condition without
+            being refreshed.
+        </p>
+
+        <h3>7. Window Watchdog Reset</h3>
+        <p>
+            WWDG can generate a reset when the
+            application refreshes outside the
+            permitted window or fails to refresh
+            before timeout.
+        </p>
+
+        <h3>8. Low-Power Reset or Wakeup-Related Reset</h3>
+        <p>
+            Certain low-power transitions and wakeup
+            events can produce reset-like startup
+            behavior. The exact behavior depends on
+            the selected STM32 mode and device.
+        </p>
+
+        <div class="warning-box">
+            Reset sources and their names are not
+            identical across STM32 families. Some
+            devices combine or rename power reset
+            mechanisms. Refer to the reset-control
+            section of the exact reference manual.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Reset Source Comparison</h2>
+
+        <table>
+            <tr>
+                <th>Reset Source</th>
+                <th>Cause</th>
+                <th>Typical Purpose</th>
+            </tr>
+            <tr>
+                <td>POR</td>
+                <td>Power applied</td>
+                <td>Initial device startup</td>
+            </tr>
+            <tr>
+                <td>PDR</td>
+                <td>Supply voltage condition</td>
+                <td>Power integrity protection</td>
+            </tr>
+            <tr>
+                <td>BOR</td>
+                <td>Supply below threshold</td>
+                <td>Brown-out protection</td>
+            </tr>
+            <tr>
+                <td>NRST</td>
+                <td>External reset signal</td>
+                <td>Hardware restart</td>
+            </tr>
+            <tr>
+                <td>Software Reset</td>
+                <td>Firmware request</td>
+                <td>Controlled restart</td>
+            </tr>
+            <tr>
+                <td>IWDG</td>
+                <td>Watchdog timeout</td>
+                <td>Recovery from software failure</td>
+            </tr>
+            <tr>
+                <td>WWDG</td>
+                <td>Invalid refresh timing</td>
+                <td>Execution timing supervision</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Reset Status Flags</h2>
+
+        <p>
+            STM32 devices commonly provide reset-status
+            flags in a reset and clock control register
+            or a dedicated reset-status register.
+            These flags help identify why the
+            microcontroller restarted.
+        </p>
+
+        <h3>Common Reset Flag Names</h3>
+
+        <table>
+            <tr>
+                <th>Flag</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>PORRSTF</td>
+                <td>Power-on reset flag.</td>
+            </tr>
+            <tr>
+                <td>PINRSTF</td>
+                <td>External reset pin flag.</td>
+            </tr>
+            <tr>
+                <td>BORRSTF</td>
+                <td>Brown-out reset flag.</td>
+            </tr>
+            <tr>
+                <td>IWDGRSTF</td>
+                <td>Independent watchdog reset flag.</td>
+            </tr>
+            <tr>
+                <td>WWDGRSTF</td>
+                <td>Window watchdog reset flag.</td>
+            </tr>
+            <tr>
+                <td>SFTRSTF</td>
+                <td>Software reset flag.</td>
+            </tr>
+        </table>
+
+        <div class="info-box">
+            These are common STM32 flag names, especially
+            in older RCC implementations. Newer families
+            may use different register names and flag
+            definitions. Multiple flags can sometimes
+            be set, so inspect all relevant flags before
+            clearing them.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Reading Reset Flags Using STM32 HAL</h2>
+
+        <p>
+            Many STM32 HAL packages provide macros
+            for reading reset flags.
+        </p>
+
+        <h3>Example: Identify Watchdog Reset</h3>
+
+        <pre><code>void Check_Reset_Cause(void)
+{
+    if (__HAL_RCC_GET_FLAG(
+            RCC_FLAG_IWDGRST) != RESET)
+    {
+        /* IWDG reset detected. */
+    }
+
+    if (__HAL_RCC_GET_FLAG(
+            RCC_FLAG_WWDGRST) != RESET)
+    {
+        /* WWDG reset detected. */
+    }
+
+    if (__HAL_RCC_GET_FLAG(
+            RCC_FLAG_SFTRST) != RESET)
+    {
+        /* Software reset detected. */
+    }
+
+    if (__HAL_RCC_GET_FLAG(
+            RCC_FLAG_PINRST) != RESET)
+    {
+        /* External pin reset detected. */
+    }
+}</code></pre>
+
+        <h3>Clear Reset Flags</h3>
+
+        <pre><code>__HAL_RCC_CLEAR_RESET_FLAGS();</code></pre>
+
+        <p>
+            A typical application reads and records
+            the flags early during startup, then clears
+            them after capturing the information.
+        </p>
+
+        <div class="warning-box">
+            HAL flag macros differ by family and HAL
+            version. Use only macros available for
+            the selected device. Do not clear reset
+            flags before recording the original cause.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Software Reset Using CMSIS</h2>
+
+        <p>
+            Firmware can request a system reset through
+            the Cortex-M system control interface.
+        </p>
+
+        <h3>CMSIS Function</h3>
+
+        <pre><code>#include "stm32xxxx.h"
+
+void Software_Reset(void)
+{
+    NVIC_SystemReset();
+}</code></pre>
+
+        <p>
+            Replace the illustrative device header with
+            the correct CMSIS device header supplied
+            by the STM32 software package.
+        </p>
+
+        <h3>Typical Applications</h3>
+        <ul>
+            <li>Restart after a critical configuration failure.</li>
+            <li>Recover from an unrecoverable software state.</li>
+            <li>Apply a new firmware configuration.</li>
+            <li>Restart after a controlled firmware update.</li>
+        </ul>
+
+        <div class="warning-box">
+            A software reset restarts the processor
+            and may reset peripheral state. Save
+            required information before requesting
+            a reset.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Cortex-M Fault Exceptions</h2>
+
+        <p>
+            Cortex-M processors provide exception
+            mechanisms for detecting and handling
+            certain processor and memory-access errors.
+        </p>
+
+        <table>
+            <tr>
+                <th>Fault</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>HardFault</td>
+                <td>Handles serious faults and faults that cannot be handled by enabled configurable fault handlers.</td>
+            </tr>
+            <tr>
+                <td>MemManage</td>
+                <td>Handles supported memory protection violations.</td>
+            </tr>
+            <tr>
+                <td>BusFault</td>
+                <td>Handles supported instruction or data bus errors.</td>
+            </tr>
+            <tr>
+                <td>UsageFault</td>
+                <td>Handles supported instruction and execution errors.</td>
+            </tr>
+        </table>
+
+        <h3>Common Fault Causes</h3>
+        <ul>
+            <li>Invalid memory access.</li>
+            <li>Incorrect pointer usage.</li>
+            <li>Stack overflow or stack corruption.</li>
+            <li>Invalid instruction execution.</li>
+            <li>Unaligned access where unsupported.</li>
+            <li>Access to unavailable or protected memory.</li>
+        </ul>
+
+        <div class="info-box">
+            Fault support differs between Cortex-M
+            architectures. For example, configurable
+            MemManage, BusFault and UsageFault handlers
+            are available on many Cortex-M3/M4/M7
+            implementations, but not all Cortex-M cores.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. What Is a HardFault?</h2>
+
+        <p>
+            HardFault is a serious processor exception.
+            It can occur when a fault cannot be handled
+            by a configurable fault handler, when a
+            fault handler itself fails, or under other
+            core-defined fault conditions.
+        </p>
+
+        <h3>Common HardFault Causes</h3>
+        <ul>
+            <li>Invalid pointer dereferencing.</li>
+            <li>Corrupted stack or return address.</li>
+            <li>Invalid memory access.</li>
+            <li>Fault escalation from another exception.</li>
+            <li>Incorrect peripheral or memory access.</li>
+            <li>Execution of an invalid instruction.</li>
+        </ul>
+
+        <pre><code>       APPLICATION RUNNING
+                |
+                v
+          FAULT CONDITION
+                |
+                v
+        PROCESSOR EXCEPTION
+                |
+                v
+         HARDFAULT HANDLER
+                |
+                v
+        CAPTURE DIAGNOSTICS
+                |
+                v
+         ANALYZE ROOT CAUSE
+                |
+                v
+        APPLY RECOVERY POLICY</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Fault Status Registers</h2>
+
+        <p>
+            Some Cortex-M processors provide system
+            control block fault-status registers.
+            These registers help determine why a
+            fault occurred.
+        </p>
+
+        <table>
+            <tr>
+                <th>Register</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>CFSR</td>
+                <td>Configurable Fault Status Register.</td>
+            </tr>
+            <tr>
+                <td>HFSR</td>
+                <td>HardFault Status Register.</td>
+            </tr>
+            <tr>
+                <td>MMFAR</td>
+                <td>MemManage Fault Address Register.</td>
+            </tr>
+            <tr>
+                <td>BFAR</td>
+                <td>BusFault Address Register.</td>
+            </tr>
+            <tr>
+                <td>AFSR</td>
+                <td>Auxiliary Fault Status Register.</td>
+            </tr>
+        </table>
+
+        <p>
+            These registers are accessed through
+            the System Control Block (SCB) where
+            implemented by the selected Cortex-M core.
+        </p>
+
+        <h3>Example: Read Fault Status</h3>
+
+        <pre><code>uint32_t fault_cfsr;
+uint32_t fault_hfsr;
+uint32_t fault_bfar;
+uint32_t fault_mmfar;
+
+void Capture_Fault_Status(void)
+{
+    fault_cfsr = SCB->CFSR;
+    fault_hfsr = SCB->HFSR;
+    fault_bfar = SCB->BFAR;
+    fault_mmfar = SCB->MMFAR;
+}</code></pre>
+
+        <div class="warning-box">
+            Not every Cortex-M core implements all
+            these registers. MMFAR and BFAR contents
+            are meaningful only when their corresponding
+            validity bits indicate valid addresses.
+            Check the core documentation before using
+            these registers.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. HardFault Handler Example</h2>
+
+        <p>
+            A basic HardFault handler can be used
+            to stop execution at the fault location
+            during debugging.
+        </p>
+
+        <pre><code>void HardFault_Handler(void)
+{
+    /*
+     * Capture diagnostic information
+     * here when the target core supports it.
+     */
+
+    __disable_irq();
+
+    while (1)
+    {
+        /*
+         * Halt for debugger inspection.
+         */
+    }
+}</code></pre>
+
+        <p>
+            In a production system, the handler should
+            capture a minimal diagnostic record in
+            a safe retained location when supported,
+            then follow a defined recovery policy.
+        </p>
+
+        <div class="warning-box">
+            Do not assume that calling HAL functions,
+            printing through UART or allocating memory
+            is safe inside HardFault_Handler. The fault
+            may have been caused by corrupted memory,
+            an unavailable clock or a broken stack.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Debugging HardFault Using STM32CubeIDE</h2>
+
+        <ol>
+            <li>Build the project with debug information.</li>
+            <li>Start a debug session using ST-LINK or the supported debugger.</li>
+            <li>Reproduce the fault condition.</li>
+            <li>Check whether execution stops in HardFault_Handler.</li>
+            <li>Inspect the call stack and available register values.</li>
+            <li>Read SCB fault-status registers where implemented.</li>
+            <li>Inspect the stacked PC and LR when the exception stack frame is valid.</li>
+            <li>Locate the failing source instruction.</li>
+            <li>Check pointer values, array boundaries and stack usage.</li>
+            <li>Correct the root cause and retest.</li>
+        </ol>
+
+        <h3>Useful Debugging Views</h3>
+
+        <ul>
+            <li>Variables and Expressions.</li>
+            <li>Registers.</li>
+            <li>Call Stack.</li>
+            <li>Disassembly.</li>
+            <li>Memory Browser.</li>
+            <li>Peripheral Registers.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Practical Project: Reset Cause Logger</h2>
+
+        <h3>Project Objective</h3>
+
+        <p>
+            Create an application that identifies
+            common reset sources and stores a basic
+            diagnostic code for later inspection.
+        </p>
+
+        <h3>Project Steps</h3>
+        <ol>
+            <li>Initialize the STM32.</li>
+            <li>Read reset flags early during startup.</li>
+            <li>Identify available reset causes.</li>
+            <li>Store the result in a diagnostic variable or retained memory.</li>
+            <li>Clear reset flags after recording them.</li>
+            <li>Print or display the diagnostic result during normal execution.</li>
+            <li>Test software and watchdog resets.</li>
+        </ol>
+
+        <h3>Example Diagnostic Concept</h3>
+
+        <pre><code>typedef enum
+{
+    RESET_UNKNOWN = 0,
+    RESET_IWDG,
+    RESET_WWDG,
+    RESET_SOFTWARE,
+    RESET_EXTERNAL_PIN
+} ResetCause_t;
+
+ResetCause_t reset_cause;
+
+void Identify_Reset_Cause(void)
+{
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST))
+    {
+        reset_cause = RESET_IWDG;
+    }
+    else if (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDGRST))
+    {
+        reset_cause = RESET_WWDG;
+    }
+    else if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST))
+    {
+        reset_cause = RESET_SOFTWARE;
+    }
+    else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST))
+    {
+        reset_cause = RESET_EXTERNAL_PIN;
+    }
+    else
+    {
+        reset_cause = RESET_UNKNOWN;
+    }
+
+    __HAL_RCC_CLEAR_RESET_FLAGS();
+}</code></pre>
+
+        <div class="warning-box">
+            This simplified example selects the first
+            matching flag. Real diagnostic firmware
+            should capture all relevant flags because
+            multiple reset flags may be set together.
+            Flag names and clearing behavior vary
+            across STM32 families.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Common Fault Diagnostic Mistakes</h2>
+
+        <table>
+            <tr>
+                <th>Mistake</th>
+                <th>Effect</th>
+                <th>Correct Approach</th>
+            </tr>
+            <tr>
+                <td>Clearing reset flags immediately</td>
+                <td>Original reset cause is lost</td>
+                <td>Capture flags before clearing.</td>
+            </tr>
+            <tr>
+                <td>Ignoring multiple reset flags</td>
+                <td>Incomplete diagnosis</td>
+                <td>Record all relevant flags.</td>
+            </tr>
+            <tr>
+                <td>Assuming every fault is HardFault</td>
+                <td>Incorrect root-cause analysis</td>
+                <td>Inspect available fault status.</td>
+            </tr>
+            <tr>
+                <td>Ignoring stack corruption</td>
+                <td>Repeated or unpredictable faults</td>
+                <td>Inspect stack usage and boundaries.</td>
+            </tr>
+            <tr>
+                <td>Using complex code inside a fault handler</td>
+                <td>Secondary fault or loss of diagnostics</td>
+                <td>Capture minimal information.</td>
+            </tr>
+            <tr>
+                <td>Assuming fault registers exist on every core</td>
+                <td>Invalid diagnostic access</td>
+                <td>Verify the Cortex-M architecture.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Placement Interview Questions and Answers</h2>
+
+        <h3>Q1. What is a microcontroller reset?</h3>
+        <p>
+            A reset places the microcontroller into
+            a defined startup state and restarts
+            its execution sequence.
+        </p>
+
+        <h3>Q2. What is POR?</h3>
+        <p>
+            POR stands for Power-On Reset. It occurs
+            when the microcontroller is powered up.
+        </p>
+
+        <h3>Q3. What is BOR?</h3>
+        <p>
+            BOR stands for Brown-Out Reset. It
+            protects the MCU when supply voltage
+            falls below a specified threshold.
+        </p>
+
+        <h3>Q4. What is the NRST pin?</h3>
+        <p>
+            NRST is an external reset input used
+            to reset the microcontroller.
+        </p>
+
+        <h3>Q5. How can firmware request a reset?</h3>
+        <p>
+            Firmware can use the CMSIS function
+            NVIC_SystemReset() to request a system reset.
+        </p>
+
+        <h3>Q6. How can the reset source be identified?</h3>
+        <p>
+            By reading the device-specific reset
+            status flags before clearing them.
+        </p>
+
+        <h3>Q7. What is HardFault?</h3>
+        <p>
+            HardFault is a serious Cortex-M exception
+            used when certain processor faults cannot
+            be handled by configurable fault handlers.
+        </p>
+
+        <h3>Q8. What causes a HardFault?</h3>
+        <p>
+            Common causes include invalid memory access,
+            corrupted stack, invalid instruction
+            execution and escalated configurable faults.
+        </p>
+
+        <h3>Q9. What is CFSR?</h3>
+        <p>
+            CFSR stands for Configurable Fault Status
+            Register. It provides status information
+            about supported configurable faults.
+        </p>
+
+        <h3>Q10. What is BFAR?</h3>
+        <p>
+            BFAR stands for BusFault Address Register.
+            It can contain the address associated
+            with a valid BusFault.
+        </p>
+
+        <h3>Q11. How do you debug a HardFault?</h3>
+        <p>
+            Inspect the fault handler, call stack,
+            processor registers, stacked PC and
+            available fault-status registers. Then
+            trace the failing instruction.
+        </p>
+
+        <h3>Q12. Why should reset flags be read early?</h3>
+        <p>
+            Because software may clear the flags
+            during initialization. Reading them early
+            preserves evidence about the previous reset.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Practical Exercises</h2>
+
+        <ol>
+            <li>List the common reset sources of an STM32.</li>
+            <li>Differentiate POR, BOR and external reset.</li>
+            <li>Write code to request a software reset.</li>
+            <li>Identify an IWDG reset using HAL reset flags.</li>
+            <li>Explain the purpose of reset-status registers.</li>
+            <li>Explain HardFault and its common causes.</li>
+            <li>Describe the purpose of CFSR, HFSR and BFAR.</li>
+            <li>Debug a controlled HardFault in STM32CubeIDE.</li>
+            <li>Design a basic reset cause logging mechanism.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Lesson Summary</h2>
+
+        <ul>
+            <li>STM32 devices support multiple reset sources.</li>
+            <li>Reset flags help identify the cause of a restart.</li>
+            <li>Reset flags should be captured before they are cleared.</li>
+            <li>CMSIS provides NVIC_SystemReset() for software reset.</li>
+            <li>HardFault is a serious Cortex-M exception.</li>
+            <li>Fault-status registers help diagnose supported faults.</li>
+            <li>STM32CubeIDE provides useful debugging views.</li>
+            <li>Fault handlers should avoid complex operations.</li>
+            <li>Reliable diagnostics require device-specific verification.</li>
+        </ul>
+    </section>
+
+    <nav class="lesson-nav">
+        <a href="L03_Low_Power_Modes_and_Wakeup_Sources.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L05_Firmware_Reliability_and_Error_Handling.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
