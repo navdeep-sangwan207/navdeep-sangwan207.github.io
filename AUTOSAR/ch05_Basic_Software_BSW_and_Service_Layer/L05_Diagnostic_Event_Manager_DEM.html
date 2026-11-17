@@ -1,1 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagnostic Event Manager (DEM) - AUTOSAR</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .lesson-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+            box-shadow: 0 2px 7px rgba(0,0,0,0.08);
+        }
+        h2 { color: #174ea6; }
+        h3 { color: #007bff; }
+        pre {
+            background: #f4f6f9;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+            border-left: 4px solid #174ea6;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5dce5;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf1ff; }
+        .note {
+            background: #fff4d6;
+            border-left: 4px solid #e0a000;
+            padding: 12px;
+            margin: 15px 0;
+        }
+        .question {
+            background: #f0f5ff;
+            padding: 12px;
+            border-radius: 7px;
+            margin: 12px 0;
+        }
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 25px 0;
+        }
+        .navigation a {
+            display: inline-block;
+            background: #174ea6;
+            color: white;
+            padding: 11px 17px;
+            text-decoration: none;
+            border-radius: 6px;
+        }
+        .navigation a:hover { background: #007bff; }
+    </style>
+</head>
+<body>
 
+<main class="container">
+
+    <div class="lesson-banner">
+        <h1>Lesson 5: Diagnostic Event Manager (DEM)</h1>
+        <p>AUTOSAR Basic Software – Diagnostic Events, DTCs and Fault Memory</p>
+    </div>
+
+    <section class="lesson-section">
+        <h2>1. Introduction to DEM</h2>
+        <p>
+            DEM stands for <strong>Diagnostic Event Manager</strong>.
+            It is an AUTOSAR Basic Software module responsible for
+            processing and managing diagnostic events reported by
+            software components and other configured modules.
+        </p>
+        <p>
+            In an automotive ECU, sensors, actuators and electronic
+            circuits are continuously monitored. When a fault is
+            detected, the responsible software reports a diagnostic
+            event. DEM processes the event, maintains its status and
+            manages associated diagnostic information.
+        </p>
+        <p>Important responsibilities include:</p>
+        <ul>
+            <li>Processing diagnostic event reports.</li>
+            <li>Managing event status information.</li>
+            <li>Managing Diagnostic Trouble Codes (DTCs).</li>
+            <li>Handling event debouncing.</li>
+            <li>Managing diagnostic event memory.</li>
+            <li>Providing diagnostic information to other modules.</li>
+        </ul>
+    </section>
+
+    <section class="lesson-section">
+        <h2>2. Position of DEM in AUTOSAR Architecture</h2>
+
+        <pre>
+        Application Software Components
+                     |
+                    RTE
+                     |
+        --------------------------------
+        |       BSW Services Layer     |
+        |                              |
+        |  DEM - Diagnostic Event Mgr  |
+        |  DCM - Diagnostic Comm. Mgr  |
+        |  EcuM - ECU State Manager    |
+        |  BswM - BSW Mode Manager     |
+        |  OS                           |
+        --------------------------------
+                     |
+             ECU Abstraction
+                     |
+                    MCAL
+                     |
+              Microcontroller
+        </pre>
+
+        <p>
+            DEM belongs to the BSW Services Layer. It manages diagnostic
+            event information and supports diagnostic functions requested
+            by other software modules.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>3. What is a Diagnostic Event?</h2>
+        <p>
+            A diagnostic event represents a monitored fault condition
+            or abnormal behavior in an ECU.
+        </p>
+
+        <h3>Automotive examples</h3>
+        <ul>
+            <li>Engine temperature exceeds a configured limit.</li>
+            <li>Battery voltage is outside the permitted range.</li>
+            <li>A sensor signal is missing or invalid.</li>
+            <li>An actuator circuit has an open-load condition.</li>
+            <li>Communication with another ECU is interrupted.</li>
+            <li>A monitored hardware component reports a failure.</li>
+        </ul>
+
+        <p>
+            The software responsible for monitoring a condition reports
+            the corresponding diagnostic event to DEM.
+        </p>
+
+        <pre>
+        Sensor / Component Monitoring
+                    |
+                    v
+             Fault Detected
+                    |
+                    v
+           Diagnostic Event Report
+                    |
+                    v
+                   DEM
+        </pre>
+    </section>
+
+    <section class="lesson-section">
+        <h2>4. Diagnostic Event and DTC</h2>
+        <p>
+            A diagnostic event and a Diagnostic Trouble Code (DTC)
+            are related, but they are not identical.
+        </p>
+
+        <table>
+            <tr>
+                <th>Diagnostic Event</th>
+                <th>Diagnostic Trouble Code (DTC)</th>
+            </tr>
+            <tr>
+                <td>Represents a monitored fault condition.</td>
+                <td>Identifies a diagnostic fault for external diagnostic reporting.</td>
+            </tr>
+            <tr>
+                <td>Used internally for event processing.</td>
+                <td>Used by diagnostic services and testers.</td>
+            </tr>
+            <tr>
+                <td>Has an event status and configured properties.</td>
+                <td>Has a configured code and associated diagnostic information.</td>
+            </tr>
+        </table>
+
+        <p>
+            An event can be associated with a configured DTC. Multiple
+            events may also be associated with a DTC depending on the
+            diagnostic configuration.
+        </p>
+
+        <div class="note">
+            A DTC is not simply the event's memory address or event ID.
+            Its relationship to diagnostic events is defined through
+            the ECU diagnostic configuration.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>5. DEM Event Processing</h2>
+
+        <p>A simplified diagnostic event processing flow is:</p>
+
+        <pre>
+        Fault Monitoring
+              |
+              v
+        Event Reported to DEM
+              |
+              v
+        Debouncing / Qualification
+              |
+              v
+        Event Status Update
+              |
+              v
+        DTC Status Processing
+              |
+              v
+        Event Memory Management
+              |
+              v
+        Diagnostic Information Available
+        </pre>
+
+        <h3>Processing stages</h3>
+        <ol>
+            <li>
+                <strong>Fault monitoring:</strong> A software component
+                monitors a sensor, actuator or system condition.
+            </li>
+            <li>
+                <strong>Event reporting:</strong> The responsible software
+                reports the event to DEM.
+            </li>
+            <li>
+                <strong>Debouncing:</strong> DEM applies the configured
+                qualification mechanism where applicable.
+            </li>
+            <li>
+                <strong>Status update:</strong> DEM updates the diagnostic
+                event status.
+            </li>
+            <li>
+                <strong>DTC processing:</strong> Associated DTC information
+                is updated according to the configuration.
+            </li>
+            <li>
+                <strong>Memory management:</strong> Qualified diagnostic
+                information may be stored in event memory.
+            </li>
+        </ol>
+    </section>
+
+    <section class="lesson-section">
+        <h2>6. Diagnostic Event Status</h2>
+        <p>
+            DEM maintains status information to describe the condition
+            and history of a diagnostic event.
+        </p>
+
+        <p>
+            Important UDS-related DTC status bits include:
+        </p>
+
+        <table>
+            <tr>
+                <th>Status Bit</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>TestFailed</td>
+                <td>The diagnostic test has currently failed.</td>
+            </tr>
+            <tr>
+                <td>TestFailedThisOperationCycle</td>
+                <td>The test failed during the current operation cycle.</td>
+            </tr>
+            <tr>
+                <td>PendingDTC</td>
+                <td>The DTC has met the configured pending criteria.</td>
+            </tr>
+            <tr>
+                <td>ConfirmedDTC</td>
+                <td>The DTC has met the configured confirmation criteria.</td>
+            </tr>
+            <tr>
+                <td>TestNotCompletedSinceLastClear</td>
+                <td>The test has not completed since the last clear operation.</td>
+            </tr>
+            <tr>
+                <td>TestFailedSinceLastClear</td>
+                <td>The test has failed at least once since the last clear operation.</td>
+            </tr>
+            <tr>
+                <td>TestNotCompletedThisOperationCycle</td>
+                <td>The test has not completed in the current operation cycle.</td>
+            </tr>
+            <tr>
+                <td>WarningIndicatorRequested</td>
+                <td>A warning indicator is requested according to configured conditions.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            These are the standardized UDS DTC status-bit meanings.
+            Their current values depend on event processing, operation
+            cycles, aging, clearing and ECU configuration.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>7. Event Debouncing</h2>
+        <p>
+            Debouncing is used to prevent temporary or unstable signals
+            from being immediately treated as confirmed faults.
+        </p>
+
+        <h3>Example: Battery Voltage Monitoring</h3>
+        <p>
+            Assume an ECU monitors battery voltage. A fault is suspected
+            when voltage falls below a configured threshold.
+        </p>
+
+        <pre>
+        Battery Voltage
+               |
+               v
+        Compare with Threshold
+               |
+               v
+        Fault Condition Detected
+               |
+               v
+        Debouncing Mechanism
+               |
+        -------------------------
+        |                       |
+        Fault Qualifies      Fault Does Not
+        as Failed             Qualify
+        |                       |
+        v                       v
+        DEM Records          No Confirmed
+        Failure Status       Failure Status
+        </pre>
+
+        <h3>Common debouncing approaches</h3>
+        <ul>
+            <li>
+                <strong>Counter-based:</strong> A counter increases or
+                decreases according to reported test results and
+                configured thresholds.
+            </li>
+            <li>
+                <strong>Time-based:</strong> The fault condition must
+                remain present for a configured period before it
+                qualifies as a failure.
+            </li>
+        </ul>
+
+        <p>
+            Debouncing helps avoid false diagnostic reports caused by
+            short-duration electrical disturbances or noisy sensor signals.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>8. Diagnostic Event Memory</h2>
+        <p>
+            DEM manages configured diagnostic event memory. This allows
+            diagnostic information to be retained for later analysis
+            and retrieval.
+        </p>
+
+        <h3>Important concepts</h3>
+        <ul>
+            <li>
+                <strong>Primary memory:</strong> A commonly used event
+                memory area for diagnostic information.
+            </li>
+            <li>
+                <strong>Secondary memory:</strong> An additional
+                configured memory area where supported and required.
+            </li>
+            <li>
+                <strong>Permanent memory:</strong> A specialized memory
+                concept used for particular diagnostic requirements
+                where configured.
+            </li>
+            <li>
+                <strong>Freeze-frame data:</strong> Contextual data
+                captured in association with a diagnostic event.
+            </li>
+            <li>
+                <strong>Extended data:</strong> Additional diagnostic
+                information associated with an event or DTC.
+            </li>
+        </ul>
+
+        <p>
+            Event memory storage and retention depend on configured
+            memory size, event priority, storage conditions and
+            diagnostic requirements.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>9. Freeze-Frame and Extended Data</h2>
+
+        <h3>9.1 Freeze-Frame Data</h3>
+        <p>
+            Freeze-frame data provides selected operating information
+            captured when a diagnostic event meets configured storage
+            conditions.
+        </p>
+
+        <p>Example information may include:</p>
+        <ul>
+            <li>Engine speed.</li>
+            <li>Battery voltage.</li>
+            <li>Coolant temperature.</li>
+            <li>Vehicle speed.</li>
+            <li>Sensor readings.</li>
+        </ul>
+
+        <h3>9.2 Extended Data</h3>
+        <p>
+            Extended data provides additional diagnostic information
+            associated with an event or DTC, such as configured
+            occurrence-related or aging-related information.
+        </p>
+
+        <table>
+            <tr>
+                <th>Freeze-Frame Data</th>
+                <th>Extended Data</th>
+            </tr>
+            <tr>
+                <td>Captures selected operating conditions.</td>
+                <td>Stores additional diagnostic information.</td>
+            </tr>
+            <tr>
+                <td>Helps understand the conditions when a fault occurred.</td>
+                <td>Helps understand diagnostic history and event behavior.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="lesson-section">
+        <h2>10. DEM APIs and Event Reporting</h2>
+        <p>
+            AUTOSAR provides standardized interfaces for diagnostic
+            event reporting and querying. The exact available APIs
+            depend on the configured software interface and AUTOSAR
+            release.
+        </p>
+
+        <h3>Important API examples</h3>
+
+        <table>
+            <tr>
+                <th>API</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>Dem_SetEventStatus()</td>
+                <td>Reports a diagnostic event status using the configured event ID.</td>
+            </tr>
+            <tr>
+                <td>Dem_GetEventStatus()</td>
+                <td>Retrieves diagnostic event status information.</td>
+            </tr>
+            <tr>
+                <td>Dem_GetDTCStatusAvailabilityMask()</td>
+                <td>Retrieves the availability mask for DTC status bits.</td>
+            </tr>
+            <tr>
+                <td>Dem_GetStatusOfDTC()</td>
+                <td>Retrieves the status of a configured DTC through the supported interface.</td>
+            </tr>
+            <tr>
+                <td>Dem_ClearDTC()</td>
+                <td>Requests clearing of diagnostic information for the specified DTC group.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            These are illustrative API names from AUTOSAR DEM interfaces.
+            Some APIs are intended for internal software interfaces and
+            others for diagnostic services. Do not assume every API is
+            directly callable by every SWC.
+        </div>
+
+        <h3>Conceptual C example</h3>
+        <pre>
+#include "Dem.h"
+
+void BatteryVoltageMonitor(void)
+{
+    if (BatteryVoltage &lt; MIN_VOLTAGE)
+    {
+        Dem_SetEventStatus(
+            DEM_EVENT_ID_BATTERY_LOW,
+            DEM_EVENT_STATUS_FAILED
+        );
+    }
+    else
+    {
+        Dem_SetEventStatus(
+            DEM_EVENT_ID_BATTERY_LOW,
+            DEM_EVENT_STATUS_PASSED
+        );
+    }
+}
+        </pre>
+
+        <p>
+            This example demonstrates the reporting concept only.
+            The event identifier, generated symbols, header access and
+            permitted calling context must match the ECU's DEM
+            configuration and generated interfaces.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>11. DEM and DCM Interaction</h2>
+        <p>
+            DEM manages diagnostic events and associated DTC information.
+            DCM handles diagnostic communication requests from external
+            diagnostic testers.
+        </p>
+
+        <pre>
+        ECU Fault Monitoring
+                 |
+                 v
+                DEM
+                 |
+          Event / DTC Data
+                 |
+                 v
+                DCM
+                 |
+          UDS Diagnostic Service
+                 |
+                 v
+        External Diagnostic Tester
+        </pre>
+
+        <table>
+            <tr>
+                <th>DEM</th>
+                <th>DCM</th>
+            </tr>
+            <tr>
+                <td>Processes diagnostic events.</td>
+                <td>Processes diagnostic communication requests.</td>
+            </tr>
+            <tr>
+                <td>Manages event status and DTC information.</td>
+                <td>Provides configured diagnostic services.</td>
+            </tr>
+            <tr>
+                <td>Manages diagnostic event memory.</td>
+                <td>Provides access to diagnostic information through supported services.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="lesson-section">
+        <h2>12. DEM Configuration</h2>
+        <p>
+            DEM behavior is defined through ECU-specific diagnostic
+            configuration.
+        </p>
+
+        <h3>Important configuration elements</h3>
+        <ul>
+            <li>Diagnostic event identifiers.</li>
+            <li>DTC identifiers and event-to-DTC associations.</li>
+            <li>Event reporting and qualification conditions.</li>
+            <li>Debouncing configuration.</li>
+            <li>Operation cycle configuration.</li>
+            <li>Event memory and storage conditions.</li>
+            <li>Freeze-frame and extended data records.</li>
+            <li>DTC status and aging-related settings.</li>
+        </ul>
+
+        <h3>Typical configuration workflow</h3>
+        <ol>
+            <li>Identify ECU fault-monitoring requirements.</li>
+            <li>Define diagnostic events.</li>
+            <li>Assign configured DTCs to events.</li>
+            <li>Configure debouncing and operation cycles.</li>
+            <li>Configure event memory and diagnostic records.</li>
+            <li>Generate and integrate DEM configuration.</li>
+            <li>Test event reporting and diagnostic behavior.</li>
+        </ol>
+    </section>
+
+    <section class="lesson-section">
+        <h2>13. Common DEM Problems and Troubleshooting</h2>
+
+        <table>
+            <tr>
+                <th>Problem</th>
+                <th>Possible Cause / Check</th>
+            </tr>
+            <tr>
+                <td>DTC is not reported</td>
+                <td>Check event reporting, event ID and DEM configuration.</td>
+            </tr>
+            <tr>
+                <td>False diagnostic fault</td>
+                <td>Check monitoring logic, thresholds and debouncing.</td>
+            </tr>
+            <tr>
+                <td>DTC remains active</td>
+                <td>Check test results, operation cycles and event healing conditions.</td>
+            </tr>
+            <tr>
+                <td>Freeze-frame data is missing</td>
+                <td>Check storage conditions and freeze-frame configuration.</td>
+            </tr>
+            <tr>
+                <td>DTC cannot be cleared</td>
+                <td>Check clear conditions, DTC group and diagnostic request handling.</td>
+            </tr>
+            <tr>
+                <td>Event memory is full</td>
+                <td>Check memory capacity, event priority and configured displacement strategy.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="lesson-section">
+        <h2>14. Placement-Oriented Interview Questions</h2>
+
+        <div class="question">
+            <strong>Q1. What is DEM in AUTOSAR?</strong>
+            <p>
+                DEM is the Diagnostic Event Manager. It processes
+                diagnostic events, maintains event status and manages
+                associated DTC information and event memory.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q2. What is a diagnostic event?</strong>
+            <p>
+                A diagnostic event represents a monitored fault condition
+                reported by the responsible software.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q3. What is a DTC?</strong>
+            <p>
+                A Diagnostic Trouble Code identifies a diagnostic fault
+                for reporting and troubleshooting through diagnostic
+                services.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q4. What is the difference between an event and a DTC?</strong>
+            <p>
+                An event represents an internally monitored fault condition.
+                A DTC is the configured diagnostic code associated with
+                one or more events.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q5. What is debouncing in DEM?</strong>
+            <p>
+                Debouncing qualifies a fault condition before it is
+                treated as a diagnostic failure. It helps avoid false
+                fault detection caused by temporary signal disturbances.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q6. What is freeze-frame data?</strong>
+            <p>
+                It is selected operating information captured when
+                configured diagnostic storage conditions are met.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q7. What is the difference between DEM and DCM?</strong>
+            <p>
+                DEM manages diagnostic events and DTC information.
+                DCM processes external diagnostic communication requests
+                and provides configured diagnostic services.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q8. What is a pending DTC?</strong>
+            <p>
+                It is a DTC whose pending status bit has been set according
+                to the configured diagnostic test and confirmation rules.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q9. What is the purpose of event memory?</strong>
+            <p>
+                Event memory retains configured diagnostic information
+                so that faults can be analyzed later.
+            </p>
+        </div>
+
+        <div class="question">
+            <strong>Q10. How do you troubleshoot a DTC that is not stored?</strong>
+            <p>
+                Check fault-monitoring logic, event reporting, event
+                configuration, debouncing, storage conditions and
+                event-memory configuration.
+            </p>
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>15. Lesson Summary</h2>
+        <ul>
+            <li>DEM stands for Diagnostic Event Manager.</li>
+            <li>It is part of the AUTOSAR BSW Services Layer.</li>
+            <li>It processes diagnostic events reported by software.</li>
+            <li>It manages event status and associated DTC information.</li>
+            <li>It supports event debouncing and diagnostic event memory.</li>
+            <li>It manages configured freeze-frame and extended data.</li>
+            <li>It works with DCM for diagnostic information access.</li>
+        </ul>
+
+        <p>
+            DEM is an important AUTOSAR module for ECU diagnostics,
+            fault monitoring, BSW integration and automotive embedded
+            software placement interviews.
+        </p>
+    </section>
+
+    <div class="navigation">
+        <a href="L04_BSW_Mode_Manager_BswM.html">← Previous Lesson</a>
+        <a href="index.html">Chapter 5 Index</a>
+        <a href="L06_Diagnostic_Communication_Manager_DCM.html">Next Lesson →</a>
+    </div>
+
+    <div class="navigation">
+        <a href="../autosar.html">AUTOSAR Course Home</a>
+    </div>
+
+</main>
+
+</body>
+</html>
