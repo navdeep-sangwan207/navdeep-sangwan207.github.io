@@ -1,1 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 3: Events, Resources and Scheduling | AUTOSAR</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-header {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .lesson-header h1 { margin: 0 0 10px; }
+        .lesson-content {
+            line-height: 1.7;
+        }
+        .lesson-content h2 {
+            color: #174ea6;
+            margin-top: 30px;
+            border-bottom: 2px solid #e5eaf2;
+            padding-bottom: 8px;
+        }
+        .lesson-content h3 { color: #1765b1; }
+        .lesson-content pre {
+            background: #17212f;
+            color: #e8f0fe;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        .lesson-content code {
+            font-family: Consolas, monospace;
+        }
+        .info-box {
+            background: #eef5ff;
+            border-left: 4px solid #174ea6;
+            padding: 14px;
+            margin: 18px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 4px solid #e59a18;
+            padding: 14px;
+            margin: 18px 0;
+            border-radius: 5px;
+        }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 35px;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            padding: 11px 18px;
+            text-decoration: none;
+            border-radius: 6px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 18px 0;
+        }
+        th, td {
+            border: 1px solid #d5dce5;
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background: #eaf1fb;
+        }
+    </style>
+</head>
 
+<body>
+<main class="container lesson-content">
+
+    <header class="lesson-header">
+        <h1>Lesson 3: Events, Resources and Scheduling</h1>
+        <p>AUTOSAR OS and Task Management</p>
+        <p>Understand event-based task synchronization, shared resource protection and real-time scheduling.</p>
+    </header>
+
+    <h2>1. Learning Objectives</h2>
+    <p>After completing this lesson, you will be able to:</p>
+    <ul>
+        <li>Explain events in AUTOSAR OS.</li>
+        <li>Differentiate Basic Tasks and Extended Tasks.</li>
+        <li>Use event-related OS services conceptually.</li>
+        <li>Explain resources and shared resource protection.</li>
+        <li>Understand priority inversion and priority ceiling.</li>
+        <li>Differentiate preemptive and non-preemptive scheduling.</li>
+        <li>Relate OS scheduling to AUTOSAR RTE runnable execution.</li>
+    </ul>
+
+    <h2>2. What Are Events in AUTOSAR OS?</h2>
+    <p>
+        An event is a synchronization mechanism used by an Extended Task
+        to wait for a particular condition or occurrence.
+    </p>
+    <p>
+        Instead of continuously checking whether data is available,
+        a task can wait for an event. Another task or an approved
+        interrupt-level service can set that event.
+    </p>
+
+    <h3>Automotive Example</h3>
+    <p>
+        Consider a vehicle ECU receiving CAN messages. A communication
+        task may wait until a particular CAN message has been received.
+        When the message is ready, the event is set and the waiting
+        task can become ready for execution.
+    </p>
+
+    <div class="info-box">
+        <strong>Important:</strong> Only Extended Tasks can wait for events
+        using the standard AUTOSAR OS event mechanism. Basic Tasks do not
+        have the WAITING state associated with event waiting.
+    </div>
+
+    <h2>3. Event-Related OS Services</h2>
+    <table>
+        <tr>
+            <th>Service</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td>WaitEvent()</td>
+            <td>Allows an Extended Task to wait for one or more events.</td>
+        </tr>
+        <tr>
+            <td>SetEvent()</td>
+            <td>Sets an event for a specified task.</td>
+        </tr>
+        <tr>
+            <td>ClearEvent()</td>
+            <td>Clears specified event bits of the calling task.</td>
+        </tr>
+        <tr>
+            <td>GetEvent()</td>
+            <td>Reads the current event mask of a task.</td>
+        </tr>
+    </table>
+
+    <h3>Event Masks</h3>
+    <p>
+        AUTOSAR OS represents events using event masks. Each event is
+        assigned a bit position in the configured event mask.
+    </p>
+
+    <pre><code>#define CAN_RX_EVENT       0x01
+#define SENSOR_EVENT       0x02
+#define DIAGNOSTIC_EVENT   0x04</code></pre>
+
+    <p>
+        For example, if CAN_RX_EVENT is set, the corresponding bit
+        becomes active in the task's event mask.
+    </p>
+
+    <h2>4. Event-Based Task Execution</h2>
+    <p>Consider a communication task that waits for a CAN reception event.</p>
+
+    <pre><code>void CommunicationTask(void)
+{
+    EventMaskType receivedEvents;
+
+    for(;;)
+    {
+        /* Wait until CAN reception event occurs */
+        WaitEvent(CAN_RX_EVENT);
+
+        /* Read the task's event mask */
+        GetEvent(CommunicationTask_ID, &receivedEvents);
+
+        if(receivedEvents & CAN_RX_EVENT)
+        {
+            /* Process received CAN data */
+            ProcessCANMessage();
+
+            /* Clear the processed event */
+            ClearEvent(CAN_RX_EVENT);
+        }
+    }
+}</code></pre>
+
+    <div class="warning-box">
+        <strong>Implementation note:</strong> This is illustrative AUTOSAR OS
+        code. Actual task identifiers, event definitions, service signatures
+        and generated configuration depend on the AUTOSAR release and OS vendor.
+        The task must be configured as an Extended Task.
+    </div>
+
+    <h2>5. Extended Task State Transitions</h2>
+    <p>An Extended Task can move between the following states:</p>
+
+    <ul>
+        <li><strong>SUSPENDED:</strong> The task is inactive.</li>
+        <li><strong>READY:</strong> The task is eligible for execution.</li>
+        <li><strong>RUNNING:</strong> The task is currently executing.</li>
+        <li><strong>WAITING:</strong> The task is waiting for an event.</li>
+    </ul>
+
+    <h3>Typical Event Flow</h3>
+    <ol>
+        <li>The Extended Task starts executing.</li>
+        <li>It calls WaitEvent() for a configured event.</li>
+        <li>If the required event has not occurred, the task enters WAITING.</li>
+        <li>Another task or permitted service calls SetEvent().</li>
+        <li>The waiting task becomes READY.</li>
+        <li>The scheduler selects it according to scheduling rules.</li>
+        <li>The task resumes and processes the event.</li>
+    </ol>
+
+    <div class="info-box">
+        If the event is already set when WaitEvent() is called, the task
+        does not need to enter the WAITING state; it can continue execution.
+    </div>
+
+    <h2>6. What Are Resources?</h2>
+    <p>
+        A resource is an AUTOSAR OS mechanism used to protect shared resources
+        from conflicting access by tasks.
+    </p>
+
+    <p>Examples of shared resources include:</p>
+    <ul>
+        <li>Shared data structures.</li>
+        <li>SPI peripheral access.</li>
+        <li>Shared communication buffers.</li>
+        <li>Common memory areas.</li>
+        <li>Hardware registers requiring controlled access.</li>
+    </ul>
+
+    <h3>Example: Shared SPI Peripheral</h3>
+    <p>
+        Suppose two tasks need to communicate with different devices using
+        the same SPI peripheral. If both tasks access the peripheral
+        simultaneously, their operations may interfere.
+    </p>
+    <p>
+        A configured OS resource can serialize access so that only one
+        eligible task holds the resource at a time.
+    </p>
+
+    <h2>7. Resource-Related OS Services</h2>
+    <table>
+        <tr>
+            <th>Service</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td>GetResource()</td>
+            <td>Requests ownership of a configured OS resource.</td>
+        </tr>
+        <tr>
+            <td>ReleaseResource()</td>
+            <td>Releases a resource previously acquired by the task.</td>
+        </tr>
+    </table>
+
+    <h3>Illustrative Example</h3>
+    <pre><code>void SPITask(void)
+{
+    for(;;)
+    {
+        GetResource(SPI_RESOURCE);
+
+        /* Protected SPI access */
+        SPI_TransmitData();
+
+        ReleaseResource(SPI_RESOURCE);
+
+        /* Continue other processing */
+    }
+}</code></pre>
+
+    <p>
+        The resource must be released after the protected operation.
+        The exact legal API usage and resource nesting rules depend on
+        the OS configuration and applicable AUTOSAR OS specification.
+    </p>
+
+    <h2>8. Priority Inversion</h2>
+    <p>
+        Priority inversion occurs when a high-priority task is indirectly
+        delayed by a lower-priority task holding a shared resource.
+    </p>
+
+    <h3>Example</h3>
+    <ol>
+        <li>Low-priority Task L acquires a shared resource.</li>
+        <li>High-priority Task H becomes ready and needs the same resource.</li>
+        <li>Task H cannot obtain the resource while Task L holds it.</li>
+        <li>Task L must finish its protected operation and release the resource.</li>
+        <li>Task H can then proceed.</li>
+    </ol>
+
+    <p>
+        If medium-priority tasks repeatedly preempt Task L, Task H may
+        experience an unexpectedly long delay.
+    </p>
+
+    <h2>9. Priority Ceiling Protocol</h2>
+    <p>
+        AUTOSAR OS resource management follows the OSEK-style priority
+        ceiling resource protocol. The configured ceiling of a resource
+        is based on the priorities of tasks that use it.
+    </p>
+
+    <p>
+        When a task obtains a resource, its effective scheduling priority
+        is raised as required by the resource ceiling rules. This limits
+        interference from other tasks and helps prevent unbounded priority
+        inversion.
+    </p>
+
+    <div class="info-box">
+        <strong>Placement concept:</strong> The resource protocol is not
+        simply a normal mutex lock. It has OS-defined priority and nesting
+        rules. Correct resource ceilings and configuration are essential.
+    </div>
+
+    <h3>Important Resource Rules</h3>
+    <ul>
+        <li>Use a resource only for its configured purpose.</li>
+        <li>Release a resource after completing the protected operation.</li>
+        <li>Follow the configured resource nesting order.</li>
+        <li>Avoid long operations while holding a resource.</li>
+        <li>Do not perform operations that violate OS resource restrictions.</li>
+    </ul>
+
+    <h2>10. What Is Task Scheduling?</h2>
+    <p>
+        Scheduling is the process by which AUTOSAR OS selects a READY task
+        for execution on the processor.
+    </p>
+
+    <p>Task selection depends on factors such as:</p>
+    <ul>
+        <li>Task priority.</li>
+        <li>Task state.</li>
+        <li>Preemption configuration.</li>
+        <li>Resource ownership and scheduling restrictions.</li>
+        <li>OS scheduling rules.</li>
+    </ul>
+
+    <h2>11. Preemptive Scheduling</h2>
+    <p>
+        In preemptive scheduling, a higher-priority READY task can interrupt
+        the execution of a lower-priority task when the OS reaches a
+        permitted scheduling point.
+    </p>
+
+    <h3>Example</h3>
+    <ul>
+        <li>Task L is running at low priority.</li>
+        <li>Task H becomes READY at a higher priority.</li>
+        <li>The OS preempts Task L when permitted.</li>
+        <li>Task H executes.</li>
+        <li>After Task H finishes or blocks, Task L may resume.</li>
+    </ul>
+
+    <h2>12. Non-Preemptive Scheduling</h2>
+    <p>
+        In non-preemptive scheduling, a running task is not preempted
+        merely because a higher-priority task becomes READY. The running
+        task continues until it reaches a permitted scheduling point,
+        such as termination, chaining or an applicable scheduling service.
+    </p>
+
+    <div class="warning-box">
+        Non-preemptive execution can increase the response time of
+        higher-priority tasks. Long-running non-preemptive sections
+        must therefore be avoided in time-critical ECU software.
+    </div>
+
+    <h2>13. Preemptive vs Non-Preemptive Scheduling</h2>
+    <table>
+        <tr>
+            <th>Feature</th>
+            <th>Preemptive</th>
+            <th>Non-Preemptive</th>
+        </tr>
+        <tr>
+            <td>Higher-priority task becomes READY</td>
+            <td>Can preempt at a permitted scheduling point</td>
+            <td>Does not automatically preempt the running task</td>
+        </tr>
+        <tr>
+            <td>Response time</td>
+            <td>Generally better for urgent tasks</td>
+            <td>Can be longer</td>
+        </tr>
+        <tr>
+            <td>Implementation complexity</td>
+            <td>Higher</td>
+            <td>Generally lower</td>
+        </tr>
+        <tr>
+            <td>Typical concern</td>
+            <td>Context switching and shared data protection</td>
+            <td>Long blocking execution periods</td>
+        </tr>
+    </table>
+
+    <h2>14. Same-Priority Task Scheduling</h2>
+    <p>
+        Tasks with equal priority are scheduled according to the applicable
+        AUTOSAR OS scheduling rules and configuration. Do not assume that
+        every OS implementation uses unrestricted round-robin scheduling.
+    </p>
+    <p>
+        Task activation limits, scheduling points and configuration
+        influence when an equal-priority task gets processor time.
+    </p>
+
+    <h2>15. Relationship Between RTE and OS Scheduling</h2>
+    <p>
+        In AUTOSAR Classic, application software is organized into
+        Software Components (SWCs). Their runnable entities are mapped
+        to OS tasks through the configured RTE and OS scheduling setup.
+    </p>
+
+    <ol>
+        <li>A sensor value or communication event occurs.</li>
+        <li>The RTE coordinates the configured runnable activation.</li>
+        <li>The mapped OS task becomes READY when appropriate.</li>
+        <li>The AUTOSAR OS scheduler selects the task.</li>
+        <li>The runnable executes within the task context.</li>
+    </ol>
+
+    <div class="info-box">
+        The RTE handles communication and runnable activation according
+        to the configured mapping. The OS handles task scheduling and
+        execution control. They perform different but connected roles.
+    </div>
+
+    <h2>16. Automotive Example: Cooling Fan ECU</h2>
+    <p>Consider an ECU controlling a vehicle cooling fan.</p>
+
+    <table>
+        <tr>
+            <th>Function</th>
+            <th>OS Concept</th>
+        </tr>
+        <tr>
+            <td>Receive temperature-related CAN data</td>
+            <td>Event-based activation or task activation</td>
+        </tr>
+        <tr>
+            <td>Process temperature information</td>
+            <td>Runnable mapped to an OS task</td>
+        </tr>
+        <tr>
+            <td>Access shared sensor data</td>
+            <td>Resource protection where required</td>
+        </tr>
+        <tr>
+            <td>Calculate fan speed</td>
+            <td>Task scheduling by priority</td>
+        </tr>
+        <tr>
+            <td>Update fan output</td>
+            <td>Scheduled task execution and peripheral access</td>
+        </tr>
+    </table>
+
+    <h2>17. Common Errors and Troubleshooting</h2>
+    <table>
+        <tr>
+            <th>Problem</th>
+            <th>Possible Cause</th>
+            <th>What to Check</th>
+        </tr>
+        <tr>
+            <td>Task remains WAITING</td>
+            <td>Expected event was never set</td>
+            <td>Event source and SetEvent call</td>
+        </tr>
+        <tr>
+            <td>Task does not resume</td>
+            <td>Incorrect event mask</td>
+            <td>Configured event identifier and mask</td>
+        </tr>
+        <tr>
+            <td>Resource access error</td>
+            <td>Incorrect resource configuration</td>
+            <td>Resource declaration and ownership</td>
+        </tr>
+        <tr>
+            <td>Task execution delayed</td>
+            <td>Long critical section or priority issue</td>
+            <td>Task priorities and resource holding time</td>
+        </tr>
+        <tr>
+            <td>Resource-related OS error</td>
+            <td>Resource not released or invalid nesting</td>
+            <td>GetResource/ReleaseResource sequence</td>
+        </tr>
+        <tr>
+            <td>Unexpected task execution order</td>
+            <td>Scheduling configuration</td>
+            <td>Priority, preemption and scheduling points</td>
+        </tr>
+    </table>
+
+    <h2>18. AUTOSAR OS APIs to Remember</h2>
+    <table>
+        <tr>
+            <th>API</th>
+            <th>Category</th>
+        </tr>
+        <tr>
+            <td>WaitEvent()</td>
+            <td>Event management</td>
+        </tr>
+        <tr>
+            <td>SetEvent()</td>
+            <td>Event management</td>
+        </tr>
+        <tr>
+            <td>ClearEvent()</td>
+            <td>Event management</td>
+        </tr>
+        <tr>
+            <td>GetEvent()</td>
+            <td>Event management</td>
+        </tr>
+        <tr>
+            <td>GetResource()</td>
+            <td>Resource management</td>
+        </tr>
+        <tr>
+            <td>ReleaseResource()</td>
+            <td>Resource management</td>
+        </tr>
+        <tr>
+            <td>Schedule()</td>
+            <td>Scheduling</td>
+        </tr>
+    </table>
+
+    <h2>19. Interview Questions and Answers</h2>
+
+    <h3>Q1. What is an event in AUTOSAR OS?</h3>
+    <p>
+        An event is a synchronization mechanism that allows an Extended
+        Task to wait for a particular condition or occurrence.
+    </p>
+
+    <h3>Q2. Can a Basic Task wait for an event?</h3>
+    <p>
+        No. Standard AUTOSAR OS event waiting is supported by Extended Tasks.
+    </p>
+
+    <h3>Q3. What is the purpose of WaitEvent()?</h3>
+    <p>
+        It allows an Extended Task to wait until one or more specified
+        events are set.
+    </p>
+
+    <h3>Q4. What is the purpose of SetEvent()?</h3>
+    <p>
+        It sets the specified event for a task, potentially making a
+        waiting Extended Task READY.
+    </p>
+
+    <h3>Q5. What is a resource in AUTOSAR OS?</h3>
+    <p>
+        A resource protects shared resources from conflicting access
+        by tasks.
+    </p>
+
+    <h3>Q6. Which APIs are used for resource management?</h3>
+    <p>
+        GetResource() and ReleaseResource().
+    </p>
+
+    <h3>Q7. What is priority inversion?</h3>
+    <p>
+        It occurs when a high-priority task is delayed because a
+        lower-priority task holds a resource it needs.
+    </p>
+
+    <h3>Q8. What is the priority ceiling protocol?</h3>
+    <p>
+        It is a resource management protocol that adjusts task execution
+        priority according to configured resource ceilings to control
+        priority inversion and resource access.
+    </p>
+
+    <h3>Q9. What is preemptive scheduling?</h3>
+    <p>
+        It allows a higher-priority READY task to preempt a lower-priority
+        running task at a permitted scheduling point.
+    </p>
+
+    <h3>Q10. What is the relationship between RTE and OS?</h3>
+    <p>
+        RTE coordinates runnable activation and communication, while
+        AUTOSAR OS schedules and manages the execution of the mapped tasks.
+    </p>
+
+    <h2>20. Lesson Summary</h2>
+    <ul>
+        <li>Events provide synchronization for Extended Tasks.</li>
+        <li>WaitEvent() waits for configured events.</li>
+        <li>SetEvent() sets an event for a task.</li>
+        <li>Resources protect shared data and hardware access.</li>
+        <li>GetResource() and ReleaseResource() manage resource ownership.</li>
+        <li>Priority ceiling rules help control priority inversion.</li>
+        <li>Preemptive and non-preemptive scheduling determine task execution behavior.</li>
+        <li>RTE runnable mapping and OS task scheduling work together.</li>
+    </ul>
+
+    <div class="info-box">
+        <strong>Placement Preparation:</strong>
+        Be prepared to explain the difference between events and resources,
+        Basic and Extended Tasks, priority inversion, resource ceiling,
+        and preemptive versus non-preemptive scheduling using an automotive ECU example.
+    </div>
+
+    <nav class="lesson-nav">
+        <a href="L02_Tasks_Alarms_and_Counters.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Contents</a>
+        <a href="L04_Interrupt_Handling_and_ISRs.html">Next Lesson →</a>
+    </nav>
+
+</main>
+</body>
+</html>
