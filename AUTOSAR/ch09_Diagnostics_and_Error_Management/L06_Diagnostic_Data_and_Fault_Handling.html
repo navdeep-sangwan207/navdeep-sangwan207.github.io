@@ -1,1 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 6 - Diagnostic Testing, Fault Handling and Troubleshooting</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-header {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 7px rgba(0,0,0,0.08);
+        }
+        .content-section h2 { color: #174ea6; }
+        pre {
+            background: #f4f6f8;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        code { color: #c7254e; }
+        .note {
+            background: #eaf3ff;
+            border-left: 4px solid #174ea6;
+            padding: 12px;
+            margin: 15px 0;
+        }
+        .warning {
+            background: #fff4e5;
+            border-left: 4px solid #e69500;
+            padding: 12px;
+            margin: 15px 0;
+        }
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+        .navigation a {
+            display: inline-block;
+            background: #174ea6;
+            color: white;
+            padding: 10px 16px;
+            border-radius: 5px;
+            text-decoration: none;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf3ff; }
+    </style>
+</head>
+<body>
 
+<div class="lesson-header">
+    <h1>Lesson 6: Diagnostic Testing, Fault Handling and Troubleshooting</h1>
+    <p>Chapter 9 – Diagnostics and Error Management</p>
+</div>
+
+<div class="content-section">
+    <h2>1. Learning Objectives</h2>
+    <ul>
+        <li>Understand diagnostic testing in automotive ECUs.</li>
+        <li>Learn how diagnostic faults are detected and reported.</li>
+        <li>Understand DEM event status and DTC storage.</li>
+        <li>Learn diagnostic debouncing and fault confirmation.</li>
+        <li>Understand diagnostic testing using UDS.</li>
+        <li>Learn CAN diagnostic troubleshooting.</li>
+        <li>Understand common ECU diagnostic failures.</li>
+        <li>Prepare for AUTOSAR diagnostic placement interviews.</li>
+    </ul>
+</div>
+
+<div class="content-section">
+    <h2>2. What Is Diagnostic Testing?</h2>
+    <p>
+        Diagnostic testing verifies whether an ECU and its connected
+        systems operate within specified conditions. It checks whether
+        faults are detected, reported, stored and communicated correctly.
+    </p>
+
+    <h3>Objectives</h3>
+    <ul>
+        <li>Detect sensor and actuator failures.</li>
+        <li>Verify diagnostic event reporting.</li>
+        <li>Verify DTC storage and retrieval.</li>
+        <li>Test diagnostic communication with an external tester.</li>
+        <li>Verify fault recovery and event status transitions.</li>
+        <li>Check diagnostic behavior after ECU restart.</li>
+    </ul>
+</div>
+
+<div class="content-section">
+    <h2>3. Diagnostic Fault Detection Flow</h2>
+
+    <pre>
+       Sensor / ECU Function
+                |
+                v
+         Monitor Signal
+                |
+                v
+        Check Fault Condition
+                |
+          +-----+-----+
+          |           |
+       No Fault     Fault
+          |           |
+          v           v
+     Normal State   Report Event
+                      |
+                      v
+                     DEM
+                      |
+                      v
+              Debouncing Logic
+                      |
+                      v
+              Event Status Update
+                      |
+                      v
+                DTC Management
+                      |
+                      v
+                Event Memory
+                      |
+                      v
+                  DCM / UDS
+                      |
+                      v
+              Diagnostic Tester
+    </pre>
+
+    <p>
+        This is a simplified flow. The actual reporting path and diagnostic
+        behavior depend on the ECU software architecture and configuration.
+    </p>
+</div>
+
+<div class="content-section">
+    <h2>4. Types of Automotive Diagnostic Faults</h2>
+
+    <table>
+        <tr>
+            <th>Fault Type</th>
+            <th>Example</th>
+        </tr>
+        <tr>
+            <td>Sensor Fault</td>
+            <td>Temperature sensor open circuit or short circuit.</td>
+        </tr>
+        <tr>
+            <td>Actuator Fault</td>
+            <td>Motor or relay fails to respond.</td>
+        </tr>
+        <tr>
+            <td>Communication Fault</td>
+            <td>CAN message timeout or missing communication.</td>
+        </tr>
+        <tr>
+            <td>Power Supply Fault</td>
+            <td>ECU supply voltage outside the permitted range.</td>
+        </tr>
+        <tr>
+            <td>Memory Fault</td>
+            <td>Configured memory integrity or access failure.</td>
+        </tr>
+        <tr>
+            <td>Software Fault</td>
+            <td>Unexpected software state or failed internal monitoring.</td>
+        </tr>
+    </table>
+</div>
+
+<div class="content-section">
+    <h2>5. Diagnostic Event Reporting to DEM</h2>
+    <p>
+        A software component or diagnostic monitor detects a fault and
+        reports its status to the Diagnostic Event Manager (DEM).
+    </p>
+
+    <p>
+        Depending on the configured interface and AUTOSAR release,
+        diagnostic event status can be reported using mechanisms such
+        as <code>Dem_SetEventStatus()</code> or a configured
+        monitor-function interface.
+    </p>
+
+    <h3>Conceptual Example</h3>
+    <pre>
+    if (sensor_value > MAX_LIMIT)
+    {
+        /* Report failed diagnostic event */
+        Dem_SetEventStatus(
+            DEM_EVENT_ID_TEMPERATURE,
+            DEM_EVENT_STATUS_FAILED
+        );
+    }
+    else
+    {
+        /* Report passed diagnostic event */
+        Dem_SetEventStatus(
+            DEM_EVENT_ID_TEMPERATURE,
+            DEM_EVENT_STATUS_PASSED
+        );
+    }
+    </pre>
+
+    <div class="warning">
+        This is illustrative AUTOSAR-style pseudocode. Exact API
+        signatures, generated event identifiers and reporting methods
+        depend on the AUTOSAR release and supplier implementation.
+    </div>
+</div>
+
+<div class="content-section">
+    <h2>6. Diagnostic Debouncing</h2>
+    <p>
+        Debouncing prevents short-duration or temporary signal variations
+        from being immediately treated as confirmed faults.
+    </p>
+
+    <h3>Common Debouncing Methods</h3>
+
+    <h4>6.1 Counter-Based Debouncing</h4>
+    <p>
+        A fault counter increases when a failure is detected and decreases
+        or resets when the monitor reports normal operation, according
+        to the configured algorithm.
+    </p>
+
+    <pre>
+    Fault detected:
+        Counter increases
+
+    Normal condition:
+        Counter decreases or resets
+
+    Counter reaches configured threshold:
+        Fault may be confirmed
+    </pre>
+
+    <h4>6.2 Time-Based Debouncing</h4>
+    <p>
+        The monitor evaluates how long a fault condition remains present.
+        A fault may be qualified after the configured time threshold.
+    </p>
+
+    <div class="note">
+        Debouncing thresholds and algorithms are configured for each
+        diagnostic event. A confirmed fault is not necessarily stored
+        immediately in non-volatile memory; storage behavior is also
+        configuration-dependent.
+    </div>
+</div>
+
+<div class="content-section">
+    <h2>7. DTC Status and Fault Confirmation</h2>
+    <p>
+        A Diagnostic Trouble Code (DTC) represents a diagnostic fault
+        identified by a configured code. DEM manages associated event
+        and DTC information.
+    </p>
+
+    <h3>Common UDS DTC Status Bits</h3>
+    <table>
+        <tr>
+            <th>Bit</th>
+            <th>Name</th>
+            <th>Meaning</th>
+        </tr>
+        <tr>
+            <td>0</td>
+            <td>TestFailed</td>
+            <td>Monitor has detected a failure.</td>
+        </tr>
+        <tr>
+            <td>1</td>
+            <td>TestFailedThisOperationCycle</td>
+            <td>Failure detected during the current operation cycle.</td>
+        </tr>
+        <tr>
+            <td>2</td>
+            <td>PendingDTC</td>
+            <td>DTC has met the applicable pending criteria.</td>
+        </tr>
+        <tr>
+            <td>3</td>
+            <td>ConfirmedDTC</td>
+            <td>DTC has met the applicable confirmation criteria.</td>
+        </tr>
+        <tr>
+            <td>4</td>
+            <td>TestNotCompletedSinceLastClear</td>
+            <td>Test has not completed since the last clear operation.</td>
+        </tr>
+        <tr>
+            <td>5</td>
+            <td>TestFailedSinceLastClear</td>
+            <td>Failure has been detected since the last clear operation.</td>
+        </tr>
+        <tr>
+            <td>6</td>
+            <td>TestNotCompletedThisOperationCycle</td>
+            <td>Test has not completed during the current operation cycle.</td>
+        </tr>
+        <tr>
+            <td>7</td>
+            <td>WarningIndicatorRequested</td>
+            <td>Associated warning indicator request is active.</td>
+        </tr>
+    </table>
+
+    <div class="note">
+        These are the standard UDS DTC status-bit meanings. Whether a
+        particular bit is supported or set depends on the ECU diagnostic
+        configuration and monitor behavior.
+    </div>
+</div>
+
+<div class="content-section">
+    <h2>8. Event Memory and Freeze Frame Data</h2>
+    <p>
+        DEM can maintain diagnostic event information and associated
+        records according to configuration.
+    </p>
+
+    <h3>Freeze Frame Data</h3>
+    <p>
+        Freeze frame data captures selected operating parameters
+        associated with a diagnostic event. It can help engineers
+        understand the conditions under which a fault occurred.
+    </p>
+
+    <h3>Example Freeze Frame Parameters</h3>
+    <ul>
+        <li>Engine speed.</li>
+        <li>Vehicle speed.</li>
+        <li>Coolant temperature.</li>
+        <li>Battery voltage.</li>
+        <li>Sensor measurement value.</li>
+        <li>Operating condition or load information.</li>
+    </ul>
+
+    <h3>Extended Data</h3>
+    <p>
+        Extended data contains additional diagnostic information
+        configured for a DTC, such as fault occurrence counters
+        or other event-related records.
+    </p>
+</div>
+
+<div class="content-section">
+    <h2>9. Diagnostic Testing Using UDS</h2>
+    <p>
+        A diagnostic tester can verify ECU diagnostic behavior by
+        sending UDS requests and analyzing the responses.
+    </p>
+
+    <table>
+        <tr>
+            <th>Test Operation</th>
+            <th>UDS SID</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td>Change diagnostic session</td>
+            <td>0x10</td>
+            <td>Verify supported session transitions.</td>
+        </tr>
+        <tr>
+            <td>Read DTC information</td>
+            <td>0x19</td>
+            <td>Verify DTC reporting.</td>
+        </tr>
+        <tr>
+            <td>Clear diagnostic information</td>
+            <td>0x14</td>
+            <td>Verify supported DTC clearing behavior.</td>
+        </tr>
+        <tr>
+            <td>Read ECU data</td>
+            <td>0x22</td>
+            <td>Verify configured DID access.</td>
+        </tr>
+        <tr>
+            <td>Tester presence</td>
+            <td>0x3E</td>
+            <td>Verify tester-present handling.</td>
+        </tr>
+        <tr>
+            <td>Execute routine</td>
+            <td>0x31</td>
+            <td>Verify configured diagnostic routines.</td>
+        </tr>
+    </table>
+</div>
+
+<div class="content-section">
+    <h2>10. CAN Diagnostic Testing Tools</h2>
+
+    <ul>
+        <li><strong>CANoe:</strong> CAN network simulation, analysis and testing.</li>
+        <li><strong>CANalyzer:</strong> CAN traffic monitoring and analysis.</li>
+        <li><strong>PCAN-View:</strong> CAN message monitoring with supported PEAK hardware.</li>
+        <li><strong>CAN USB Interface:</strong> Connects a computer to a physical CAN network.</li>
+        <li><strong>UDS Diagnostic Tester:</strong> Sends diagnostic requests and interprets responses.</li>
+        <li><strong>Oscilloscope:</strong> Helps inspect CANH and CANL electrical signals.</li>
+        <li><strong>Multimeter:</strong> Checks supply voltage, ground and resistance where appropriate.</li>
+    </ul>
+
+    <div class="warning">
+        Software tools alone cannot verify physical CAN wiring or electrical
+        signal quality. Hardware measurements require suitable test
+        equipment and safe access to the vehicle or ECU network.
+    </div>
+</div>
+
+<div class="content-section">
+    <h2>11. CAN Communication Troubleshooting</h2>
+
+    <table>
+        <tr>
+            <th>Problem</th>
+            <th>Possible Cause</th>
+            <th>Checks</th>
+        </tr>
+        <tr>
+            <td>No CAN communication</td>
+            <td>Power, wiring, termination or configuration issue.</td>
+            <td>Check ECU supply, ground, CANH/CANL and bitrate.</td>
+        </tr>
+        <tr>
+            <td>Bus-off condition</td>
+            <td>Excessive CAN transmission errors.</td>
+            <td>Inspect wiring, bit timing, transceiver and bus errors.</td>
+        </tr>
+        <tr>
+            <td>Incorrect message reception</td>
+            <td>Identifier or filter configuration mismatch.</td>
+            <td>Check CAN IDs, masks and communication configuration.</td>
+        </tr>
+        <tr>
+            <td>UDS timeout</td>
+            <td>Missing response or transport/application delay.</td>
+            <td>Inspect tester timing, DCM processing and transport flow.</td>
+        </tr>
+        <tr>
+            <td>ISO-TP transfer failure</td>
+            <td>Flow-control or sequence problem.</td>
+            <td>Inspect FF, FC and CF frames, block size and STmin.</td>
+        </tr>
+        <tr>
+            <td>Negative UDS response</td>
+            <td>Unsupported service or unmet conditions.</td>
+            <td>Decode NRC and check session, security and parameters.</td>
+        </tr>
+    </table>
+</div>
+
+<div class="content-section">
+    <h2>12. Physical CAN Bus Checks</h2>
+
+    <h3>12.1 CAN Termination</h3>
+    <p>
+        A conventional high-speed CAN network typically uses two
+        120-ohm termination resistors, one at each physical end of
+        the bus.
+    </p>
+
+    <p>
+        With the network powered down and isolated appropriately,
+        resistance measured between CANH and CANL is commonly
+        approximately 60 ohms when both 120-ohm terminators are
+        connected in parallel.
+    </p>
+
+    <h3>12.2 CAN Wiring</h3>
+    <ul>
+        <li>Inspect CANH and CANL connections.</li>
+        <li>Check for open circuits and short circuits.</li>
+        <li>Check connector pin assignments.</li>
+        <li>Inspect grounding and shielding where applicable.</li>
+        <li>Check the physical bus topology and termination locations.</li>
+    </ul>
+
+    <h3>12.3 CAN Signal Inspection</h3>
+    <p>
+        An oscilloscope can help inspect differential CAN signaling.
+        On a conventional high-speed CAN bus, the recessive state has
+        CANH and CANL near the same common-mode voltage, while the
+        dominant state produces a differential voltage between them.
+    </p>
+
+    <div class="warning">
+        Resistance checks must be performed with power removed and the
+        network in a safe, appropriate measurement condition. Do not
+        disconnect or probe live vehicle wiring without following the
+        applicable service procedures.
+    </div>
+</div>
+
+<div class="content-section">
+    <h2>13. DCM Troubleshooting</h2>
+
+    <table>
+        <tr>
+            <th>Problem</th>
+            <th>Possible Cause</th>
+            <th>Recommended Check</th>
+        </tr>
+        <tr>
+            <td>Service not supported</td>
+            <td>Service not configured in DCM.</td>
+            <td>Check diagnostic service configuration.</td>
+        </tr>
+        <tr>
+            <td>Subfunction not supported</td>
+            <td>Unsupported session or subfunction.</td>
+            <td>Check supported subfunctions and configuration.</td>
+        </tr>
+        <tr>
+            <td>Security access denied</td>
+            <td>Invalid key or security restrictions.</td>
+            <td>Check security configuration and access sequence.</td>
+        </tr>
+        <tr>
+            <td>Request out of range</td>
+            <td>Invalid DID, routine or parameter.</td>
+            <td>Check configured identifiers and parameter ranges.</td>
+        </tr>
+        <tr>
+            <td>Response timeout</td>
+            <td>Communication or processing delay.</td>
+            <td>Check PduR, CanTp, DCM and timing configuration.</td>
+        </tr>
+        <tr>
+            <td>Incorrect DID data</td>
+            <td>Wrong data mapping or application interface.</td>
+            <td>Verify DID configuration and data source.</td>
+        </tr>
+    </table>
+</div>
+
+<div class="content-section">
+    <h2>14. DEM Troubleshooting</h2>
+
+    <table>
+        <tr>
+            <th>Problem</th>
+            <th>Possible Cause</th>
+            <th>Recommended Check</th>
+        </tr>
+        <tr>
+            <td>DTC not stored</td>
+            <td>Event not reported or storage conditions not met.</td>
+            <td>Check monitor reporting and DEM configuration.</td>
+        </tr>
+        <tr>
+            <td>DTC not confirmed</td>
+            <td>Confirmation threshold not reached.</td>
+            <td>Check debouncing and operation-cycle configuration.</td>
+        </tr>
+        <tr>
+            <td>DTC remains after repair</td>
+            <td>Monitor has not completed successfully or clearing conditions not met.</td>
+            <td>Check monitor execution and DTC status.</td>
+        </tr>
+        <tr>
+            <td>Freeze frame unavailable</td>
+            <td>Record not configured or capture conditions not met.</td>
+            <td>Check freeze-frame configuration.</td>
+        </tr>
+        <tr>
+            <td>Unexpected event status</td>
+            <td>Incorrect monitor reporting or status handling.</td>
+            <td>Trace event reporting and DEM state transitions.</td>
+        </tr>
+    </table>
+</div>
+
+<div class="content-section">
+    <h2>15. Practical Example – Engine Temperature Sensor Fault</h2>
+
+    <h3>System Description</h3>
+    <p>
+        An ECU monitors an engine temperature sensor. The sensor signal
+        is expected to remain within a configured operating range.
+    </p>
+
+    <h3>Fault Scenario</h3>
+    <ol>
+        <li>The sensor signal becomes invalid or exceeds the configured range.</li>
+        <li>The diagnostic monitor detects the fault.</li>
+        <li>The monitor reports the event to DEM.</li>
+        <li>DEM applies the configured debouncing algorithm.</li>
+        <li>The event and associated DTC status are updated.</li>
+        <li>Configured event memory records may be stored.</li>
+        <li>A diagnostic tester sends a ReadDTCInformation request.</li>
+        <li>DCM obtains the diagnostic information and returns a UDS response.</li>
+        <li>The technician checks the fault and investigates the sensor circuit.</li>
+    </ol>
+
+    <h3>Possible Troubleshooting Checks</h3>
+    <ul>
+        <li>Inspect sensor connector and wiring.</li>
+        <li>Check sensor supply and ground.</li>
+        <li>Measure the sensor output according to its specification.</li>
+        <li>Check ADC input and scaling in the ECU software.</li>
+        <li>Check diagnostic monitor thresholds.</li>
+        <li>Verify DEM event reporting and DTC status.</li>
+        <li>Read the DTC and relevant records using a diagnostic tester.</li>
+    </ul>
+</div>
+
+<div class="content-section">
+    <h2>16. Diagnostic Test Case Format</h2>
+
+    <p>
+        A diagnostic test case should define the preconditions,
+        test procedure and expected result.
+    </p>
+
+    <table>
+        <tr>
+            <th>Test Case</th>
+            <td>Verify DTC detection and reporting</td>
+        </tr>
+        <tr>
+            <th>Precondition</th>
+            <td>ECU is powered and diagnostic communication is available.</td>
+        </tr>
+        <tr>
+            <th>Test Input</th>
+            <td>Apply a controlled sensor fault condition.</td>
+        </tr>
+        <tr>
+            <th>Expected Monitor Result</th>
+            <td>Diagnostic monitor detects the configured fault.</td>
+        </tr>
+        <tr>
+            <th>Expected DEM Result</th>
+            <td>Event status changes according to configured debouncing.</td>
+        </tr>
+        <tr>
+            <th>Diagnostic Request</th>
+            <td>Send a supported ReadDTCInformation request (SID 0x19).</td>
+        </tr>
+        <tr>
+            <th>Expected Response</th>
+            <td>Configured DTC information is returned.</td>
+        </tr>
+        <tr>
+            <th>Pass Criteria</th>
+            <td>Observed behavior matches the ECU diagnostic specification.</td>
+        </tr>
+    </table>
+</div>
+
+<div class="content-section">
+    <h2>17. Diagnostic Troubleshooting Methodology</h2>
+
+    <ol>
+        <li><strong>Identify the problem:</strong> Record the reported fault, symptoms and operating conditions.</li>
+        <li><strong>Read diagnostic information:</strong> Retrieve supported DTCs and status information.</li>
+        <li><strong>Check communication:</strong> Verify CAN communication and UDS request/response behavior.</li>
+        <li><strong>Inspect hardware:</strong> Check power, ground, connectors, wiring and sensor signals.</li>
+        <li><strong>Inspect software:</strong> Verify monitor logic, event reporting and diagnostic configuration.</li>
+        <li><strong>Reproduce the fault:</strong> Apply a controlled test condition where safe and permitted.</li>
+        <li><strong>Verify the repair:</strong> Confirm that the monitor completes successfully and the fault is no longer active.</li>
+        <li><strong>Document results:</strong> Record test conditions, diagnostic responses and corrective actions.</li>
+    </ol>
+
+    <div class="note">
+        Clearing a DTC does not repair the underlying fault. Always
+        verify the actual fault condition and confirm correct monitor
+        behavior after repair.
+    </div>
+</div>
+
+<div class="content-section">
+    <h2>18. Placement Interview Questions and Answers</h2>
+
+    <h3>Q1. What is diagnostic testing?</h3>
+    <p>
+        Diagnostic testing verifies that faults are detected, reported,
+        stored and communicated correctly by an ECU.
+    </p>
+
+    <h3>Q2. What is diagnostic debouncing?</h3>
+    <p>
+        It filters temporary fault conditions using configured counter-
+        based or time-based qualification mechanisms.
+    </p>
+
+    <h3>Q3. What is a DTC?</h3>
+    <p>
+        A Diagnostic Trouble Code identifies a configured diagnostic
+        fault condition.
+    </p>
+
+    <h3>Q4. What is freeze frame data?</h3>
+    <p>
+        It is a configured record of operating parameters associated
+        with a diagnostic event.
+    </p>
+
+    <h3>Q5. What is the difference between pending and confirmed DTC?</h3>
+    <p>
+        A pending DTC indicates that applicable pending criteria have
+        been met. A confirmed DTC indicates that the configured
+        confirmation criteria have been satisfied.
+    </p>
+
+    <h3>Q6. What is the purpose of DEM?</h3>
+    <p>
+        DEM manages diagnostic events, event status, DTC-related
+        information and configured diagnostic records.
+    </p>
+
+    <h3>Q7. What is the purpose of DCM?</h3>
+    <p>
+        DCM manages diagnostic communication and processes supported
+        diagnostic services.
+    </p>
+
+    <h3>Q8. How do you troubleshoot a CAN communication failure?</h3>
+    <p>
+        Check ECU power and ground, CANH/CANL wiring, termination,
+        bitrate, transceiver operation, communication configuration
+        and CAN error information.
+    </p>
+
+    <h3>Q9. Why might a DTC not be stored?</h3>
+    <p>
+        The event may not be reported, debouncing criteria may not
+        be satisfied, or event-memory and storage configuration
+        may prevent the expected record.
+    </p>
+
+    <h3>Q10. Does clearing a DTC fix a fault?</h3>
+    <p>
+        No. Clearing removes supported stored diagnostic information;
+        it does not correct the physical or software cause of the fault.
+    </p>
+</div>
+
+<div class="content-section">
+    <h2>19. Quick Knowledge Check</h2>
+
+    <p><strong>1. Which module manages diagnostic events?</strong></p>
+    <p>A. DCM<br>B. DEM<br>C. CanIf<br>D. PduR</p>
+    <p><strong>Answer:</strong> B. DEM</p>
+
+    <p><strong>2. Which service reads DTC information?</strong></p>
+    <p>A. 0x10<br>B. 0x19<br>C. 0x22<br>D. 0x27</p>
+    <p><strong>Answer:</strong> B. 0x19</p>
+
+    <p><strong>3. What is the purpose of debouncing?</strong></p>
+    <p>A. Increase CAN bitrate<br>B. Filter temporary fault conditions<br>C. Reset ECU<br>D. Configure ADC</p>
+    <p><strong>Answer:</strong> B. Filter temporary fault conditions</p>
+
+    <p><strong>4. What does freeze frame data contain?</strong></p>
+    <p>A. ECU source code<br>B. Diagnostic operating-condition records<br>C. CAN termination values<br>D. Bootloader program</p>
+    <p><strong>Answer:</strong> B. Diagnostic operating-condition records</p>
+
+    <p><strong>5. What is a common resistance measurement across CANH and CANL on a properly terminated, powered-down high-speed CAN bus?</strong></p>
+    <p>A. 10 ohms<br>B. 60 ohms<br>C. 1200 ohms<br>D. 1 megaohm</p>
+    <p><strong>Answer:</strong> B. Approximately 60 ohms</p>
+
+    <p><strong>6. Does clearing a DTC repair the fault?</strong></p>
+    <p>A. Always<br>B. No<br>C. Only in CAN FD<br>D. Only in programming session</p>
+    <p><strong>Answer:</strong> B. No</p>
+</div>
+
+<div class="content-section">
+    <h2>20. Lesson Summary</h2>
+    <ul>
+        <li>Diagnostic testing verifies ECU fault detection and reporting.</li>
+        <li>Diagnostic monitors report events to DEM.</li>
+        <li>Debouncing qualifies fault conditions.</li>
+        <li>DEM manages event status and DTC-related information.</li>
+        <li>Freeze frame and extended data help analyze faults.</li>
+        <li>DCM provides diagnostic communication through UDS.</li>
+        <li>CAN and ISO-TP troubleshooting helps identify communication problems.</li>
+        <li>Hardware and software checks are both important in ECU troubleshooting.</li>
+        <li>Clearing a DTC does not repair the underlying fault.</li>
+    </ul>
+</div>
+
+<div class="navigation">
+    <a href="L05_UDS_Diagnostic_Services_and_CAN_Diagnostics.html">← Previous Lesson</a>
+    <a href="index.html">Chapter 9 Index</a>
+    <a href="../ch10_AUTOSAR_Methodology_and_Configuration_Tools/index.html">Next Chapter →</a>
+</div>
+
+</body>
+</html>
