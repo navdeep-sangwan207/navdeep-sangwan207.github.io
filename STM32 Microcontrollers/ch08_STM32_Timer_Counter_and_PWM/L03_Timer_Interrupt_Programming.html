@@ -1,1 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 3 - Timer Interrupt Programming | NS Learning Hub</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+
+        .content-section {
+            background: #fff;
+            border: 1px solid #e0e6ef;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 18px 0;
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #e5edf8;
+            padding-bottom: 8px;
+        }
+
+        h3 { color: #1769aa; }
+
+        pre {
+            background: #17212f;
+            color: #e8f1ff;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e0a000;
+            padding: 12px;
+            margin: 15px 0;
+        }
+
+        .example {
+            background: #eef6ff;
+            border-left: 5px solid #007bff;
+            padding: 12px;
+            margin: 15px 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th { background: #eaf2ff; }
+
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+
+        .navigation a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 17px;
+            border-radius: 6px;
+        }
+
+        .navigation a:hover { background: #007bff; }
+    </style>
+</head>
+
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 3: Timer Interrupt Programming</h1>
+        <p>
+            Learn how to configure STM32 timer interrupts,
+            generate periodic events, use HAL callbacks and
+            implement interrupt-driven embedded applications.
+        </p>
+    </header>
+
+    <p>
+        <a href="index.html">← Back to Chapter 8</a> |
+        <a href="../stm32-microcontrollers.html">STM32 Course Home</a>
+    </p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand timer interrupts and update events.</li>
+            <li>Learn the timer interrupt execution sequence.</li>
+            <li>Configure timer interrupts using STM32 HAL.</li>
+            <li>Understand the timer IRQ handler and HAL callback.</li>
+            <li>Configure NVIC for timer interrupt handling.</li>
+            <li>Generate periodic events using a hardware timer.</li>
+            <li>Debug common timer interrupt problems.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Is a Timer Interrupt?</h2>
+
+        <p>
+            A timer interrupt is a processor interrupt request
+            generated when a configured timer event occurs
+            and the corresponding interrupt source is enabled.
+        </p>
+
+        <p>
+            A timer can generate periodic update events after
+            the counter reaches its configured limit.
+            When update interrupt generation is enabled,
+            the timer can request CPU service.
+        </p>
+
+        <h3>Example</h3>
+        <p>
+            Suppose an STM32 application must toggle an LED
+            every 500 milliseconds. A timer can generate an
+            update interrupt at a suitable frequency, and
+            the callback can signal the main program to
+            toggle the LED.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Timer Interrupt Execution Sequence</h2>
+
+        <pre><code>
+       Timer Clock
+            |
+            v
+       Counter Starts
+            |
+            v
+       Counter Reaches ARR
+            |
+            v
+       Update Event Occurs
+            |
+            v
+       Update Interrupt Enabled?
+            |
+            v
+       NVIC Accepts Request
+            |
+            v
+       Timer IRQ Handler
+            |
+            v
+       HAL Timer Handler
+            |
+            v
+       HAL Callback
+            |
+            v
+       Return to Main Program
+        </code></pre>
+
+        <p>
+            The exact sequence depends on timer configuration,
+            interrupt masking, priority and the STM32 HAL
+            implementation.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Requirements for Timer Interrupt Generation</h2>
+
+        <p>
+            A timer interrupt generally requires the following
+            configuration steps:
+        </p>
+
+        <ol>
+            <li>Enable the timer peripheral clock.</li>
+            <li>Configure the timer prescaler and auto-reload value.</li>
+            <li>Enable the timer update interrupt source.</li>
+            <li>Configure the corresponding NVIC interrupt.</li>
+            <li>Start the timer in interrupt mode.</li>
+            <li>Implement the correct interrupt handler and callback.</li>
+        </ol>
+
+        <div class="note">
+            Enabling the timer peripheral alone does not
+            automatically enable its update interrupt.
+            The peripheral interrupt source and NVIC must
+            both be configured.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Timer Interrupt Registers</h2>
+
+        <table>
+            <tr>
+                <th>Register</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>PSC</td>
+                <td>Sets the timer prescaler.</td>
+            </tr>
+            <tr>
+                <td>ARR</td>
+                <td>Sets the auto-reload value.</td>
+            </tr>
+            <tr>
+                <td>CNT</td>
+                <td>Stores the current counter value.</td>
+            </tr>
+            <tr>
+                <td>DIER</td>
+                <td>Enables timer interrupt and DMA request sources.</td>
+            </tr>
+            <tr>
+                <td>SR</td>
+                <td>Contains timer status flags, including UIF on common timers.</td>
+            </tr>
+            <tr>
+                <td>CR1</td>
+                <td>Controls timer operation, including counter enable.</td>
+            </tr>
+        </table>
+
+        <h3>Important Bits</h3>
+
+        <ul>
+            <li><strong>UIE:</strong> Update interrupt enable bit in DIER.</li>
+            <li><strong>UIF:</strong> Update interrupt/status flag in SR.</li>
+            <li><strong>CEN:</strong> Counter enable bit in CR1.</li>
+        </ul>
+
+        <p>
+            These names are common in STM32 timer implementations.
+            Verify register availability and flag-clearing behavior
+            for the selected timer.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Timer Interrupt Frequency Calculation</h2>
+
+        <p>
+            For a typical up-counting timer time base:
+        </p>
+
+        <p><strong>
+            Update frequency = Timer clock /
+            [(PSC + 1) × (ARR + 1)]
+        </strong></p>
+
+        <div class="example">
+            <h3>Example: 1 ms Timer Interrupt</h3>
+
+            <p>Timer clock = 84 MHz</p>
+            <p>PSC = 83</p>
+            <p>ARR = 999</p>
+
+            <p>
+                Update frequency =
+                84,000,000 / (84 × 1000)
+            </p>
+
+            <p><strong>Update frequency = 1000 Hz</strong></p>
+            <p><strong>Update period = 1 ms</strong></p>
+        </div>
+
+        <p>
+            If the callback is executed once for every update
+            interrupt, it will run approximately 1000 times
+            per second, assuming no interrupt events are
+            suppressed or otherwise affected by configuration.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Timer Interrupt Configuration Using STM32CubeMX</h2>
+
+        <ol>
+            <li>Open the STM32CubeIDE project.</li>
+            <li>Open the device configuration (.ioc) file.</li>
+            <li>Select a suitable timer, such as TIM2.</li>
+            <li>Enable the timer's internal clock source.</li>
+            <li>Configure the prescaler.</li>
+            <li>Configure the counter period.</li>
+            <li>Open the NVIC settings for the timer.</li>
+            <li>Enable the timer global interrupt, if available.</li>
+            <li>Generate the project code.</li>
+            <li>Build and inspect the generated initialization code.</li>
+        </ol>
+
+        <div class="note">
+            Exact CubeMX menu names and timer options vary
+            between STM32 families and CubeIDE versions.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. STM32 HAL Timer Interrupt Programming</h2>
+
+        <h3>Step 1: Declare Timer Handle</h3>
+
+        <pre><code>#include "main.h"
+
+TIM_HandleTypeDef htim2;
+
+volatile uint8_t timer_event = 0;</code></pre>
+
+        <h3>Step 2: Initialize Timer</h3>
+
+        <pre><code>void MX_TIM2_Init(void)
+{
+    htim2.Instance = TIM2;
+
+    htim2.Init.Prescaler = 83;
+    htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim2.Init.Period = 999;
+
+    htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+
+    htim2.Init.AutoReloadPreload =
+        TIM_AUTORELOAD_PRELOAD_DISABLE;
+
+    if (HAL_TIM_Base_Init(&amp;htim2) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}</code></pre>
+
+        <h3>Step 3: Start Timer in Interrupt Mode</h3>
+
+        <pre><code>HAL_TIM_Base_Start_IT(&amp;htim2);</code></pre>
+
+        <h3>Step 4: Implement the HAL Callback</h3>
+
+        <pre><code>void HAL_TIM_PeriodElapsedCallback(
+    TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM2)
+    {
+        timer_event = 1;
+    }
+}</code></pre>
+
+        <h3>Step 5: Process Event in Main Loop</h3>
+
+        <pre><code>while (1)
+{
+    if (timer_event != 0)
+    {
+        timer_event = 0;
+
+        HAL_GPIO_TogglePin(
+            GPIOA,
+            GPIO_PIN_5
+        );
+    }
+}</code></pre>
+
+        <div class="note">
+            This flag-based example can coalesce multiple timer
+            events into one pending event. If every timer event
+            must be accounted for, use an appropriate counter
+            or queue and protect shared data where necessary.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Timer IRQ Handler</h2>
+
+        <p>
+            The timer IRQ handler is the interrupt service
+            routine associated with the timer's interrupt vector.
+        </p>
+
+        <h3>Example: TIM2 Interrupt Handler</h3>
+
+        <pre><code>void TIM2_IRQHandler(void)
+{
+    HAL_TIM_IRQHandler(&amp;htim2);
+}</code></pre>
+
+        <p>
+            The HAL handler processes the timer interrupt
+            condition and dispatches the appropriate callback.
+        </p>
+
+        <h3>Typical HAL Interrupt Flow</h3>
+
+        <pre><code>
+TIM2 Update Event
+       |
+       v
+TIM2_IRQHandler()
+       |
+       v
+HAL_TIM_IRQHandler()
+       |
+       v
+HAL_TIM_PeriodElapsedCallback()
+       |
+       v
+Application Event Handling
+        </code></pre>
+
+        <div class="note">
+            When using HAL, let HAL manage the timer interrupt
+            flag according to its driver implementation.
+            Do not independently clear the same flag without
+            understanding the handler's behavior.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. NVIC Configuration</h2>
+
+        <p>
+            The Nested Vectored Interrupt Controller (NVIC)
+            controls the enabling, priority and handling of
+            processor interrupts.
+        </p>
+
+        <h3>HAL Configuration Example</h3>
+
+        <pre><code>HAL_NVIC_SetPriority(TIM2_IRQn, 2, 0);
+
+HAL_NVIC_EnableIRQ(TIM2_IRQn);</code></pre>
+
+        <p>
+            The priority values must be valid for the selected
+            STM32 device and its implemented priority bits.
+        </p>
+
+        <h3>CMSIS Configuration Example</h3>
+
+        <pre><code>NVIC_SetPriority(TIM2_IRQn, 2);
+
+NVIC_EnableIRQ(TIM2_IRQn);</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Practical Project: LED Blinking Using Timer Interrupt</h2>
+
+        <h3>Objective</h3>
+        <p>
+            Generate a periodic timer interrupt and toggle
+            an LED every 500 milliseconds.
+        </p>
+
+        <h3>Configuration</h3>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Value</th>
+            </tr>
+            <tr>
+                <td>Timer</td>
+                <td>TIM2</td>
+            </tr>
+            <tr>
+                <td>Timer clock</td>
+                <td>84 MHz</td>
+            </tr>
+            <tr>
+                <td>Prescaler</td>
+                <td>8399</td>
+            </tr>
+            <tr>
+                <td>Auto-reload</td>
+                <td>4999</td>
+            </tr>
+            <tr>
+                <td>Update frequency</td>
+                <td>2 Hz</td>
+            </tr>
+            <tr>
+                <td>Update period</td>
+                <td>500 ms</td>
+            </tr>
+        </table>
+
+        <h3>Calculation</h3>
+
+        <p>
+            Counter frequency = 84 MHz / 8400 = 10 kHz
+        </p>
+
+        <p>
+            Update frequency = 10,000 / 5000 = 2 Hz
+        </p>
+
+        <h3>Application Code</h3>
+
+        <pre><code>volatile uint8_t led_event = 0;
+
+void HAL_TIM_PeriodElapsedCallback(
+    TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM2)
+    {
+        led_event = 1;
+    }
+}
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_TIM2_Init();
+
+    if (HAL_TIM_Base_Start_IT(&amp;htim2) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    while (1)
+    {
+        if (led_event != 0)
+        {
+            led_event = 0;
+
+            HAL_GPIO_TogglePin(
+                GPIOA,
+                GPIO_PIN_5
+            );
+        }
+    }
+}</code></pre>
+
+        <div class="note">
+            The GPIO pin must be configured as an output.
+            The timer clock must be 84 MHz for these example
+            values. Configure TIM2's NVIC interrupt and
+            interrupt handler as described above. The example
+            assumes the LED is connected to the selected pin.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Polling vs Timer Interrupt</h2>
+
+        <table>
+            <tr>
+                <th>Polling</th>
+                <th>Timer Interrupt</th>
+            </tr>
+            <tr>
+                <td>CPU repeatedly checks a condition.</td>
+                <td>CPU responds when an interrupt is accepted.</td>
+            </tr>
+            <tr>
+                <td>Can waste CPU time in continuous checks.</td>
+                <td>Can allow the CPU to perform other work between events.</td>
+            </tr>
+            <tr>
+                <td>Timing depends on polling loop behavior.</td>
+                <td>Hardware timer provides a defined event interval.</td>
+            </tr>
+            <tr>
+                <td>Simple for basic applications.</td>
+                <td>Useful for periodic and event-driven applications.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Common Timer Interrupt Problems</h2>
+
+        <table>
+            <tr>
+                <th>Problem</th>
+                <th>Possible Cause</th>
+                <th>Solution</th>
+            </tr>
+            <tr>
+                <td>Callback not executing</td>
+                <td>Timer interrupt not enabled.</td>
+                <td>Check Start_IT and timer interrupt source.</td>
+            </tr>
+            <tr>
+                <td>IRQ handler not reached</td>
+                <td>NVIC disabled or incorrect vector.</td>
+                <td>Check NVIC and IRQ handler name.</td>
+            </tr>
+            <tr>
+                <td>Wrong interrupt interval</td>
+                <td>Incorrect timer clock or PSC/ARR.</td>
+                <td>Recalculate using actual timer clock.</td>
+            </tr>
+            <tr>
+                <td>Repeated interrupt</td>
+                <td>Interrupt condition not handled correctly.</td>
+                <td>Inspect timer status and HAL dispatch.</td>
+            </tr>
+            <tr>
+                <td>LED does not toggle</td>
+                <td>GPIO configuration or application flag issue.</td>
+                <td>Check GPIO output and callback execution.</td>
+            </tr>
+            <tr>
+                <td>Unexpected timing</td>
+                <td>Long ISR or higher-priority interrupt activity.</td>
+                <td>Measure execution time and review priorities.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Placement-Oriented Interview Questions</h2>
+
+        <h3>Q1. What is a timer interrupt?</h3>
+        <p>
+            It is an interrupt request generated by a timer
+            event when the corresponding interrupt source is enabled.
+        </p>
+
+        <h3>Q2. What is the purpose of HAL_TIM_Base_Start_IT()?</h3>
+        <p>
+            It starts the timer in interrupt mode.
+        </p>
+
+        <h3>Q3. What is HAL_TIM_PeriodElapsedCallback()?</h3>
+        <p>
+            It is a HAL callback invoked when the timer's
+            period-elapsed condition is processed.
+        </p>
+
+        <h3>Q4. What is TIM2_IRQHandler()?</h3>
+        <p>
+            It is the interrupt handler associated with
+            the TIM2 interrupt vector on devices that provide it.
+        </p>
+
+        <h3>Q5. What is the role of NVIC?</h3>
+        <p>
+            NVIC manages processor interrupt enabling,
+            priorities and interrupt handling.
+        </p>
+
+        <h3>Q6. Why must both the timer source and NVIC be enabled?</h3>
+        <p>
+            The timer generates the interrupt request, while
+            NVIC controls whether the processor can accept
+            the corresponding interrupt.
+        </p>
+
+        <h3>Q7. Can a timer generate periodic interrupts?</h3>
+        <p>
+            Yes. The timer can generate repeated update events
+            at a frequency determined by its clock, prescaler
+            and auto-reload value.
+        </p>
+
+        <h3>Q8. Why should lengthy operations be avoided in callbacks?</h3>
+        <p>
+            Long callback execution increases interrupt
+            latency and can delay other time-critical events.
+        </p>
+
+        <h3>Q9. What is the difference between Start and Start_IT?</h3>
+        <p>
+            Start enables timer operation without enabling
+            the corresponding HAL interrupt-based operation.
+            Start_IT starts the timer with update interrupt
+            handling enabled.
+        </p>
+
+        <h3>Q10. How do you debug a timer interrupt?</h3>
+        <p>
+            Inspect timer configuration, update flags,
+            interrupt enable bits, NVIC settings, IRQ handler
+            and callback execution.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Practical Exercises</h2>
+
+        <ol>
+            <li>Configure TIM2 to generate a 1 ms update interrupt.</li>
+            <li>Generate a 500 ms periodic timer event.</li>
+            <li>Toggle an LED using a timer callback and main-loop flag.</li>
+            <li>Explain the timer IRQ handler and HAL callback sequence.</li>
+            <li>Configure NVIC priority for a timer interrupt.</li>
+            <li>Debug a timer interrupt that does not execute.</li>
+            <li>Compare timer polling and interrupt-based operation.</li>
+            <li>Explain why a simple event flag can lose repeated events.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Lesson Summary</h2>
+
+        <ul>
+            <li>Timer update events can generate interrupt requests.</li>
+            <li>Timer interrupt source and NVIC must be configured.</li>
+            <li>HAL_TIM_Base_Start_IT() starts timer interrupt operation.</li>
+            <li>The IRQ handler forwards the interrupt to HAL.</li>
+            <li>HAL callback provides an application-level event hook.</li>
+            <li>Keep interrupt callbacks short and predictable.</li>
+            <li>Use flags or queues to defer application processing.</li>
+            <li>Correct timer clock and PSC/ARR values determine timing.</li>
+        </ul>
+    </section>
+
+    <nav class="navigation">
+        <a href="L02_Timer_Prescaler_Auto_Reload_and_Update_Event.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter 8 Index
+        </a>
+
+        <a href="L04_Input_Capture_and_Output_Compare.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
