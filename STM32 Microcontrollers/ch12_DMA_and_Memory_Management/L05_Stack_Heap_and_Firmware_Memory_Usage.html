@@ -1,1 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 5 - Stack, Heap and Firmware Memory Usage</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dce5f0;
+            border-radius: 9px;
+        }
+        h2, h3 { color: #174ea6; }
+        .info-box {
+            background: #eef6ff;
+            border-left: 5px solid #174ea6;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 5px solid #e09b24;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        pre {
+            background: #172033;
+            color: #e8f0ff;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 16px;
+            border-radius: 6px;
+        }
+        .lesson-nav a:hover { background: #007bff; }
+    </style>
+</head>
 
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 5: Stack, Heap and Firmware Memory Usage</h1>
+        <p>STM32 Microcontrollers – Chapter 12</p>
+        <p>Understand runtime memory allocation, stack usage, heap management and firmware optimization.</p>
+    </header>
+
+    <p><a href="index.html">← Back to Chapter 12</a></p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand stack and heap memory.</li>
+            <li>Differentiate static and dynamic memory allocation.</li>
+            <li>Understand function calls and stack frames.</li>
+            <li>Identify stack overflow and heap fragmentation.</li>
+            <li>Understand recursion and local variable memory usage.</li>
+            <li>Estimate firmware memory requirements.</li>
+            <li>Inspect memory usage using STM32CubeIDE.</li>
+            <li>Apply memory optimization techniques in embedded firmware.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. Runtime Memory Organization</h2>
+
+        <p>
+            During program execution, an STM32 application
+            uses different memory areas for instructions,
+            variables, function calls and dynamic allocation.
+        </p>
+
+        <pre><code>             STM32 MEMORY
+                  |
+       +----------+----------+
+       |                     |
+       v                     v
+    FLASH MEMORY          SRAM MEMORY
+       |                     |
+       |              +------+------+
+       |              |      |      |
+       v              v      v      v
+     .text          .data  .bss   Runtime
+     .rodata                       Memory
+                                     |
+                            +--------+--------+
+                            |                 |
+                            v                 v
+                          STACK              HEAP
+                       Function calls    Dynamic memory
+                       Local variables   malloc/free</code></pre>
+
+        <p>
+            The exact layout and stack/heap arrangement
+            are determined by the linker script, startup
+            code and runtime library.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>3. What Is Stack Memory?</h2>
+
+        <p>
+            The stack is a memory area used to manage
+            function calls and temporary execution data.
+            It commonly stores return information,
+            saved registers and automatic local variables.
+        </p>
+
+        <h3>Stack Characteristics</h3>
+        <ul>
+            <li>Supports function calls and returns.</li>
+            <li>Stores automatic local variables when allocated in memory.</li>
+            <li>Stores saved registers and return context.</li>
+            <li>Supports interrupt and exception context stacking.</li>
+            <li>Typically follows a last-in, first-out model.</li>
+            <li>On Cortex-M, the stack normally grows toward lower addresses.</li>
+        </ul>
+
+        <h3>Example</h3>
+
+        <pre><code>#include &lt;stdint.h&gt;
+
+void Calculate(void)
+{
+    uint32_t a = 10;
+    uint32_t b = 20;
+    uint32_t result;
+
+    result = a + b;
+}
+
+int main(void)
+{
+    Calculate();
+
+    while (1)
+    {
+    }
+}</code></pre>
+
+        <p>
+            The local variables have automatic storage
+            duration. The compiler may keep some values
+            in registers rather than placing them in
+            stack memory.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>4. How Stack Works During Function Calls</h2>
+
+        <p>
+            A function call may create a stack frame
+            containing local storage, saved registers
+            and other information required by the
+            calling convention.
+        </p>
+
+        <pre><code>main()
+  |
+  | calls Function_A()
+  v
+Function_A()
+  |
+  | calls Function_B()
+  v
+Function_B()
+  |
+  v
+Function_B() returns
+  |
+  v
+Function_A() resumes
+  |
+  v
+Function_A() returns
+  |
+  v
+main() resumes</code></pre>
+
+        <p>
+            When a function returns, its active stack
+            frame is released according to the compiler's
+            calling convention.
+        </p>
+
+        <h3>Stack Frame May Contain</h3>
+        <ul>
+            <li>Return address or return-state information.</li>
+            <li>Saved registers.</li>
+            <li>Local variables that require stack storage.</li>
+            <li>Spilled register values.</li>
+            <li>Temporary data and alignment padding.</li>
+        </ul>
+
+        <div class="info-box">
+            The exact stack frame layout is compiler-
+            and optimization-dependent. Do not assume
+            every local variable is stored on the stack.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>5. What Is Heap Memory?</h2>
+
+        <p>
+            The heap is a memory region used for dynamic
+            memory allocation during program execution.
+            In C, common dynamic memory functions are
+            <code>malloc()</code>, <code>calloc()</code>,
+            <code>realloc()</code> and <code>free()</code>.
+        </p>
+
+        <h3>Heap Characteristics</h3>
+        <ul>
+            <li>Supports runtime memory allocation.</li>
+            <li>Memory remains allocated until released or reclaimed by the runtime.</li>
+            <li>Can be used for variable-size data structures.</li>
+            <li>May suffer from fragmentation.</li>
+            <li>Requires careful allocation failure handling.</li>
+        </ul>
+
+        <h3>Example</h3>
+
+        <pre><code>#include &lt;stdlib.h&gt;
+#include &lt;stdint.h&gt;
+
+void Heap_Example(void)
+{
+    uint32_t *ptr;
+
+    ptr = malloc(5U * sizeof(uint32_t));
+
+    if (ptr != NULL)
+    {
+        ptr[0] = 10;
+        ptr[1] = 20;
+
+        free(ptr);
+        ptr = NULL;
+    }
+}</code></pre>
+
+        <div class="warning-box">
+            Embedded systems often avoid frequent
+            dynamic allocation because of limited RAM,
+            fragmentation, unpredictable allocation
+            time and failure-handling complexity.
+            Some projects use fixed-size memory pools
+            or static allocation instead.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Stack vs Heap</h2>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>Stack</th>
+                <th>Heap</th>
+            </tr>
+            <tr>
+                <td>Purpose</td>
+                <td>Function execution and automatic storage</td>
+                <td>Dynamic allocation</td>
+            </tr>
+            <tr>
+                <td>Management</td>
+                <td>Compiler/runtime calling convention</td>
+                <td>Allocator and application</td>
+            </tr>
+            <tr>
+                <td>Lifetime</td>
+                <td>Usually limited to function or execution context</td>
+                <td>Until explicitly released or reclaimed</td>
+            </tr>
+            <tr>
+                <td>Typical access</td>
+                <td>Local variables and saved context</td>
+                <td>Allocated objects through pointers</td>
+            </tr>
+            <tr>
+                <td>Common problem</td>
+                <td>Stack overflow</td>
+                <td>Fragmentation and leaks</td>
+            </tr>
+            <tr>
+                <td>Embedded usage</td>
+                <td>Required for normal execution</td>
+                <td>Optional and application-dependent</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Static vs Dynamic Memory Allocation</h2>
+
+        <h3>Static Allocation</h3>
+
+        <p>
+            Static allocation reserves storage with
+            a fixed size and lifetime determined by
+            the program's declarations and memory layout.
+        </p>
+
+        <pre><code>#include &lt;stdint.h&gt;
+
+static uint8_t sensor_buffer[100];
+
+void Process_Data(void)
+{
+    sensor_buffer[0] = 25;
+}</code></pre>
+
+        <h3>Dynamic Allocation</h3>
+
+        <p>
+            Dynamic allocation requests memory while
+            the application is running.
+        </p>
+
+        <pre><code>#include &lt;stdlib.h&gt;
+#include &lt;stdint.h&gt;
+
+void Allocate_Buffer(void)
+{
+    uint8_t *buffer = malloc(100U);
+
+    if (buffer != NULL)
+    {
+        buffer[0] = 25U;
+
+        free(buffer);
+        buffer = NULL;
+    }
+}</code></pre>
+
+        <table>
+            <tr>
+                <th>Static Allocation</th>
+                <th>Dynamic Allocation</th>
+            </tr>
+            <tr>
+                <td>Size is fixed at build time.</td>
+                <td>Size can be selected at runtime.</td>
+            </tr>
+            <tr>
+                <td>Predictable memory usage.</td>
+                <td>Allocation may fail at runtime.</td>
+            </tr>
+            <tr>
+                <td>No general-purpose heap fragmentation.</td>
+                <td>Can cause heap fragmentation.</td>
+            </tr>
+            <tr>
+                <td>Often preferred for predictable embedded systems.</td>
+                <td>Useful when variable-size allocation is required.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Stack Overflow</h2>
+
+        <p>
+            Stack overflow occurs when execution requires
+            more stack space than the configured stack
+            region can provide.
+        </p>
+
+        <h3>Common Causes</h3>
+        <ul>
+            <li>Large local arrays.</li>
+            <li>Deep function call chains.</li>
+            <li>Uncontrolled recursion.</li>
+            <li>Nested interrupts with significant context usage.</li>
+            <li>Large local structures.</li>
+            <li>Insufficient RTOS task stack allocation.</li>
+        </ul>
+
+        <h3>Example of Risky Code</h3>
+
+        <pre><code>void Process_Data(void)
+{
+    uint8_t large_buffer[10000];
+
+    large_buffer[0] = 10;
+}</code></pre>
+
+        <p>
+            A large automatic array can consume
+            substantial stack space. Whether this
+            overflows depends on the configured stack
+            size and other runtime usage.
+        </p>
+
+        <h3>Recursive Function Example</h3>
+
+        <pre><code>void Recursive_Function(void)
+{
+    Recursive_Function();
+}</code></pre>
+
+        <p>
+            This function has no terminating condition
+            and can exhaust the available stack.
+        </p>
+
+        <h3>Prevention</h3>
+        <ul>
+            <li>Estimate worst-case stack usage.</li>
+            <li>Avoid uncontrolled recursion.</li>
+            <li>Move large buffers to suitable static storage or memory pools.</li>
+            <li>Check nested interrupt and task stack requirements.</li>
+            <li>Use stack watermark or guard techniques where available.</li>
+            <li>Inspect linker and debugger memory information.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Heap Fragmentation and Memory Leak</h2>
+
+        <h3>Heap Fragmentation</h3>
+
+        <p>
+            Heap fragmentation occurs when free memory
+            becomes divided into smaller non-contiguous
+            blocks. A large allocation may fail even
+            when the total free memory appears sufficient.
+        </p>
+
+        <pre><code>Initial Heap:
++--------------------------------+
+|             FREE               |
++--------------------------------+
+
+After Allocations:
++----------+--------+-------------+
+| Used A   | Free   | Used B      |
++----------+--------+-------------+
+
+After Freeing A:
++----------+--------+-------------+
+| Free     | Free   | Used B      |
++----------+--------+-------------+</code></pre>
+
+        <h3>Memory Leak</h3>
+
+        <p>
+            A memory leak occurs when allocated memory
+            is no longer reachable by the application
+            but has not been released.
+        </p>
+
+        <pre><code>#include &lt;stdlib.h&gt;
+
+void Memory_Leak_Example(void)
+{
+    int *ptr = malloc(10U * sizeof(int));
+
+    if (ptr != NULL)
+    {
+        ptr[0] = 100;
+
+        /* Missing free(ptr). */
+    }
+}</code></pre>
+
+        <h3>Prevention</h3>
+        <ul>
+            <li>Release allocated memory when no longer required.</li>
+            <li>Check every allocation result.</li>
+            <li>Avoid repeated allocation and deallocation in critical real-time paths.</li>
+            <li>Use fixed-size pools for predictable workloads.</li>
+            <li>Track allocation ownership carefully.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Firmware Memory Usage</h2>
+
+        <p>
+            Firmware memory usage is generally evaluated
+            in terms of Flash and RAM consumption.
+        </p>
+
+        <table>
+            <tr>
+                <th>Memory Type</th>
+                <th>Common Contents</th>
+            </tr>
+            <tr>
+                <td>Flash</td>
+                <td>Code, read-only data, initialized-data load image and constants.</td>
+            </tr>
+            <tr>
+                <td>RAM</td>
+                <td>Writable data, BSS, stack, heap and runtime buffers.</td>
+            </tr>
+        </table>
+
+        <h3>Example Memory Report</h3>
+
+        <pre><code>Program Size:
+Code      = 32000 bytes
+RO-data   =  4000 bytes
+RW-data   =  1200 bytes
+ZI-data   =  2800 bytes
+
+Flash Load Usage:
+32000 + 4000 + 1200
+= 37200 bytes
+
+Static RAM Usage:
+1200 + 2800
+= 4000 bytes</code></pre>
+
+        <p>
+            This is an illustrative report. Actual
+            toolchains may classify sections differently.
+            Stack and heap reservations must also be
+            considered when estimating total RAM needs.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Estimating Stack Usage</h2>
+
+        <p>
+            Stack requirements should be estimated
+            from the worst-case execution path, including
+            function calls, interrupts and task contexts.
+        </p>
+
+        <h3>Example Estimate</h3>
+
+        <table>
+            <tr>
+                <th>Component</th>
+                <th>Illustrative Usage</th>
+            </tr>
+            <tr>
+                <td>Main function and call chain</td>
+                <td>200 bytes</td>
+            </tr>
+            <tr>
+                <td>Local variables and temporary data</td>
+                <td>150 bytes</td>
+            </tr>
+            <tr>
+                <td>Interrupt context allowance</td>
+                <td>100 bytes</td>
+            </tr>
+            <tr>
+                <td>Safety margin</td>
+                <td>150 bytes</td>
+            </tr>
+            <tr>
+                <th>Estimated Total</th>
+                <th>600 bytes</th>
+            </tr>
+        </table>
+
+        <p>
+            The estimate is illustrative, not a universal
+            stack-size recommendation. Actual usage
+            should be measured or analyzed for the
+            compiler, optimization level and application.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Firmware Memory Optimization</h2>
+
+        <h3>Flash Optimization</h3>
+        <ul>
+            <li>Enable suitable compiler optimization.</li>
+            <li>Remove unused code and data through linker garbage collection where appropriate.</li>
+            <li>Avoid unnecessary large lookup tables.</li>
+            <li>Use appropriate integer types.</li>
+            <li>Review library and debugging code included in Release builds.</li>
+        </ul>
+
+        <h3>RAM Optimization</h3>
+        <ul>
+            <li>Use appropriately sized buffers.</li>
+            <li>Reuse temporary buffers when safe.</li>
+            <li>Avoid unnecessary global arrays.</li>
+            <li>Limit stack-heavy local variables.</li>
+            <li>Use static allocation for predictable data requirements.</li>
+            <li>Review task stack sizes in RTOS applications.</li>
+        </ul>
+
+        <div class="warning-box">
+            Optimization must not compromise correctness.
+            Do not shrink stack sizes or buffers without
+            checking worst-case usage and transfer rates.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Memory Usage Inspection in STM32CubeIDE</h2>
+
+        <ol>
+            <li>Build the STM32 project.</li>
+            <li>Review the build console memory summary.</li>
+            <li>Open the generated linker map file.</li>
+            <li>Inspect Flash and RAM section sizes.</li>
+            <li>Check linker errors for region overflow.</li>
+            <li>Inspect variable addresses in the debugger.</li>
+            <li>Review stack and heap configuration in the linker script or startup files.</li>
+            <li>Use runtime stack watermarking or guards if implemented.</li>
+        </ol>
+
+        <h3>Common Files and Settings</h3>
+
+        <table>
+            <tr>
+                <th>Item</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>Linker script (.ld)</td>
+                <td>Defines memory regions and section placement.</td>
+            </tr>
+            <tr>
+                <td>Map file (.map)</td>
+                <td>Shows section and symbol memory usage.</td>
+            </tr>
+            <tr>
+                <td>Startup assembly file</td>
+                <td>Defines reset handling and initial stack setup.</td>
+            </tr>
+            <tr>
+                <td>Build memory summary</td>
+                <td>Reports program and data size.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>14. RTOS Stack Considerations</h2>
+
+        <p>
+            In an RTOS application, each task normally
+            has its own stack. Stack size must be selected
+            according to task execution requirements.
+        </p>
+
+        <pre><code>Task 1
+  |
+  +-- Task 1 Stack
+
+Task 2
+  |
+  +-- Task 2 Stack
+
+Task 3
+  |
+  +-- Task 3 Stack
+
+Interrupt Handling
+  |
+  +-- Core/Handler Stack Context</code></pre>
+
+        <ul>
+            <li>Each task requires sufficient stack memory.</li>
+            <li>Task stack overflow can corrupt application data.</li>
+            <li>FreeRTOS provides stack high-water-mark APIs.</li>
+            <li>Stack overflow checking can be enabled in FreeRTOS configuration.</li>
+            <li>Interrupt stack behavior depends on the Cortex-M core and RTOS port.</li>
+        </ul>
+
+        <div class="info-box">
+            FreeRTOS task stack-size units depend on
+            the API and port configuration. In common
+            FreeRTOS APIs, stack depth is specified
+            in words rather than bytes. Check the
+            selected port and version.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Placement Interview Questions and Answers</h2>
+
+        <h3>Q1. What is stack memory?</h3>
+        <p>
+            Stack memory supports function calls,
+            saved context and automatic local storage.
+        </p>
+
+        <h3>Q2. What is heap memory?</h3>
+        <p>
+            Heap memory is used for dynamic memory
+            allocation during program execution.
+        </p>
+
+        <h3>Q3. What is the main difference between stack and heap?</h3>
+        <p>
+            Stack usage is managed through function
+            execution and calling conventions, whereas
+            heap memory is managed by a dynamic allocator.
+        </p>
+
+        <h3>Q4. What is stack overflow?</h3>
+        <p>
+            It occurs when stack usage exceeds the
+            available stack region.
+        </p>
+
+        <h3>Q5. What is heap fragmentation?</h3>
+        <p>
+            It is the division of free heap memory
+            into smaller non-contiguous blocks.
+        </p>
+
+        <h3>Q6. What is a memory leak?</h3>
+        <p>
+            It occurs when allocated memory is not
+            released and becomes unavailable for reuse.
+        </p>
+
+        <h3>Q7. What is static memory allocation?</h3>
+        <p>
+            It reserves fixed-size storage according
+            to program declarations and memory layout.
+        </p>
+
+        <h3>Q8. Why is dynamic allocation often limited in embedded systems?</h3>
+        <p>
+            It can introduce fragmentation, allocation
+            failures and less predictable execution time.
+        </p>
+
+        <h3>Q9. How can stack overflow be detected?</h3>
+        <p>
+            Techniques include stack watermarking,
+            guard regions, MPU protection where available
+            and runtime diagnostics.
+        </p>
+
+        <h3>Q10. What is a linker map file?</h3>
+        <p>
+            It reports how the linker placed program
+            sections and symbols into memory.
+        </p>
+
+        <h3>Q11. How can RAM usage be reduced?</h3>
+        <p>
+            Optimize buffer sizes, avoid unnecessary
+            arrays, reuse memory safely and use suitable
+            static allocation.
+        </p>
+
+        <h3>Q12. Why does each RTOS task need a stack?</h3>
+        <p>
+            Each task needs execution context and
+            storage for its function calls and local
+            data when it runs.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Practical Exercises</h2>
+
+        <ol>
+            <li>Create a function with local variables and inspect its stack behavior.</li>
+            <li>Compare a global array with a local array.</li>
+            <li>Use malloc() and free() in a controlled test program.</li>
+            <li>Inspect Flash and RAM usage after building firmware.</li>
+            <li>Open the linker map file and locate .text, .data and .bss.</li>
+            <li>Estimate stack usage for a simple function call chain.</li>
+            <li>Identify a potential memory leak in a sample C program.</li>
+            <li>Inspect FreeRTOS task stack usage if using an RTOS project.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Lesson Summary</h2>
+
+        <ul>
+            <li>Stack memory manages function execution and automatic storage.</li>
+            <li>Heap memory supports dynamic allocation.</li>
+            <li>Stack overflow occurs when stack requirements exceed available space.</li>
+            <li>Heap fragmentation can prevent large allocations.</li>
+            <li>Memory leaks reduce available heap memory.</li>
+            <li>Static allocation provides predictable memory usage.</li>
+            <li>Linker map files help analyze firmware memory consumption.</li>
+            <li>RTOS tasks require carefully sized stacks.</li>
+            <li>Memory optimization must preserve worst-case reliability.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>18. Chapter 12 Completion</h2>
+
+        <p>
+            Congratulations! You have completed
+            Chapter 12: DMA and Memory Management.
+        </p>
+
+        <h3>Skills Covered</h3>
+        <ul>
+            <li>DMA architecture and transfer modes.</li>
+            <li>DMA configuration and HAL programming.</li>
+            <li>DMA integration with UART, SPI and ADC.</li>
+            <li>Flash and SRAM memory organization.</li>
+            <li>Stack, heap and firmware memory usage.</li>
+        </ul>
+
+        <p>
+            You should now be able to explain how
+            STM32 transfers peripheral data using DMA,
+            organize firmware memory and investigate
+            common memory-related problems.
+        </p>
+    </section>
+
+    <nav class="lesson-nav">
+        <a href="L04_Flash_SRAM_and_Memory_Organization.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter Index</a>
+        <a href="../ch13_Watchdog_Low_Power_and_System_Reliability/index.html">
+            Next Chapter →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
