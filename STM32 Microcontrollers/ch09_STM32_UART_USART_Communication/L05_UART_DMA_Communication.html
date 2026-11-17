@@ -1,1 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 5 - UART DMA Communication</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dce5f0;
+            border-radius: 9px;
+        }
+        h2, h3 { color: #174ea6; }
+        .info-box {
+            background: #eef6ff;
+            border-left: 5px solid #174ea6;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 5px solid #e09b24;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        pre {
+            background: #172033;
+            color: #e8f0ff;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 16px;
+            border-radius: 6px;
+        }
+        .lesson-nav a:hover { background: #007bff; }
+    </style>
+</head>
+
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 5: UART DMA Communication</h1>
+        <p>STM32 Microcontrollers – Chapter 9</p>
+        <p>Learn efficient serial data transfer using Direct Memory Access.</p>
+    </header>
+
+    <p><a href="index.html">← Back to Chapter 9</a></p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand DMA architecture and its purpose.</li>
+            <li>Understand UART communication using DMA.</li>
+            <li>Compare polling, interrupt and DMA transfers.</li>
+            <li>Configure UART DMA using STM32CubeMX.</li>
+            <li>Implement DMA-based transmission and reception.</li>
+            <li>Understand circular DMA and reception techniques.</li>
+            <li>Identify common DMA configuration problems.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What is DMA?</h2>
+        <p>
+            DMA stands for Direct Memory Access. It is a hardware
+            mechanism that transfers data between memory and
+            peripherals, or between memory locations, without
+            requiring the CPU to move every individual data element.
+        </p>
+
+        <h3>Basic DMA Operation</h3>
+        <ol>
+            <li>CPU configures the DMA transfer.</li>
+            <li>CPU specifies source, destination and transfer length.</li>
+            <li>A peripheral or software request triggers the transfer.</li>
+            <li>DMA transfers the data.</li>
+            <li>DMA can generate an interrupt when a configured event occurs.</li>
+            <li>CPU processes the completed data or continues application work.</li>
+        </ol>
+
+        <div class="info-box">
+            DMA reduces CPU involvement in data movement. The
+            CPU is still responsible for configuring the transfer,
+            managing buffers and handling completion or error events.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Why Use DMA with UART?</h2>
+        <p>
+            In polling, the CPU waits for UART transfer progress.
+            In interrupt-based operation, the CPU services
+            transfer events. With DMA, hardware moves a block
+            of data between memory and the UART data register.
+        </p>
+
+        <h3>Benefits</h3>
+        <ul>
+            <li>Reduced CPU involvement during data movement.</li>
+            <li>Efficient transfer of larger data buffers.</li>
+            <li>Useful for continuous or high-rate communication.</li>
+            <li>Allows the CPU to perform other application tasks.</li>
+            <li>Supports circular reception on compatible DMA implementations.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>4. UART DMA Architecture</h2>
+
+        <pre><code>             STM32 Microcontroller
+
+      +---------------------------+
+      |            CPU            |
+      |  Configure and process    |
+      +-------------+-------------+
+                    |
+                    | Configuration
+                    v
+      +---------------------------+
+      |            DMA            |
+      |     Data transfer         |
+      +-------------+-------------+
+                    |
+                    v
+      +---------------------------+
+      |        UART / USART       |
+      |       Data Register       |
+      +-------------+-------------+
+                    |
+                    v
+                 UART TX/RX
+                    |
+                    v
+              External Device</code></pre>
+
+        <p>
+            For transmission, DMA reads data from memory and
+            supplies it to the UART peripheral. For reception,
+            DMA transfers received data from the UART peripheral
+            into a memory buffer.
+        </p>
+
+        <div class="warning-box">
+            DMA request routing, channel or stream selection,
+            transfer width and supported modes vary across
+            STM32 families. Consult the device reference manual.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>5. DMA-Based UART Transmission</h2>
+
+        <p>
+            The HAL function <code>HAL_UART_Transmit_DMA()</code>
+            starts a DMA-based UART transmission.
+        </p>
+
+        <h3>Function Syntax</h3>
+        <pre><code>HAL_StatusTypeDef HAL_UART_Transmit_DMA(
+    UART_HandleTypeDef *huart,
+    const uint8_t *pData,
+    uint16_t Size
+);</code></pre>
+
+        <h3>Example Program</h3>
+        <pre><code>#include "main.h"
+#include &lt;string.h&gt;
+
+extern UART_HandleTypeDef huart2;
+
+uint8_t tx_message[] = "STM32 UART DMA Transmission\r\n";
+
+volatile uint8_t tx_done = 0;
+
+void UART_DMA_Transmit_Start(void)
+{
+    tx_done = 0;
+
+    if (HAL_UART_Transmit_DMA(
+            &amp;huart2,
+            tx_message,
+            sizeof(tx_message) - 1) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart-&gt;Instance == USART2)
+    {
+        tx_done = 1;
+    }
+}</code></pre>
+
+        <h3>Explanation</h3>
+        <ul>
+            <li>The message is stored in memory.</li>
+            <li>DMA reads the message from the transmit buffer.</li>
+            <li>DMA supplies the data to the UART peripheral.</li>
+            <li>UART serializes the data and sends it through TX.</li>
+            <li>The completion callback indicates that the DMA-backed UART transfer has completed.</li>
+        </ul>
+
+        <div class="warning-box">
+            Keep the transmit buffer valid and unchanged until
+            the transfer completes. Do not start another transfer
+            on the same UART handle while it is busy.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. DMA-Based UART Reception</h2>
+
+        <p>
+            The HAL function <code>HAL_UART_Receive_DMA()</code>
+            starts DMA-based reception into a memory buffer.
+        </p>
+
+        <h3>Function Syntax</h3>
+        <pre><code>HAL_StatusTypeDef HAL_UART_Receive_DMA(
+    UART_HandleTypeDef *huart,
+    uint8_t *pData,
+    uint16_t Size
+);</code></pre>
+
+        <h3>Example Program</h3>
+        <pre><code>#include "main.h"
+
+extern UART_HandleTypeDef huart2;
+
+uint8_t rx_buffer[10];
+
+volatile uint8_t rx_done = 0;
+
+void UART_DMA_Receive_Start(void)
+{
+    rx_done = 0;
+
+    if (HAL_UART_Receive_DMA(
+            &amp;huart2,
+            rx_buffer,
+            sizeof(rx_buffer)) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart-&gt;Instance == USART2)
+    {
+        rx_done = 1;
+    }
+}</code></pre>
+
+        <p>
+            The callback occurs after the configured number
+            of data elements has been received successfully.
+        </p>
+
+        <div class="info-box">
+            Normal-mode DMA reception is a fixed-length transfer.
+            After completion, firmware generally processes the
+            buffer and starts another receive operation.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Normal Mode and Circular Mode</h2>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>Normal Mode</th>
+                <th>Circular Mode</th>
+            </tr>
+            <tr>
+                <td>Transfer behavior</td>
+                <td>Stops after the configured transfer length</td>
+                <td>Reloads and continues transferring</td>
+            </tr>
+            <tr>
+                <td>Typical use</td>
+                <td>Known-length data blocks</td>
+                <td>Continuous or repeated data streams</td>
+            </tr>
+            <tr>
+                <td>Buffer handling</td>
+                <td>Process and restart as needed</td>
+                <td>Track completed portions and prevent overwrite</td>
+            </tr>
+            <tr>
+                <td>Application example</td>
+                <td>Receive a fixed packet</td>
+                <td>Continuous serial data collection</td>
+            </tr>
+        </table>
+
+        <div class="warning-box">
+            Circular DMA does not automatically provide
+            application-level packet boundaries. Firmware must
+            track the producer position and consume data before
+            DMA overwrites it.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. UART Reception Using Circular DMA</h2>
+
+        <p>
+            Circular DMA is useful when data arrives continuously
+            and the firmware cannot predict the exact message length.
+            DMA repeatedly fills the configured buffer.
+        </p>
+
+        <h3>Example Configuration Concept</h3>
+        <pre><code>uint8_t rx_dma_buffer[128];
+
+void UART_DMA_Circular_Start(void)
+{
+    if (HAL_UART_Receive_DMA(
+            &amp;huart2,
+            rx_dma_buffer,
+            sizeof(rx_dma_buffer)) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}</code></pre>
+
+        <p>
+            Configure the corresponding RX DMA channel or stream
+            for circular mode in CubeMX. The exact setup depends
+            on the STM32 family.
+        </p>
+
+        <h3>Finding the Current DMA Position</h3>
+        <pre><code>uint16_t position;
+
+position = sizeof(rx_dma_buffer)
+         - __HAL_DMA_GET_COUNTER(huart2.hdmarx);</code></pre>
+
+        <p>
+            The result represents the current write position
+            relative to the start of the buffer. The application
+            must compare it with the previous read position and
+            handle wraparound correctly.
+        </p>
+
+        <div class="warning-box">
+            Reading the DMA counter once does not provide a
+            complete thread-safe buffer-management system.
+            Production code must account for wraparound,
+            concurrent updates and possible data overwrite.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. UART Receive-to-IDLE with DMA</h2>
+
+        <p>
+            Some STM32 HAL versions provide
+            <code>HAL_UARTEx_ReceiveToIdle_DMA()</code>.
+            It starts DMA reception and allows the application
+            to receive a callback when the receiver detects an
+            idle condition after incoming data.
+        </p>
+
+        <h3>Example</h3>
+        <pre><code>#include "main.h"
+
+extern UART_HandleTypeDef huart2;
+
+uint8_t rx_buffer[128];
+
+void UART_ReceiveToIdle_Start(void)
+{
+    if (HAL_UARTEx_ReceiveToIdle_DMA(
+            &amp;huart2,
+            rx_buffer,
+            sizeof(rx_buffer)) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+void HAL_UARTEx_RxEventCallback(
+    UART_HandleTypeDef *huart,
+    uint16_t Size)
+{
+    if (huart-&gt;Instance == USART2)
+    {
+        // Size indicates the received data length
+        // reported by this callback event.
+
+        // Process or copy the received bytes.
+        // Restart reception when using a mode that
+        // requires rearming.
+    }
+}</code></pre>
+
+        <h3>Important Notes</h3>
+        <ul>
+            <li>Receive-to-IDLE can help identify bursts of incoming data.</li>
+            <li>The callback reports the received size or event position according to the HAL implementation.</li>
+            <li>In circular mode, reception may continue after half-transfer, transfer-complete or idle events.</li>
+            <li>In normal mode, reception generally needs to be restarted after completion.</li>
+            <li>Idle detection is not a substitute for a complete application protocol.</li>
+        </ul>
+
+        <div class="warning-box">
+            Receive-to-IDLE availability and exact callback behavior
+            depend on the STM32 HAL version and selected peripheral.
+            Check the relevant HAL documentation and examples.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. DMA Configuration Using STM32CubeMX</h2>
+
+        <ol>
+            <li>Open the STM32CubeIDE project.</li>
+            <li>Enable the required USART peripheral.</li>
+            <li>Configure the TX and RX pins.</li>
+            <li>Open the DMA Settings section for the USART.</li>
+            <li>Add a DMA request for UART transmission.</li>
+            <li>Add a DMA request for UART reception if required.</li>
+            <li>Select normal or circular mode as appropriate.</li>
+            <li>Configure peripheral and memory data widths.</li>
+            <li>Enable the required DMA interrupts.</li>
+            <li>Enable the USART global interrupt if required by the HAL implementation.</li>
+            <li>Generate and build the project.</li>
+        </ol>
+
+        <div class="info-box">
+            CubeMX configures the DMA request mapping and
+            initialization code for the selected device. Verify
+            that the generated configuration matches the
+            intended transfer direction and buffer behavior.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Polling vs Interrupt vs DMA</h2>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>Polling</th>
+                <th>Interrupt</th>
+                <th>DMA</th>
+            </tr>
+            <tr>
+                <td>CPU involvement</td>
+                <td>High while waiting</td>
+                <td>Handles transfer events</td>
+                <td>Low during data movement</td>
+            </tr>
+            <tr>
+                <td>Data movement</td>
+                <td>CPU</td>
+                <td>CPU through interrupt-driven HAL operation</td>
+                <td>DMA hardware</td>
+            </tr>
+            <tr>
+                <td>Implementation</td>
+                <td>Simple</td>
+                <td>Moderate</td>
+                <td>More configuration required</td>
+            </tr>
+            <tr>
+                <td>Suitable use</td>
+                <td>Small transfers</td>
+                <td>Moderate asynchronous transfers</td>
+                <td>Large or continuous transfers</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>12. DMA Memory and Buffer Considerations</h2>
+
+        <ul>
+            <li>Use buffers that remain valid throughout the DMA operation.</li>
+            <li>Do not modify a transmit buffer while DMA is reading it.</li>
+            <li>Do not process a receive buffer while DMA is overwriting the same data.</li>
+            <li>Check the DMA transfer length and data width.</li>
+            <li>Handle transfer-complete and error events.</li>
+            <li>Consider memory alignment and accessibility restrictions.</li>
+            <li>Use cache maintenance on cache-equipped MCUs where required.</li>
+        </ul>
+
+        <div class="warning-box">
+            On STM32 devices with a data cache, DMA coherency must
+            be handled according to the memory system. Clean cache
+            lines before DMA reads CPU-written transmit data, and
+            invalidate appropriate cache lines before the CPU
+            reads DMA-written receive data. Follow device-specific
+            cache and alignment requirements.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Common UART DMA Errors</h2>
+
+        <table>
+            <tr><th>Problem</th><th>Possible Solution</th></tr>
+            <tr>
+                <td>DMA transfer does not start</td>
+                <td>Check DMA request mapping and initialization.</td>
+            </tr>
+            <tr>
+                <td>Completion callback does not execute</td>
+                <td>Check DMA IRQ handler and NVIC configuration.</td>
+            </tr>
+            <tr>
+                <td>Incorrect received data</td>
+                <td>Verify baud rate, data width and buffer handling.</td>
+            </tr>
+            <tr>
+                <td>HAL_BUSY status</td>
+                <td>Check whether the previous transfer is still active.</td>
+            </tr>
+            <tr>
+                <td>DMA overrun or lost data</td>
+                <td>Ensure data is consumed quickly enough and buffer capacity is adequate.</td>
+            </tr>
+            <tr>
+                <td>Cache-related corruption</td>
+                <td>Apply the required cache maintenance operations.</td>
+            </tr>
+            <tr>
+                <td>Transfer stops unexpectedly</td>
+                <td>Check normal/circular mode and error recovery.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Placement Interview Questions and Answers</h2>
+
+        <h3>Q1. What is DMA?</h3>
+        <p>
+            DMA is a hardware mechanism that transfers data
+            between memory and peripherals with reduced CPU
+            involvement.
+        </p>
+
+        <h3>Q2. Why is DMA used with UART?</h3>
+        <p>
+            DMA is used to transfer larger or continuous data
+            buffers efficiently without requiring the CPU to
+            handle every data element.
+        </p>
+
+        <h3>Q3. Which HAL function starts UART DMA transmission?</h3>
+        <p><code>HAL_UART_Transmit_DMA()</code>.</p>
+
+        <h3>Q4. Which HAL function starts UART DMA reception?</h3>
+        <p><code>HAL_UART_Receive_DMA()</code>.</p>
+
+        <h3>Q5. What is circular DMA mode?</h3>
+        <p>
+            It is a DMA mode in which the transfer restarts
+            automatically from the beginning of the configured
+            buffer after reaching its end.
+        </p>
+
+        <h3>Q6. What is normal DMA mode?</h3>
+        <p>
+            It is a mode in which DMA stops after the configured
+            number of data elements has been transferred.
+        </p>
+
+        <h3>Q7. What is UART Receive-to-IDLE?</h3>
+        <p>
+            It is a reception technique supported by some STM32
+            HAL versions that reports received data when an idle
+            condition is detected.
+        </p>
+
+        <h3>Q8. What is the advantage of DMA over interrupt-based transfer?</h3>
+        <p>
+            DMA moves data directly between memory and the
+            peripheral, reducing the number of CPU data-handling
+            operations.
+        </p>
+
+        <h3>Q9. Why must a DMA buffer remain valid?</h3>
+        <p>
+            DMA accesses the buffer independently of the normal
+            program flow. Invalid or modified memory can corrupt
+            the transfer.
+        </p>
+
+        <h3>Q10. What is DMA circular buffer overrun?</h3>
+        <p>
+            It occurs when DMA overwrites data that the application
+            has not yet consumed.
+        </p>
+
+        <h3>Q11. What is the purpose of a DMA completion callback?</h3>
+        <p>
+            It notifies the application that the configured
+            transfer has completed.
+        </p>
+
+        <h3>Q12. What is cache coherency in DMA?</h3>
+        <p>
+            It means ensuring that the CPU cache and memory
+            contain consistent data when DMA accesses memory
+            independently of the CPU cache.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Practical Exercises</h2>
+        <ol>
+            <li>Configure UART TX DMA in STM32CubeMX.</li>
+            <li>Transmit a string using HAL_UART_Transmit_DMA().</li>
+            <li>Receive a fixed-length buffer using HAL_UART_Receive_DMA().</li>
+            <li>Compare normal and circular DMA modes.</li>
+            <li>Explain the role of DMA completion callbacks.</li>
+            <li>Configure circular DMA reception for a serial data stream.</li>
+            <li>Explain UART Receive-to-IDLE.</li>
+            <li>Identify possible DMA buffer overwrite problems.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Lesson Summary</h2>
+        <ul>
+            <li>DMA transfers data with reduced CPU involvement.</li>
+            <li>UART TX DMA transfers memory data to the UART peripheral.</li>
+            <li>UART RX DMA transfers peripheral data into memory.</li>
+            <li>Normal mode stops after the configured transfer.</li>
+            <li>Circular mode repeatedly uses the same buffer.</li>
+            <li>Receive-to-IDLE can help handle variable-length data bursts.</li>
+            <li>Buffer lifetime, memory access and cache coherency matter.</li>
+            <li>DMA is useful for efficient high-volume serial communication.</li>
+        </ul>
+    </section>
+
+    <nav class="lesson-nav">
+        <a href="L04_UART_Interrupt_Based_Communication.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L06_UART_Debugging_and_Communication_Troubleshooting.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
