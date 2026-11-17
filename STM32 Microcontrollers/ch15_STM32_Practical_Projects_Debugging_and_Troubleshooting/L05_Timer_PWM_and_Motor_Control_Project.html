@@ -1,1 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 5: Timer, PWM and Motor Control Project</title>
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
 
+<header class="lesson-header">
+    <h1>Lesson 5: Timer, PWM and Motor Control Project</h1>
+    <p>STM32 Practical Projects, Debugging and Troubleshooting</p>
+</header>
+
+<main class="lesson-container">
+
+    <section>
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand STM32 timer-based applications.</li>
+            <li>Configure a timer using STM32CubeMX.</li>
+            <li>Generate PWM signals using STM32 timers.</li>
+            <li>Calculate PWM frequency and duty cycle.</li>
+            <li>Control LED brightness using PWM.</li>
+            <li>Control a DC motor using a motor driver.</li>
+            <li>Debug timer and PWM configuration problems.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>2. Project Overview</h2>
+        <p>
+            Pulse Width Modulation (PWM) is commonly used in embedded
+            systems to control the average power delivered to a load.
+            STM32 timer peripherals can generate PWM signals with
+            configurable frequency and duty cycle.
+        </p>
+
+        <h3>Applications</h3>
+        <ul>
+            <li>LED brightness control.</li>
+            <li>DC motor speed control.</li>
+            <li>Fan speed control.</li>
+            <li>Servo motor control.</li>
+            <li>Power converter control signals.</li>
+            <li>Heating element control through a suitable power stage.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>3. Project Architecture</h2>
+
+        <pre>
++--------------------------+
+|   STM32 Microcontroller  |
+|                          |
+| Timer Peripheral         |
+| PWM Configuration        |
+| Duty Cycle Control       |
++--------------------------+
+             |
+             | PWM Output
+             |
+             v
++--------------------------+
+| Driver / Power Stage     |
++--------------------------+
+             |
+             v
++--------------------------+
+| LED / DC Motor / Load    |
++--------------------------+
+        </pre>
+
+        <p>
+            The STM32 generates the PWM signal. A suitable driver
+            interfaces the MCU output with the load when the load
+            requires more current or voltage than the GPIO can provide.
+        </p>
+    </section>
+
+    <section>
+        <h2>4. Understanding PWM</h2>
+
+        <p>
+            PWM is a digital waveform in which the ON time and OFF time
+            are varied while maintaining a selected period.
+        </p>
+
+        <h3>PWM Waveforms</h3>
+
+        <pre>
+25% Duty Cycle
+
+HIGH  ┌───┐
+      │   │
+LOW ──┘   └──────────────
+
+50% Duty Cycle
+
+HIGH  ┌──────┐
+      │      │
+LOW ──┘      └───────────
+
+75% Duty Cycle
+
+HIGH  ┌───────────┐
+      │           │
+LOW ──┘           └──────
+        </pre>
+
+        <h3>Important Terms</h3>
+        <ul>
+            <li><strong>Period:</strong> Time for one complete PWM cycle.</li>
+            <li><strong>Frequency:</strong> Number of cycles per second.</li>
+            <li><strong>ON time:</strong> Duration for which the signal is active.</li>
+            <li><strong>OFF time:</strong> Duration for which the signal is inactive.</li>
+            <li><strong>Duty cycle:</strong> Percentage of the period for which the signal is active.</li>
+        </ul>
+
+        <p>
+            Duty cycle is calculated as:
+        </p>
+
+        <pre>
+Duty Cycle (%) = (ON Time / Total Period) × 100
+        </pre>
+    </section>
+
+    <section>
+        <h2>5. STM32 Timer Registers Used for PWM</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Register</th>
+                    <th>Function</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PSC</td>
+                    <td>Prescaler</td>
+                </tr>
+                <tr>
+                    <td>ARR</td>
+                    <td>Auto-reload register</td>
+                </tr>
+                <tr>
+                    <td>CNT</td>
+                    <td>Counter register</td>
+                </tr>
+                <tr>
+                    <td>CCR</td>
+                    <td>Capture/Compare register</td>
+                </tr>
+                <tr>
+                    <td>CCMR</td>
+                    <td>Capture/Compare mode configuration</td>
+                </tr>
+                <tr>
+                    <td>CCER</td>
+                    <td>Capture/Compare enable and polarity</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>
+            The timer counts according to its input clock and prescaler.
+            The ARR value determines the counter period, while the
+            capture/compare register controls the PWM active interval.
+        </p>
+    </section>
+
+    <section>
+        <h2>6. PWM Frequency Calculation</h2>
+
+        <p>
+            For a common edge-aligned, up-counting timer configuration:
+        </p>
+
+        <pre>
+PWM Frequency =
+Timer Clock / [(PSC + 1) × (ARR + 1)]
+        </pre>
+
+        <p>
+            The timer counter frequency is:
+        </p>
+
+        <pre>
+Counter Frequency = Timer Clock / (PSC + 1)
+        </pre>
+
+        <h3>Example</h3>
+
+        <p>Assume:</p>
+        <ul>
+            <li>Timer clock = 84 MHz</li>
+            <li>PSC = 83</li>
+            <li>ARR = 999</li>
+        </ul>
+
+        <p>Counter frequency:</p>
+        <pre>
+84,000,000 / (83 + 1) = 1,000,000 Hz
+        </pre>
+
+        <p>PWM frequency:</p>
+        <pre>
+1,000,000 / (999 + 1) = 1,000 Hz
+        </pre>
+
+        <p>
+            Therefore, the PWM frequency is 1 kHz and its period is
+            1 millisecond.
+        </p>
+
+        <p>
+            The actual timer clock must be calculated from the selected
+            STM32 clock tree. On many STM32F4 devices, the timer clock
+            may be twice the APB peripheral clock when the APB prescaler
+            is greater than one. Verify the exact device clock rules.
+        </p>
+    </section>
+
+    <section>
+        <h2>7. Duty Cycle Calculation</h2>
+
+        <p>
+            For common edge-aligned, up-counting PWM mode 1 with
+            active-high output:
+        </p>
+
+        <pre>
+Duty Cycle (%) ≈ [CCR / (ARR + 1)] × 100
+        </pre>
+
+        <h3>Example</h3>
+        <ul>
+            <li>ARR = 999</li>
+            <li>CCR = 500</li>
+        </ul>
+
+        <pre>
+Duty Cycle ≈ (500 / 1000) × 100
+           ≈ 50%
+        </pre>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>CCR Value</th>
+                    <th>Approximate Duty Cycle</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>250</td>
+                    <td>25%</td>
+                </tr>
+                <tr>
+                    <td>500</td>
+                    <td>50%</td>
+                </tr>
+                <tr>
+                    <td>750</td>
+                    <td>75%</td>
+                </tr>
+                <tr>
+                    <td>1000</td>
+                    <td>100% in common configurations</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>
+            Exact endpoint behavior depends on the timer mode and
+            implementation. Confirm the selected timer's PWM behavior
+            in the reference manual.
+        </p>
+    </section>
+
+    <section>
+        <h2>8. PWM Configuration Using STM32CubeMX</h2>
+
+        <ol>
+            <li>Open the STM32CubeIDE project.</li>
+            <li>Select a timer that supports PWM output.</li>
+            <li>Enable the required timer channel in PWM Generation mode.</li>
+            <li>Select the appropriate GPIO alternate function.</li>
+            <li>Configure the prescaler value.</li>
+            <li>Configure the auto-reload value.</li>
+            <li>Set the initial pulse value.</li>
+            <li>Configure output polarity and other channel settings.</li>
+            <li>Generate the code.</li>
+        </ol>
+
+        <p>
+            Timer instances, channels, alternate-function pins and
+            available PWM features differ across STM32 devices.
+        </p>
+    </section>
+
+    <section>
+        <h2>9. Project 1: LED Brightness Control Using PWM</h2>
+
+        <p>
+            An LED's apparent brightness can be controlled by changing
+            the PWM duty cycle. A higher duty cycle generally produces
+            greater average LED current and brightness when the circuit
+            is configured appropriately.
+        </p>
+
+        <h3>HAL Program</h3>
+        <pre><code>
+#include "main.h"
+
+extern TIM_HandleTypeDef htim2;
+
+void Set_LED_Brightness(uint32_t duty)
+{
+    if (duty > 100U)
+    {
+        duty = 100U;
+    }
+
+    uint32_t arr =
+        __HAL_TIM_GET_AUTORELOAD(&htim2);
+
+    uint32_t compare =
+        ((arr + 1U) * duty) / 100U;
+
+    __HAL_TIM_SET_COMPARE(
+        &htim2,
+        TIM_CHANNEL_1,
+        compare
+    );
+}
+
+int main(void)
+{
+    HAL_Init();
+
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_TIM2_Init();
+
+    HAL_TIM_PWM_Start(
+        &htim2,
+        TIM_CHANNEL_1
+    );
+
+    while (1)
+    {
+        Set_LED_Brightness(25);
+        HAL_Delay(1000);
+
+        Set_LED_Brightness(50);
+        HAL_Delay(1000);
+
+        Set_LED_Brightness(75);
+        HAL_Delay(1000);
+
+        Set_LED_Brightness(100);
+        HAL_Delay(1000);
+
+        Set_LED_Brightness(0);
+        HAL_Delay(1000);
+    }
+}
+        </code></pre>
+
+        <h3>Program Explanation</h3>
+        <ul>
+            <li><code>MX_TIM2_Init()</code> initializes the configured timer.</li>
+            <li><code>HAL_TIM_PWM_Start()</code> starts PWM output on Channel 1.</li>
+            <li><code>Set_LED_Brightness()</code> converts a percentage into a compare value.</li>
+            <li><code>__HAL_TIM_SET_COMPARE()</code> updates the PWM compare register through the HAL macro.</li>
+        </ul>
+
+        <p>
+            The example assumes that TIM2 Channel 1 is configured for
+            PWM and connected to the selected LED pin. The timer period
+            and channel must be configured correctly in CubeMX.
+        </p>
+    </section>
+
+    <section>
+        <h2>10. DC Motor Speed Control</h2>
+
+        <p>
+            PWM can control the average voltage applied to a DC motor
+            through a suitable motor driver.
+        </p>
+
+        <h3>Basic Motor Control Architecture</h3>
+
+        <pre>
++-----------------------+
+| STM32 Microcontroller |
+|                       |
+| PWM Output            |
+| Direction GPIO        |
++-----------------------+
+            |
+            v
++-----------------------+
+| H-Bridge Motor Driver |
++-----------------------+
+            |
+            v
++-----------------------+
+|      DC Motor         |
++-----------------------+
+        </pre>
+
+        <h3>Motor Driver Functions</h3>
+        <ul>
+            <li>Provides the motor's required drive current.</li>
+            <li>Controls motor direction where supported.</li>
+            <li>Accepts PWM input for drive control.</li>
+            <li>Provides power-stage switching and protection features according to its design.</li>
+        </ul>
+
+        <p>
+            Never connect a DC motor directly to an STM32 GPIO pin.
+            GPIO pins cannot supply the motor's operating or stall
+            current.
+        </p>
+    </section>
+
+    <section>
+        <h2>11. H-Bridge Direction Control</h2>
+
+        <p>
+            An H-bridge motor driver can reverse the polarity applied
+            to a DC motor, allowing forward and reverse operation.
+        </p>
+
+        <h3>Illustrative Direction Table</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>IN1</th>
+                    <th>IN2</th>
+                    <th>Typical Result</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>HIGH</td>
+                    <td>LOW</td>
+                    <td>Forward</td>
+                </tr>
+                <tr>
+                    <td>LOW</td>
+                    <td>HIGH</td>
+                    <td>Reverse</td>
+                </tr>
+                <tr>
+                    <td>LOW</td>
+                    <td>LOW</td>
+                    <td>Coast or stop, driver-dependent</td>
+                </tr>
+                <tr>
+                    <td>HIGH</td>
+                    <td>HIGH</td>
+                    <td>Brake or another defined state, driver-dependent</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>
+            The table is illustrative. Actual behavior depends on the
+            motor-driver IC. Consult its truth table and datasheet.
+        </p>
+    </section>
+
+    <section>
+        <h2>12. Project 2: DC Motor Speed and Direction Control</h2>
+
+        <p>
+            This example uses one PWM channel for speed control and
+            two GPIO outputs for direction control.
+        </p>
+
+        <h3>Example HAL Program</h3>
+        <pre><code>
+#include "main.h"
+
+extern TIM_HandleTypeDef htim2;
+
+#define MOTOR_IN1_PORT GPIOB
+#define MOTOR_IN1_PIN  GPIO_PIN_0
+
+#define MOTOR_IN2_PORT GPIOB
+#define MOTOR_IN2_PIN  GPIO_PIN_1
+
+void Motor_Set_Speed(uint32_t duty)
+{
+    if (duty > 100U)
+    {
+        duty = 100U;
+    }
+
+    uint32_t arr =
+        __HAL_TIM_GET_AUTORELOAD(&htim2);
+
+    uint32_t compare =
+        ((arr + 1U) * duty) / 100U;
+
+    __HAL_TIM_SET_COMPARE(
+        &htim2,
+        TIM_CHANNEL_1,
+        compare
+    );
+}
+
+void Motor_Forward(void)
+{
+    HAL_GPIO_WritePin(
+        MOTOR_IN1_PORT,
+        MOTOR_IN1_PIN,
+        GPIO_PIN_SET
+    );
+
+    HAL_GPIO_WritePin(
+        MOTOR_IN2_PORT,
+        MOTOR_IN2_PIN,
+        GPIO_PIN_RESET
+    );
+}
+
+void Motor_Reverse(void)
+{
+    HAL_GPIO_WritePin(
+        MOTOR_IN1_PORT,
+        MOTOR_IN1_PIN,
+        GPIO_PIN_RESET
+    );
+
+    HAL_GPIO_WritePin(
+        MOTOR_IN2_PORT,
+        MOTOR_IN2_PIN,
+        GPIO_PIN_SET
+    );
+}
+
+void Motor_Stop(void)
+{
+    Motor_Set_Speed(0);
+}
+
+int main(void)
+{
+    HAL_Init();
+
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_TIM2_Init();
+
+    HAL_TIM_PWM_Start(
+        &htim2,
+        TIM_CHANNEL_1
+    );
+
+    Motor_Forward();
+    Motor_Set_Speed(40);
+
+    HAL_Delay(3000);
+
+    Motor_Set_Speed(70);
+
+    HAL_Delay(3000);
+
+    Motor_Stop();
+
+    HAL_Delay(1000);
+
+    Motor_Reverse();
+    Motor_Set_Speed(40);
+
+    HAL_Delay(3000);
+
+    Motor_Stop();
+
+    while (1)
+    {
+    }
+}
+        </code></pre>
+
+        <h3>Program Explanation</h3>
+        <ul>
+            <li><code>Motor_Forward()</code> selects one direction.</li>
+            <li><code>Motor_Reverse()</code> selects the opposite direction.</li>
+            <li><code>Motor_Set_Speed()</code> changes the PWM duty cycle.</li>
+            <li><code>Motor_Stop()</code> sets the PWM compare value to zero.</li>
+        </ul>
+
+        <p>
+            This is a basic open-loop demonstration. The duty cycle
+            does not directly specify an exact motor speed. Actual
+            speed depends on motor characteristics, supply voltage,
+            mechanical load and driver losses.
+        </p>
+
+        <p>
+            The GPIO pins, PWM channel and driver truth table must be
+            adapted to the selected hardware. A production design
+            should also provide safe direction changes, current
+            protection and appropriate fault handling.
+        </p>
+    </section>
+
+    <section>
+        <h2>13. Open-Loop and Closed-Loop Motor Control</h2>
+
+        <h3>Open-Loop Control</h3>
+        <p>
+            The controller applies a selected PWM duty cycle without
+            measuring actual motor speed.
+        </p>
+
+        <h3>Closed-Loop Control</h3>
+        <p>
+            The controller measures motor speed using an encoder or
+            another feedback sensor and adjusts PWM to approach a
+            target speed.
+        </p>
+
+        <pre>
+Target Speed
+     |
+     v
++----------------+
+| Speed Control  |
+| Algorithm      |
++----------------+
+     |
+     v
+ PWM Output
+     |
+     v
+ Motor + Driver
+     |
+     v
+ Encoder Feedback
+     |
+     +----------> Speed Measurement
+                       |
+                       +---- Feedback
+        </pre>
+
+        <p>
+            Closed-loop systems may use a PI or PID controller.
+            Controller gains and sampling intervals must be tuned
+            for the motor and mechanical system.
+        </p>
+    </section>
+
+    <section>
+        <h2>14. Motor Control Safety</h2>
+
+        <ul>
+            <li>Choose a driver rated for the motor supply and stall current.</li>
+            <li>Use a separate suitable motor supply when required.</li>
+            <li>Connect grounds appropriately for a non-isolated interface.</li>
+            <li>Use the protection and decoupling recommended by the driver datasheet.</li>
+            <li>Prevent H-bridge shoot-through using correct interlocking and dead-time where required.</li>
+            <li>Check thermal limits of the motor driver.</li>
+            <li>Do not change direction abruptly under unsafe conditions.</li>
+            <li>Provide emergency stop and fault handling where the application requires them.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>15. Common PWM and Motor Control Problems</h2>
+
+        <h3>Problem 1: No PWM Output</h3>
+        <ul>
+            <li>Verify the timer channel configuration.</li>
+            <li>Check GPIO alternate-function selection.</li>
+            <li>Confirm that PWM was started.</li>
+            <li>Check timer and peripheral clock configuration.</li>
+        </ul>
+
+        <h3>Problem 2: Incorrect PWM Frequency</h3>
+        <ul>
+            <li>Check the actual timer input clock.</li>
+            <li>Verify PSC and ARR values.</li>
+            <li>Check APB prescaler and timer clock multiplication rules.</li>
+            <li>Confirm edge-aligned or center-aligned counting mode.</li>
+        </ul>
+
+        <h3>Problem 3: LED Brightness Does Not Change</h3>
+        <ul>
+            <li>Check whether the LED is connected to the configured timer channel.</li>
+            <li>Verify the compare register update.</li>
+            <li>Check output polarity.</li>
+            <li>Confirm the LED circuit and current-limiting resistor.</li>
+        </ul>
+
+        <h3>Problem 4: Motor Does Not Rotate</h3>
+        <ul>
+            <li>Check motor supply voltage.</li>
+            <li>Verify motor-driver enable and direction pins.</li>
+            <li>Check common ground where required.</li>
+            <li>Verify PWM input and driver compatibility.</li>
+            <li>Check whether the driver has entered a fault state.</li>
+        </ul>
+
+        <h3>Problem 5: Motor Speed Is Unstable</h3>
+        <ul>
+            <li>Check power supply stability.</li>
+            <li>Inspect motor current and mechanical load.</li>
+            <li>Check PWM frequency and driver behavior.</li>
+            <li>Use encoder feedback if accurate speed regulation is required.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>16. Practical Testing Procedure</h2>
+
+        <ol>
+            <li>Configure a timer channel for PWM generation.</li>
+            <li>Calculate the timer clock, prescaler and ARR values.</li>
+            <li>Start PWM on the selected output pin.</li>
+            <li>Measure PWM frequency using an oscilloscope or logic analyzer.</li>
+            <li>Change the CCR value and verify duty-cycle changes.</li>
+            <li>Connect an LED through an appropriate circuit.</li>
+            <li>Verify brightness changes at different duty cycles.</li>
+            <li>Connect a suitable motor driver and DC motor.</li>
+            <li>Test motor direction and speed at safe operating conditions.</li>
+            <li>Inspect the driver for abnormal heating or fault indications.</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>17. Placement-Oriented Interview Questions and Answers</h2>
+
+        <h3>Q1. What is PWM?</h3>
+        <p>Pulse Width Modulation is a technique that controls the active duration of a periodic signal.</p>
+
+        <h3>Q2. What is duty cycle?</h3>
+        <p>It is the percentage of one PWM period during which the output is active.</p>
+
+        <h3>Q3. Which STM32 timer registers control PWM frequency?</h3>
+        <p>The prescaler (PSC) and auto-reload register (ARR) determine the counter period in a common edge-aligned configuration.</p>
+
+        <h3>Q4. What is the function of CCR?</h3>
+        <p>The capture/compare register determines the compare point used to control PWM output timing.</p>
+
+        <h3>Q5. How can LED brightness be controlled using PWM?</h3>
+        <p>By changing the duty cycle of the PWM signal driving the LED circuit.</p>
+
+        <h3>Q6. Why is a motor driver required?</h3>
+        <p>An MCU GPIO cannot provide the voltage and current required by most motors. A suitable power driver supplies the required motor current.</p>
+
+        <h3>Q7. What is an H-bridge?</h3>
+        <p>An H-bridge is a switching circuit that can reverse the polarity applied to a DC motor.</p>
+
+        <h3>Q8. What is open-loop motor control?</h3>
+        <p>It controls the motor without measuring actual speed or position feedback.</p>
+
+        <h3>Q9. What is closed-loop motor control?</h3>
+        <p>It uses feedback to compare actual performance with the target and adjust the control output.</p>
+
+        <h3>Q10. What is the difference between PWM frequency and duty cycle?</h3>
+        <p>Frequency specifies how many cycles occur per second, while duty cycle specifies the active fraction of each cycle.</p>
+
+        <h3>Q11. How can PWM be verified?</h3>
+        <p>Use an oscilloscope or logic analyzer to inspect frequency, period, duty cycle and output level.</p>
+
+        <h3>Q12. Why might a motor fail to start at a low duty cycle?</h3>
+        <p>The applied average drive may be insufficient to overcome friction and the motor's starting load.</p>
+    </section>
+
+    <section>
+        <h2>18. Practical Exercises</h2>
+        <ol>
+            <li>Generate a 1 kHz PWM signal using an STM32 timer.</li>
+            <li>Calculate PSC and ARR for a required PWM frequency.</li>
+            <li>Generate PWM signals with 25%, 50% and 75% duty cycles.</li>
+            <li>Control LED brightness using PWM.</li>
+            <li>Measure PWM frequency using an oscilloscope.</li>
+            <li>Interface a DC motor through a suitable motor driver.</li>
+            <li>Implement forward and reverse motor control.</li>
+            <li>Implement adjustable motor speed using PWM.</li>
+            <li>Study encoder-based motor speed feedback.</li>
+            <li>Debug an incorrect timer configuration.</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>19. Lesson Summary</h2>
+        <ul>
+            <li>STM32 timers can generate PWM signals.</li>
+            <li>PSC and ARR determine the PWM period in common timer modes.</li>
+            <li>CCR controls the PWM compare point and duty cycle.</li>
+            <li>PWM can control LED brightness and motor drive.</li>
+            <li>A suitable driver is required for motor interfacing.</li>
+            <li>Encoder feedback supports closed-loop speed control.</li>
+            <li>Oscilloscopes and logic analyzers help validate PWM output.</li>
+        </ul>
+    </section>
+
+    <section class="lesson-navigation">
+        <a href="L04_Sensor_Interfacing_Using_I2C_and_SPI.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L06_ADC_Based_Voltage_Monitoring_Project.html">Next Lesson →</a>
+    </section>
+
+</main>
+
+</body>
+</html>
