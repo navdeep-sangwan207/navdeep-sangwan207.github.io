@@ -1,1 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 6 - UART Debugging and Communication Troubleshooting</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dce5f0;
+            border-radius: 9px;
+        }
+        h2, h3 { color: #174ea6; }
+        .info-box {
+            background: #eef6ff;
+            border-left: 5px solid #174ea6;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 5px solid #e09b24;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        pre {
+            background: #172033;
+            color: #e8f0ff;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 16px;
+            border-radius: 6px;
+        }
+        .lesson-nav a:hover { background: #007bff; }
+    </style>
+</head>
+
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 6: UART Debugging and Communication Troubleshooting</h1>
+        <p>STM32 Microcontrollers – Chapter 9</p>
+        <p>Diagnose UART faults, verify serial signals and debug embedded communication.</p>
+    </header>
+
+    <p><a href="index.html">← Back to Chapter 9</a></p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand common UART communication failures.</li>
+            <li>Verify UART wiring and electrical levels.</li>
+            <li>Diagnose baud-rate and frame-format mismatches.</li>
+            <li>Use a USB-to-UART converter and serial terminal.</li>
+            <li>Debug UART polling, interrupt and DMA operations.</li>
+            <li>Understand UART error flags and HAL error codes.</li>
+            <li>Develop a systematic troubleshooting procedure.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. UART Debugging Overview</h2>
+
+        <p>
+            UART debugging is the process of identifying and
+            correcting problems in serial communication between
+            an STM32 microcontroller and another device.
+        </p>
+
+        <h3>Common Debugging Tools</h3>
+        <ul>
+            <li>STM32CubeIDE debugger</li>
+            <li>USB-to-UART converter</li>
+            <li>Serial terminal software</li>
+            <li>Digital multimeter</li>
+            <li>Oscilloscope</li>
+            <li>Logic analyzer</li>
+        </ul>
+
+        <div class="info-box">
+            A serial terminal helps inspect received characters.
+            An oscilloscope or logic analyzer helps verify the
+            actual electrical waveform and timing.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Verify UART Hardware Connections</h2>
+
+        <p>
+            UART communication requires correct signal wiring
+            between the STM32 and the external device.
+        </p>
+
+        <h3>Basic Connection</h3>
+        <pre><code>STM32 Board                 USB-to-UART Adapter
+
+UART_TX  -----------------> RX
+UART_RX  <----------------- TX
+GND      ------------------ GND</code></pre>
+
+        <h3>Connection Checklist</h3>
+        <ul>
+            <li>Connect STM32 TX to the external RX.</li>
+            <li>Connect STM32 RX to the external TX.</li>
+            <li>Connect a common ground when required.</li>
+            <li>Verify the selected UART pins.</li>
+            <li>Verify the GPIO alternate-function configuration.</li>
+            <li>Check the voltage compatibility of both devices.</li>
+        </ul>
+
+        <div class="warning-box">
+            STM32 UART pins normally use logic-level signals,
+            not RS-232 voltage levels. Do not connect an RS-232
+            interface directly to MCU pins. Use a suitable
+            level-translator or transceiver. Also verify whether
+            the selected STM32 pin is 5 V tolerant before
+            connecting a 5 V signal.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Verify Baud Rate and Frame Format</h2>
+
+        <p>
+            Both communicating devices must use compatible
+            UART settings.
+        </p>
+
+        <h3>Example Configuration</h3>
+        <table>
+            <tr><th>Parameter</th><th>STM32</th><th>Serial Terminal</th></tr>
+            <tr><td>Baud rate</td><td>115200</td><td>115200</td></tr>
+            <tr><td>Data bits</td><td>8</td><td>8</td></tr>
+            <tr><td>Parity</td><td>None</td><td>None</td></tr>
+            <tr><td>Stop bits</td><td>1</td><td>1</td></tr>
+            <tr><td>Flow control</td><td>None</td><td>None</td></tr>
+        </table>
+
+        <p>
+            This is commonly called 115200, 8-N-1.
+        </p>
+
+        <h3>Bit Duration</h3>
+        <p>
+            Bit duration is the reciprocal of the baud rate
+            for conventional binary UART signaling.
+        </p>
+
+        <pre><code>Bit Duration = 1 / Baud Rate
+
+For 115200 baud:
+
+Bit Duration = 1 / 115200
+             ≈ 8.68 microseconds</code></pre>
+
+        <p>
+            Incorrect baud rate, clock configuration, parity,
+            word length or stop-bit settings can produce
+            corrupted characters or framing errors.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Testing UART Using a USB-to-UART Converter</h2>
+
+        <p>
+            A USB-to-UART converter provides a serial connection
+            between a computer and the STM32 UART interface.
+        </p>
+
+        <h3>Testing Procedure</h3>
+        <ol>
+            <li>Connect the converter TX to STM32 RX.</li>
+            <li>Connect the converter RX to STM32 TX.</li>
+            <li>Connect the required ground reference.</li>
+            <li>Connect the converter to the computer.</li>
+            <li>Identify its COM port in Device Manager.</li>
+            <li>Open a serial terminal.</li>
+            <li>Select the correct COM port and UART settings.</li>
+            <li>Run the STM32 firmware and test transmission.</li>
+        </ol>
+
+        <h3>Example Test Message</h3>
+        <pre><code>STM32 UART Communication Test
+UART is working correctly.
+Baud Rate: 115200</code></pre>
+
+        <div class="info-box">
+            Common serial terminal applications include
+            PuTTY, Tera Term and RealTerm. Use a terminal
+            configuration that matches the firmware.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. UART Loopback Testing</h2>
+
+        <p>
+            Loopback testing checks whether transmitted UART
+            data can be received back by the same UART interface.
+        </p>
+
+        <h3>Basic Wiring</h3>
+        <pre><code>STM32 UART
+
+TX  --------+
+            |
+            +-------- RX</code></pre>
+
+        <p>
+            Connect the selected UART TX pin to its RX pin
+            where the board and peripheral configuration allow
+            this test.
+        </p>
+
+        <h3>Polling-Based Loopback Example</h3>
+        <pre><code>#include "main.h"
+
+extern UART_HandleTypeDef huart2;
+
+uint8_t tx_data[] = "UART LOOPBACK";
+uint8_t rx_data[sizeof(tx_data)];
+
+void UART_Loopback_Test(void)
+{
+    if (HAL_UART_Transmit(
+            &amp;huart2,
+            tx_data,
+            sizeof(tx_data) - 1,
+            1000) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    if (HAL_UART_Receive(
+            &amp;huart2,
+            rx_data,
+            sizeof(tx_data) - 1,
+            1000) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    if (memcmp(
+            tx_data,
+            rx_data,
+            sizeof(tx_data) - 1) == 0)
+    {
+        // Loopback test passed.
+    }
+    else
+    {
+        // Data mismatch.
+    }
+}</code></pre>
+
+        <p>
+            Include <code>&lt;string.h&gt;</code> for
+            <code>memcmp()</code>.
+        </p>
+
+        <div class="warning-box">
+            This blocking example requires the loopback connection
+            to be established before transmission. It assumes the
+            selected UART supports simultaneous TX and RX operation
+            and that the pins are configured correctly.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Debugging UART Using STM32CubeIDE</h2>
+
+        <h3>Useful Debugging Features</h3>
+        <ul>
+            <li>Breakpoints</li>
+            <li>Step Into, Step Over and Step Return</li>
+            <li>Live Expressions</li>
+            <li>Variables and Expressions views</li>
+            <li>Peripheral Registers view</li>
+            <li>Call Stack view</li>
+            <li>Memory Browser</li>
+        </ul>
+
+        <h3>Variables to Inspect</h3>
+        <pre><code>huart2.gState
+huart2.RxState
+huart2.ErrorCode
+rx_buffer
+tx_buffer</code></pre>
+
+        <p>
+            The exact HAL handle members can vary by HAL version.
+            Inspect the structure definition in the installed
+            STM32 HAL driver.
+        </p>
+
+        <h3>Debugging Steps</h3>
+        <ol>
+            <li>Set a breakpoint before the UART operation.</li>
+            <li>Verify that the correct UART handle is used.</li>
+            <li>Step over the HAL transmit or receive call.</li>
+            <li>Check the returned HAL status.</li>
+            <li>Inspect the transfer state and error code.</li>
+            <li>Set breakpoints inside UART callbacks.</li>
+            <li>Inspect the receive and transmit buffers.</li>
+        </ol>
+
+        <div class="warning-box">
+            Breakpoints can change real-time behavior. For
+            high-speed or continuous UART communication, use
+            non-intrusive methods such as GPIO timing markers,
+            logic analyzers or trace facilities where available.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. UART Error Conditions</h2>
+
+        <table>
+            <tr><th>Error</th><th>Description</th><th>Possible Cause</th></tr>
+            <tr>
+                <td>Parity Error (PE)</td>
+                <td>Received parity check failed.</td>
+                <td>Incorrect parity configuration or signal corruption.</td>
+            </tr>
+            <tr>
+                <td>Framing Error (FE)</td>
+                <td>Expected stop-bit condition was not detected.</td>
+                <td>Baud mismatch, noise or incorrect frame format.</td>
+            </tr>
+            <tr>
+                <td>Noise Error (NE)</td>
+                <td>Noise was detected during reception.</td>
+                <td>Electrical interference or poor signal quality.</td>
+            </tr>
+            <tr>
+                <td>Overrun Error (ORE)</td>
+                <td>Received data was not read before another arrived.</td>
+                <td>CPU or DMA did not service the receive data in time.</td>
+            </tr>
+        </table>
+
+        <p>
+            Error flags and clearing procedures depend on the
+            STM32 USART implementation. Follow the reference
+            manual and HAL driver documentation for the selected
+            device.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Checking HAL UART Error Codes</h2>
+
+        <p>
+            STM32 HAL provides <code>HAL_UART_GetError()</code>
+            to retrieve the error status associated with a UART
+            handle.
+        </p>
+
+        <h3>Example</h3>
+        <pre><code>void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart-&gt;Instance == USART2)
+    {
+        uint32_t error_code = HAL_UART_GetError(huart);
+
+        if (error_code &amp; HAL_UART_ERROR_PE)
+        {
+            // Handle parity error.
+        }
+
+        if (error_code &amp; HAL_UART_ERROR_FE)
+        {
+            // Handle framing error.
+        }
+
+        if (error_code &amp; HAL_UART_ERROR_NE)
+        {
+            // Handle noise error.
+        }
+
+        if (error_code &amp; HAL_UART_ERROR_ORE)
+        {
+            // Handle overrun error.
+        }
+    }
+}</code></pre>
+
+        <p>
+            The callback should record the error and schedule
+            recovery rather than perform lengthy processing.
+            Error recovery may require restarting a receive
+            operation or clearing peripheral error conditions,
+            depending on the HAL and device.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Common UART Problems and Solutions</h2>
+
+        <table>
+            <tr><th>Problem</th><th>Likely Cause</th><th>Solution</th></tr>
+            <tr>
+                <td>No output in terminal</td>
+                <td>Wrong COM port or TX wiring</td>
+                <td>Check port selection and TX-to-RX connection.</td>
+            </tr>
+            <tr>
+                <td>Unreadable characters</td>
+                <td>Baud or frame mismatch</td>
+                <td>Match baud, data bits, parity and stop bits.</td>
+            </tr>
+            <tr>
+                <td>Receive not working</td>
+                <td>Wrong RX pin or alternate function</td>
+                <td>Verify GPIO and peripheral configuration.</td>
+            </tr>
+            <tr>
+                <td>Interrupt callback missing</td>
+                <td>NVIC or handler configuration issue</td>
+                <td>Check IRQ handler and interrupt enable settings.</td>
+            </tr>
+            <tr>
+                <td>DMA callback missing</td>
+                <td>DMA IRQ not configured</td>
+                <td>Check DMA mapping, NVIC and generated handlers.</td>
+            </tr>
+            <tr>
+                <td>Characters lost</td>
+                <td>Insufficient buffering or delayed processing</td>
+                <td>Use appropriate buffering and DMA where needed.</td>
+            </tr>
+            <tr>
+                <td>Random communication errors</td>
+                <td>Noise, grounding or electrical incompatibility</td>
+                <td>Inspect wiring, signal quality and voltage levels.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>11. UART Signal Analysis Using an Oscilloscope</h2>
+
+        <p>
+            An oscilloscope can help verify the electrical
+            waveform of UART communication.
+        </p>
+
+        <h3>What to Check</h3>
+        <ul>
+            <li>Idle state is normally logic HIGH.</li>
+            <li>Start bit is logic LOW.</li>
+            <li>Data bits are transmitted least-significant bit first in conventional UART framing.</li>
+            <li>Parity bit is present only when configured.</li>
+            <li>Stop bit returns the line to logic HIGH.</li>
+            <li>Bit duration matches the configured baud rate.</li>
+        </ul>
+
+        <h3>Example: 115200 Baud</h3>
+        <pre><code>Bit Duration ≈ 8.68 microseconds
+
+For 8-N-1:
+
+1 Start Bit
+8 Data Bits
+0 Parity Bits
+1 Stop Bit
+
+Total = 10 bits per frame
+
+Ideal frame duration ≈ 86.8 microseconds</code></pre>
+
+        <div class="info-box">
+            Actual frame duration and observed timing depend
+            on the configured frame format and clock accuracy.
+            Use a suitable probe and voltage reference when
+            measuring MCU logic signals.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Systematic UART Troubleshooting Procedure</h2>
+
+        <ol>
+            <li>Confirm the correct STM32 UART peripheral is selected.</li>
+            <li>Check the UART peripheral clock.</li>
+            <li>Verify TX and RX pin alternate functions.</li>
+            <li>Verify TX/RX cross-connections and ground reference.</li>
+            <li>Check voltage-level compatibility.</li>
+            <li>Match baud rate and frame settings.</li>
+            <li>Test simple polling transmission first.</li>
+            <li>Test reception with a known external message.</li>
+            <li>Move to interrupt mode and verify callbacks.</li>
+            <li>Move to DMA mode and verify transfer completion.</li>
+            <li>Inspect error codes and signal waveforms.</li>
+            <li>Test the complete application under expected operating conditions.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Practical Project: UART Command Interface</h2>
+
+        <p>
+            Build a simple command interface in which a computer
+            sends commands to an STM32 through a serial terminal.
+        </p>
+
+        <h3>Example Commands</h3>
+        <pre><code>LED_ON
+LED_OFF
+STATUS
+HELP</code></pre>
+
+        <h3>Expected Responses</h3>
+        <pre><code>LED_ON  -> LED turned ON
+LED_OFF -> LED turned OFF
+STATUS  -> STM32 is running
+HELP    -> Available commands displayed</code></pre>
+
+        <h3>Implementation Tasks</h3>
+        <ol>
+            <li>Configure USART2 at 115200 baud, 8-N-1.</li>
+            <li>Receive command characters through UART.</li>
+            <li>Build a bounded command buffer.</li>
+            <li>Detect a command terminator such as carriage return or newline.</li>
+            <li>Validate the command before execution.</li>
+            <li>Control an LED using GPIO.</li>
+            <li>Send a response to the serial terminal.</li>
+            <li>Handle unknown commands and buffer overflow.</li>
+        </ol>
+
+        <div class="warning-box">
+            Never execute an incomplete or unvalidated command.
+            Define maximum command length and explicitly handle
+            buffer overflow, malformed input and line endings.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Placement Interview Questions and Answers</h2>
+
+        <h3>Q1. What is UART debugging?</h3>
+        <p>
+            It is the process of identifying communication
+            problems by checking configuration, wiring,
+            electrical signals, transfer state and received data.
+        </p>
+
+        <h3>Q2. What is the purpose of a USB-to-UART converter?</h3>
+        <p>
+            It provides a serial interface between a computer's
+            USB port and a UART-based embedded device.
+        </p>
+
+        <h3>Q3. What is a UART loopback test?</h3>
+        <p>
+            It connects the UART transmitter to the receiver
+            so transmitted data can be checked by receiving it
+            back.
+        </p>
+
+        <h3>Q4. What causes framing errors?</h3>
+        <p>
+            Possible causes include baud-rate mismatch, incorrect
+            stop-bit configuration and signal noise.
+        </p>
+
+        <h3>Q5. What causes UART overrun errors?</h3>
+        <p>
+            An overrun can occur when received data is not
+            serviced before additional data arrives.
+        </p>
+
+        <h3>Q6. Why is common ground important?</h3>
+        <p>
+            It provides a shared voltage reference for
+            non-isolated logic-level UART communication.
+        </p>
+
+        <h3>Q7. What is the purpose of a logic analyzer?</h3>
+        <p>
+            It captures and analyzes digital signals and can
+            decode serial protocols such as UART.
+        </p>
+
+        <h3>Q8. Why can UART output contain garbage characters?</h3>
+        <p>
+            Common causes include incorrect baud rate,
+            clock error, incorrect frame settings, noise
+            or incompatible electrical levels.
+        </p>
+
+        <h3>Q9. What is the difference between TTL UART and RS-232?</h3>
+        <p>
+            They use different electrical signaling levels
+            and conventions. A suitable transceiver is required
+            when connecting between the two interfaces.
+        </p>
+
+        <h3>Q10. How do you debug a missing UART interrupt?</h3>
+        <p>
+            Verify the peripheral interrupt source, NVIC enable,
+            correct vector handler, HAL IRQ forwarding and
+            callback conditions.
+        </p>
+
+        <h3>Q11. Why use DMA for UART communication?</h3>
+        <p>
+            DMA reduces CPU involvement in data movement and
+            is useful for larger or continuous transfers.
+        </p>
+
+        <h3>Q12. What is the first step when UART communication fails?</h3>
+        <p>
+            Check basic configuration and physical connections,
+            including the selected UART pins, TX/RX wiring,
+            ground and voltage compatibility.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Practical Exercises</h2>
+        <ol>
+            <li>Transmit a message from STM32 to a serial terminal.</li>
+            <li>Receive a character from the serial terminal.</li>
+            <li>Perform a UART loopback test.</li>
+            <li>Identify an incorrect baud-rate configuration.</li>
+            <li>Debug a missing UART interrupt callback.</li>
+            <li>Inspect UART error codes in the HAL error callback.</li>
+            <li>Measure UART bit duration using an oscilloscope or logic analyzer.</li>
+            <li>Build a command-based LED control application.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Lesson Summary</h2>
+        <ul>
+            <li>UART debugging requires checking software and hardware.</li>
+            <li>TX and RX must be connected correctly.</li>
+            <li>Both devices must use compatible UART settings.</li>
+            <li>USB-to-UART adapters help test serial communication.</li>
+            <li>Loopback testing checks basic transmit and receive operation.</li>
+            <li>CubeIDE helps inspect transfer states and callbacks.</li>
+            <li>UART errors include parity, framing, noise and overrun.</li>
+            <li>Oscilloscopes and logic analyzers help verify signal timing.</li>
+            <li>Systematic troubleshooting reduces debugging time.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Chapter 9 Completion</h2>
+        <p>
+            You have completed STM32 UART/USART Communication.
+            You can now configure UART, transmit and receive
+            data using polling, interrupts and DMA, and diagnose
+            common serial communication problems.
+        </p>
+
+        <h3>Skills Covered</h3>
+        <ul>
+            <li>UART and USART fundamentals</li>
+            <li>Baud-rate and frame configuration</li>
+            <li>HAL polling-based communication</li>
+            <li>Interrupt-based transmission and reception</li>
+            <li>DMA-based serial communication</li>
+            <li>UART debugging and troubleshooting</li>
+        </ul>
+    </section>
+
+    <nav class="lesson-nav">
+        <a href="L05_UART_DMA_Communication.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter Index</a>
+        <a href="../ch10_STM32_I2C_and_SPI_Communication/index.html">
+            Next Chapter →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
