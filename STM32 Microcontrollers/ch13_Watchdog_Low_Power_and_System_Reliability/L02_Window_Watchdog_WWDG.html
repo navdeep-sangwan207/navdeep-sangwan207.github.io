@@ -1,1 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 2 - Window Watchdog (WWDG)</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dce5f0;
+            border-radius: 9px;
+        }
+        h2, h3 { color: #174ea6; }
+        .info-box {
+            background: #eef6ff;
+            border-left: 5px solid #174ea6;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 5px solid #e09b24;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        pre {
+            background: #172033;
+            color: #e8f0ff;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 16px;
+            border-radius: 6px;
+        }
+        .lesson-nav a:hover { background: #007bff; }
+    </style>
+</head>
 
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 2: Window Watchdog (WWDG)</h1>
+        <p>STM32 Microcontrollers – Chapter 13</p>
+        <p>Understand refresh windows, timeout calculation, early refresh detection and WWDG programming.</p>
+    </header>
+
+    <p><a href="index.html">← Back to Chapter 13</a></p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand the Window Watchdog concept.</li>
+            <li>Explain the WWDG counter and window value.</li>
+            <li>Understand early and late refresh conditions.</li>
+            <li>Calculate the WWDG timeout.</li>
+            <li>Configure WWDG using STM32 HAL.</li>
+            <li>Understand the Early Wakeup Interrupt (EWI).</li>
+            <li>Compare IWDG and WWDG.</li>
+            <li>Identify common WWDG configuration errors.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Is a Window Watchdog?</h2>
+
+        <p>
+            The Window Watchdog (WWDG) is a hardware
+            watchdog peripheral available on selected
+            STM32 microcontrollers. It requires the
+            application to refresh its counter during
+            a permitted time window.
+        </p>
+
+        <p>
+            Unlike a simple timeout watchdog, WWDG can
+            detect two types of incorrect behavior:
+        </p>
+
+        <ul>
+            <li><strong>Early refresh:</strong> The application refreshes before the permitted window opens.</li>
+            <li><strong>Late refresh:</strong> The application fails to refresh before the counter reaches its timeout condition.</li>
+        </ul>
+
+        <pre><code>        WWDG COUNTER STARTS
+                 |
+                 v
+          Counter Decreases
+                 |
+                 v
+          Refresh Window Open?
+             /         \
+           NO           YES
+           |             |
+           v             v
+     Early Refresh   Refresh Allowed
+       Causes Reset       |
+                          v
+                   Application Refreshes
+                          |
+                          v
+                    Counter Reloaded
+
+          If Counter Expires Before Refresh
+                          |
+                          v
+                       RESET</code></pre>
+
+        <div class="info-box">
+            WWDG is useful when the firmware must
+            demonstrate that its execution timing is
+            within an expected range, not merely that
+            it eventually refreshes the watchdog.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>3. WWDG Architecture</h2>
+
+        <p>
+            A typical WWDG contains a programmable
+            down-counter, a window register, a
+            prescaler and control logic.
+        </p>
+
+        <pre><code>             PCLK1 CLOCK
+                  |
+                  v
+               PRESCALER
+                  |
+                  v
+             WWDG COUNTER
+                  |
+          +-------+-------+
+          |               |
+          v               v
+     WINDOW VALUE     COUNTER LIMIT
+          |               |
+          +-------+-------+
+                  |
+                  v
+           REFRESH CONTROL
+                  |
+          +-------+-------+
+          |               |
+          v               v
+      VALID REFRESH   INVALID REFRESH
+          |               |
+          v               v
+       RELOAD          SYSTEM RESET</code></pre>
+
+        <h3>Main Components</h3>
+
+        <table>
+            <tr>
+                <th>Component</th>
+                <th>Function</th>
+            </tr>
+            <tr>
+                <td>Counter</td>
+                <td>Counts down from its programmed value.</td>
+            </tr>
+            <tr>
+                <td>Window register</td>
+                <td>Defines the counter threshold at which refreshing becomes permitted.</td>
+            </tr>
+            <tr>
+                <td>Prescaler</td>
+                <td>Divides the peripheral clock used by the watchdog.</td>
+            </tr>
+            <tr>
+                <td>Control register</td>
+                <td>Controls watchdog operation and configuration.</td>
+            </tr>
+            <tr>
+                <td>Early Wakeup Interrupt</td>
+                <td>Can provide an interrupt shortly before the watchdog reset condition.</td>
+            </tr>
+        </table>
+
+        <div class="warning-box">
+            WWDG clock source, register layout, counter
+            behavior and available features are
+            device-specific. The following register
+            descriptions and calculations refer to
+            common STM32 WWDG implementations.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. WWDG Counter and Window Value</h2>
+
+        <p>
+            In common STM32 implementations, the WWDG
+            counter starts in the range 0x40 to 0x7F.
+            The window value determines the earliest
+            permitted counter value for refreshing.
+        </p>
+
+        <h3>Example</h3>
+
+        <p>Assume:</p>
+        <ul>
+            <li>Initial counter value = 0x7F</li>
+            <li>Window value = 0x60</li>
+        </ul>
+
+        <p>
+            The counter decreases over time.
+            Refreshing is permitted only after the
+            counter has reached the allowed window.
+        </p>
+
+        <pre><code>Counter = 0x7F
+       |
+       v
+Counter = 0x70
+       |
+       v
+Counter = 0x65
+       |
+       v
+Counter = 0x60
+       |
+       v
+Refresh Window Opens
+       |
+       v
+Application May Refresh
+       |
+       v
+Counter Reloaded</code></pre>
+
+        <div class="info-box">
+            In common STM32 WWDG implementations,
+            refreshing while the counter is greater
+            than the programmed window value causes
+            a reset. The counter must also be refreshed
+            before it reaches the reset boundary.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>5. WWDG Registers</h2>
+
+        <p>
+            A common STM32 WWDG implementation uses
+            the following registers.
+        </p>
+
+        <table>
+            <tr>
+                <th>Register</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>WWDG_CR</td>
+                <td>Control register containing the counter and activation bit.</td>
+            </tr>
+            <tr>
+                <td>WWDG_CFR</td>
+                <td>Configuration register containing prescaler, window value and interrupt enable.</td>
+            </tr>
+            <tr>
+                <td>WWDG_SR</td>
+                <td>Status register, including the Early Wakeup Interrupt flag.</td>
+            </tr>
+        </table>
+
+        <h3>Important Fields</h3>
+
+        <ul>
+            <li><strong>T[6:0]:</strong> Seven-bit watchdog counter.</li>
+            <li><strong>WDGA:</strong> Watchdog activation bit in common implementations.</li>
+            <li><strong>W[6:0]:</strong> Window value.</li>
+            <li><strong>WDGTB:</strong> Prescaler selection field.</li>
+            <li><strong>EWI:</strong> Early Wakeup Interrupt enable.</li>
+        </ul>
+
+        <p>
+            The exact bit positions and register
+            definitions must be checked in the
+            reference manual for the selected STM32.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>6. WWDG Timeout Calculation</h2>
+
+        <p>
+            In common STM32 WWDG implementations,
+            the counter clock is derived from PCLK1.
+        </p>
+
+        <h3>Counter Clock Formula</h3>
+
+        <pre><code>WWDG Counter Clock =
+PCLK1 / (4096 x Prescaler Division Factor)</code></pre>
+
+        <h3>Timeout Formula</h3>
+
+        <pre><code>Timeout =
+(Counter Start - Counter End)
+--------------------------------
+       WWDG Counter Clock</code></pre>
+
+        <p>
+            For a common STM32 implementation,
+            the counter starts from the programmed
+            value and reset occurs when the counter
+            reaches the 0x3F boundary.
+        </p>
+
+        <h3>Calculation Example</h3>
+
+        <p>Assume:</p>
+        <ul>
+            <li>PCLK1 = 42 MHz</li>
+            <li>Prescaler division factor = 8</li>
+            <li>Counter start = 0x7F = 127</li>
+            <li>Counter end boundary = 0x3F = 63</li>
+        </ul>
+
+        <pre><code>Counter Clock =
+42,000,000 / (4096 x 8)
+
+Counter Clock = 1281.25 Hz
+
+Timeout =
+(127 - 63) / 1281.25
+
+Timeout = 0.04995 seconds
+
+Timeout ≈ 49.95 ms</code></pre>
+
+        <div class="warning-box">
+            This is a nominal example based on a
+            common STM32 WWDG counter model. Check
+            the exact counter decrement and reset
+            conditions in the selected device reference
+            manual. The allowed refresh interval also
+            depends on the window value.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Refresh Window Operation</h2>
+
+        <p>
+            WWDG refresh must occur after the counter
+            enters the permitted window and before
+            it reaches the reset boundary.
+        </p>
+
+        <table>
+            <tr>
+                <th>Refresh Condition</th>
+                <th>Result</th>
+            </tr>
+            <tr>
+                <td>Counter greater than window value</td>
+                <td>Early refresh; reset is generated.</td>
+            </tr>
+            <tr>
+                <td>Counter within permitted window</td>
+                <td>Refresh is accepted.</td>
+            </tr>
+            <tr>
+                <td>Counter reaches reset boundary</td>
+                <td>Watchdog reset is generated.</td>
+            </tr>
+        </table>
+
+        <h3>Timing Illustration</h3>
+
+        <pre><code>Time ------------------------------------>
+
+Counter:
+  0x7F ---------> 0x70 ---------> 0x60
+                                      |
+                                      v
+                              WINDOW OPENS
+                                      |
+                                      v
+                          VALID REFRESH PERIOD
+                                      |
+                                      v
+                              REFRESH REQUIRED
+                                      |
+                                      v
+                                  0x3F
+                                      |
+                                      v
+                                    RESET</code></pre>
+
+        <p>
+            The application should be designed to
+            refresh at a predictable point inside
+            the permitted window, with enough margin
+            for execution-time variation.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>8. WWDG Configuration Using STM32CubeMX</h2>
+
+        <ol>
+            <li>Open the STM32CubeIDE project.</li>
+            <li>Open the device configuration file.</li>
+            <li>Locate WWDG in the available peripheral list.</li>
+            <li>Enable the WWDG peripheral.</li>
+            <li>Configure the prescaler.</li>
+            <li>Set the counter start value.</li>
+            <li>Set the window value.</li>
+            <li>Enable EWI if the application requires it.</li>
+            <li>Generate the initialization code.</li>
+            <li>Build and test the application.</li>
+        </ol>
+
+        <div class="info-box">
+            WWDG is not present on every STM32 model.
+            Confirm peripheral availability before
+            selecting a device or creating the project.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. WWDG Programming Using STM32 HAL</h2>
+
+        <p>
+            The following example uses a common STM32
+            HAL configuration style. The selected
+            device and HAL version must support the
+            shown WWDG fields and functions.
+        </p>
+
+        <h3>Step 1: Declare the Handle</h3>
+
+        <pre><code>WWDG_HandleTypeDef hwwdg;</code></pre>
+
+        <h3>Step 2: Initialize WWDG</h3>
+
+        <pre><code>void MX_WWDG_Init(void)
+{
+    hwwdg.Instance = WWDG;
+
+    hwwdg.Init.Prescaler = WWDG_PRESCALER_8;
+    hwwdg.Init.Window = 0x60;
+    hwwdg.Init.Counter = 0x7F;
+
+    if (HAL_WWDG_Init(&amp;hwwdg) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}</code></pre>
+
+        <h3>Step 3: Refresh WWDG</h3>
+
+        <pre><code>void WWDG_Refresh(void)
+{
+    if (HAL_WWDG_Refresh(&amp;hwwdg) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}</code></pre>
+
+        <h3>Step 4: Main Application Concept</h3>
+
+        <pre><code>int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_WWDG_Init();
+
+    while (1)
+    {
+        Application_Task();
+
+        if (Application_Health_Check())
+        {
+            /*
+             * Refresh only when the counter
+             * has entered the permitted window.
+             */
+            WWDG_Refresh();
+        }
+    }
+}</code></pre>
+
+        <div class="warning-box">
+            The example shows the initialization and
+            refresh APIs, not a complete timing solution.
+            A production application must schedule the
+            refresh inside the actual permitted window.
+            An unconditional or too-early refresh can
+            cause an immediate reset.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Early Wakeup Interrupt (EWI)</h2>
+
+        <p>
+            Some STM32 WWDG implementations provide
+            an Early Wakeup Interrupt. It can notify
+            the application shortly before the
+            watchdog reaches its reset condition.
+        </p>
+
+        <h3>Purpose of EWI</h3>
+        <ul>
+            <li>Provide an early warning of an impending watchdog reset.</li>
+            <li>Record diagnostic information where time permits.</li>
+            <li>Update a fault indicator.</li>
+            <li>Support controlled diagnostic actions.</li>
+        </ul>
+
+        <h3>HAL Callback Example</h3>
+
+        <pre><code>void HAL_WWDG_EarlyWakeupCallback(
+    WWDG_HandleTypeDef *hwwdg)
+{
+    /*
+     * Keep this callback short.
+     * Set a diagnostic flag or record
+     * minimal fault information.
+     */
+    fault_warning = 1U;
+}</code></pre>
+
+        <p>
+            The interrupt handler must call the
+            appropriate HAL WWDG handler for the
+            selected device.
+        </p>
+
+        <div class="warning-box">
+            EWI timing and callback support vary by
+            device and HAL version. Do not depend on
+            lengthy processing or blocking operations
+            before the impending reset.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. IWDG vs WWDG</h2>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>IWDG</th>
+                <th>WWDG</th>
+            </tr>
+            <tr>
+                <td>Full Name</td>
+                <td>Independent Watchdog</td>
+                <td>Window Watchdog</td>
+            </tr>
+            <tr>
+                <td>Typical Clock</td>
+                <td>LSI</td>
+                <td>PCLK1-derived clock</td>
+            </tr>
+            <tr>
+                <td>Refresh Rule</td>
+                <td>Refresh before timeout</td>
+                <td>Refresh within permitted window</td>
+            </tr>
+            <tr>
+                <td>Early Refresh Detection</td>
+                <td>Not normally provided</td>
+                <td>Yes</td>
+            </tr>
+            <tr>
+                <td>Late Refresh Detection</td>
+                <td>Yes</td>
+                <td>Yes</td>
+            </tr>
+            <tr>
+                <td>Clock Independence</td>
+                <td>Independent of main clock on typical implementations</td>
+                <td>Typically derived from peripheral clock</td>
+            </tr>
+            <tr>
+                <td>Typical Use</td>
+                <td>General software recovery</td>
+                <td>Monitoring execution timing</td>
+            </tr>
+        </table>
+
+        <p>
+            Both watchdogs improve reliability, but
+            their clock sources and refresh behavior
+            make them suitable for different
+            application requirements.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Common WWDG Programming Errors</h2>
+
+        <table>
+            <tr>
+                <th>Error</th>
+                <th>Possible Result</th>
+                <th>Prevention</th>
+            </tr>
+            <tr>
+                <td>Refreshing too early</td>
+                <td>Immediate watchdog reset</td>
+                <td>Respect the refresh window.</td>
+            </tr>
+            <tr>
+                <td>Refreshing too late</td>
+                <td>Watchdog reset</td>
+                <td>Provide sufficient timing margin.</td>
+            </tr>
+            <tr>
+                <td>Incorrect PCLK1 assumption</td>
+                <td>Incorrect timeout</td>
+                <td>Calculate the actual peripheral clock.</td>
+            </tr>
+            <tr>
+                <td>Incorrect prescaler</td>
+                <td>Unexpected refresh interval</td>
+                <td>Verify the prescaler configuration.</td>
+            </tr>
+            <tr>
+                <td>Wrong window value</td>
+                <td>Unexpected early or late reset</td>
+                <td>Validate the allowed counter range.</td>
+            </tr>
+            <tr>
+                <td>Assuming WWDG exists on every STM32</td>
+                <td>Peripheral unavailable</td>
+                <td>Check the device datasheet.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Practical Project: WWDG Refresh Window</h2>
+
+        <h3>Project Objective</h3>
+        <p>
+            Configure the WWDG and refresh it at a
+            controlled interval within the allowed
+            refresh window.
+        </p>
+
+        <h3>Project Steps</h3>
+        <ol>
+            <li>Select an STM32 device that supports WWDG.</li>
+            <li>Calculate the WWDG counter clock.</li>
+            <li>Choose the prescaler and counter value.</li>
+            <li>Set the refresh window.</li>
+            <li>Configure WWDG using CubeMX or HAL.</li>
+            <li>Schedule a valid refresh point.</li>
+            <li>Test a refresh that occurs too early.</li>
+            <li>Test a refresh that occurs too late.</li>
+            <li>Observe reset behavior and inspect reset flags.</li>
+        </ol>
+
+        <div class="info-box">
+            Perform early- and late-refresh tests in a
+            controlled development environment. A
+            watchdog reset restarts the target and
+            may interrupt debugging.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Placement Interview Questions and Answers</h2>
+
+        <h3>Q1. What is WWDG?</h3>
+        <p>
+            WWDG is a Window Watchdog that requires
+            the application to refresh its counter
+            within a permitted timing window.
+        </p>
+
+        <h3>Q2. Why is it called a Window Watchdog?</h3>
+        <p>
+            Because the counter can only be refreshed
+            during a defined window of time.
+        </p>
+
+        <h3>Q3. What happens if WWDG is refreshed too early?</h3>
+        <p>
+            In common STM32 implementations, an
+            early refresh causes a watchdog reset.
+        </p>
+
+        <h3>Q4. What happens if WWDG is not refreshed?</h3>
+        <p>
+            The counter reaches its reset boundary
+            and the microcontroller is reset.
+        </p>
+
+        <h3>Q5. What clock is commonly used by WWDG?</h3>
+        <p>
+            WWDG commonly derives its counter clock
+            from PCLK1.
+        </p>
+
+        <h3>Q6. What is the purpose of the window register?</h3>
+        <p>
+            It defines the counter threshold at which
+            refreshing becomes permitted.
+        </p>
+
+        <h3>Q7. What is EWI?</h3>
+        <p>
+            EWI stands for Early Wakeup Interrupt.
+            It can provide an interrupt before the
+            watchdog reset condition.
+        </p>
+
+        <h3>Q8. What is the main difference between IWDG and WWDG?</h3>
+        <p>
+            IWDG normally checks whether the application
+            refreshes before timeout. WWDG additionally
+            checks that refreshing does not occur too early.
+        </p>
+
+        <h3>Q9. Why must PCLK1 be calculated correctly?</h3>
+        <p>
+            Because the WWDG counter clock is commonly
+            derived from PCLK1, so an incorrect clock
+            assumption produces an incorrect timeout.
+        </p>
+
+        <h3>Q10. Where is WWDG useful?</h3>
+        <p>
+            It is useful in embedded applications where
+            firmware execution must remain within
+            expected timing limits.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Practical Exercises</h2>
+
+        <ol>
+            <li>Explain the working principle of WWDG.</li>
+            <li>Draw the WWDG block diagram.</li>
+            <li>Explain the purpose of the counter and window register.</li>
+            <li>Calculate the WWDG counter clock for a given PCLK1 and prescaler.</li>
+            <li>Calculate the nominal timeout for a selected counter range.</li>
+            <li>Configure WWDG using STM32CubeMX.</li>
+            <li>Write HAL initialization and refresh code.</li>
+            <li>Explain early and late refresh behavior.</li>
+            <li>Compare IWDG and WWDG.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Lesson Summary</h2>
+
+        <ul>
+            <li>WWDG is a hardware watchdog with a refresh window.</li>
+            <li>Refreshing too early can generate a reset.</li>
+            <li>Failing to refresh before timeout also generates a reset.</li>
+            <li>The window register controls the permitted refresh threshold.</li>
+            <li>WWDG commonly uses a clock derived from PCLK1.</li>
+            <li>EWI can provide an early warning interrupt.</li>
+            <li>WWDG availability and features vary across STM32 devices.</li>
+            <li>Refresh timing must be designed and tested carefully.</li>
+        </ul>
+    </section>
+
+    <nav class="lesson-nav">
+        <a href="L01_Independent_Watchdog_IWDG.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L03_Low_Power_Modes_and_Wakeup_Sources.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
