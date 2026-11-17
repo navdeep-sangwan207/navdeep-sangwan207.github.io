@@ -1,1 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 6 - HAL, CMSIS and Low-Level Programming</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: #fff;
+            border: 1px solid #e0e6ef;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 18px 0;
+        }
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #e5edf8;
+            padding-bottom: 8px;
+        }
+        h3 { color: #1769aa; }
+        pre {
+            background: #17212f;
+            color: #e8f1ff;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e0a000;
+            padding: 12px;
+            margin: 15px 0;
+        }
+        .example {
+            background: #eef6ff;
+            border-left: 5px solid #007bff;
+            padding: 12px;
+            margin: 15px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .navigation a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 17px;
+            border-radius: 6px;
+        }
+        .navigation a:hover { background: #007bff; }
+    </style>
+</head>
+<body>
 
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 6: HAL, CMSIS and Low-Level Programming</h1>
+        <p>
+            Understand STM32 software layers, compare HAL and register-level
+            programming, and learn how CMSIS supports embedded firmware development.
+        </p>
+    </header>
+
+    <p>
+        <a href="index.html">← Back to Chapter 4</a> |
+        <a href="../stm32-microcontrollers.html">STM32 Course Home</a>
+    </p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand the STM32 firmware software architecture.</li>
+            <li>Learn the purpose of CMSIS.</li>
+            <li>Understand the STM32 HAL library.</li>
+            <li>Learn the role of LL drivers.</li>
+            <li>Compare HAL, LL and register-level programming.</li>
+            <li>Understand peripheral initialization and driver APIs.</li>
+            <li>Choose an appropriate programming approach for a project.</li>
+            <li>Identify common software-layer and configuration errors.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. STM32 Firmware Software Architecture</h2>
+
+        <p>
+            STM32 firmware is commonly developed using several software
+            layers. These layers help separate application logic from
+            processor-specific and peripheral-specific implementation.
+        </p>
+
+        <h3>Typical Software Layers</h3>
+
+        <pre><code>+--------------------------------------+
+|          Application Layer           |
+|       Application and Project Logic   |
++--------------------------------------+
+|          Middleware Layer            |
+|     FreeRTOS, USB, TCP/IP, File System|
++--------------------------------------+
+|      STM32 HAL / LL Drivers           |
+|       Peripheral Driver APIs         |
++--------------------------------------+
+|          CMSIS Device Layer           |
+|     Device Registers and Definitions |
++--------------------------------------+
+|          Cortex-M Core                |
+|      NVIC, SysTick, Core Registers   |
++--------------------------------------+
+|              Hardware                 |
+|       CPU, Memory and Peripherals    |
++--------------------------------------+</code></pre>
+
+        <p>
+            Not every project uses all these layers. A small application
+            may use CMSIS device definitions and direct register access,
+            while a larger project may use HAL and middleware.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>3. What is CMSIS?</h2>
+
+        <p>
+            CMSIS stands for Arm Cortex Microcontroller Software Interface
+            Standard. It provides standardized software interfaces for
+            Cortex-M processor-based microcontrollers.
+        </p>
+
+        <h3>Important CMSIS Components</h3>
+
+        <table>
+            <tr>
+                <th>Component</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>CMSIS-Core</td>
+                <td>Processor core access, NVIC, SysTick and core registers.</td>
+            </tr>
+            <tr>
+                <td>CMSIS-Device</td>
+                <td>Device-specific peripheral definitions supplied by the vendor.</td>
+            </tr>
+            <tr>
+                <td>CMSIS-DSP</td>
+                <td>Optimized digital signal processing functions.</td>
+            </tr>
+            <tr>
+                <td>CMSIS-RTOS</td>
+                <td>Standardized RTOS interfaces, with version-specific APIs.</td>
+            </tr>
+            <tr>
+                <td>CMSIS-Pack</td>
+                <td>Software component and device support packaging.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            CMSIS is an Arm standard. STM32 device-specific headers and
+            peripheral definitions are supplied through the STM32 device
+            support package.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. CMSIS Core Programming</h2>
+
+        <p>
+            CMSIS-Core provides functions and definitions for accessing
+            Cortex-M core features.
+        </p>
+
+        <h3>Example: Configure an NVIC Interrupt</h3>
+
+        <pre><code>#include "stm32f4xx.h"
+
+void configure_irq(void)
+{
+    NVIC_SetPriority(EXTI0_IRQn, 5U);
+    NVIC_EnableIRQ(EXTI0_IRQn);
+}</code></pre>
+
+        <h3>Common CMSIS-Core Functions</h3>
+
+        <table>
+            <tr>
+                <th>Function</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>NVIC_EnableIRQ()</td>
+                <td>Enable an external interrupt.</td>
+            </tr>
+            <tr>
+                <td>NVIC_DisableIRQ()</td>
+                <td>Disable an external interrupt.</td>
+            </tr>
+            <tr>
+                <td>NVIC_SetPriority()</td>
+                <td>Set an interrupt priority.</td>
+            </tr>
+            <tr>
+                <td>SysTick_Config()</td>
+                <td>Configure the SysTick timer.</td>
+            </tr>
+            <tr>
+                <td>__disable_irq()</td>
+                <td>Disable configurable interrupts globally.</td>
+            </tr>
+            <tr>
+                <td>__enable_irq()</td>
+                <td>Enable configurable interrupts globally.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            These APIs operate on Cortex-M core facilities. Peripheral
+            interrupt flags and peripheral-specific interrupt enables
+            must still be configured separately.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>5. What is STM32 HAL?</h2>
+
+        <p>
+            HAL stands for Hardware Abstraction Layer. STM32 HAL is a
+            vendor-provided driver library that offers high-level APIs
+            for configuring and using STM32 peripherals.
+        </p>
+
+        <h3>Examples of HAL Functions</h3>
+
+        <table>
+            <tr>
+                <th>Function</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>HAL_Init()</td>
+                <td>Initialize the HAL library and basic system services.</td>
+            </tr>
+            <tr>
+                <td>HAL_GPIO_WritePin()</td>
+                <td>Set or reset a GPIO output pin.</td>
+            </tr>
+            <tr>
+                <td>HAL_GPIO_ReadPin()</td>
+                <td>Read a GPIO input pin.</td>
+            </tr>
+            <tr>
+                <td>HAL_UART_Transmit()</td>
+                <td>Transmit UART data.</td>
+            </tr>
+            <tr>
+                <td>HAL_UART_Receive()</td>
+                <td>Receive UART data.</td>
+            </tr>
+            <tr>
+                <td>HAL_ADC_Start()</td>
+                <td>Start an ADC conversion.</td>
+            </tr>
+            <tr>
+                <td>HAL_TIM_Base_Start()</td>
+                <td>Start a timer base counter.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>6. GPIO Programming Using HAL</h2>
+
+        <h3>Example: Toggle an LED</h3>
+
+        <pre><code>#include "main.h"
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    while (1)
+    {
+        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+
+        HAL_Delay(500);
+    }
+}</code></pre>
+
+        <h3>Explanation</h3>
+        <ul>
+            <li><code>HAL_Init()</code> initializes the HAL framework.</li>
+            <li><code>SystemClock_Config()</code> configures the system clock.</li>
+            <li><code>MX_GPIO_Init()</code> initializes GPIO using generated configuration.</li>
+            <li><code>HAL_GPIO_TogglePin()</code> changes the output state.</li>
+            <li><code>HAL_Delay()</code> provides a blocking delay based on the HAL time base.</li>
+        </ul>
+
+        <div class="note">
+            GPIOA pin 5 is only an example. The LED port and pin must match
+            the selected STM32 board and its circuit. The HAL time base
+            must also be configured correctly.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. What are STM32 LL Drivers?</h2>
+
+        <p>
+            LL stands for Low-Layer. STM32 LL drivers provide lower-level
+            peripheral access than HAL and are designed to offer more
+            direct control over peripheral registers.
+        </p>
+
+        <h3>Example: GPIO Output Using LL</h3>
+
+        <pre><code>#include "main.h"
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+
+    /* Enable GPIOA peripheral clock */
+    LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_GPIOA);
+
+    /* Configure PA5 as output */
+    LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_5, LL_GPIO_MODE_OUTPUT);
+
+    while (1)
+    {
+        LL_GPIO_TogglePin(GPIOA, LL_GPIO_PIN_5);
+
+        for (volatile uint32_t i = 0U; i &lt; 100000U; i++)
+        {
+            /* Illustrative software delay only */
+        }
+    }
+}</code></pre>
+
+        <div class="note">
+            LL API names and available functions depend on the STM32 family
+            and installed driver package. The loop is not a calibrated
+            timing mechanism; use a hardware timer for accurate timing.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Register-Level Programming</h2>
+
+        <p>
+            Register-level programming accesses peripheral registers
+            directly using CMSIS device definitions or carefully defined
+            register addresses.
+        </p>
+
+        <h3>Example: Configure PA5 as Output (STM32F4)</h3>
+
+        <pre><code>#include "stm32f4xx.h"
+
+int main(void)
+{
+    /* Enable GPIOA clock */
+    RCC-&gt;AHB1ENR |= (1U &lt;&lt; 0);
+
+    /* Set PA5 mode to output */
+    GPIOA-&gt;MODER &amp;= ~(3U &lt;&lt; 10);
+    GPIOA-&gt;MODER |=  (1U &lt;&lt; 10);
+
+    while (1)
+    {
+        /* Set PA5 */
+        GPIOA-&gt;BSRR = (1U &lt;&lt; 5);
+
+        /* Reset PA5 */
+        GPIOA-&gt;BSRR = (1U &lt;&lt; 21);
+    }
+}</code></pre>
+
+        <p>
+            In this example, each GPIO pin uses two MODER bits.
+            PA5 uses bits 11:10. The BSRR lower half sets output bits,
+            while the upper half resets output bits.
+        </p>
+
+        <div class="note">
+            This example uses the STM32F4 GPIO register layout.
+            It does not provide a visible blink delay. For another STM32
+            family, verify the RCC and GPIO register layout in its reference
+            manual and device header.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. HAL vs LL vs Register-Level Programming</h2>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>HAL</th>
+                <th>LL</th>
+                <th>Register-Level</th>
+            </tr>
+            <tr>
+                <td>Abstraction</td>
+                <td>High</td>
+                <td>Low</td>
+                <td>Very low</td>
+            </tr>
+            <tr>
+                <td>Ease of use</td>
+                <td>Generally easier</td>
+                <td>Requires more peripheral knowledge</td>
+                <td>Requires detailed register knowledge</td>
+            </tr>
+            <tr>
+                <td>Control</td>
+                <td>Driver-managed</td>
+                <td>More direct</td>
+                <td>Direct register control</td>
+            </tr>
+            <tr>
+                <td>Portability</td>
+                <td>Often easier within supported STM32 families</td>
+                <td>Family-dependent</td>
+                <td>Highly device-dependent</td>
+            </tr>
+            <tr>
+                <td>Development speed</td>
+                <td>Usually faster</td>
+                <td>Moderate</td>
+                <td>Can require more development time</td>
+            </tr>
+            <tr>
+                <td>Typical use</td>
+                <td>Application development</td>
+                <td>Performance-sensitive peripheral control</td>
+                <td>Specialized control and hardware learning</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>10. STM32CubeMX and Code Generation</h2>
+
+        <p>
+            STM32CubeMX is a configuration tool used to select the MCU,
+            configure pins, clocks and peripherals, and generate initialization
+            code for a project.
+        </p>
+
+        <h3>Typical Workflow</h3>
+        <ol>
+            <li>Select the STM32 microcontroller or development board.</li>
+            <li>Configure GPIO pins and alternate functions.</li>
+            <li>Configure the clock tree.</li>
+            <li>Configure peripherals such as UART, SPI, I2C and ADC.</li>
+            <li>Configure NVIC settings where required.</li>
+            <li>Select HAL or LL driver options where supported.</li>
+            <li>Generate the project code.</li>
+            <li>Build, flash and debug using STM32CubeIDE.</li>
+        </ol>
+
+        <div class="example">
+            CubeMX-generated initialization functions commonly use names
+            such as <code>MX_GPIO_Init()</code>,
+            <code>MX_USART2_UART_Init()</code> and
+            <code>MX_ADC1_Init()</code>.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. STM32 HAL Driver Structure</h2>
+
+        <p>
+            HAL drivers commonly use handle structures to maintain
+            peripheral configuration and runtime state.
+        </p>
+
+        <h3>UART Handle Example</h3>
+
+        <pre><code>UART_HandleTypeDef huart2;</code></pre>
+
+        <p>
+            The handle is configured with information such as the UART
+            instance, baud rate, word length, stop bits and other settings.
+        </p>
+
+        <h3>Example Initialization</h3>
+
+        <pre><code>huart2.Instance = USART2;
+
+huart2.Init.BaudRate = 115200;
+huart2.Init.WordLength = UART_WORDLENGTH_8B;
+huart2.Init.StopBits = UART_STOPBITS_1;
+huart2.Init.Parity = UART_PARITY_NONE;
+huart2.Init.Mode = UART_MODE_TX_RX;
+huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+
+if (HAL_UART_Init(&amp;huart2) != HAL_OK)
+{
+    Error_Handler();
+}</code></pre>
+
+        <p>
+            This is a typical STM32 HAL UART initialization pattern.
+            The exact fields and supported settings depend on the device
+            and HAL driver version.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Error Handling in HAL</h2>
+
+        <p>
+            HAL functions often return a status value that allows the
+            application to detect configuration or operation errors.
+        </p>
+
+        <h3>Common HAL Status Values</h3>
+
+        <table>
+            <tr>
+                <th>Status</th>
+                <th>Meaning</th>
+            </tr>
+            <tr>
+                <td>HAL_OK</td>
+                <td>Operation completed successfully.</td>
+            </tr>
+            <tr>
+                <td>HAL_ERROR</td>
+                <td>Operation failed.</td>
+            </tr>
+            <tr>
+                <td>HAL_BUSY</td>
+                <td>Peripheral or driver is busy.</td>
+            </tr>
+            <tr>
+                <td>HAL_TIMEOUT</td>
+                <td>Operation exceeded its allowed timeout.</td>
+            </tr>
+        </table>
+
+        <h3>Example</h3>
+
+        <pre><code>if (HAL_UART_Transmit(&amp;huart2,
+                      (uint8_t *)"STM32\r\n",
+                      7U,
+                      100U) != HAL_OK)
+{
+    Error_Handler();
+}</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Choosing the Right Programming Approach</h2>
+
+        <table>
+            <tr>
+                <th>Project Requirement</th>
+                <th>Suitable Approach</th>
+            </tr>
+            <tr>
+                <td>Quick prototype using standard peripherals</td>
+                <td>HAL</td>
+            </tr>
+            <tr>
+                <td>Application using multiple STM32 peripherals</td>
+                <td>HAL with CMSIS</td>
+            </tr>
+            <tr>
+                <td>More direct peripheral control</td>
+                <td>LL</td>
+            </tr>
+            <tr>
+                <td>Learning hardware register operation</td>
+                <td>Register-level with CMSIS definitions</td>
+            </tr>
+            <tr>
+                <td>Custom timing or specialized hardware behavior</td>
+                <td>LL or register-level, as appropriate</td>
+            </tr>
+        </table>
+
+        <p>
+            Real-world firmware often combines these approaches.
+            The important requirement is to avoid conflicting ownership
+            of the same peripheral between different software layers.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Common Development Errors</h2>
+
+        <table>
+            <tr>
+                <th>Error</th>
+                <th>Recommended Check</th>
+            </tr>
+            <tr>
+                <td>HAL function returns an error</td>
+                <td>Check handle initialization, peripheral clock and state.</td>
+            </tr>
+            <tr>
+                <td>Peripheral does not respond</td>
+                <td>Check pin configuration, clock and wiring.</td>
+            </tr>
+            <tr>
+                <td>Incorrect register access</td>
+                <td>Check the exact MCU reference manual and header.</td>
+            </tr>
+            <tr>
+                <td>Generated code does not match hardware</td>
+                <td>Verify selected MCU and CubeMX configuration.</td>
+            </tr>
+            <tr>
+                <td>Unexpected HAL timeout</td>
+                <td>Check peripheral state, clock configuration and timeout.</td>
+            </tr>
+            <tr>
+                <td>Interrupt callback not executed</td>
+                <td>Check peripheral IRQ handler and NVIC configuration.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Placement-Oriented Interview Questions and Answers</h2>
+
+        <h3>Q1. What is CMSIS?</h3>
+        <p>
+            CMSIS is the Arm Cortex Microcontroller Software Interface
+            Standard. It provides standardized interfaces for Cortex-M
+            processor-based microcontrollers.
+        </p>
+
+        <h3>Q2. What is STM32 HAL?</h3>
+        <p>
+            HAL is STMicroelectronics' Hardware Abstraction Layer library
+            for accessing STM32 peripherals through higher-level APIs.
+        </p>
+
+        <h3>Q3. What is an LL driver?</h3>
+        <p>
+            LL is a low-layer peripheral driver library that provides
+            more direct control than HAL.
+        </p>
+
+        <h3>Q4. What is the difference between HAL and LL?</h3>
+        <p>
+            HAL provides higher-level APIs and manages more driver details.
+            LL provides lower-level operations with more direct peripheral control.
+        </p>
+
+        <h3>Q5. What is register-level programming?</h3>
+        <p>
+            It is the direct reading and writing of hardware peripheral
+            registers to configure and control the microcontroller.
+        </p>
+
+        <h3>Q6. What is the purpose of STM32CubeMX?</h3>
+        <p>
+            It configures MCU pins, clocks and peripherals and generates
+            initialization code for STM32 projects.
+        </p>
+
+        <h3>Q7. What is a HAL handle?</h3>
+        <p>
+            It is a driver data structure that stores peripheral instance,
+            configuration and runtime state information.
+        </p>
+
+        <h3>Q8. Can HAL and register-level programming be used together?</h3>
+        <p>
+            Yes, when carefully designed. Avoid modifying peripheral
+            registers in ways that conflict with HAL's internal state
+            or ongoing operations.
+        </p>
+
+        <h3>Q9. What is HAL_OK?</h3>
+        <p>
+            It is a HAL status value indicating that an operation completed
+            successfully.
+        </p>
+
+        <h3>Q10. Which approach is best for embedded development?</h3>
+        <p>
+            It depends on project requirements, performance, maintainability,
+            hardware control and development time.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Practical Exercises</h2>
+        <ol>
+            <li>Identify CMSIS files in an STM32CubeIDE project.</li>
+            <li>Locate the CMSIS device header for the selected STM32 MCU.</li>
+            <li>Configure GPIO using HAL.</li>
+            <li>Configure the same GPIO using LL.</li>
+            <li>Configure GPIO using CMSIS register definitions.</li>
+            <li>Compare the three approaches.</li>
+            <li>Configure UART using STM32CubeMX and HAL.</li>
+            <li>Inspect a HAL peripheral handle in the debugger.</li>
+            <li>Check and handle a HAL error return value.</li>
+            <li>Explain which programming layer is suitable for a given embedded project.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Lesson Summary</h2>
+        <ul>
+            <li>CMSIS provides standardized Cortex-M software interfaces.</li>
+            <li>CMSIS device headers provide device-specific peripheral definitions.</li>
+            <li>HAL provides higher-level STM32 peripheral APIs.</li>
+            <li>LL provides lower-level peripheral operations.</li>
+            <li>Register-level programming gives direct hardware control.</li>
+            <li>STM32CubeMX generates peripheral initialization code.</li>
+            <li>HAL handles maintain peripheral configuration and runtime state.</li>
+            <li>Firmware can combine software layers when peripheral ownership is managed carefully.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>18. Chapter 4 Completion – Embedded C Programming for STM32</h2>
+        <p>
+            You have completed all six lessons in this chapter.
+            The chapter covered Embedded C fundamentals, register-level
+            programming, volatile and const, pointers, structures,
+            interrupts, callbacks, HAL, CMSIS and LL drivers.
+        </p>
+
+        <ul>
+            <li>Lesson 1: Embedded C Programming Fundamentals</li>
+            <li>Lesson 2: Register-Level Programming and Bit Manipulation</li>
+            <li>Lesson 3: Volatile, Const and Static Keywords</li>
+            <li>Lesson 4: Pointers, Structures and Memory-Mapped Registers</li>
+            <li>Lesson 5: Interrupt Service Routines and Callbacks</li>
+            <li>Lesson 6: HAL, CMSIS and Low-Level Programming</li>
+        </ul>
+    </section>
+
+    <nav class="navigation">
+        <a href="L05_Interrupt_Service_Routines_and_Callbacks.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter 4 Index</a>
+        <a href="../ch05_STM32_GPIO_and_Digital_Interfacing/index.html">
+            Next Chapter: GPIO →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
