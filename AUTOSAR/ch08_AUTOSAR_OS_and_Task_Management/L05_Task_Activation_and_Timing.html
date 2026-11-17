@@ -1,1 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 5: Task Activation and Timing | AUTOSAR</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-header {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .lesson-content { line-height: 1.7; }
+        .lesson-content h2 {
+            color: #174ea6;
+            margin-top: 30px;
+            border-bottom: 2px solid #e5eaf2;
+            padding-bottom: 8px;
+        }
+        .lesson-content h3 { color: #1765b1; }
+        .lesson-content pre {
+            background: #17212f;
+            color: #e8f0fe;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        .lesson-content code { font-family: Consolas, monospace; }
+        .info-box {
+            background: #eef5ff;
+            border-left: 4px solid #174ea6;
+            padding: 14px;
+            margin: 18px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 4px solid #e59a18;
+            padding: 14px;
+            margin: 18px 0;
+            border-radius: 5px;
+        }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 35px;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            padding: 11px 18px;
+            text-decoration: none;
+            border-radius: 6px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 18px 0;
+        }
+        th, td {
+            border: 1px solid #d5dce5;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf1fb; }
+    </style>
+</head>
 
+<body>
+<main class="container lesson-content">
+
+    <header class="lesson-header">
+        <h1>Lesson 5: Task Activation and Timing</h1>
+        <p>AUTOSAR OS and Task Management</p>
+        <p>Understand task activation, execution timing, periodic tasks, deadlines and real-time scheduling requirements.</p>
+    </header>
+
+    <h2>1. Learning Objectives</h2>
+    <ul>
+        <li>Understand task activation in AUTOSAR OS.</li>
+        <li>Learn task activation limits and activation counts.</li>
+        <li>Understand ActivateTask(), ChainTask() and TerminateTask().</li>
+        <li>Differentiate periodic, aperiodic and sporadic tasks.</li>
+        <li>Understand task execution time, period and deadline.</li>
+        <li>Learn response time, jitter and task latency.</li>
+        <li>Understand real-time timing analysis in automotive ECUs.</li>
+    </ul>
+
+    <h2>2. What Is Task Activation?</h2>
+    <p>
+        Task activation is the process of making an AUTOSAR OS task
+        eligible for execution. An activation request can come from
+        another task, an alarm action or an ISR using a permitted OS service.
+    </p>
+
+    <p>When a task is activated:</p>
+    <ol>
+        <li>The OS checks whether the activation request is valid.</li>
+        <li>The OS checks the task's activation limit.</li>
+        <li>The task becomes READY if it can start executing.</li>
+        <li>The scheduler selects a READY task according to priority and OS rules.</li>
+        <li>The task executes when the processor is assigned to it.</li>
+    </ol>
+
+    <h2>3. ActivateTask() Service</h2>
+    <p>
+        ActivateTask() requests activation of a configured task.
+        It is commonly used when one software component or OS-controlled
+        execution context needs another task to perform work.
+    </p>
+
+    <pre><code>void SensorProcessingTask(void)
+{
+    ReadSensorData();
+
+    /* Request activation of the processing task */
+    ActivateTask(DataProcessingTask_ID);
+
+    TerminateTask();
+}</code></pre>
+
+    <p>
+        The example is conceptual. The actual task identifier and API
+        integration are generated from the OS configuration.
+    </p>
+
+    <h2>4. Task Activation Limits</h2>
+    <p>
+        AUTOSAR OS tasks have a configured maximum number of outstanding
+        activations. The permitted value depends on task configuration.
+    </p>
+
+    <p>For example:</p>
+    <ul>
+        <li>A task configured with one allowed activation cannot accept an additional outstanding activation.</li>
+        <li>A task configured for multiple activations can accept more than one, up to its configured limit.</li>
+        <li>When the activation limit is exceeded, the OS reports an error according to its error-handling configuration.</li>
+    </ul>
+
+    <div class="info-box">
+        <strong>Important:</strong> Multiple activation requests do not mean
+        that the same task executes simultaneously on a single core.
+        They represent outstanding activation requests managed by the OS.
+    </div>
+
+    <h2>5. Task Activation and Task States</h2>
+    <table>
+        <tr>
+            <th>Task State</th>
+            <th>Meaning</th>
+        </tr>
+        <tr>
+            <td>SUSPENDED</td>
+            <td>The task has no active execution.</td>
+        </tr>
+        <tr>
+            <td>READY</td>
+            <td>The task is eligible for execution.</td>
+        </tr>
+        <tr>
+            <td>RUNNING</td>
+            <td>The task is currently executing.</td>
+        </tr>
+        <tr>
+            <td>WAITING</td>
+            <td>An Extended Task is waiting for an event.</td>
+        </tr>
+    </table>
+
+    <h3>Typical Task Lifecycle</h3>
+    <ol>
+        <li>A task is activated.</li>
+        <li>It enters READY state.</li>
+        <li>The scheduler selects it and it enters RUNNING.</li>
+        <li>It may be preempted and return to READY.</li>
+        <li>An Extended Task may enter WAITING when it calls WaitEvent().</li>
+        <li>After completion or termination, the task returns to SUSPENDED when no further activation remains.</li>
+    </ol>
+
+    <h2>6. TerminateTask()</h2>
+    <p>
+        TerminateTask() terminates the calling task's current activation.
+        The OS then selects another eligible task according to its scheduling rules.
+    </p>
+
+    <pre><code>void DataProcessingTask(void)
+{
+    ProcessSensorData();
+
+    TerminateTask();
+}</code></pre>
+
+    <div class="warning-box">
+        TerminateTask() is a task termination service, not a normal
+        function return. It must be used according to the OS task
+        programming model and configuration.
+    </div>
+
+    <h2>7. ChainTask()</h2>
+    <p>
+        ChainTask() terminates the current task activation and requests
+        activation of another task as one OS operation.
+    </p>
+
+    <pre><code>void SensorTask(void)
+{
+    ReadTemperature();
+
+    ChainTask(TemperatureProcessingTask_ID);
+}</code></pre>
+
+    <p>
+        This is useful when one processing stage hands execution over
+        to another task.
+    </p>
+
+    <table>
+        <tr>
+            <th>Service</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td>ActivateTask()</td>
+            <td>Requests activation of another task.</td>
+        </tr>
+        <tr>
+            <td>TerminateTask()</td>
+            <td>Terminates the calling task's current activation.</td>
+        </tr>
+        <tr>
+            <td>ChainTask()</td>
+            <td>Terminates the calling activation and activates another task.</td>
+        </tr>
+    </table>
+
+    <h2>8. Types of Tasks Based on Arrival Pattern</h2>
+
+    <h3>8.1 Periodic Task</h3>
+    <p>
+        A periodic task is activated at regular time intervals.
+    </p>
+    <p>Examples:</p>
+    <ul>
+        <li>Read engine temperature every 10 ms.</li>
+        <li>Update a control value every 5 ms.</li>
+        <li>Monitor a battery measurement every 100 ms.</li>
+    </ul>
+
+    <h3>8.2 Aperiodic Task</h3>
+    <p>
+        An aperiodic task is activated when an event occurs, without
+        a fixed regular arrival interval.
+    </p>
+    <p>Examples:</p>
+    <ul>
+        <li>Diagnostic request received.</li>
+        <li>Driver door switch changes state.</li>
+        <li>Fault notification is generated.</li>
+    </ul>
+
+    <h3>8.3 Sporadic Task</h3>
+    <p>
+        A sporadic task is activated by irregular events, but its
+        arrivals are subject to a known minimum inter-arrival time
+        or another defined arrival constraint.
+    </p>
+    <p>Examples:</p>
+    <ul>
+        <li>Emergency event processing.</li>
+        <li>Fault handling with a defined minimum event separation.</li>
+    </ul>
+
+    <h2>9. Periodic Task Configuration</h2>
+    <p>
+        Periodic task execution can be implemented using configured
+        OS alarms or schedule tables.
+    </p>
+
+    <p>Example timing requirements:</p>
+    <table>
+        <tr>
+            <th>Task</th>
+            <th>Function</th>
+            <th>Period</th>
+        </tr>
+        <tr>
+            <td>SensorTask</td>
+            <td>Read sensor data</td>
+            <td>10 ms</td>
+        </tr>
+        <tr>
+            <td>ControlTask</td>
+            <td>Calculate control output</td>
+            <td>5 ms</td>
+        </tr>
+        <tr>
+            <td>DiagnosticTask</td>
+            <td>Process diagnostic information</td>
+            <td>100 ms</td>
+        </tr>
+    </table>
+
+    <p>
+        The configured alarm or schedule table triggers the appropriate
+        task activation at the required time.
+    </p>
+
+    <h2>10. What Is Task Execution Time?</h2>
+    <p>
+        Task execution time is the processor time required by a task
+        to complete its work under specified execution conditions.
+    </p>
+
+    <p>For example:</p>
+    <ul>
+        <li>Task period: 10 ms.</li>
+        <li>Task execution time: 2 ms.</li>
+        <li>Remaining time before the next nominal release: 8 ms.</li>
+    </ul>
+
+    <div class="info-box">
+        Execution time is not the same as response time. Response time
+        also includes delays such as higher-priority task interference
+        and blocking.
+    </div>
+
+    <h2>11. Period, Deadline and Execution Time</h2>
+    <table>
+        <tr>
+            <th>Term</th>
+            <th>Meaning</th>
+        </tr>
+        <tr>
+            <td>Period (T)</td>
+            <td>Time interval between successive periodic releases.</td>
+        </tr>
+        <tr>
+            <td>Execution Time (C)</td>
+            <td>Processor time required to complete the task.</td>
+        </tr>
+        <tr>
+            <td>Deadline (D)</td>
+            <td>Time by which the task must complete its required work.</td>
+        </tr>
+        <tr>
+            <td>Release Time</td>
+            <td>Time when a task instance becomes eligible for execution.</td>
+        </tr>
+        <tr>
+            <td>Response Time (R)</td>
+            <td>Time from release until completion.</td>
+        </tr>
+    </table>
+
+    <h2>12. Response Time</h2>
+    <p>
+        Response time measures the total time between a task becoming
+        eligible for execution and its completion.
+    </p>
+
+    <p>Consider this example:</p>
+    <ul>
+        <li>Task release time: 0 ms.</li>
+        <li>Task starts executing: 1 ms.</li>
+        <li>Task completes: 3 ms.</li>
+    </ul>
+
+    <p>
+        Response time = Completion time − Release time
+    </p>
+    <pre><code>Response Time = 3 ms - 0 ms
+Response Time = 3 ms</code></pre>
+
+    <h2>13. Deadline Miss</h2>
+    <p>
+        A deadline miss occurs when a task does not complete its required
+        work within its specified deadline.
+    </p>
+
+    <h3>Example</h3>
+    <ul>
+        <li>Task period: 10 ms.</li>
+        <li>Task deadline: 10 ms.</li>
+        <li>Actual response time: 12 ms.</li>
+    </ul>
+
+    <p>
+        The task has missed its deadline by 2 ms.
+    </p>
+
+    <div class="warning-box">
+        Deadline misses in automotive control software can affect
+        control accuracy, communication timing and system safety.
+        Timing requirements must be verified through appropriate
+        analysis and testing.
+    </div>
+
+    <h2>14. What Is Jitter?</h2>
+    <p>
+        Jitter is the variation in the timing of task releases,
+        execution starts or completion times relative to their
+        expected timing.
+    </p>
+
+    <p>Example:</p>
+    <ul>
+        <li>Expected periodic release: every 10 ms.</li>
+        <li>Actual releases: 0 ms, 10.2 ms, 19.9 ms, 30.3 ms.</li>
+        <li>The differences from the expected release times represent timing variation.</li>
+    </ul>
+
+    <p>
+        Excessive jitter can affect control loops and time-sensitive
+        communication.
+    </p>
+
+    <h2>15. Task Timing Analysis</h2>
+    <p>
+        Task timing analysis verifies whether configured tasks can
+        complete within their required deadlines under expected
+        system load and interference.
+    </p>
+
+    <p>Important parameters include:</p>
+    <ul>
+        <li>Task priority.</li>
+        <li>Execution time.</li>
+        <li>Task period.</li>
+        <li>Deadline.</li>
+        <li>Blocking time caused by shared resources.</li>
+        <li>Interrupt interference.</li>
+        <li>Higher-priority task interference.</li>
+    </ul>
+
+    <h2>16. Simple CPU Utilization Example</h2>
+    <p>
+        For a set of periodic tasks, a basic utilization estimate is:
+    </p>
+
+    <pre><code>U = C1/T1 + C2/T2 + ... + Cn/Tn</code></pre>
+
+    <p>Where:</p>
+    <ul>
+        <li>C = execution time of a task.</li>
+        <li>T = period of that task.</li>
+        <li>U = total processor utilization.</li>
+    </ul>
+
+    <h3>Example</h3>
+    <table>
+        <tr>
+            <th>Task</th>
+            <th>Execution Time</th>
+            <th>Period</th>
+            <th>Utilization</th>
+        </tr>
+        <tr>
+            <td>Task 1</td>
+            <td>2 ms</td>
+            <td>10 ms</td>
+            <td>0.20</td>
+        </tr>
+        <tr>
+            <td>Task 2</td>
+            <td>1 ms</td>
+            <td>5 ms</td>
+            <td>0.20</td>
+        </tr>
+        <tr>
+            <td>Task 3</td>
+            <td>5 ms</td>
+            <td>20 ms</td>
+            <td>0.25</td>
+        </tr>
+    </table>
+
+    <pre><code>U = (2/10) + (1/5) + (5/20)
+U = 0.20 + 0.20 + 0.25
+U = 0.65
+
+CPU Utilization = 65%</code></pre>
+
+    <div class="info-box">
+        This is a utilization estimate, not proof that all deadlines
+        will be met. Actual schedulability depends on scheduling policy,
+        priorities, blocking, interrupt load, deadlines and other
+        system constraints.
+    </div>
+
+    <h2>17. Automotive ECU Timing Example</h2>
+    <p>
+        Consider an engine management ECU with three periodic activities:
+    </p>
+
+    <table>
+        <tr>
+            <th>Activity</th>
+            <th>Period</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td>Crankshaft signal processing</td>
+            <td>Event-driven</td>
+            <td>Process engine position information.</td>
+        </tr>
+        <tr>
+            <td>Engine control task</td>
+            <td>5 ms</td>
+            <td>Calculate control parameters.</td>
+        </tr>
+        <tr>
+            <td>Temperature monitoring</td>
+            <td>100 ms</td>
+            <td>Monitor engine temperature.</td>
+        </tr>
+    </table>
+
+    <p>
+        The OS configuration must ensure that time-critical processing
+        receives suitable priority and that each activity meets its
+        timing requirements.
+    </p>
+
+    <h2>18. Common Task Timing Problems</h2>
+    <table>
+        <tr>
+            <th>Problem</th>
+            <th>Possible Cause</th>
+            <th>What to Check</th>
+        </tr>
+        <tr>
+            <td>Task not activated</td>
+            <td>Missing alarm, event or activation request</td>
+            <td>Activation source and OS configuration</td>
+        </tr>
+        <tr>
+            <td>Activation limit exceeded</td>
+            <td>Too many outstanding activation requests</td>
+            <td>Activation count and task design</td>
+        </tr>
+        <tr>
+            <td>Deadline miss</td>
+            <td>Excessive execution or blocking time</td>
+            <td>Timing analysis and task priorities</td>
+        </tr>
+        <tr>
+            <td>High response time</td>
+            <td>Higher-priority task or interrupt interference</td>
+            <td>CPU load and execution measurements</td>
+        </tr>
+        <tr>
+            <td>Unstable periodic timing</td>
+            <td>Incorrect timing source or configuration</td>
+            <td>Counter, alarm and schedule table settings</td>
+        </tr>
+        <tr>
+            <td>Unexpected CPU utilization</td>
+            <td>Frequent activations or long execution time</td>
+            <td>Task execution profiling</td>
+        </tr>
+    </table>
+
+    <h2>19. Interview Questions and Answers</h2>
+
+    <h3>Q1. What is task activation?</h3>
+    <p>
+        Task activation makes a configured OS task eligible for execution.
+    </p>
+
+    <h3>Q2. What is ActivateTask()?</h3>
+    <p>
+        It requests activation of a specified task.
+    </p>
+
+    <h3>Q3. What is the difference between TerminateTask() and ChainTask()?</h3>
+    <p>
+        TerminateTask() terminates the current activation. ChainTask()
+        terminates the current activation and requests activation of
+        another task.
+    </p>
+
+    <h3>Q4. What is an activation limit?</h3>
+    <p>
+        It is the configured maximum number of outstanding activations
+        allowed for a task.
+    </p>
+
+    <h3>Q5. What is a periodic task?</h3>
+    <p>
+        A periodic task is activated at regular time intervals.
+    </p>
+
+    <h3>Q6. What is the difference between aperiodic and sporadic tasks?</h3>
+    <p>
+        Aperiodic tasks have event-driven arrivals without a fixed
+        regular pattern. Sporadic tasks also have irregular arrivals,
+        but their arrival pattern has a defined minimum inter-arrival
+        time or another timing constraint.
+    </p>
+
+    <h3>Q7. What is task execution time?</h3>
+    <p>
+        It is the processor time required for a task to complete its work.
+    </p>
+
+    <h3>Q8. What is a deadline miss?</h3>
+    <p>
+        It occurs when a task does not complete within its specified deadline.
+    </p>
+
+    <h3>Q9. What is jitter?</h3>
+    <p>
+        Jitter is variation in expected and actual task timing.
+    </p>
+
+    <h3>Q10. What is CPU utilization?</h3>
+    <p>
+        It is the proportion of processor capacity consumed by executing
+        tasks over a defined observation interval.
+    </p>
+
+    <h2>20. Lesson Summary</h2>
+    <ul>
+        <li>Task activation makes a task eligible for execution.</li>
+        <li>ActivateTask() requests task activation.</li>
+        <li>TerminateTask() terminates the current task activation.</li>
+        <li>ChainTask() terminates the current activation and activates another task.</li>
+        <li>Tasks can be periodic, aperiodic or sporadic.</li>
+        <li>Period, execution time and deadline are important timing parameters.</li>
+        <li>Response time includes scheduling and blocking delays.</li>
+        <li>Jitter represents variation in task timing.</li>
+        <li>CPU utilization is useful but does not alone prove schedulability.</li>
+    </ul>
+
+    <div class="info-box">
+        <strong>Placement Preparation:</strong>
+        Prepare to explain task activation limits, ActivateTask() vs
+        ChainTask(), periodic tasks, execution time, deadline, response
+        time, jitter and CPU utilization with automotive ECU examples.
+    </div>
+
+    <nav class="lesson-nav">
+        <a href="L04_Interrupt_Handling_and_ISRs.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Contents</a>
+        <a href="L06_OS_Configuration_and_Integration.html">Next Lesson →</a>
+    </nav>
+
+</main>
+</body>
+</html>
