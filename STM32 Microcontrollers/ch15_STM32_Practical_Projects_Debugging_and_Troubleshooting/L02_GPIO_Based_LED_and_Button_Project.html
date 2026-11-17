@@ -1,1 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 2: GPIO-Based LED and Button Project</title>
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
 
+<header class="lesson-header">
+    <h1>Lesson 2: GPIO-Based LED and Button Project</h1>
+    <p>STM32 Practical Projects, Debugging and Troubleshooting</p>
+</header>
+
+<main class="lesson-container">
+
+    <section>
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand GPIO-based project architecture.</li>
+            <li>Configure STM32 GPIO pins as inputs and outputs.</li>
+            <li>Interface an LED with an STM32 microcontroller.</li>
+            <li>Interface a push button using pull-up and pull-down resistors.</li>
+            <li>Implement polling-based button detection.</li>
+            <li>Implement interrupt-based button detection using EXTI.</li>
+            <li>Understand switch debouncing.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>2. Project Overview</h2>
+        <p>
+            In this project, an STM32 microcontroller controls an LED
+            using a push button. When the user presses the button,
+            the firmware detects the input and changes the LED state.
+        </p>
+
+        <h3>Project Requirements</h3>
+        <ul>
+            <li>STM32 development board.</li>
+            <li>One user LED or external LED.</li>
+            <li>One push button.</li>
+            <li>Current-limiting resistor for an external LED.</li>
+            <li>STM32CubeIDE and STM32CubeMX configuration.</li>
+            <li>USB cable and ST-LINK programmer/debugger.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>3. GPIO-Based System Architecture</h2>
+
+        <pre>
+       +----------------------+
+       |   Push Button        |
+       +----------------------+
+                  |
+                  v
+       +----------------------+
+       | STM32 GPIO Input     |
+       +----------------------+
+                  |
+                  v
+       +----------------------+
+       | Button Detection     |
+       | Firmware             |
+       +----------------------+
+                  |
+                  v
+       +----------------------+
+       | STM32 GPIO Output    |
+       +----------------------+
+                  |
+                  v
+       +----------------------+
+       |       LED            |
+       +----------------------+
+        </pre>
+
+        <p>
+            The GPIO input reads the button state. The application
+            processes the input and controls the GPIO output connected
+            to the LED.
+        </p>
+    </section>
+
+    <section>
+        <h2>4. Required Hardware Connections</h2>
+
+        <h3>Example Pin Assignment</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Component</th>
+                    <th>Example STM32 Pin</th>
+                    <th>Configuration</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>LED</td>
+                    <td>PA5</td>
+                    <td>GPIO Output</td>
+                </tr>
+                <tr>
+                    <td>Push Button</td>
+                    <td>PC13</td>
+                    <td>GPIO Input</td>
+                </tr>
+                <tr>
+                    <td>Ground</td>
+                    <td>GND</td>
+                    <td>Common reference</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>
+            These are illustrative pins commonly seen on some STM32
+            boards. Confirm the actual board schematic, LED polarity,
+            button wiring and pin availability before using them.
+        </p>
+
+        <h3>External LED Connection</h3>
+        <pre>
+STM32 GPIO Output
+       |
+       |
+    Resistor
+       |
+       |
+      LED
+       |
+       |
+      GND
+        </pre>
+
+        <p>
+            Use an appropriate current-limiting resistor. Select its
+            value using the supply voltage, LED forward voltage and
+            permitted GPIO current. Never connect an LED directly
+            without current limiting.
+        </p>
+
+        <h3>Button with Pull-Up</h3>
+        <pre>
+       3.3 V
+         |
+      Pull-Up
+      Resistor
+         |
+         +---------- STM32 GPIO Input
+         |
+       Button
+         |
+        GND
+        </pre>
+
+        <p>
+            With this arrangement, the input is HIGH when released
+            and LOW when pressed. An internal pull-up may be used
+            instead of an external resistor if suitable for the design.
+        </p>
+    </section>
+
+    <section>
+        <h2>5. GPIO Configuration Using STM32CubeMX</h2>
+
+        <h3>LED Configuration</h3>
+        <ol>
+            <li>Open the STM32CubeIDE project.</li>
+            <li>Open the device configuration.</li>
+            <li>Select the LED pin, for example PA5.</li>
+            <li>Configure it as GPIO_Output.</li>
+            <li>Select an appropriate output type and speed.</li>
+            <li>Set the initial output state.</li>
+        </ol>
+
+        <h3>Button Configuration</h3>
+        <ol>
+            <li>Select the button pin, for example PC13.</li>
+            <li>Configure it as GPIO_Input.</li>
+            <li>Select Pull-Up if the button connects the pin to ground when pressed.</li>
+            <li>Generate the code.</li>
+        </ol>
+
+        <p>
+            The correct pin mode and pull configuration must match the
+            actual electrical circuit.
+        </p>
+    </section>
+
+    <section>
+        <h2>6. GPIO HAL Functions</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Function</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>HAL_GPIO_WritePin()</code></td>
+                    <td>Set or reset a GPIO output.</td>
+                </tr>
+                <tr>
+                    <td><code>HAL_GPIO_ReadPin()</code></td>
+                    <td>Read a GPIO input state.</td>
+                </tr>
+                <tr>
+                    <td><code>HAL_GPIO_TogglePin()</code></td>
+                    <td>Toggle a GPIO output state.</td>
+                </tr>
+                <tr>
+                    <td><code>HAL_GPIO_Init()</code></td>
+                    <td>Initialize a GPIO pin.</td>
+                </tr>
+                <tr>
+                    <td><code>HAL_GPIO_DeInit()</code></td>
+                    <td>Deinitialize a GPIO pin.</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>7. Project 1: LED Blinking</h2>
+
+        <p>
+            First verify that the selected GPIO output can control
+            the LED.
+        </p>
+
+        <h3>Program</h3>
+        <pre><code>
+#include "main.h"
+
+int main(void)
+{
+    HAL_Init();
+
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+
+    while (1)
+    {
+        HAL_GPIO_TogglePin(
+            GPIOA,
+            GPIO_PIN_5
+        );
+
+        HAL_Delay(500);
+    }
+}
+        </code></pre>
+
+        <h3>Program Explanation</h3>
+        <ol>
+            <li>Initialize the HAL library.</li>
+            <li>Configure the system clock.</li>
+            <li>Initialize GPIO.</li>
+            <li>Toggle the LED output.</li>
+            <li>Wait approximately 500 ms before the next toggle.</li>
+        </ol>
+
+        <h3>Expected Result</h3>
+        <p>
+            The LED changes state approximately every 500 ms,
+            giving a complete ON-OFF cycle of approximately one second.
+        </p>
+    </section>
+
+    <section>
+        <h2>8. Project 2: Button-Controlled LED Using Polling</h2>
+
+        <p>
+            Polling continuously checks the button input in the main loop.
+            When a press is detected, the LED state changes.
+        </p>
+
+        <h3>Program</h3>
+        <pre><code>
+#include "main.h"
+
+int main(void)
+{
+    GPIO_PinState buttonState;
+    GPIO_PinState previousState = GPIO_PIN_SET;
+
+    HAL_Init();
+
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+
+    while (1)
+    {
+        buttonState = HAL_GPIO_ReadPin(
+            GPIOC,
+            GPIO_PIN_13
+        );
+
+        if (previousState == GPIO_PIN_SET &&
+            buttonState == GPIO_PIN_RESET)
+        {
+            HAL_GPIO_TogglePin(
+                GPIOA,
+                GPIO_PIN_5
+            );
+
+            HAL_Delay(30);
+        }
+
+        previousState = buttonState;
+    }
+}
+        </code></pre>
+
+        <h3>Program Explanation</h3>
+        <ul>
+            <li>The button uses an active-LOW pull-up arrangement.</li>
+            <li>Released state is HIGH.</li>
+            <li>Pressed state is LOW.</li>
+            <li>The HIGH-to-LOW transition is detected.</li>
+            <li>The LED toggles when a press is detected.</li>
+        </ul>
+
+        <p>
+            This is a basic teaching example. A fixed delay after
+            detecting an edge is not a complete debounce algorithm.
+            A robust design should confirm that the input remains
+            stable for a defined interval and should detect release
+            before accepting another press.
+        </p>
+    </section>
+
+    <section>
+        <h2>9. Switch Debouncing</h2>
+
+        <p>
+            Mechanical push buttons can produce multiple rapid electrical
+            transitions when their contacts open or close. This is called
+            switch bounce.
+        </p>
+
+        <h3>Without Debouncing</h3>
+        <pre>
+Button Signal:
+
+HIGH ─────┐  ┌─┐ ┌──┐
+          └──┘ └─┘  └────
+             Contact bounce
+        </pre>
+
+        <h3>With Debouncing</h3>
+        <pre>
+Button Signal:
+
+HIGH ─────┐
+          |
+          |
+LOW  ─────└────────────────
+        Stable transition
+        </pre>
+
+        <h3>Common Debouncing Methods</h3>
+        <ul>
+            <li>Software delay and stable-state verification.</li>
+            <li>Periodic sampling with a counter.</li>
+            <li>Timer-based debounce state machine.</li>
+            <li>Hardware RC filtering.</li>
+            <li>Dedicated debounce circuits.</li>
+        </ul>
+
+        <h3>Periodic Sampling Example</h3>
+        <pre><code>
+#include "main.h"
+
+#define DEBOUNCE_SAMPLES 5
+
+int main(void)
+{
+    uint8_t stableCount = 0;
+    GPIO_PinState rawState;
+    GPIO_PinState stableState = GPIO_PIN_SET;
+
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    while (1)
+    {
+        rawState = HAL_GPIO_ReadPin(
+            GPIOC,
+            GPIO_PIN_13
+        );
+
+        if (rawState == GPIO_PIN_RESET)
+        {
+            if (stableCount < DEBOUNCE_SAMPLES)
+            {
+                stableCount++;
+            }
+        }
+        else
+        {
+            stableCount = 0;
+        }
+
+        if (stableCount == DEBOUNCE_SAMPLES &&
+            stableState == GPIO_PIN_SET)
+        {
+            stableState = GPIO_PIN_RESET;
+
+            HAL_GPIO_TogglePin(
+                GPIOA,
+                GPIO_PIN_5
+            );
+        }
+
+        if (rawState == GPIO_PIN_SET)
+        {
+            stableState = GPIO_PIN_SET;
+        }
+
+        HAL_Delay(10);
+    }
+}
+        </code></pre>
+
+        <p>
+            Five consecutive samples at 10 ms intervals provide
+            approximately 50 ms of confirmation. This example detects
+            a stable press and rearms after release. For more demanding
+            applications, use a dedicated debounce state machine and
+            validate timing against the button's actual behavior.
+        </p>
+    </section>
+
+    <section>
+        <h2>10. Project 3: Button-Controlled LED Using EXTI Interrupt</h2>
+
+        <p>
+            An external interrupt allows the STM32 to respond to a
+            button transition without continuously polling the input.
+        </p>
+
+        <h3>Configuration</h3>
+        <ol>
+            <li>Select the button pin in STM32CubeMX.</li>
+            <li>Configure the pin as GPIO_EXTI.</li>
+            <li>Select the falling edge for an active-LOW button.</li>
+            <li>Enable the corresponding EXTI interrupt in NVIC.</li>
+            <li>Generate the code.</li>
+        </ol>
+
+        <h3>HAL Callback Example</h3>
+        <pre><code>
+#include "main.h"
+
+volatile uint8_t buttonEvent = 0;
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == GPIO_PIN_13)
+    {
+        buttonEvent = 1;
+    }
+}
+
+int main(void)
+{
+    HAL_Init();
+
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+
+    while (1)
+    {
+        if (buttonEvent != 0)
+        {
+            buttonEvent = 0;
+
+            HAL_GPIO_TogglePin(
+                GPIOA,
+                GPIO_PIN_5
+            );
+        }
+    }
+}
+        </code></pre>
+
+        <p>
+            The callback runs in interrupt context. It only sets an
+            event flag; the main loop performs the LED operation.
+            The interrupt handler generated by CubeMX must call
+            <code>HAL_GPIO_EXTI_IRQHandler()</code> for the relevant pin.
+        </p>
+
+        <p>
+            This simple flag can merge multiple button events if they
+            arrive before the main loop processes them. Use a counter
+            or RTOS queue when every event must be preserved. The flag
+            is volatile for compiler visibility, not because volatile
+            guarantees atomicity or synchronization.
+        </p>
+    </section>
+
+    <section>
+        <h2>11. Polling vs Interrupt-Based Button Detection</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Feature</th>
+                    <th>Polling</th>
+                    <th>Interrupt</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Detection method</td>
+                    <td>Repeated input checking</td>
+                    <td>Hardware event triggers ISR</td>
+                </tr>
+                <tr>
+                    <td>CPU usage</td>
+                    <td>Depends on polling frequency</td>
+                    <td>Can reduce repeated checking</td>
+                </tr>
+                <tr>
+                    <td>Response</td>
+                    <td>Depends on polling interval</td>
+                    <td>Depends on interrupt latency</td>
+                </tr>
+                <tr>
+                    <td>Implementation</td>
+                    <td>Simple</td>
+                    <td>Requires interrupt configuration</td>
+                </tr>
+                <tr>
+                    <td>Typical use</td>
+                    <td>Simple input monitoring</td>
+                    <td>Event-driven applications</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>12. Practical Testing Procedure</h2>
+
+        <ol>
+            <li>Inspect the development board and identify its LED and button pins.</li>
+            <li>Confirm the LED polarity and button electrical connection.</li>
+            <li>Configure GPIO pins using STM32CubeMX.</li>
+            <li>Build and program the LED blink firmware.</li>
+            <li>Verify that the LED changes state.</li>
+            <li>Configure the button as a GPIO input.</li>
+            <li>Test button detection using polling.</li>
+            <li>Implement software debouncing.</li>
+            <li>Configure EXTI and test interrupt-based detection.</li>
+            <li>Compare polling and interrupt behavior.</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>13. Common Troubleshooting</h2>
+
+        <h3>LED Does Not Turn ON</h3>
+        <ul>
+            <li>Check the selected GPIO pin.</li>
+            <li>Verify output mode and GPIO clock.</li>
+            <li>Check LED polarity and current-limiting resistor.</li>
+            <li>Confirm whether the board LED is active-high or active-low.</li>
+        </ul>
+
+        <h3>Button Input Is Always HIGH</h3>
+        <ul>
+            <li>Check the button connection to ground.</li>
+            <li>Verify pull-up configuration.</li>
+            <li>Confirm the correct GPIO pin.</li>
+            <li>Check the electrical connection using a multimeter.</li>
+        </ul>
+
+        <h3>LED Toggles Multiple Times</h3>
+        <ul>
+            <li>Mechanical contact bounce may be present.</li>
+            <li>Implement software or hardware debouncing.</li>
+            <li>Check whether the firmware detects both press and release edges.</li>
+        </ul>
+
+        <h3>EXTI Does Not Work</h3>
+        <ul>
+            <li>Verify EXTI line configuration.</li>
+            <li>Check the selected edge trigger.</li>
+            <li>Enable the corresponding NVIC interrupt.</li>
+            <li>Check the generated IRQ handler.</li>
+            <li>Verify that the HAL callback receives the expected pin.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>14. Placement-Oriented Interview Questions and Answers</h2>
+
+        <h3>Q1. What is GPIO?</h3>
+        <p>GPIO stands for General Purpose Input/Output. It allows a microcontroller to interface with external digital signals.</p>
+
+        <h3>Q2. What is the difference between GPIO input and output?</h3>
+        <p>An input reads an external logic state, while an output drives a configured logic state.</p>
+
+        <h3>Q3. What is a pull-up resistor?</h3>
+        <p>A pull-up resistor connects an input to a positive logic supply through resistance, giving it a defined HIGH state when no external signal pulls it LOW.</p>
+
+        <h3>Q4. What is switch debouncing?</h3>
+        <p>Debouncing prevents multiple detections caused by rapid electrical transitions from mechanical switch contacts.</p>
+
+        <h3>Q5. What is EXTI?</h3>
+        <p>EXTI is the external interrupt/event controller used to detect configured signal transitions on supported STM32 pins.</p>
+
+        <h3>Q6. What is the difference between rising-edge and falling-edge detection?</h3>
+        <p>Rising-edge detection responds to LOW-to-HIGH transitions; falling-edge detection responds to HIGH-to-LOW transitions.</p>
+
+        <h3>Q7. Why should an ISR be short?</h3>
+        <p>A short ISR reduces interrupt latency and allows the processor to return quickly to normal execution.</p>
+
+        <h3>Q8. Why is a current-limiting resistor required for an LED?</h3>
+        <p>It limits current to protect the LED and microcontroller output from excessive current.</p>
+
+        <h3>Q9. What is polling?</h3>
+        <p>Polling is repeatedly checking a peripheral or input state in software.</p>
+
+        <h3>Q10. Why use an interrupt instead of polling?</h3>
+        <p>Interrupts allow the processor to respond to events without continuously checking the input.</p>
+
+        <h3>Q11. What does HAL_GPIO_ReadPin() do?</h3>
+        <p>It reads the logic state of a specified GPIO pin.</p>
+
+        <h3>Q12. What does HAL_GPIO_TogglePin() do?</h3>
+        <p>It changes the output latch state of a specified GPIO pin.</p>
+    </section>
+
+    <section>
+        <h2>15. Practical Exercises</h2>
+        <ol>
+            <li>Write an LED blinking program using HAL.</li>
+            <li>Control an LED using a push button.</li>
+            <li>Implement active-LOW and active-HIGH button detection.</li>
+            <li>Implement a software debounce routine.</li>
+            <li>Configure an EXTI interrupt for a push button.</li>
+            <li>Compare polling and interrupt-based implementations.</li>
+            <li>Use a button to switch between two LED blinking rates.</li>
+            <li>Debug a GPIO configuration error using STM32CubeIDE.</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>16. Lesson Summary</h2>
+        <ul>
+            <li>GPIO supports digital input and output interfacing.</li>
+            <li>LEDs require appropriate current limiting.</li>
+            <li>Pull-up and pull-down resistors establish defined input states.</li>
+            <li>Polling repeatedly checks input states.</li>
+            <li>EXTI supports event-driven input detection.</li>
+            <li>Switch debouncing prevents false button events.</li>
+            <li>ISRs should perform minimal work and defer processing.</li>
+        </ul>
+    </section>
+
+    <section class="lesson-navigation">
+        <a href="L01_STM32_Board_Setup_and_Hardware_Validation.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L03_UART_Based_Serial_Command_Interface.html">Next Lesson →</a>
+    </section>
+
+</main>
+
+</body>
+</html>
