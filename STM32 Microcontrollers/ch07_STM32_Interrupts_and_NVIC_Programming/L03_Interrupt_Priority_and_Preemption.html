@@ -1,1 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 3 - Interrupt Priority and Preemption | NS Learning Hub</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+
+        .content-section {
+            background: #fff;
+            border: 1px solid #e0e6ef;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 18px 0;
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #e5edf8;
+            padding-bottom: 8px;
+        }
+
+        h3 { color: #1769aa; }
+
+        pre {
+            background: #17212f;
+            color: #e8f1ff;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e0a000;
+            padding: 12px;
+            margin: 15px 0;
+        }
+
+        .example {
+            background: #eef6ff;
+            border-left: 5px solid #007bff;
+            padding: 12px;
+            margin: 15px 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th { background: #eaf2ff; }
+
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+
+        .navigation a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 17px;
+            border-radius: 6px;
+        }
+
+        .navigation a:hover { background: #007bff; }
+    </style>
+</head>
+
+<body>
+
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 3: Interrupt Priority and Preemption</h1>
+        <p>
+            Understand NVIC priority levels, preemption,
+            nested interrupts, priority grouping, subpriority
+            and interrupt latency in STM32 microcontrollers.
+        </p>
+    </header>
+
+    <p>
+        <a href="index.html">← Back to Chapter 7</a> |
+        <a href="../stm32-microcontrollers.html">STM32 Course Home</a>
+    </p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand interrupt priority.</li>
+            <li>Learn how NVIC priority values work.</li>
+            <li>Understand preemption and nested interrupts.</li>
+            <li>Differentiate preemption priority and subpriority.</li>
+            <li>Configure interrupt priorities using CMSIS and HAL.</li>
+            <li>Understand interrupt latency and response time.</li>
+            <li>Identify common priority configuration mistakes.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Is Interrupt Priority?</h2>
+
+        <p>
+            Interrupt priority determines the relative urgency
+            of interrupt requests handled by the processor.
+        </p>
+
+        <p>
+            When multiple interrupts are pending, the NVIC uses
+            priority information and processor execution state
+            to determine which eligible interrupt should execute.
+        </p>
+
+        <div class="example">
+            <strong>Example:</strong>
+            <p>
+                A motor protection fault may need faster handling
+                than a periodic status LED update. The motor fault
+                interrupt can be assigned a higher priority,
+                subject to the application's safety and timing design.
+            </p>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>3. NVIC Priority Numbering</h2>
+
+        <p>
+            In Cortex-M NVIC priority numbering, a lower numerical
+            value represents a higher priority.
+        </p>
+
+        <table>
+            <tr>
+                <th>Priority Value</th>
+                <th>Relative Priority</th>
+            </tr>
+            <tr>
+                <td>0</td>
+                <td>Highest configurable priority</td>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>High priority</td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>Medium-high priority</td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>Medium priority</td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>Lower priority</td>
+            </tr>
+            <tr>
+                <td>10</td>
+                <td>Still lower priority</td>
+            </tr>
+            <tr>
+                <td>15</td>
+                <td>Lowest priority in a 4-bit implementation</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            The number of implemented priority bits varies
+            between Cortex-M implementations and STM32 devices.
+            The 0–15 example assumes four implemented priority
+            bits. Always check the device documentation and CMSIS
+            configuration.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. What Is Preemption?</h2>
+
+        <p>
+            Preemption occurs when a higher-priority interrupt
+            interrupts the execution of a lower-priority ISR.
+        </p>
+
+        <p>
+            The processor temporarily suspends the lower-priority
+            ISR, executes the higher-priority ISR and then
+            resumes the previously interrupted handler.
+        </p>
+
+        <h3>Preemption Example</h3>
+
+        <pre><code>
+       Main Program
+            |
+            v
+       Low Priority ISR
+            |
+            v
+    High Priority Interrupt
+            |
+            v
+    Suspend Low Priority ISR
+            |
+            v
+       High Priority ISR
+            |
+            v
+     Return to Low Priority ISR
+            |
+            v
+       Resume Main Program
+        </code></pre>
+
+        <div class="example">
+            <strong>Example:</strong>
+            <p>
+                Suppose a UART receive interrupt has priority 5
+                and a motor fault interrupt has priority 1.
+                If the motor fault interrupt becomes eligible
+                while the UART ISR is running, it can preempt
+                the UART ISR.
+            </p>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>5. What Are Nested Interrupts?</h2>
+
+        <p>
+            Nested interrupts occur when one interrupt handler
+            is interrupted by another interrupt handler.
+        </p>
+
+        <p>
+            On Cortex-M processors, a higher-preemption-priority
+            interrupt can normally preempt a lower-preemption-priority
+            interrupt when both are enabled and eligible.
+        </p>
+
+        <h3>Nested Interrupt Example</h3>
+
+        <pre><code>
+       Main Program
+            |
+            v
+        Timer ISR
+            |
+            v
+       UART Interrupt
+            |
+            v
+         UART ISR
+            |
+            v
+      Return to Timer ISR
+            |
+            v
+       Resume Timer ISR
+            |
+            v
+       Return to Main
+        </code></pre>
+
+        <p>
+            Nested interrupt handling allows urgent events
+            to be serviced without waiting for a lower-priority
+            ISR to finish.
+        </p>
+
+        <div class="note">
+            Nested interrupts increase stack usage and system
+            complexity. Each nested exception can require
+            additional exception stacking. ISR execution time
+            and stack size must be considered carefully.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Preemption Priority and Subpriority</h2>
+
+        <p>
+            Some Cortex-M NVIC implementations support priority
+            grouping, which divides implemented priority bits
+            into two fields:
+        </p>
+
+        <ul>
+            <li>
+                <strong>Preemption priority:</strong>
+                Determines whether one interrupt can preempt another.
+            </li>
+            <li>
+                <strong>Subpriority:</strong>
+                Helps determine which pending interrupt is serviced
+                first when preemption priorities are equal.
+            </li>
+        </ul>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>Preemption Priority</th>
+                <th>Subpriority</th>
+            </tr>
+            <tr>
+                <td>Purpose</td>
+                <td>Controls preemption.</td>
+                <td>Orders pending interrupts within the same preemption level.</td>
+            </tr>
+            <tr>
+                <td>Can cause preemption?</td>
+                <td>Yes, when the new interrupt has higher preemption priority.</td>
+                <td>No.</td>
+            </tr>
+            <tr>
+                <td>Used for</td>
+                <td>Urgency and nesting.</td>
+                <td>Selection among pending requests.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            Subpriority does not cause one ISR to preempt another.
+            If two interrupts have equal preemption priority,
+            one cannot preempt the other merely because its
+            subpriority is higher.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Priority Grouping</h2>
+
+        <p>
+            Priority grouping determines how the implemented
+            priority bits are divided between preemption priority
+            and subpriority.
+        </p>
+
+        <p>
+            The exact grouping options depend on the Cortex-M
+            implementation and the priority bits implemented
+            by the STM32 device.
+        </p>
+
+        <h3>Conceptual Example</h3>
+
+        <p>
+            Assume four priority bits are implemented. A
+            conceptual grouping could allocate:
+        </p>
+
+        <table>
+            <tr>
+                <th>Grouping</th>
+                <th>Preemption Bits</th>
+                <th>Subpriority Bits</th>
+            </tr>
+            <tr>
+                <td>Example A</td>
+                <td>4</td>
+                <td>0</td>
+            </tr>
+            <tr>
+                <td>Example B</td>
+                <td>3</td>
+                <td>1</td>
+            </tr>
+            <tr>
+                <td>Example C</td>
+                <td>2</td>
+                <td>2</td>
+            </tr>
+            <tr>
+                <td>Example D</td>
+                <td>1</td>
+                <td>3</td>
+            </tr>
+            <tr>
+                <td>Example E</td>
+                <td>0</td>
+                <td>4</td>
+            </tr>
+        </table>
+
+        <p>
+            These are conceptual allocations. Actual valid
+            configurations must be checked against the selected
+            Cortex-M architecture and STM32 CMSIS implementation.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Configuring Priority Using CMSIS</h2>
+
+        <p>
+            CMSIS provides NVIC_SetPriority() to configure
+            interrupt priority.
+        </p>
+
+        <pre><code>#include "stm32f4xx.h"
+
+void Configure_Interrupts(void)
+{
+    /* Higher priority: lower numerical value */
+    NVIC_SetPriority(TIM2_IRQn, 1);
+
+    /* Lower priority */
+    NVIC_SetPriority(USART2_IRQn, 5);
+
+    NVIC_EnableIRQ(TIM2_IRQn);
+    NVIC_EnableIRQ(USART2_IRQn);
+}</code></pre>
+
+        <p>
+            In this example, TIM2 has a higher configurable
+            priority than USART2, assuming the same priority
+            grouping and valid implemented priority values.
+        </p>
+
+        <div class="note">
+            The IRQ names and peripheral availability depend
+            on the selected STM32 device. Configure each
+            peripheral interrupt source separately.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Configuring Priority Using STM32 HAL</h2>
+
+        <p>
+            STM32 HAL provides HAL_NVIC_SetPriority() for
+            priority configuration.
+        </p>
+
+        <pre><code>void Configure_NVIC(void)
+{
+    HAL_NVIC_SetPriority(
+        TIM2_IRQn,
+        1,
+        0
+    );
+
+    HAL_NVIC_SetPriority(
+        USART2_IRQn,
+        5,
+        0
+    );
+
+    HAL_NVIC_EnableIRQ(TIM2_IRQn);
+    HAL_NVIC_EnableIRQ(USART2_IRQn);
+}</code></pre>
+
+        <p>
+            The first priority argument represents the
+            preemption priority and the second represents
+            the subpriority, as interpreted under the
+            configured priority grouping.
+        </p>
+
+        <h3>Priority Grouping Example</h3>
+
+        <pre><code>HAL_NVIC_SetPriorityGrouping(
+    NVIC_PRIORITYGROUP_4
+);</code></pre>
+
+        <p>
+            In STM32 HAL configurations where this grouping
+            means all implemented priority bits are used for
+            preemption priority, there are no subpriority bits.
+        </p>
+
+        <div class="note">
+            HAL priority-grouping macros and their mapping
+            must be checked for the particular STM32 HAL
+            and Cortex-M device. Do not assume the same
+            grouping behavior across all STM32 families.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Interrupt Latency</h2>
+
+        <p>
+            Interrupt latency is the time between an interrupt
+            request becoming eligible and the start of its
+            corresponding handler execution.
+        </p>
+
+        <h3>Factors Affecting Interrupt Latency</h3>
+        <ul>
+            <li>Processor clock frequency.</li>
+            <li>Current processor execution state.</li>
+            <li>Interrupt masking and disabled states.</li>
+            <li>Higher-priority interrupt activity.</li>
+            <li>Memory wait states and bus activity.</li>
+            <li>Exception entry and stacking overhead.</li>
+            <li>Processor architecture and implementation.</li>
+        </ul>
+
+        <div class="example">
+            <strong>Example:</strong>
+            <p>
+                If a peripheral generates an interrupt while
+                a higher-priority ISR is executing, the new
+                interrupt may have to wait until it becomes
+                eligible for service. This increases its
+                response time.
+            </p>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Important Priority Programming Rules</h2>
+
+        <ul>
+            <li>Assign higher priority to time-critical events.</li>
+            <li>Keep interrupt service routines short.</li>
+            <li>Avoid unnecessary nested interrupt complexity.</li>
+            <li>Understand the configured priority grouping.</li>
+            <li>Use only implemented priority levels.</li>
+            <li>Consider interrupt masking and critical sections.</li>
+            <li>Account for worst-case response time.</li>
+            <li>Check stack usage when nested interrupts are possible.</li>
+        </ul>
+
+        <p>
+            Avoid assigning the highest priority to every
+            interrupt. A well-designed priority scheme should
+            reflect actual timing requirements.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Common Priority Configuration Errors</h2>
+
+        <table>
+            <tr>
+                <th>Error</th>
+                <th>Possible Consequence</th>
+            </tr>
+            <tr>
+                <td>Assuming larger number means higher priority</td>
+                <td>Incorrect interrupt urgency.</td>
+            </tr>
+            <tr>
+                <td>Using unsupported priority values</td>
+                <td>Priority may be truncated or not behave as expected.</td>
+            </tr>
+            <tr>
+                <td>Misunderstanding priority grouping</td>
+                <td>Unexpected preemption behavior.</td>
+            </tr>
+            <tr>
+                <td>Using long ISRs at high priority</td>
+                <td>Lower-priority interrupts may be delayed.</td>
+            </tr>
+            <tr>
+                <td>Ignoring nested stack usage</td>
+                <td>Possible stack overflow.</td>
+            </tr>
+            <tr>
+                <td>Assuming subpriority causes preemption</td>
+                <td>Incorrect interrupt scheduling assumptions.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Placement-Oriented Interview Questions</h2>
+
+        <h3>Q1. What is interrupt priority?</h3>
+        <p>
+            Interrupt priority determines the relative urgency
+            with which interrupt requests are handled.
+        </p>
+
+        <h3>Q2. Does a lower numerical priority value mean higher priority?</h3>
+        <p>
+            Yes. In the Cortex-M NVIC, lower numerical values
+            represent higher configurable priorities.
+        </p>
+
+        <h3>Q3. What is preemption?</h3>
+        <p>
+            Preemption occurs when a higher-preemption-priority
+            interrupt suspends a lower-priority ISR.
+        </p>
+
+        <h3>Q4. What are nested interrupts?</h3>
+        <p>
+            Nested interrupts occur when one ISR is interrupted
+            by another eligible interrupt handler.
+        </p>
+
+        <h3>Q5. What is subpriority?</h3>
+        <p>
+            Subpriority determines the service order among
+            pending interrupts with the same preemption priority.
+        </p>
+
+        <h3>Q6. Can subpriority cause preemption?</h3>
+        <p>
+            No. Subpriority does not determine whether one
+            interrupt can preempt another.
+        </p>
+
+        <h3>Q7. What is priority grouping?</h3>
+        <p>
+            Priority grouping divides implemented NVIC priority
+            bits into preemption priority and subpriority fields.
+        </p>
+
+        <h3>Q8. What is interrupt latency?</h3>
+        <p>
+            It is the time between an interrupt request becoming
+            eligible and execution of its handler beginning.
+        </p>
+
+        <h3>Q9. Why should high-priority ISRs be short?</h3>
+        <p>
+            Long high-priority ISRs can delay other interrupts
+            and increase system response time.
+        </p>
+
+        <h3>Q10. Which function sets interrupt priority in CMSIS?</h3>
+        <p>
+            NVIC_SetPriority() is the standard CMSIS function.
+        </p>
+
+        <h3>Q11. Which HAL function configures interrupt priority?</h3>
+        <p>
+            HAL_NVIC_SetPriority() configures interrupt priority
+            using the STM32 HAL interface.
+        </p>
+
+        <h3>Q12. What can happen if too many interrupts are nested?</h3>
+        <p>
+            Stack consumption and execution overhead increase,
+            potentially causing stack overflow or missed timing
+            requirements.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Practical Exercises</h2>
+
+        <ol>
+            <li>Explain why priority value 1 is higher than priority value 5.</li>
+            <li>Configure two interrupts with different priorities.</li>
+            <li>Demonstrate preemption using timer and UART interrupts.</li>
+            <li>Explain the difference between preemption priority and subpriority.</li>
+            <li>Configure a priority grouping in STM32CubeIDE.</li>
+            <li>Measure interrupt response time using a GPIO pin and oscilloscope or logic analyzer.</li>
+            <li>Analyze the effect of a long high-priority ISR.</li>
+            <li>Estimate additional stack requirements for nested interrupts.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Lesson Summary</h2>
+
+        <ul>
+            <li>NVIC priority controls interrupt urgency.</li>
+            <li>Lower numerical values represent higher priorities.</li>
+            <li>Preemption allows urgent interrupts to interrupt lower-priority ISRs.</li>
+            <li>Nested interrupts involve multiple active exception levels.</li>
+            <li>Priority grouping divides priority bits into two fields.</li>
+            <li>Subpriority orders pending interrupts but does not cause preemption.</li>
+            <li>Interrupt latency affects response time.</li>
+            <li>Nested interrupts require careful stack and timing analysis.</li>
+        </ul>
+    </section>
+
+    <nav class="navigation">
+        <a href="L02_NVIC_Configuration_and_Programming.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter Index
+        </a>
+
+        <a href="L04_External_Interrupt_Programming_Using_EXTI.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
