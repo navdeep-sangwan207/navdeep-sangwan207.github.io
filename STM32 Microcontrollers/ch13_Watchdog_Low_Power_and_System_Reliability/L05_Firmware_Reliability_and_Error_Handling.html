@@ -1,1 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 5 - Firmware Reliability and Error Handling</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dce5f0;
+            border-radius: 9px;
+        }
+        h2, h3 { color: #174ea6; }
+        .info-box {
+            background: #eef6ff;
+            border-left: 5px solid #174ea6;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 5px solid #e09b24;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        pre {
+            background: #172033;
+            color: #e8f0ff;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 16px;
+            border-radius: 6px;
+        }
+        .lesson-nav a:hover { background: #007bff; }
+    </style>
+</head>
 
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 5: Firmware Reliability and Error Handling</h1>
+        <p>STM32 Microcontrollers – Chapter 13</p>
+        <p>Design reliable embedded firmware using error detection, recovery mechanisms and defensive programming.</p>
+    </header>
+
+    <p><a href="index.html">← Back to Chapter 13</a></p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand firmware reliability and fault tolerance.</li>
+            <li>Identify common embedded firmware failures.</li>
+            <li>Implement error detection and handling.</li>
+            <li>Understand defensive programming techniques.</li>
+            <li>Use watchdogs and timeout mechanisms effectively.</li>
+            <li>Design safe recovery procedures.</li>
+            <li>Understand firmware diagnostics and logging.</li>
+            <li>Apply reliability techniques to STM32 applications.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Is Firmware Reliability?</h2>
+
+        <p>
+            Firmware reliability is the ability of an
+            embedded system to perform its intended
+            functions correctly and consistently
+            under specified operating conditions.
+        </p>
+
+        <p>
+            Reliable firmware should detect abnormal
+            conditions, handle errors safely and
+            recover when recovery is possible.
+        </p>
+
+        <h3>Why Is Reliability Important?</h3>
+        <ul>
+            <li>Prevents unexpected system failures.</li>
+            <li>Improves product availability.</li>
+            <li>Reduces maintenance requirements.</li>
+            <li>Protects hardware from unsafe operation.</li>
+            <li>Improves system stability.</li>
+            <li>Supports predictable real-time behavior.</li>
+        </ul>
+
+        <pre><code>        EMBEDDED APPLICATION
+                 |
+                 v
+          NORMAL OPERATION
+                 |
+                 v
+          MONITOR SYSTEM
+                 |
+          +------+------+
+          |             |
+       NORMAL          ERROR
+          |             |
+          v             v
+       CONTINUE     DETECT ERROR
+                        |
+                        v
+                   CLASSIFY ERROR
+                        |
+                        v
+                   RECOVERY ACTION
+                        |
+                        v
+                  VERIFY OPERATION</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Common Embedded Firmware Failures</h2>
+
+        <table>
+            <tr>
+                <th>Failure</th>
+                <th>Possible Cause</th>
+                <th>Possible Effect</th>
+            </tr>
+            <tr>
+                <td>Software lockup</td>
+                <td>Infinite loop or blocked task</td>
+                <td>Application stops responding</td>
+            </tr>
+            <tr>
+                <td>Stack overflow</td>
+                <td>Insufficient stack allocation</td>
+                <td>Memory corruption</td>
+            </tr>
+            <tr>
+                <td>Memory corruption</td>
+                <td>Invalid pointer or buffer overflow</td>
+                <td>Unpredictable behavior</td>
+            </tr>
+            <tr>
+                <td>Communication failure</td>
+                <td>Noise, wiring or protocol error</td>
+                <td>Missing or incorrect data</td>
+            </tr>
+            <tr>
+                <td>Peripheral timeout</td>
+                <td>Device not responding</td>
+                <td>Application waits indefinitely</td>
+            </tr>
+            <tr>
+                <td>Power instability</td>
+                <td>Supply voltage variation</td>
+                <td>Unexpected reset or malfunction</td>
+            </tr>
+            <tr>
+                <td>Timing failure</td>
+                <td>Incorrect clock or scheduling</td>
+                <td>Missed deadlines</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Error Detection and Classification</h2>
+
+        <p>
+            An embedded application should identify
+            errors as early as possible and classify
+            them according to their severity.
+        </p>
+
+        <h3>Common Error Categories</h3>
+
+        <ul>
+            <li><strong>Hardware errors:</strong> Sensor failure, supply fault or peripheral malfunction.</li>
+            <li><strong>Communication errors:</strong> UART framing error, I2C NACK or SPI communication failure.</li>
+            <li><strong>Software errors:</strong> Invalid pointer, incorrect state or unexpected function result.</li>
+            <li><strong>Timing errors:</strong> Missed deadline or peripheral timeout.</li>
+            <li><strong>Resource errors:</strong> Memory exhaustion, buffer overflow or queue overflow.</li>
+        </ul>
+
+        <h3>Example Error Codes</h3>
+
+        <pre><code>typedef enum
+{
+    ERROR_NONE = 0,
+    ERROR_UART,
+    ERROR_I2C,
+    ERROR_ADC,
+    ERROR_SENSOR,
+    ERROR_TIMEOUT,
+    ERROR_MEMORY
+} ErrorCode_t;</code></pre>
+
+        <p>
+            Enumerated error codes make diagnostic
+            information easier to understand and
+            maintain.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Defensive Programming</h2>
+
+        <p>
+            Defensive programming means writing code
+            that checks inputs, validates conditions
+            and handles unexpected situations instead
+            of assuming that every operation succeeds.
+        </p>
+
+        <h3>Important Techniques</h3>
+        <ul>
+            <li>Validate function arguments.</li>
+            <li>Check peripheral return values.</li>
+            <li>Check array and buffer boundaries.</li>
+            <li>Use finite timeouts.</li>
+            <li>Initialize variables before use.</li>
+            <li>Validate sensor readings.</li>
+            <li>Avoid unbounded loops.</li>
+            <li>Define recovery behavior for failures.</li>
+        </ul>
+
+        <h3>Example: Validate a Function Argument</h3>
+
+        <pre><code>#include &lt;stdint.h&gt;
+#include &lt;stdbool.h&gt;
+
+bool Set_LED_Brightness(uint8_t brightness)
+{
+    if (brightness > 100U)
+    {
+        return false;
+    }
+
+    /* Apply valid brightness value. */
+
+    return true;
+}</code></pre>
+
+        <h3>Example: Check HAL Return Status</h3>
+
+        <pre><code>HAL_StatusTypeDef status;
+
+status = HAL_I2C_Master_Transmit(
+    &amp;hi2c1,
+    (uint16_t)(0x48U &lt;&lt; 1),
+    tx_buffer,
+    sizeof(tx_buffer),
+    100U
+);
+
+if (status != HAL_OK)
+{
+    /* Handle communication failure. */
+}</code></pre>
+
+        <div class="info-box">
+            A successful HAL return value indicates
+            that the HAL operation completed according
+            to its API contract. It does not necessarily
+            prove that the connected sensor returned
+            valid application data.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Timeout-Based Error Handling</h2>
+
+        <p>
+            A timeout prevents firmware from waiting
+            indefinitely for a peripheral, sensor or
+            external device.
+        </p>
+
+        <h3>Example: Check a Peripheral Operation</h3>
+
+        <pre><code>HAL_StatusTypeDef status;
+
+status = HAL_UART_Receive(
+    &amp;huart2,
+    rx_buffer,
+    1U,
+    100U
+);
+
+if (status == HAL_TIMEOUT)
+{
+    /* Receive operation timed out. */
+}
+else if (status == HAL_ERROR)
+{
+    /* Communication error. */
+}
+else if (status == HAL_OK)
+{
+    /* Data received successfully. */
+}</code></pre>
+
+        <h3>Why Are Timeouts Important?</h3>
+        <ul>
+            <li>Prevent indefinite blocking.</li>
+            <li>Improve system responsiveness.</li>
+            <li>Allow recovery after communication failure.</li>
+            <li>Help detect disconnected peripherals.</li>
+        </ul>
+
+        <div class="warning-box">
+            Select timeout values according to the
+            peripheral's timing requirements. A timeout
+            that is too short can produce false errors;
+            one that is too long can delay recovery.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Watchdog-Based System Supervision</h2>
+
+        <p>
+            A watchdog monitors firmware execution.
+            If the application fails to refresh the
+            watchdog within its permitted time,
+            the watchdog can reset the MCU.
+        </p>
+
+        <h3>Watchdog Design Principles</h3>
+        <ul>
+            <li>Refresh only after critical application checks succeed.</li>
+            <li>Do not refresh unconditionally from a timer interrupt.</li>
+            <li>Monitor important tasks and system functions.</li>
+            <li>Choose timeout values based on worst-case execution time.</li>
+            <li>Record reset causes after restart.</li>
+        </ul>
+
+        <h3>Example: Application Health Check</h3>
+
+        <pre><code>#include &lt;stdbool.h&gt;
+
+bool Application_Healthy(void)
+{
+    bool sensor_ok = true;
+    bool communication_ok = true;
+    bool control_ok = true;
+
+    return (sensor_ok &amp;&amp;
+            communication_ok &amp;&amp;
+            control_ok);
+}
+
+void Watchdog_Service(void)
+{
+    if (Application_Healthy())
+    {
+        HAL_IWDG_Refresh(&amp;hiwdg);
+    }
+}</code></pre>
+
+        <div class="warning-box">
+            The example shows the health-check concept.
+            Real firmware must obtain these status values
+            from actual subsystems. A single health flag
+            should not hide a stalled task or stale data.
+            Watchdog servicing should be designed around
+            the complete application architecture.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Safe Error Recovery</h2>
+
+        <p>
+            Error recovery should return the system
+            to a known safe condition whenever
+            possible.
+        </p>
+
+        <h3>Common Recovery Methods</h3>
+        <ol>
+            <li>Retry a communication operation when appropriate.</li>
+            <li>Reinitialize a failed peripheral.</li>
+            <li>Reset an external sensor if supported.</li>
+            <li>Move the application into a safe state.</li>
+            <li>Record diagnostic information.</li>
+            <li>Request a controlled system reset if necessary.</li>
+        </ol>
+
+        <h3>Example: Retry a Communication Operation</h3>
+
+        <pre><code>HAL_StatusTypeDef status;
+uint8_t retry;
+
+status = HAL_ERROR;
+
+for (retry = 0U; retry &lt; 3U; retry++)
+{
+    status = HAL_I2C_Master_Transmit(
+        &amp;hi2c1,
+        (uint16_t)(0x48U &lt;&lt; 1),
+        tx_buffer,
+        sizeof(tx_buffer),
+        100U
+    );
+
+    if (status == HAL_OK)
+    {
+        break;
+    }
+}
+
+if (status != HAL_OK)
+{
+    /* Enter the defined error-handling path. */
+}</code></pre>
+
+        <div class="info-box">
+            Retries should be bounded. Some operations
+            are not safe to repeat unless the protocol
+            and device behavior are understood.
+            Use backoff or recovery procedures where
+            appropriate.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Error Logging and Diagnostics</h2>
+
+        <p>
+            Error logging records useful information
+            about abnormal application behavior.
+            It helps engineers reproduce and diagnose
+            problems.
+        </p>
+
+        <h3>Useful Diagnostic Information</h3>
+        <ul>
+            <li>Error code and subsystem.</li>
+            <li>Timestamp or system tick.</li>
+            <li>Peripheral status and error flags.</li>
+            <li>Reset cause.</li>
+            <li>Important application state.</li>
+            <li>Fault address and processor state where valid.</li>
+        </ul>
+
+        <h3>Example: Basic Error Logger</h3>
+
+        <pre><code>#include &lt;stdint.h&gt;
+
+typedef struct
+{
+    uint32_t timestamp;
+    uint32_t error_code;
+} ErrorLog_t;
+
+volatile ErrorLog_t last_error;
+
+void Log_Error(uint32_t code)
+{
+    last_error.timestamp = HAL_GetTick();
+    last_error.error_code = code;
+}</code></pre>
+
+        <p>
+            This is a minimal example for illustrating
+            the concept. A production logger should
+            define how records are stored, protected,
+            retained across resets and read safely.
+        </p>
+
+        <div class="warning-box">
+            HAL_GetTick() may not advance when its
+            time base is suspended or unavailable.
+            Do not call complex logging functions from
+            a fault handler or time-critical ISR.
+            Flash logging also requires care because
+            erase/program operations have latency and
+            endurance limits.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. State Machine-Based Error Handling</h2>
+
+        <p>
+            A state machine makes application behavior
+            more predictable by defining valid states
+            and transitions.
+        </p>
+
+        <h3>Example States</h3>
+
+        <table>
+            <tr>
+                <th>State</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td>INIT</td>
+                <td>Initialize peripherals and application data.</td>
+            </tr>
+            <tr>
+                <td>IDLE</td>
+                <td>Wait for an application event.</td>
+            </tr>
+            <tr>
+                <td>RUN</td>
+                <td>Perform normal application operation.</td>
+            </tr>
+            <tr>
+                <td>ERROR</td>
+                <td>Handle an abnormal condition.</td>
+            </tr>
+            <tr>
+                <td>RECOVERY</td>
+                <td>Attempt a controlled recovery.</td>
+            </tr>
+        </table>
+
+        <pre><code>typedef enum
+{
+    STATE_INIT = 0,
+    STATE_IDLE,
+    STATE_RUN,
+    STATE_ERROR,
+    STATE_RECOVERY
+} SystemState_t;
+
+SystemState_t system_state = STATE_INIT;
+
+void Application_Task(void)
+{
+    switch (system_state)
+    {
+        case STATE_INIT:
+            /* Initialize application. */
+            system_state = STATE_IDLE;
+            break;
+
+        case STATE_IDLE:
+            /* Wait for an event. */
+            system_state = STATE_RUN;
+            break;
+
+        case STATE_RUN:
+            /* Execute application operation. */
+            break;
+
+        case STATE_ERROR:
+            /* Enter a safe condition. */
+            system_state = STATE_RECOVERY;
+            break;
+
+        case STATE_RECOVERY:
+            /* Perform controlled recovery. */
+            break;
+
+        default:
+            system_state = STATE_ERROR;
+            break;
+    }
+}</code></pre>
+
+        <p>
+            In a real application, state transitions
+            should be driven by validated events,
+            operation results and explicit recovery
+            conditions.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Reliability Testing Techniques</h2>
+
+        <table>
+            <tr>
+                <th>Test</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>Power cycling</td>
+                <td>Check startup and power recovery behavior.</td>
+            </tr>
+            <tr>
+                <td>Watchdog testing</td>
+                <td>Verify recovery from firmware lockup.</td>
+            </tr>
+            <tr>
+                <td>Communication fault injection</td>
+                <td>Check behavior when devices stop responding.</td>
+            </tr>
+            <tr>
+                <td>Boundary testing</td>
+                <td>Verify minimum, maximum and invalid inputs.</td>
+            </tr>
+            <tr>
+                <td>Long-duration testing</td>
+                <td>Find memory leaks and timing problems.</td>
+            </tr>
+            <tr>
+                <td>Stack monitoring</td>
+                <td>Detect insufficient stack allocation.</td>
+            </tr>
+            <tr>
+                <td>Fault injection</td>
+                <td>Verify error detection and recovery paths.</td>
+            </tr>
+        </table>
+
+        <h3>Reliability Verification Checklist</h3>
+        <ul>
+            <li>All peripheral operations check return status.</li>
+            <li>Blocking operations have appropriate timeouts.</li>
+            <li>Buffers have valid size and ownership rules.</li>
+            <li>Critical variables are accessed safely.</li>
+            <li>Watchdog refresh depends on system health.</li>
+            <li>Reset causes are recorded.</li>
+            <li>Error paths have been tested.</li>
+            <li>Safe-state behavior is defined.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Embedded Firmware Best Practices</h2>
+
+        <ul>
+            <li>Use meaningful function and variable names.</li>
+            <li>Separate hardware drivers from application logic.</li>
+            <li>Use fixed-width integer types for hardware-related data.</li>
+            <li>Keep interrupt service routines short.</li>
+            <li>Avoid unnecessary dynamic memory allocation.</li>
+            <li>Use finite timeouts for external operations.</li>
+            <li>Validate external and sensor data.</li>
+            <li>Protect shared data between execution contexts.</li>
+            <li>Document hardware and software assumptions.</li>
+            <li>Test failure and recovery conditions.</li>
+        </ul>
+
+        <div class="info-box">
+            Reliability is not achieved by adding a
+            watchdog alone. It requires correct
+            hardware design, robust firmware,
+            diagnostics, testing and defined
+            recovery behavior.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Placement Interview Questions and Answers</h2>
+
+        <h3>Q1. What is firmware reliability?</h3>
+        <p>
+            It is the ability of firmware to perform
+            its intended functions consistently under
+            specified operating conditions.
+        </p>
+
+        <h3>Q2. What is defensive programming?</h3>
+        <p>
+            Defensive programming validates inputs,
+            checks operation results and handles
+            unexpected conditions safely.
+        </p>
+
+        <h3>Q3. Why are timeouts used in embedded systems?</h3>
+        <p>
+            Timeouts prevent indefinite waiting for
+            peripherals or external devices and
+            allow the application to recover.
+        </p>
+
+        <h3>Q4. What is fault tolerance?</h3>
+        <p>
+            Fault tolerance is the ability of a system
+            to continue operating safely or provide
+            defined behavior when certain faults occur.
+        </p>
+
+        <h3>Q5. Why should HAL return values be checked?</h3>
+        <p>
+            They indicate whether an operation
+            completed successfully, was busy, timed
+            out or encountered an error.
+        </p>
+
+        <h3>Q6. What is watchdog supervision?</h3>
+        <p>
+            It monitors application progress and can
+            reset the MCU when firmware fails to
+            refresh the watchdog as required.
+        </p>
+
+        <h3>Q7. What is error logging?</h3>
+        <p>
+            Error logging records diagnostic details
+            that help engineers identify and analyze
+            application failures.
+        </p>
+
+        <h3>Q8. Why should retries be limited?</h3>
+        <p>
+            Unbounded retries can block the application
+            and prevent other tasks from executing.
+        </p>
+
+        <h3>Q9. What is a safe state?</h3>
+        <p>
+            A safe state is a predefined system
+            condition that reduces risk when an
+            abnormal condition is detected.
+        </p>
+
+        <h3>Q10. Why is a state machine useful?</h3>
+        <p>
+            It defines valid application states and
+            transitions, making control flow and
+            error recovery easier to understand.
+        </p>
+
+        <h3>Q11. What is fault injection testing?</h3>
+        <p>
+            It deliberately introduces faults to
+            verify that the system detects them and
+            responds according to its design.
+        </p>
+
+        <h3>Q12. How can stack overflow be prevented?</h3>
+        <p>
+            Estimate worst-case stack requirements,
+            monitor stack usage, avoid excessive
+            recursion and validate task stack sizes.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Practical Exercises</h2>
+
+        <ol>
+            <li>Define firmware reliability and fault tolerance.</li>
+            <li>List common embedded firmware failures.</li>
+            <li>Create an error-code enumeration in C.</li>
+            <li>Write a function that validates sensor input.</li>
+            <li>Implement timeout-based UART error handling.</li>
+            <li>Write a bounded retry mechanism for I2C communication.</li>
+            <li>Design an application health-check mechanism for IWDG.</li>
+            <li>Draw a state machine with normal, error and recovery states.</li>
+            <li>Prepare a reliability testing checklist for an STM32 project.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Lesson Summary</h2>
+
+        <ul>
+            <li>Firmware reliability requires predictable and safe operation.</li>
+            <li>Error detection identifies abnormal conditions.</li>
+            <li>Defensive programming validates inputs and operation results.</li>
+            <li>Timeouts prevent indefinite blocking.</li>
+            <li>Watchdogs supervise application progress.</li>
+            <li>Recovery procedures restore a safe operating condition.</li>
+            <li>Error logging supports troubleshooting.</li>
+            <li>State machines improve application control flow.</li>
+            <li>Reliability testing verifies failure and recovery behavior.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>Chapter 13 Completed</h2>
+        <p>
+            You have completed Watchdog, Low Power
+            and System Reliability.
+        </p>
+        <p>
+            You can now explain watchdog supervision,
+            low-power operation, reset diagnostics,
+            fault handling and firmware reliability
+            techniques used in STM32 embedded systems.
+        </p>
+    </section>
+
+    <nav class="lesson-nav">
+        <a href="L04_Reset_Causes_and_System_Fault_Diagnostics.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter Index</a>
+        <a href="../ch14_STM32_RTOS_and_FreeRTOS_Fundamentals/index.html">
+            Next Chapter →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
