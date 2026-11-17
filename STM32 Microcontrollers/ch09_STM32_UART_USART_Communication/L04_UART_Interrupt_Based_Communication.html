@@ -1,1 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 4 - UART Interrupt-Based Communication</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dce5f0;
+            border-radius: 9px;
+        }
+        h2, h3 { color: #174ea6; }
+        .info-box {
+            background: #eef6ff;
+            border-left: 5px solid #174ea6;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 5px solid #e09b24;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        pre {
+            background: #172033;
+            color: #e8f0ff;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 16px;
+            border-radius: 6px;
+        }
+        .lesson-nav a:hover { background: #007bff; }
+    </style>
+</head>
+
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 4: UART Interrupt-Based Communication</h1>
+        <p>STM32 Microcontrollers – Chapter 9</p>
+        <p>Implement non-blocking serial communication using UART interrupts.</p>
+    </header>
+
+    <p><a href="index.html">← Back to Chapter 9</a></p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand interrupt-driven UART communication.</li>
+            <li>Compare polling and interrupt-based communication.</li>
+            <li>Use HAL UART interrupt functions.</li>
+            <li>Understand UART interrupt callbacks.</li>
+            <li>Implement interrupt-based data reception.</li>
+            <li>Transmit data using UART interrupts.</li>
+            <li>Manage buffers and shared data safely.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What is Interrupt-Based UART Communication?</h2>
+
+        <p>
+            Interrupt-based UART communication allows the CPU to
+            perform other application tasks while the UART
+            peripheral handles data transmission or reception.
+            When a configured UART event occurs, the peripheral
+            requests CPU attention through an interrupt.
+        </p>
+
+        <h3>Basic Working</h3>
+        <ol>
+            <li>Firmware starts a UART interrupt operation.</li>
+            <li>The CPU continues executing other instructions.</li>
+            <li>The UART peripheral transmits or receives data.</li>
+            <li>A UART event generates an interrupt request.</li>
+            <li>The NVIC forwards the enabled interrupt to the CPU.</li>
+            <li>The interrupt handler processes the UART event.</li>
+            <li>The HAL callback notifies the application when appropriate.</li>
+        </ol>
+
+        <div class="info-box">
+            Interrupt-based HAL functions are non-blocking after
+            the transfer has been successfully started. The
+            application must still handle completion and errors.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Polling vs Interrupt-Based UART</h2>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>Polling</th>
+                <th>Interrupt-Based</th>
+            </tr>
+            <tr>
+                <td>CPU operation</td>
+                <td>Waits or repeatedly checks status</td>
+                <td>Can execute other tasks while waiting</td>
+            </tr>
+            <tr>
+                <td>CPU efficiency</td>
+                <td>Can be lower when waiting</td>
+                <td>Often better for asynchronous applications</td>
+            </tr>
+            <tr>
+                <td>Implementation</td>
+                <td>Relatively simple</td>
+                <td>Requires interrupt configuration and callbacks</td>
+            </tr>
+            <tr>
+                <td>Timing</td>
+                <td>Depends on polling and blocking behavior</td>
+                <td>Responds to configured peripheral events</td>
+            </tr>
+            <tr>
+                <td>Applications</td>
+                <td>Simple short transfers</td>
+                <td>Responsive embedded applications</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>4. HAL_UART_Receive_IT()</h2>
+
+        <p>
+            <code>HAL_UART_Receive_IT()</code> starts an
+            interrupt-based reception operation.
+        </p>
+
+        <h3>Function Syntax</h3>
+        <pre><code>HAL_StatusTypeDef HAL_UART_Receive_IT(
+    UART_HandleTypeDef *huart,
+    uint8_t *pData,
+    uint16_t Size
+);</code></pre>
+
+        <h3>Parameters</h3>
+        <table>
+            <tr><th>Parameter</th><th>Description</th></tr>
+            <tr><td>huart</td><td>UART handle.</td></tr>
+            <tr><td>pData</td><td>Receive buffer address.</td></tr>
+            <tr><td>Size</td><td>Number of data elements to receive.</td></tr>
+        </table>
+
+        <p>
+            Unlike the polling function, this function returns
+            after starting the operation rather than waiting
+            for all requested data to arrive.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Interrupt-Based UART Reception Example</h2>
+
+        <p>
+            This example receives one character through USART2
+            and stores it in a variable. After reception, the
+            callback sets an event flag and rearms reception.
+        </p>
+
+        <pre><code>#include "main.h"
+
+extern UART_HandleTypeDef huart2;
+
+uint8_t rx_char;
+volatile uint8_t uart_rx_event = 0;
+
+void UART_Start_Receive(void)
+{
+    if (HAL_UART_Receive_IT(&amp;huart2, &amp;rx_char, 1) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart-&gt;Instance == USART2)
+    {
+        uart_rx_event = 1;
+
+        // Rearm one-byte reception.
+        HAL_UART_Receive_IT(&amp;huart2, &amp;rx_char, 1);
+    }
+}
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_USART2_UART_Init();
+
+    UART_Start_Receive();
+
+    while (1)
+    {
+        if (uart_rx_event)
+        {
+            uart_rx_event = 0;
+
+            // Process the received character here.
+            // Example: update application state.
+        }
+    }
+}</code></pre>
+
+        <h3>Explanation</h3>
+        <ul>
+            <li><code>HAL_UART_Receive_IT()</code> starts reception.</li>
+            <li><code>HAL_UART_RxCpltCallback()</code> is called after the requested reception completes successfully.</li>
+            <li><code>uart_rx_event</code> informs the main loop that a character has arrived.</li>
+            <li>The receive operation is started again for the next character.</li>
+        </ul>
+
+        <div class="warning-box">
+            The callback executes in interrupt context. Keep it
+            short. Check the return value when rearming reception
+            in production code and handle UART errors separately.
+            The buffer must remain valid for the duration of the
+            transfer.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. UART Interrupt Handler</h2>
+
+        <p>
+            The MCU interrupt vector directs the UART interrupt
+            to its corresponding interrupt handler. The STM32 HAL
+            handler processes the peripheral status and advances
+            the transfer state.
+        </p>
+
+        <h3>Example: USART2 Interrupt Handler</h3>
+
+        <pre><code>void USART2_IRQHandler(void)
+{
+    HAL_UART_IRQHandler(&amp;huart2);
+}</code></pre>
+
+        <p>
+            This handler is commonly generated in the
+            <code>stm32xx_it.c</code> file by STM32CubeMX.
+            The exact file name depends on the selected STM32 family.
+        </p>
+
+        <div class="info-box">
+            Do not create a duplicate interrupt handler if
+            CubeMX has already generated one. Ensure the correct
+            IRQ handler and vector are enabled for the selected
+            USART instance.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. NVIC Configuration</h2>
+
+        <p>
+            The Nested Vectored Interrupt Controller (NVIC)
+            controls interrupt enabling and priority for the
+            processor.
+        </p>
+
+        <h3>HAL Configuration Example</h3>
+        <pre><code>HAL_NVIC_SetPriority(USART2_IRQn, 5, 0);
+HAL_NVIC_EnableIRQ(USART2_IRQn);</code></pre>
+
+        <h3>Important Steps</h3>
+        <ol>
+            <li>Configure the UART peripheral.</li>
+            <li>Enable the UART interrupt source through the HAL operation.</li>
+            <li>Set the NVIC priority.</li>
+            <li>Enable the USART IRQ in the NVIC.</li>
+            <li>Provide the correct interrupt handler.</li>
+        </ol>
+
+        <p>
+            CubeMX can generate much of this configuration
+            when the USART global interrupt is enabled in the
+            NVIC settings.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>8. HAL_UART_Transmit_IT()</h2>
+
+        <p>
+            <code>HAL_UART_Transmit_IT()</code> starts
+            interrupt-based transmission.
+        </p>
+
+        <h3>Function Syntax</h3>
+        <pre><code>HAL_StatusTypeDef HAL_UART_Transmit_IT(
+    UART_HandleTypeDef *huart,
+    const uint8_t *pData,
+    uint16_t Size
+);</code></pre>
+
+        <h3>Example</h3>
+        <pre><code>#include "main.h"
+#include &lt;string.h&gt;
+
+extern UART_HandleTypeDef huart2;
+
+uint8_t tx_message[] = "STM32 interrupt transmission\r\n";
+volatile uint8_t tx_complete = 0;
+
+void UART_Start_Transmit(void)
+{
+    tx_complete = 0;
+
+    if (HAL_UART_Transmit_IT(
+            &amp;huart2,
+            tx_message,
+            sizeof(tx_message) - 1) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart-&gt;Instance == USART2)
+    {
+        tx_complete = 1;
+    }
+}</code></pre>
+
+        <p>
+            The transmit buffer must remain valid and unchanged
+            until transmission has completed. The completion
+            callback signals that the requested transfer is done.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>9. UART Reception Using a Fixed-Length Buffer</h2>
+
+        <p>
+            Interrupt reception can receive multiple data elements
+            into a fixed-length buffer.
+        </p>
+
+        <pre><code>#include "main.h"
+
+extern UART_HandleTypeDef huart2;
+
+uint8_t rx_buffer[8];
+volatile uint8_t message_received = 0;
+
+void UART_Start_Buffer_Receive(void)
+{
+    message_received = 0;
+
+    if (HAL_UART_Receive_IT(
+            &amp;huart2,
+            rx_buffer,
+            sizeof(rx_buffer)) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart-&gt;Instance == USART2)
+    {
+        message_received = 1;
+    }
+}
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_USART2_UART_Init();
+
+    UART_Start_Buffer_Receive();
+
+    while (1)
+    {
+        if (message_received)
+        {
+            message_received = 0;
+
+            // Process all eight received data elements.
+
+            UART_Start_Buffer_Receive();
+        }
+    }
+}</code></pre>
+
+        <div class="warning-box">
+            This example expects exactly eight data elements
+            before the receive-complete callback occurs. It
+            does not automatically detect a variable-length
+            message or newline delimiter.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Sharing Data Between ISR and Main Loop</h2>
+
+        <p>
+            Data shared between an interrupt callback and the
+            main program must be handled carefully.
+        </p>
+
+        <h3>Using a Volatile Event Flag</h3>
+        <pre><code>volatile uint8_t uart_event = 0;
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart-&gt;Instance == USART2)
+    {
+        uart_event = 1;
+    }
+}
+
+int main(void)
+{
+    while (1)
+    {
+        if (uart_event)
+        {
+            uart_event = 0;
+
+            // Handle the UART event.
+        }
+    }
+}</code></pre>
+
+        <div class="info-box">
+            <code>volatile</code> tells the compiler that a
+            variable can change outside the normal program flow.
+            It does not make compound operations atomic and
+            does not provide a complete synchronization mechanism.
+        </div>
+
+        <h3>Important Considerations</h3>
+        <ul>
+            <li>Use short ISR callbacks.</li>
+            <li>Do not perform lengthy processing inside callbacks.</li>
+            <li>Use a queue or ring buffer when several bytes or events must be retained.</li>
+            <li>Protect shared multi-byte data when atomic access is required.</li>
+            <li>Handle buffer overflow explicitly.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>11. UART Error Callback</h2>
+
+        <p>
+            STM32 HAL provides an error callback for UART
+            communication errors.
+        </p>
+
+        <pre><code>void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart-&gt;Instance == USART2)
+    {
+        uint32_t error = HAL_UART_GetError(huart);
+
+        // Record the error and schedule recovery
+        // outside interrupt context.
+        (void)error;
+    }
+}</code></pre>
+
+        <p>
+            Possible errors include parity, noise, framing and
+            overrun errors. Available error conditions and
+            recovery requirements depend on the peripheral and
+            HAL version.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Interrupt-Based UART Design Rules</h2>
+
+        <ul>
+            <li>Keep interrupt callbacks short and predictable.</li>
+            <li>Avoid blocking delays inside interrupt callbacks.</li>
+            <li>Avoid blocking UART transmit or receive calls inside a UART callback.</li>
+            <li>Do not use long loops or lengthy string processing in an ISR.</li>
+            <li>Use persistent buffers rather than short-lived local buffers for asynchronous operations.</li>
+            <li>Check the return value when starting or restarting transfers.</li>
+            <li>Use DMA or ring buffers for high-volume continuous data.</li>
+            <li>Handle UART errors and reception recovery.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Common Problems and Troubleshooting</h2>
+
+        <table>
+            <tr><th>Problem</th><th>Possible Cause or Solution</th></tr>
+            <tr>
+                <td>Callback never executes</td>
+                <td>Check NVIC enable, IRQ handler and peripheral interrupt configuration.</td>
+            </tr>
+            <tr>
+                <td>Only first character is received</td>
+                <td>Rearm reception after completing the previous transfer.</td>
+            </tr>
+            <tr>
+                <td>Incorrect received data</td>
+                <td>Check baud rate, frame format and wiring.</td>
+            </tr>
+            <tr>
+                <td>HAL_BUSY returned</td>
+                <td>Check whether the UART handle is already handling a transfer.</td>
+            </tr>
+            <tr>
+                <td>Data overwritten</td>
+                <td>Use suitable buffers and process received data before reuse.</td>
+            </tr>
+            <tr>
+                <td>Repeated UART errors</td>
+                <td>Inspect clock configuration, signal quality and error recovery.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Placement Interview Questions and Answers</h2>
+
+        <h3>Q1. What is interrupt-based UART communication?</h3>
+        <p>
+            It is a communication method in which UART peripheral
+            events generate interrupts to notify the processor
+            about transmission or reception progress.
+        </p>
+
+        <h3>Q2. Which HAL function starts interrupt-based reception?</h3>
+        <p><code>HAL_UART_Receive_IT()</code>.</p>
+
+        <h3>Q3. Which HAL function starts interrupt-based transmission?</h3>
+        <p><code>HAL_UART_Transmit_IT()</code>.</p>
+
+        <h3>Q4. What is HAL_UART_RxCpltCallback()?</h3>
+        <p>
+            It is the HAL callback invoked when the requested
+            interrupt-based reception completes successfully.
+        </p>
+
+        <h3>Q5. What is HAL_UART_TxCpltCallback()?</h3>
+        <p>
+            It is the HAL callback invoked when the requested
+            interrupt-based transmission completes successfully.
+        </p>
+
+        <h3>Q6. What is the role of NVIC?</h3>
+        <p>
+            NVIC controls interrupt enabling, pending state,
+            priorities and delivery to the processor.
+        </p>
+
+        <h3>Q7. Why should an ISR be short?</h3>
+        <p>
+            A short ISR reduces interrupt latency for other
+            events and helps maintain predictable system timing.
+        </p>
+
+        <h3>Q8. Why must an interrupt receive operation be restarted?</h3>
+        <p>
+            A normal fixed-length HAL interrupt receive operation
+            completes after the requested number of data elements.
+            Another operation must be started to receive more data.
+        </p>
+
+        <h3>Q9. Is volatile sufficient for sharing data?</h3>
+        <p>
+            No. Volatile affects compiler access behavior but
+            does not guarantee atomicity or synchronization.
+        </p>
+
+        <h3>Q10. What is a UART overrun error?</h3>
+        <p>
+            It occurs when new received data arrives before
+            previously received data has been read or handled
+            as required by the peripheral.
+        </p>
+
+        <h3>Q11. What is the difference between polling and interrupt UART?</h3>
+        <p>
+            Polling repeatedly checks peripheral status, while
+            interrupt-based operation allows the processor to
+            perform other tasks until an enabled event occurs.
+        </p>
+
+        <h3>Q12. When should DMA be preferred?</h3>
+        <p>
+            DMA is useful for larger, continuous or high-rate
+            data transfers where reducing CPU involvement is
+            important.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Practical Exercises</h2>
+        <ol>
+            <li>Configure USART2 interrupt reception in STM32CubeMX.</li>
+            <li>Receive one character using HAL_UART_Receive_IT().</li>
+            <li>Implement a UART echo program using interrupt reception.</li>
+            <li>Transmit a message using HAL_UART_Transmit_IT().</li>
+            <li>Explain the USART2_IRQHandler() function.</li>
+            <li>Implement a fixed-length receive buffer.</li>
+            <li>Explain the purpose of UART completion callbacks.</li>
+            <li>Identify the reason for a missing UART receive callback.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Lesson Summary</h2>
+        <ul>
+            <li>Interrupt-based UART operation reduces the need for continuous polling.</li>
+            <li>HAL_UART_Receive_IT() starts interrupt-based reception.</li>
+            <li>HAL_UART_Transmit_IT() starts interrupt-based transmission.</li>
+            <li>HAL callbacks report transfer completion.</li>
+            <li>NVIC and the correct IRQ handler are essential.</li>
+            <li>Reception must be rearmed for subsequent fixed-length transfers.</li>
+            <li>Shared data and buffers require careful management.</li>
+            <li>ISRs should remain short and predictable.</li>
+        </ul>
+    </section>
+
+    <nav class="lesson-nav">
+        <a href="L03_UART_Transmit_and_Receive_Programming.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L05_UART_DMA_Communication.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
