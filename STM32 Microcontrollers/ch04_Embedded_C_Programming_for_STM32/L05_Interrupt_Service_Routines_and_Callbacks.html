@@ -1,1 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 5 - Interrupt Service Routines and Callbacks</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: #fff;
+            border: 1px solid #e0e6ef;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 18px 0;
+        }
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #e5edf8;
+            padding-bottom: 8px;
+        }
+        h3 { color: #1769aa; }
+        pre {
+            background: #17212f;
+            color: #e8f1ff;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e0a000;
+            padding: 12px;
+            margin: 15px 0;
+        }
+        .example {
+            background: #eef6ff;
+            border-left: 5px solid #007bff;
+            padding: 12px;
+            margin: 15px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .navigation a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 17px;
+            border-radius: 6px;
+        }
+        .navigation a:hover { background: #007bff; }
+    </style>
+</head>
+<body>
 
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 5: Interrupt Service Routines and Callbacks</h1>
+        <p>
+            Learn how STM32 firmware responds to hardware events using
+            interrupt handlers, ISR design principles and HAL callbacks.
+        </p>
+    </header>
+
+    <p>
+        <a href="index.html">← Back to Chapter 4</a> |
+        <a href="../stm32-microcontrollers.html">STM32 Course Home</a>
+    </p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand interrupts and interrupt service routines.</li>
+            <li>Differentiate polling and interrupt-based programming.</li>
+            <li>Understand interrupt vectors and handler functions.</li>
+            <li>Learn how to write efficient ISRs.</li>
+            <li>Understand shared variables and volatile qualification.</li>
+            <li>Learn STM32 HAL interrupt callbacks.</li>
+            <li>Understand interrupt priorities and nested interrupts.</li>
+            <li>Identify common interrupt programming errors.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What is an Interrupt?</h2>
+        <p>
+            An interrupt is an event that causes the processor to temporarily
+            suspend its current execution and transfer control to an
+            interrupt handler.
+        </p>
+
+        <p>Common STM32 interrupt sources include:</p>
+        <ul>
+            <li>GPIO external interrupt (EXTI).</li>
+            <li>Timer update or capture/compare event.</li>
+            <li>UART receive or transmit event.</li>
+            <li>ADC conversion completion.</li>
+            <li>DMA transfer completion.</li>
+            <li>System exceptions such as SysTick.</li>
+        </ul>
+
+        <div class="example">
+            <strong>Example:</strong> When a UART byte is received, the
+            peripheral can request an interrupt. The processor executes
+            the corresponding handler to process the receive event.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>3. What is an Interrupt Service Routine (ISR)?</h2>
+        <p>
+            An Interrupt Service Routine is a function executed in response
+            to an interrupt request. In STM32 firmware, the handler name
+            must match the interrupt vector provided by the startup file
+            and device configuration.
+        </p>
+
+        <h3>Basic ISR Structure</h3>
+        <pre><code>void EXTI0_IRQHandler(void)
+{
+    /* Handle EXTI0 interrupt */
+}</code></pre>
+
+        <p>
+            This is an illustrative handler. A real handler must also
+            acknowledge or clear the relevant interrupt condition according
+            to the peripheral's requirements.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>4. Polling vs Interrupt-Based Programming</h2>
+
+        <table>
+            <tr>
+                <th>Polling</th>
+                <th>Interrupt-Based</th>
+            </tr>
+            <tr>
+                <td>CPU repeatedly checks a status flag.</td>
+                <td>Hardware notifies the processor through an interrupt.</td>
+            </tr>
+            <tr>
+                <td>Can waste CPU time while waiting.</td>
+                <td>Allows the CPU to perform other work between events.</td>
+            </tr>
+            <tr>
+                <td>Simple to implement.</td>
+                <td>Requires interrupt configuration and handler design.</td>
+            </tr>
+            <tr>
+                <td>Response depends on polling frequency.</td>
+                <td>Response depends on interrupt latency and priority.</td>
+            </tr>
+        </table>
+
+        <h3>Polling Example</h3>
+        <pre><code>while ((USART2-&gt;SR &amp; USART_SR_RXNE) == 0U)
+{
+    /* Wait for received data */
+}</code></pre>
+
+        <p>
+            This register example is specific to STM32 families that
+            implement the shown USART status register. Other families
+            may use different register names and flags.
+        </p>
+
+        <h3>Interrupt-Based Concept</h3>
+        <pre><code>void USART2_IRQHandler(void)
+{
+    /* Handle UART receive event */
+}</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Interrupt Vector Table</h2>
+        <p>
+            The interrupt vector table contains addresses of exception
+            and interrupt handler functions. The processor uses this table
+            to locate the handler when an exception occurs.
+        </p>
+
+        <h3>Important Entries</h3>
+        <ul>
+            <li>Initial Main Stack Pointer.</li>
+            <li>Reset Handler.</li>
+            <li>NMI Handler.</li>
+            <li>HardFault Handler.</li>
+            <li>SysTick Handler.</li>
+            <li>Peripheral interrupt handlers.</li>
+        </ul>
+
+        <p>
+            The startup file supplies the vector table and default handler
+            definitions for the selected STM32 device.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Interrupt Handling Sequence</h2>
+        <ol>
+            <li>A peripheral or system event generates an interrupt request.</li>
+            <li>The interrupt controller evaluates enable and priority settings.</li>
+            <li>The processor completes the current instruction as required by the architecture.</li>
+            <li>The processor stacks the exception context.</li>
+            <li>The processor enters Handler mode and executes the ISR.</li>
+            <li>The handler services the event and acknowledges the source as required.</li>
+            <li>The processor returns from the exception and resumes execution.</li>
+        </ol>
+
+        <div class="note">
+            Interrupt entry and return are managed by the Cortex-M exception
+            mechanism. The exact stacking behavior can vary with processor
+            features, including floating-point support.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Writing an Efficient ISR</h2>
+        <p>
+            An ISR should execute quickly and predictably. Long-running
+            processing should normally be performed outside the ISR.
+        </p>
+
+        <h3>Recommended Practices</h3>
+        <ul>
+            <li>Keep the handler short.</li>
+            <li>Clear or acknowledge the interrupt source correctly.</li>
+            <li>Avoid blocking delays.</li>
+            <li>Avoid waiting for UART or other peripheral operations.</li>
+            <li>Avoid lengthy calculations.</li>
+            <li>Use flags or buffers to defer processing.</li>
+            <li>Protect shared data appropriately.</li>
+            <li>Measure worst-case execution time when timing matters.</li>
+        </ul>
+
+        <h3>Example: Set a Flag in an ISR</h3>
+        <pre><code>#include &lt;stdint.h&gt;
+
+volatile uint8_t interrupt_flag = 0U;
+
+void EXTI0_IRQHandler(void)
+{
+    /* Clear the EXTI pending condition using
+       the device-specific register mechanism. */
+
+    interrupt_flag = 1U;
+}
+
+int main(void)
+{
+    while (1)
+    {
+        if (interrupt_flag != 0U)
+        {
+            interrupt_flag = 0U;
+
+            /* Perform longer processing here */
+        }
+    }
+}</code></pre>
+
+        <div class="note">
+            This example illustrates the flag technique only. A production
+            EXTI handler must clear the correct pending bit using the
+            selected STM32 family's documented mechanism. If the event
+            can occur again before the flag is processed, a single flag
+            may lose event counts; use a counter or queue where required.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Shared Variables and Volatile</h2>
+        <p>
+            A variable accessed by both normal code and an ISR may need
+            volatile qualification so the compiler does not assume that
+            its value remains unchanged between accesses.
+        </p>
+
+        <h3>Example</h3>
+        <pre><code>#include &lt;stdint.h&gt;
+
+volatile uint8_t data_ready = 0U;
+
+void Example_IRQHandler(void)
+{
+    data_ready = 1U;
+}
+
+int main(void)
+{
+    while (1)
+    {
+        if (data_ready != 0U)
+        {
+            data_ready = 0U;
+
+            /* Process the event */
+        }
+    }
+}</code></pre>
+
+        <div class="note">
+            volatile does not make an operation atomic, prevent race
+            conditions, or provide general thread synchronization.
+            Multi-byte shared data, read-modify-write operations and
+            data shared with DMA or an RTOS may require additional
+            synchronization and memory-ordering considerations.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Interrupt Priorities and Nested Interrupts</h2>
+        <p>
+            The Nested Vectored Interrupt Controller (NVIC) manages
+            interrupt enabling, pending state and priority.
+        </p>
+
+        <ul>
+            <li>Lower numerical priority values represent higher priority.</li>
+            <li>Higher-priority interrupts can preempt lower-priority handlers.</li>
+            <li>Equal-priority interrupts do not preempt one another.</li>
+            <li>Priority grouping determines the split between preemption priority and subpriority.</li>
+            <li>The number of implemented priority bits depends on the device.</li>
+        </ul>
+
+        <h3>CMSIS Example</h3>
+        <pre><code>#include "stm32f4xx.h"
+
+void configure_interrupt(void)
+{
+    NVIC_SetPriority(EXTI0_IRQn, 5U);
+    NVIC_EnableIRQ(EXTI0_IRQn);
+}</code></pre>
+
+        <p>
+            The peripheral's own interrupt source and GPIO/EXTI configuration
+            must also be enabled. NVIC configuration alone is not sufficient.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>10. HAL Interrupt Programming</h2>
+        <p>
+            STM32 HAL provides functions to start interrupt-based
+            peripheral operations. When the operation completes or
+            a configured event occurs, HAL calls an application callback.
+        </p>
+
+        <h3>UART Receive Interrupt Example</h3>
+        <pre><code>#include "main.h"
+
+uint8_t rx_data;
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_USART2_UART_Init();
+
+    HAL_UART_Receive_IT(&amp;huart2, &amp;rx_data, 1U);
+
+    while (1)
+    {
+        /* Main application */
+    }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart-&gt;Instance == USART2)
+    {
+        /* Process the received byte or set a flag */
+
+        HAL_UART_Receive_IT(&amp;huart2, &amp;rx_data, 1U);
+    }
+}</code></pre>
+
+        <h3>Explanation</h3>
+        <ul>
+            <li><code>HAL_UART_Receive_IT()</code> starts an interrupt-based receive operation.</li>
+            <li>The UART peripheral receives the requested data.</li>
+            <li>The UART interrupt handler invokes the HAL IRQ handler.</li>
+            <li>HAL processes the event and calls the receive-complete callback.</li>
+            <li>The callback rearms reception for the next byte.</li>
+        </ul>
+
+        <div class="note">
+            The generated interrupt handler must call
+            <code>HAL_UART_IRQHandler(&amp;huart2)</code> for this UART.
+            CubeMX-generated startup and IRQ configuration normally provide
+            the required structure. Verify the selected USART instance,
+            NVIC settings and generated code.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Common STM32 HAL Callbacks</h2>
+
+        <table>
+            <tr>
+                <th>Callback</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>HAL_UART_RxCpltCallback()</td>
+                <td>UART receive operation completed.</td>
+            </tr>
+            <tr>
+                <td>HAL_UART_TxCpltCallback()</td>
+                <td>UART transmit operation completed.</td>
+            </tr>
+            <tr>
+                <td>HAL_GPIO_EXTI_Callback()</td>
+                <td>GPIO external interrupt event handled by HAL.</td>
+            </tr>
+            <tr>
+                <td>HAL_TIM_PeriodElapsedCallback()</td>
+                <td>Timer period elapsed event.</td>
+            </tr>
+            <tr>
+                <td>HAL_ADC_ConvCpltCallback()</td>
+                <td>ADC conversion operation completed.</td>
+            </tr>
+            <tr>
+                <td>HAL_SPI_RxCpltCallback()</td>
+                <td>SPI receive operation completed.</td>
+            </tr>
+        </table>
+
+        <p>
+            Callback availability and signatures depend on the HAL driver
+            and STM32 family. Use the HAL documentation and header files
+            for the selected device.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>12. GPIO External Interrupt Callback</h2>
+
+        <h3>Example</h3>
+        <pre><code>#include "main.h"
+
+volatile uint8_t button_event = 0U;
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == GPIO_PIN_13)
+    {
+        button_event = 1U;
+    }
+}
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    while (1)
+    {
+        if (button_event != 0U)
+        {
+            button_event = 0U;
+
+            /* Handle button event outside callback */
+        }
+    }
+}</code></pre>
+
+        <p>
+            This example assumes the selected board and CubeMX configuration
+            assign the button to the corresponding EXTI-capable pin.
+            GPIO mode, pull configuration, EXTI routing and NVIC must
+            be configured correctly.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Interrupt Latency</h2>
+        <p>
+            Interrupt latency is the time between an interrupt event
+            and the beginning of execution of its handler.
+        </p>
+
+        <h3>Factors Affecting Latency</h3>
+        <ul>
+            <li>Current processor instruction and execution state.</li>
+            <li>Interrupt masking and priority.</li>
+            <li>Higher-priority interrupt activity.</li>
+            <li>Memory wait states and bus activity.</li>
+            <li>Exception entry and context stacking.</li>
+        </ul>
+
+        <p>
+            Low and predictable interrupt latency is important in
+            real-time embedded applications.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Common Interrupt Programming Errors</h2>
+
+        <table>
+            <tr>
+                <th>Error</th>
+                <th>Possible Cause or Correction</th>
+            </tr>
+            <tr>
+                <td>ISR never executes</td>
+                <td>Check peripheral source, NVIC enable, vector name and configuration.</td>
+            </tr>
+            <tr>
+                <td>Interrupt occurs repeatedly</td>
+                <td>Check whether the source or pending condition is correctly cleared.</td>
+            </tr>
+            <tr>
+                <td>Unexpected variable values</td>
+                <td>Review shared data access, volatile use and synchronization.</td>
+            </tr>
+            <tr>
+                <td>System becomes unresponsive</td>
+                <td>Check for long-running ISR code or interrupt storms.</td>
+            </tr>
+            <tr>
+                <td>UART callback not called</td>
+                <td>Check receive start, IRQ handler and HAL IRQ dispatch.</td>
+            </tr>
+            <tr>
+                <td>Unexpected nested interrupts</td>
+                <td>Review NVIC priorities and priority grouping.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Placement-Oriented Interview Questions and Answers</h2>
+
+        <h3>Q1. What is an interrupt?</h3>
+        <p>
+            An interrupt is an event that causes the processor to execute
+            a handler instead of continuing normal program flow.
+        </p>
+
+        <h3>Q2. What is an ISR?</h3>
+        <p>
+            An ISR is a function executed when the corresponding interrupt
+            or exception is accepted by the processor.
+        </p>
+
+        <h3>Q3. Why should an ISR be short?</h3>
+        <p>
+            A short ISR reduces interrupt blocking, latency for other
+            events and the risk of missing time-critical work.
+        </p>
+
+        <h3>Q4. What is the NVIC?</h3>
+        <p>
+            The Nested Vectored Interrupt Controller manages external
+            interrupt enabling, pending state and priority on Cortex-M processors.
+        </p>
+
+        <h3>Q5. What is interrupt latency?</h3>
+        <p>
+            It is the time between an interrupt event and the start
+            of its handler execution.
+        </p>
+
+        <h3>Q6. What is a callback function?</h3>
+        <p>
+            A callback is a function invoked by a software component
+            or driver when a particular event or operation occurs.
+        </p>
+
+        <h3>Q7. What is the difference between an ISR and a HAL callback?</h3>
+        <p>
+            The ISR is the interrupt handler connected to the vector table.
+            A HAL callback is an application-level function called by
+            the HAL driver while processing the interrupt event.
+        </p>
+
+        <h3>Q8. Why is volatile used for ISR-shared variables?</h3>
+        <p>
+            It tells the compiler that accesses must account for changes
+            that can occur outside the normal flow of code.
+        </p>
+
+        <h3>Q9. Does volatile make a variable atomic?</h3>
+        <p>
+            No. Volatile does not guarantee atomic access or synchronization.
+        </p>
+
+        <h3>Q10. What is a nested interrupt?</h3>
+        <p>
+            It occurs when a higher-priority interrupt preempts an
+            interrupt handler that is already executing.
+        </p>
+
+        <h3>Q11. What happens if an interrupt flag is not cleared?</h3>
+        <p>
+            The interrupt may remain pending or be generated again,
+            depending on the peripheral's interrupt mechanism.
+        </p>
+
+        <h3>Q12. What is the purpose of HAL_UART_RxCpltCallback()?</h3>
+        <p>
+            It allows application code to respond when a HAL interrupt-based
+            UART receive operation completes.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Practical Exercises</h2>
+        <ol>
+            <li>Explain the difference between polling and interrupt-based programming.</li>
+            <li>Identify the interrupt handler for a selected STM32 peripheral.</li>
+            <li>Configure an EXTI interrupt using STM32CubeMX.</li>
+            <li>Write a short handler that sets an event flag.</li>
+            <li>Explain why volatile may be required for an ISR-shared flag.</li>
+            <li>Configure a UART receive interrupt using HAL.</li>
+            <li>Implement a UART receive-complete callback.</li>
+            <li>Configure a timer interrupt and identify its callback.</li>
+            <li>Inspect NVIC priorities in STM32CubeIDE.</li>
+            <li>Debug an interrupt that repeatedly fires.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Lesson Summary</h2>
+        <ul>
+            <li>Interrupts allow event-driven processor execution.</li>
+            <li>ISRs handle hardware and system events.</li>
+            <li>The vector table maps exceptions and interrupts to handlers.</li>
+            <li>NVIC manages external interrupt priorities and enabling.</li>
+            <li>ISRs should be short and predictable.</li>
+            <li>Shared variables may require volatile and additional synchronization.</li>
+            <li>HAL callbacks provide application-level event handling.</li>
+            <li>Interrupt configuration requires both peripheral and NVIC setup.</li>
+        </ul>
+    </section>
+
+    <nav class="navigation">
+        <a href="L04_Pointers_Structures_and_Memory_Mapped_Registers.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter 4 Index</a>
+        <a href="L06_HAL_CMSIS_and_Low_Level_Programming.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
