@@ -1,1 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 2 - UART Configuration and Baud Rate</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+
+        .content-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dce5f0;
+            border-radius: 9px;
+        }
+
+        h2, h3 { color: #174ea6; }
+
+        .info-box {
+            background: #eef6ff;
+            border-left: 5px solid #174ea6;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+
+        .warning-box {
+            background: #fff5e6;
+            border-left: 5px solid #e09b24;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+
+        pre {
+            background: #172033;
+            color: #e8f0ff;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th { background: #eaf2ff; }
+
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 16px;
+            border-radius: 6px;
+        }
+
+        .lesson-nav a:hover { background: #007bff; }
+    </style>
+</head>
+
+<body>
+
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 2: UART Configuration and Baud Rate</h1>
+        <p>STM32 Microcontrollers – Chapter 9</p>
+        <p>Learn UART parameters, clock dependencies and baud-rate configuration.</p>
+    </header>
+
+    <p><a href="index.html">← Back to Chapter 9</a></p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand UART configuration parameters.</li>
+            <li>Calculate UART baud rate.</li>
+            <li>Understand the UART peripheral clock.</li>
+            <li>Configure word length, parity and stop bits.</li>
+            <li>Understand oversampling and baud-rate error.</li>
+            <li>Configure UART using STM32CubeMX and HAL.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. UART Configuration Parameters</h2>
+
+        <p>
+            UART communication requires the transmitter and receiver
+            to use compatible communication settings. If the
+            configuration does not match, received data may be
+            corrupted or communication may fail.
+        </p>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>Baud rate</td>
+                <td>Defines the serial symbol rate.</td>
+            </tr>
+            <tr>
+                <td>Word length</td>
+                <td>Defines the configured frame data length.</td>
+            </tr>
+            <tr>
+                <td>Parity</td>
+                <td>Provides optional simple error detection.</td>
+            </tr>
+            <tr>
+                <td>Stop bits</td>
+                <td>Defines the stop interval at the end of a frame.</td>
+            </tr>
+            <tr>
+                <td>Oversampling</td>
+                <td>Controls receiver sampling and baud-rate generation on supported USARTs.</td>
+            </tr>
+            <tr>
+                <td>Flow control</td>
+                <td>Can coordinate transmission using RTS/CTS hardware signals.</td>
+            </tr>
+        </table>
+
+        <div class="info-box">
+            A common configuration is 115200 baud, 8 data bits,
+            no parity and 1 stop bit (115200, 8-N-1).
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Baud Rate Fundamentals</h2>
+
+        <p>
+            Baud rate is the number of symbols transmitted per
+            second. In conventional binary UART signalling, one
+            symbol represents one bit, so the baud rate is
+            numerically equal to the bit rate.
+        </p>
+
+        <h3>Bit Duration</h3>
+
+        <p>
+            The duration of one bit is the reciprocal of the
+            bit rate:
+        </p>
+
+        <pre><code>Bit Duration = 1 / Baud Rate</code></pre>
+
+        <h3>Example: 9600 Baud</h3>
+
+        <pre><code>Bit Duration = 1 / 9600
+             = 0.00010417 seconds
+             = 104.17 microseconds</code></pre>
+
+        <h3>Example: 115200 Baud</h3>
+
+        <pre><code>Bit Duration = 1 / 115200
+             = 8.68 microseconds approximately</code></pre>
+
+        <div class="info-box">
+            At a higher baud rate, each bit occupies less time.
+            The receiver must sample the incoming signal at the
+            correct time to decode the data reliably.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. UART Baud Rate Generation</h2>
+
+        <p>
+            An STM32 UART peripheral derives its baud-rate timing
+            from a peripheral kernel clock. The clock source and
+            divider implementation depend on the particular
+            STM32 family and USART instance.
+        </p>
+
+        <p>
+            A simplified conceptual relationship is:
+        </p>
+
+        <pre><code>Baud Rate = UART Clock / Baud-Rate Divider</code></pre>
+
+        <p>
+            The actual divider formula and register encoding depend
+            on the USART implementation and oversampling mode.
+            Always use the reference manual and the HAL/CubeMX
+            configuration for the selected STM32.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Baud Rate Calculation Example</h2>
+
+        <p>
+            Consider a simplified USART divider example with:
+        </p>
+
+        <ul>
+            <li>USART peripheral clock = 16 MHz</li>
+            <li>Desired baud rate = 9600</li>
+        </ul>
+
+        <pre><code>Divider = 16,000,000 / 9,600
+
+        = 1666.67 approximately</code></pre>
+
+        <p>
+            The hardware must encode a supported divider value.
+            Rounding and the USART's divider format determine the
+            actual baud rate.
+        </p>
+
+        <h3>Actual Baud Rate and Percentage Error</h3>
+
+        <pre><code>Baud Error (%) =
+((Actual Baud Rate - Desired Baud Rate)
+ / Desired Baud Rate) × 100</code></pre>
+
+        <p>
+            A small baud-rate error is normally acceptable, but
+            the total mismatch between both communication endpoints
+            must remain within the receiver's timing tolerance.
+        </p>
+
+        <div class="warning-box">
+            The simplified divider calculation is useful for
+            understanding the concept. It is not a universal STM32
+            BRR register formula. Some STM32 USARTs support
+            oversampling by 16 or 8 and use specific divider
+            encoding rules.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Oversampling by 16 and 8</h2>
+
+        <p>
+            Oversampling allows the receiver to sample the incoming
+            signal multiple times within a bit period to determine
+            the data value and improve sampling robustness.
+        </p>
+
+        <table>
+            <tr>
+                <th>Mode</th>
+                <th>General Description</th>
+            </tr>
+            <tr>
+                <td>Oversampling by 16</td>
+                <td>Uses a 16-times sampling clock relationship for the receiver.</td>
+            </tr>
+            <tr>
+                <td>Oversampling by 8</td>
+                <td>Uses an 8-times sampling clock relationship and may support higher baud rates for a given clock.</td>
+            </tr>
+        </table>
+
+        <p>
+            On many STM32 USART implementations, the oversampling
+            selection changes the baud-rate divider calculation
+            and the interpretation of the baud-rate register.
+        </p>
+
+        <div class="info-box">
+            The exact supported oversampling modes and their
+            restrictions are device-specific. Check the selected
+            STM32 reference manual.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Word Length</h2>
+
+        <p>
+            Word length determines the configured data frame
+            length. UART data is commonly transmitted using
+            8-bit payloads.
+        </p>
+
+        <p>
+            Some STM32 HAL versions describe the UART word length
+            as the total frame data field, including the parity
+            bit when parity is enabled. Therefore, the number of
+            actual payload bits can differ from the selected
+            word-length setting.
+        </p>
+
+        <table>
+            <tr>
+                <th>Configuration concept</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td>8-bit data, no parity</td>
+                <td>8 payload bits</td>
+            </tr>
+            <tr>
+                <td>8-bit data, parity enabled</td>
+                <td>On common STM32 HAL configurations, the parity bit occupies one configured word-length bit, leaving 7 payload bits.</td>
+            </tr>
+            <tr>
+                <td>9-bit frame, no parity</td>
+                <td>Can provide 9 payload bits on supported peripherals.</td>
+            </tr>
+        </table>
+
+        <div class="warning-box">
+            Check the HAL documentation for the selected STM32
+            family. Do not assume that selecting a HAL word length
+            always means that many payload bits when parity is
+            enabled.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Parity Configuration</h2>
+
+        <p>
+            Parity is an optional error-detection mechanism.
+            It adds a parity bit to the data frame.
+        </p>
+
+        <h3>Even Parity</h3>
+        <p>
+            The total number of logic-1 bits in the data and
+            parity field is even.
+        </p>
+
+        <h3>Odd Parity</h3>
+        <p>
+            The total number of logic-1 bits in the data and
+            parity field is odd.
+        </p>
+
+        <h3>No Parity</h3>
+        <p>
+            No parity bit is transmitted. This is common in
+            8-N-1 communication.
+        </p>
+
+        <div class="info-box">
+            Parity can detect some single-bit errors, but it
+            cannot identify the incorrect bit or detect every
+            possible multi-bit error.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Stop Bit Configuration</h2>
+
+        <p>
+            Stop bits indicate the end of a UART frame. The
+            receiver uses the stop interval to complete frame
+            reception and synchronize with the next start bit.
+        </p>
+
+        <table>
+            <tr>
+                <th>Stop Bit Setting</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td>1 stop bit</td>
+                <td>Common setting for embedded serial communication.</td>
+            </tr>
+            <tr>
+                <td>2 stop bits</td>
+                <td>Provides a longer stop interval.</td>
+            </tr>
+        </table>
+
+        <p>
+            The available stop-bit options depend on the
+            particular STM32 USART.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>10. UART Peripheral Clock</h2>
+
+        <p>
+            UART baud-rate generation depends on the clock supplied
+            to the UART peripheral.
+        </p>
+
+        <p>
+            On many STM32 devices, UART instances are connected
+            to APB buses. However, newer STM32 families may provide
+            separate peripheral kernel clock selections.
+        </p>
+
+        <h3>Important Clock Sources</h3>
+        <ul>
+            <li>APB1 peripheral clock</li>
+            <li>APB2 peripheral clock</li>
+            <li>System clock-derived sources</li>
+            <li>HSI or other selectable kernel clock sources on supported devices</li>
+        </ul>
+
+        <div class="warning-box">
+            Never assume that every USART uses the same clock.
+            Verify the clock tree and UART kernel clock selection
+            for the exact STM32 device.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. UART Configuration Using STM32CubeMX</h2>
+
+        <ol>
+            <li>Open the project in STM32CubeIDE.</li>
+            <li>Open the device configuration view.</li>
+            <li>Select a suitable USART peripheral, such as USART2.</li>
+            <li>Enable asynchronous mode.</li>
+            <li>Assign the required TX and RX pins.</li>
+            <li>Set the baud rate.</li>
+            <li>Select the word length.</li>
+            <li>Configure parity and stop bits.</li>
+            <li>Configure hardware flow control if required.</li>
+            <li>Configure NVIC interrupts if interrupt-based communication is needed.</li>
+            <li>Generate the project code.</li>
+        </ol>
+
+        <h3>Example Configuration</h3>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Value</th>
+            </tr>
+            <tr>
+                <td>Peripheral</td>
+                <td>USART2</td>
+            </tr>
+            <tr>
+                <td>Mode</td>
+                <td>Asynchronous</td>
+            </tr>
+            <tr>
+                <td>Baud rate</td>
+                <td>115200</td>
+            </tr>
+            <tr>
+                <td>Word length</td>
+                <td>8 bits</td>
+            </tr>
+            <tr>
+                <td>Parity</td>
+                <td>None</td>
+            </tr>
+            <tr>
+                <td>Stop bits</td>
+                <td>1</td>
+            </tr>
+            <tr>
+                <td>Hardware flow control</td>
+                <td>None</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>12. STM32 HAL UART Initialization Example</h2>
+
+        <p>
+            The following is an illustrative configuration for
+            USART2. CubeMX normally generates the initialization
+            function and configures the GPIO alternate functions
+            and peripheral clocks.
+        </p>
+
+        <pre><code>UART_HandleTypeDef huart2;
+
+void MX_USART2_UART_Init(void)
+{
+    huart2.Instance = USART2;
+
+    huart2.Init.BaudRate = 115200;
+    huart2.Init.WordLength = UART_WORDLENGTH_8B;
+    huart2.Init.StopBits = UART_STOPBITS_1;
+    huart2.Init.Parity = UART_PARITY_NONE;
+    huart2.Init.Mode = UART_MODE_TX_RX;
+
+    huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+
+    huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+
+    if (HAL_UART_Init(&amp;huart2) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}</code></pre>
+
+        <h3>Explanation</h3>
+        <ul>
+            <li><code>Instance</code> selects the USART peripheral.</li>
+            <li><code>BaudRate</code> specifies the required baud rate.</li>
+            <li><code>WordLength</code> selects the configured data field length.</li>
+            <li><code>StopBits</code> configures the stop interval.</li>
+            <li><code>Parity</code> enables or disables parity checking.</li>
+            <li><code>Mode</code> enables transmission and reception.</li>
+            <li><code>HwFlowCtl</code> selects hardware flow control.</li>
+            <li><code>OverSampling</code> selects the supported oversampling mode.</li>
+            <li><code>HAL_UART_Init()</code> initializes the peripheral.</li>
+        </ul>
+
+        <div class="warning-box">
+            This example uses common STM32 HAL field names.
+            Exact available fields and supported settings vary
+            by STM32 family and HAL version. GPIO, clock and
+            MSP initialization must also be implemented.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Baud Rate Mismatch</h2>
+
+        <p>
+            Baud-rate mismatch occurs when the transmitter and
+            receiver operate at significantly different bit rates.
+        </p>
+
+        <h3>Possible Symptoms</h3>
+        <ul>
+            <li>Unreadable characters.</li>
+            <li>Incorrect data reception.</li>
+            <li>Framing errors.</li>
+            <li>Intermittent communication.</li>
+            <li>Missing data.</li>
+        </ul>
+
+        <h3>Possible Causes</h3>
+        <ul>
+            <li>Incorrect peripheral clock configuration.</li>
+            <li>Wrong baud-rate setting.</li>
+            <li>Clock source not configured as expected.</li>
+            <li>Excessive clock tolerance between endpoints.</li>
+            <li>Incorrect terminal settings.</li>
+        </ul>
+
+        <h3>Solutions</h3>
+        <ul>
+            <li>Verify both baud-rate settings.</li>
+            <li>Check the actual UART kernel clock.</li>
+            <li>Verify the clock tree and prescalers.</li>
+            <li>Use a suitable clock source.</li>
+            <li>Check the receiver's framing and error flags.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Placement Interview Questions and Answers</h2>
+
+        <h3>Q1. What is baud rate?</h3>
+        <p>
+            Baud rate is the number of symbols transmitted per
+            second. For conventional binary UART, it equals the
+            bit rate numerically.
+        </p>
+
+        <h3>Q2. What is the bit duration at 9600 baud?</h3>
+        <p>
+            Approximately 104.17 microseconds.
+        </p>
+
+        <h3>Q3. What is the bit duration at 115200 baud?</h3>
+        <p>
+            Approximately 8.68 microseconds.
+        </p>
+
+        <h3>Q4. What does 8-N-1 mean?</h3>
+        <p>
+            Eight data bits, no parity and one stop bit.
+        </p>
+
+        <h3>Q5. What is oversampling?</h3>
+        <p>
+            It is a receiver sampling technique that uses multiple
+            sampling-clock intervals per bit period to determine
+            the incoming data value.
+        </p>
+
+        <h3>Q6. What is the function of a parity bit?</h3>
+        <p>
+            It provides simple error detection by checking whether
+            the number of logic-1 bits follows the selected parity
+            rule.
+        </p>
+
+        <h3>Q7. What happens if baud rates do not match?</h3>
+        <p>
+            The receiver may sample data at incorrect times,
+            causing corrupted data or framing errors.
+        </p>
+
+        <h3>Q8. What is the purpose of a UART peripheral clock?</h3>
+        <p>
+            It provides the timing reference used by the UART
+            hardware for baud-rate generation and operation.
+        </p>
+
+        <h3>Q9. What is hardware flow control?</h3>
+        <p>
+            It coordinates data transfer using signals such as
+            RTS and CTS, where supported and configured.
+        </p>
+
+        <h3>Q10. What is oversampling by 16?</h3>
+        <p>
+            It is a USART sampling mode based on a 16-times
+            sampling-clock relationship.
+        </p>
+
+        <h3>Q11. How do you configure UART in STM32CubeMX?</h3>
+        <p>
+            Select the USART peripheral, enable the required mode,
+            assign GPIO pins and configure baud rate, word length,
+            parity, stop bits and optional interrupts.
+        </p>
+
+        <h3>Q12. Why should the UART clock be checked?</h3>
+        <p>
+            Because an incorrect clock assumption can produce an
+            incorrect actual baud rate even when the configured
+            baud-rate value appears correct.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Practical Exercises</h2>
+        <ol>
+            <li>Calculate the bit duration at 9600 baud.</li>
+            <li>Calculate the bit duration at 115200 baud.</li>
+            <li>Explain the meaning of 8-N-1.</li>
+            <li>Compare even parity and odd parity.</li>
+            <li>Configure USART2 for 115200 baud using CubeMX.</li>
+            <li>Identify the clock source used by a selected STM32 USART.</li>
+            <li>Explain how baud-rate mismatch affects communication.</li>
+            <li>Find the actual UART baud rate using the device's clock and divider configuration.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Lesson Summary</h2>
+        <ul>
+            <li>UART requires compatible communication settings at both endpoints.</li>
+            <li>Baud rate determines the serial symbol rate.</li>
+            <li>Bit duration is the reciprocal of the bit rate.</li>
+            <li>Word length, parity and stop bits define the frame configuration.</li>
+            <li>Oversampling affects receiver sampling and baud-rate generation.</li>
+            <li>UART baud-rate generation depends on the actual peripheral clock.</li>
+            <li>STM32CubeMX simplifies peripheral configuration and code generation.</li>
+            <li>Baud-rate mismatch can cause corrupted data and framing errors.</li>
+        </ul>
+    </section>
+
+    <nav class="lesson-nav">
+        <a href="L01_UART_and_USART_Communication_Fundamentals.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">Chapter Index</a>
+
+        <a href="L03_UART_Transmit_and_Receive_Programming.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
