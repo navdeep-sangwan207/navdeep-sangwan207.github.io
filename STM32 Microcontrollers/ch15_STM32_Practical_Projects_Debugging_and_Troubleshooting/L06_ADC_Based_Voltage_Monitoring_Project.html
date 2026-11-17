@@ -1,1 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 6: ADC-Based Voltage Monitoring Project</title>
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
 
+<header class="lesson-header">
+    <h1>Lesson 6: ADC-Based Voltage Monitoring Project</h1>
+    <p>STM32 Practical Projects, Debugging and Troubleshooting</p>
+</header>
+
+<main class="lesson-container">
+
+<section>
+    <h2>1. Learning Objectives</h2>
+    <ul>
+        <li>Understand ADC-based voltage monitoring.</li>
+        <li>Configure STM32 ADC using STM32CubeMX.</li>
+        <li>Read analog voltage using HAL functions.</li>
+        <li>Convert ADC digital values into voltage.</li>
+        <li>Interface a voltage sensor or divider circuit.</li>
+        <li>Implement threshold-based voltage detection.</li>
+        <li>Understand ADC calibration, noise and measurement errors.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>2. Project Overview</h2>
+    <p>
+        An Analog-to-Digital Converter (ADC) converts an analog input
+        voltage into a digital value that can be processed by an STM32
+        microcontroller.
+    </p>
+
+    <p>
+        In this project, the STM32 measures an input voltage, calculates
+        its equivalent voltage value and checks whether it is within
+        a defined operating range.
+    </p>
+
+    <h3>Applications</h3>
+    <ul>
+        <li>Battery voltage monitoring.</li>
+        <li>Power supply monitoring.</li>
+        <li>Overvoltage and undervoltage detection.</li>
+        <li>Solar panel voltage measurement.</li>
+        <li>DC bus voltage monitoring.</li>
+        <li>Embedded power management systems.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>3. Project Block Diagram</h2>
+    <pre>
++----------------------+
+|   Input DC Voltage   |
++----------------------+
+           |
+           v
++----------------------+
+| Voltage Divider /    |
+| Signal Conditioning  |
++----------------------+
+           |
+           v
++----------------------+
+| STM32 ADC Peripheral |
++----------------------+
+           |
+           v
++----------------------+
+| Digital Voltage      |
+| Calculation          |
++----------------------+
+           |
+           v
++----------------------+
+| Threshold Comparison |
++----------------------+
+           |
+           v
++----------------------+
+| Display / UART / LED |
+| Warning Indication   |
++----------------------+
+    </pre>
+</section>
+
+<section>
+    <h2>4. Understanding ADC Conversion</h2>
+    <p>
+        An ADC samples an analog voltage and produces a corresponding
+        digital code. The number of available digital levels depends
+        on ADC resolution.
+    </p>
+
+    <h3>ADC Resolution</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Resolution</th>
+                <th>Number of Levels</th>
+                <th>Digital Code Range</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>8-bit</td><td>256</td><td>0–255</td></tr>
+            <tr><td>10-bit</td><td>1024</td><td>0–1023</td></tr>
+            <tr><td>12-bit</td><td>4096</td><td>0–4095</td></tr>
+            <tr><td>16-bit</td><td>65536</td><td>0–65535</td></tr>
+        </tbody>
+    </table>
+
+    <p>
+        A 12-bit ADC has 4096 possible output codes, ranging from
+        0 to 4095.
+    </p>
+</section>
+
+<section>
+    <h2>5. ADC Voltage Calculation</h2>
+    <p>For an ideal N-bit ADC, the approximate input voltage is:</p>
+
+    <pre>
+ADC Voltage ≈ (ADC Value × VREF) / (2^N - 1)
+    </pre>
+
+    <p>Where:</p>
+    <ul>
+        <li>ADC Value = digital conversion result.</li>
+        <li>VREF = ADC reference voltage.</li>
+        <li>N = ADC resolution in bits.</li>
+    </ul>
+
+    <h3>Example: 12-bit ADC</h3>
+    <p>Assume:</p>
+    <ul>
+        <li>ADC resolution = 12 bits.</li>
+        <li>VREF = 3.3 V.</li>
+        <li>ADC result = 2048.</li>
+    </ul>
+
+    <pre>
+ADC Voltage ≈ (2048 × 3.3) / 4095
+
+ADC Voltage ≈ 1.65 V
+    </pre>
+
+    <p>
+        This is an idealized conversion calculation. Actual measurement
+        accuracy depends on reference voltage, ADC characteristics,
+        calibration and circuit design.
+    </p>
+</section>
+
+<section>
+    <h2>6. Voltage Divider Circuit</h2>
+    <p>
+        A voltage divider reduces a higher input voltage to a level
+        suitable for the STM32 ADC input.
+    </p>
+
+    <pre>
+       VIN
+        |
+       R1
+        |
+        +-----------> STM32 ADC Input
+        |
+       R2
+        |
+       GND
+    </pre>
+
+    <p>Output voltage:</p>
+    <pre>
+VOUT = VIN × R2 / (R1 + R2)
+    </pre>
+
+    <h3>Example</h3>
+    <p>Assume:</p>
+    <ul>
+        <li>Input voltage = 12 V.</li>
+        <li>R1 = 30 kΩ.</li>
+        <li>R2 = 10 kΩ.</li>
+    </ul>
+
+    <pre>
+VOUT = 12 × 10 / (30 + 10)
+
+VOUT = 3 V
+    </pre>
+
+    <p>
+        The ADC receives approximately 3 V, rather than the original
+        12 V.
+    </p>
+
+    <p>
+        Select resistor values so that the ADC pin remains within its
+        permitted input range under all expected conditions, including
+        transients and component tolerances. Also consider ADC input
+        impedance, sampling time and divider loading.
+    </p>
+</section>
+
+<section>
+    <h2>7. STM32 ADC Configuration Using CubeMX</h2>
+    <ol>
+        <li>Open the STM32CubeIDE project.</li>
+        <li>Select an ADC-capable analog input pin.</li>
+        <li>Enable the corresponding ADC peripheral.</li>
+        <li>Configure the channel and conversion sequence.</li>
+        <li>Select the ADC resolution supported by the device.</li>
+        <li>Configure sampling time.</li>
+        <li>Select single or continuous conversion mode as required.</li>
+        <li>Configure data alignment and trigger source.</li>
+        <li>Generate the initialization code.</li>
+    </ol>
+
+    <p>
+        ADC channel numbers, resolution options, reference configuration
+        and calibration procedures vary across STM32 families.
+    </p>
+</section>
+
+<section>
+    <h2>8. HAL Functions Used</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Function</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>HAL_ADC_Start()</td>
+                <td>Starts ADC conversion.</td>
+            </tr>
+            <tr>
+                <td>HAL_ADC_PollForConversion()</td>
+                <td>Waits for conversion completion.</td>
+            </tr>
+            <tr>
+                <td>HAL_ADC_GetValue()</td>
+                <td>Reads the converted ADC value.</td>
+            </tr>
+            <tr>
+                <td>HAL_ADC_Stop()</td>
+                <td>Stops ADC conversion.</td>
+            </tr>
+            <tr>
+                <td>HAL_ADC_Start_DMA()</td>
+                <td>Starts ADC conversion using DMA.</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<section>
+    <h2>9. Project 1: Read Analog Voltage Using STM32 ADC</h2>
+
+    <h3>HAL Program</h3>
+    <pre><code>
+#include "main.h"
+#include <stdio.h>
+
+extern ADC_HandleTypeDef hadc1;
+
+uint32_t adc_value;
+float adc_voltage;
+
+int main(void)
+{
+    HAL_Init();
+
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_ADC1_Init();
+    MX_USART2_UART_Init();
+
+    while (1)
+    {
+        if (HAL_ADC_Start(&hadc1) == HAL_OK)
+        {
+            if (HAL_ADC_PollForConversion(
+                    &hadc1, 100) == HAL_OK)
+            {
+                adc_value = HAL_ADC_GetValue(&hadc1);
+
+                adc_voltage =
+                    (adc_value * 3.3f) / 4095.0f;
+
+                printf("ADC Value: %lu\r\n",
+                       (unsigned long)adc_value);
+
+                printf("ADC Voltage: %.3f V\r\n",
+                       adc_voltage);
+            }
+
+            HAL_ADC_Stop(&hadc1);
+        }
+
+        HAL_Delay(500);
+    }
+}
+    </code></pre>
+
+    <h3>Program Explanation</h3>
+    <ul>
+        <li>ADC1 is initialized using generated CubeMX code.</li>
+        <li><code>HAL_ADC_Start()</code> starts the conversion.</li>
+        <li><code>HAL_ADC_PollForConversion()</code> waits for the result.</li>
+        <li><code>HAL_ADC_GetValue()</code> reads the ADC data.</li>
+        <li>The result is converted into voltage.</li>
+        <li>The voltage is printed through UART.</li>
+    </ul>
+
+    <p>
+        This example assumes a 12-bit ADC and a 3.3 V reference.
+        Replace these values with the actual resolution and reference
+        used by the selected STM32 device. UART printf retargeting
+        must also be configured separately.
+    </p>
+</section>
+
+<section>
+    <h2>10. Project 2: Calculate the Original Input Voltage</h2>
+
+    <p>
+        If a voltage divider is used, the measured ADC pin voltage
+        must be scaled back to estimate the original input voltage.
+    </p>
+
+    <pre><code>
+#include "main.h"
+#include <stdio.h>
+
+extern ADC_HandleTypeDef hadc1;
+
+#define VREF        3.3f
+#define ADC_MAX     4095.0f
+#define R1          30000.0f
+#define R2          10000.0f
+
+uint32_t adc_value;
+
+float adc_pin_voltage;
+float input_voltage;
+
+int main(void)
+{
+    HAL_Init();
+
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_ADC1_Init();
+    MX_USART2_UART_Init();
+
+    while (1)
+    {
+        if (HAL_ADC_Start(&hadc1) == HAL_OK)
+        {
+            if (HAL_ADC_PollForConversion(
+                    &hadc1, 100) == HAL_OK)
+            {
+                adc_value = HAL_ADC_GetValue(&hadc1);
+
+                adc_pin_voltage =
+                    (adc_value * VREF) / ADC_MAX;
+
+                input_voltage =
+                    adc_pin_voltage * (R1 + R2) / R2;
+
+                printf("Input Voltage: %.2f V\r\n",
+                       input_voltage);
+            }
+
+            HAL_ADC_Stop(&hadc1);
+        }
+
+        HAL_Delay(500);
+    }
+}
+    </code></pre>
+
+    <p>
+        The resistor values in the program must match the actual
+        voltage divider. The calculated input voltage is an estimate;
+        resistor tolerance and reference accuracy affect the result.
+    </p>
+</section>
+
+<section>
+    <h2>11. Project 3: Overvoltage and Undervoltage Detection</h2>
+
+    <p>
+        The STM32 compares the measured input voltage against predefined
+        thresholds and produces an indication.
+    </p>
+
+    <h3>Example Thresholds</h3>
+    <ul>
+        <li>Undervoltage threshold = 10 V.</li>
+        <li>Normal operating range = 10 V to 14 V.</li>
+        <li>Overvoltage threshold = 14 V.</li>
+    </ul>
+
+    <h3>HAL Program</h3>
+    <pre><code>
+#include "main.h"
+
+extern ADC_HandleTypeDef hadc1;
+
+#define VREF       3.3f
+#define ADC_MAX    4095.0f
+#define R1         30000.0f
+#define R2         10000.0f
+
+#define UNDER_LIMIT 10.0f
+#define OVER_LIMIT  14.0f
+
+float input_voltage;
+uint32_t adc_value;
+
+void Check_Voltage(void)
+{
+    if (input_voltage < UNDER_LIMIT)
+    {
+        HAL_GPIO_WritePin(
+            GPIOB, GPIO_PIN_0, GPIO_PIN_SET
+        );
+
+        HAL_GPIO_WritePin(
+            GPIOB, GPIO_PIN_1, GPIO_PIN_RESET
+        );
+    }
+    else if (input_voltage > OVER_LIMIT)
+    {
+        HAL_GPIO_WritePin(
+            GPIOB, GPIO_PIN_0, GPIO_PIN_RESET
+        );
+
+        HAL_GPIO_WritePin(
+            GPIOB, GPIO_PIN_1, GPIO_PIN_SET
+        );
+    }
+    else
+    {
+        HAL_GPIO_WritePin(
+            GPIOB, GPIO_PIN_0, GPIO_PIN_RESET
+        );
+
+        HAL_GPIO_WritePin(
+            GPIOB, GPIO_PIN_1, GPIO_PIN_RESET
+        );
+    }
+}
+
+int main(void)
+{
+    HAL_Init();
+
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_ADC1_Init();
+
+    while (1)
+    {
+        if (HAL_ADC_Start(&hadc1) == HAL_OK)
+        {
+            if (HAL_ADC_PollForConversion(
+                    &hadc1, 100) == HAL_OK)
+            {
+                adc_value = HAL_ADC_GetValue(&hadc1);
+
+                float adc_pin_voltage =
+                    (adc_value * VREF) / ADC_MAX;
+
+                input_voltage =
+                    adc_pin_voltage * (R1 + R2) / R2;
+
+                Check_Voltage();
+            }
+
+            HAL_ADC_Stop(&hadc1);
+        }
+
+        HAL_Delay(100);
+    }
+}
+    </code></pre>
+
+    <p>
+        GPIOB pins 0 and 1 are illustrative output pins. Configure
+        them as GPIO outputs and adapt the pins to the actual board.
+        In a real protection system, use suitable filtering, hysteresis,
+        fault latching and a safe hardware shutdown path where required.
+    </p>
+</section>
+
+<section>
+    <h2>12. ADC Noise and Filtering</h2>
+    <p>
+        ADC readings may fluctuate because of electrical noise,
+        reference instability, grounding problems and input source
+        impedance.
+    </p>
+
+    <h3>Moving Average Filter</h3>
+    <pre><code>
+#define SAMPLE_COUNT 10
+
+uint32_t samples[SAMPLE_COUNT];
+
+uint32_t Moving_Average(void)
+{
+    uint32_t sum = 0;
+
+    for (uint32_t i = 0; i < SAMPLE_COUNT; i++)
+    {
+        sum += samples[i];
+    }
+
+    return sum / SAMPLE_COUNT;
+}
+    </code></pre>
+
+    <p>
+        The moving-average function calculates the average of the
+        stored samples. A complete implementation must update the
+        sample buffer with fresh ADC readings before calculating
+        the average.
+    </p>
+
+    <h3>Other Noise Reduction Methods</h3>
+    <ul>
+        <li>Use suitable analog filtering.</li>
+        <li>Keep analog signal paths short.</li>
+        <li>Use proper grounding and decoupling.</li>
+        <li>Select an appropriate ADC sampling time.</li>
+        <li>Use averaging or digital filtering where suitable.</li>
+        <li>Keep switching noise away from sensitive analog inputs.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>13. ADC Calibration and Accuracy</h2>
+    <ul>
+        <li>Verify the ADC reference voltage.</li>
+        <li>Check resistor divider tolerances.</li>
+        <li>Use the calibration procedure supported by the MCU family.</li>
+        <li>Allow sufficient ADC sampling time for the input source impedance.</li>
+        <li>Compare readings with a calibrated multimeter.</li>
+        <li>Check offset, gain and noise errors.</li>
+    </ul>
+
+    <p>
+        Not all STM32 families implement ADC calibration in the same
+        way. Follow the reference manual and HAL documentation for
+        the exact device.
+    </p>
+</section>
+
+<section>
+    <h2>14. Common ADC Problems and Troubleshooting</h2>
+
+    <h3>Problem 1: ADC Always Reads Zero</h3>
+    <ul>
+        <li>Check the analog input pin configuration.</li>
+        <li>Verify the selected ADC channel.</li>
+        <li>Check the input voltage and ground connection.</li>
+        <li>Confirm ADC clock and peripheral initialization.</li>
+    </ul>
+
+    <h3>Problem 2: ADC Reading Is Always Maximum</h3>
+    <ul>
+        <li>Check whether the input exceeds the permitted range.</li>
+        <li>Verify the voltage divider.</li>
+        <li>Check the reference voltage assumption.</li>
+        <li>Inspect the analog pin for shorts to the supply.</li>
+    </ul>
+
+    <h3>Problem 3: Unstable ADC Readings</h3>
+    <ul>
+        <li>Check supply and reference stability.</li>
+        <li>Inspect grounding and analog layout.</li>
+        <li>Increase sampling time if required.</li>
+        <li>Use filtering and suitable decoupling.</li>
+    </ul>
+
+    <h3>Problem 4: Incorrect Input Voltage Calculation</h3>
+    <ul>
+        <li>Verify the ADC resolution.</li>
+        <li>Use the actual VREF value.</li>
+        <li>Check R1 and R2 values.</li>
+        <li>Check resistor tolerance and measurement calibration.</li>
+    </ul>
+</section>
+
+<section>
+    <h2>15. Practical Testing Procedure</h2>
+    <ol>
+        <li>Configure an ADC channel in STM32CubeMX.</li>
+        <li>Build and flash the firmware.</li>
+        <li>Start with a safe, known low-voltage input.</li>
+        <li>Measure the ADC input using a multimeter.</li>
+        <li>Read the ADC result through the debugger or UART.</li>
+        <li>Calculate the ADC pin voltage.</li>
+        <li>Calculate the original input voltage if a divider is used.</li>
+        <li>Compare the calculated voltage with a multimeter reading.</li>
+        <li>Test the undervoltage and overvoltage thresholds safely.</li>
+        <li>Verify that the warning outputs respond correctly.</li>
+    </ol>
+
+    <p>
+        Never connect mains voltage directly to an MCU ADC input.
+        Mains measurement requires an appropriately rated, isolated
+        sensing and protection design performed with suitable
+        electrical safety precautions.
+    </p>
+</section>
+
+<section>
+    <h2>16. Placement-Oriented Interview Questions and Answers</h2>
+
+    <h3>Q1. What is an ADC?</h3>
+    <p>An Analog-to-Digital Converter converts an analog signal into a digital representation.</p>
+
+    <h3>Q2. What is the resolution of a 12-bit ADC?</h3>
+    <p>It provides 4096 possible output codes, from 0 to 4095.</p>
+
+    <h3>Q3. What is VREF?</h3>
+    <p>VREF is the reference voltage used by the ADC conversion process.</p>
+
+    <h3>Q4. What is quantization?</h3>
+    <p>Quantization maps a continuous input range to discrete digital levels.</p>
+
+    <h3>Q5. Why is a voltage divider used?</h3>
+    <p>It scales an input voltage to a level suitable for the ADC input.</p>
+
+    <h3>Q6. What is ADC sampling time?</h3>
+    <p>It is the time during which the ADC input sampling circuit acquires the analog signal before conversion.</p>
+
+    <h3>Q7. What is ADC calibration?</h3>
+    <p>It is a device-supported procedure that helps reduce certain ADC measurement errors.</p>
+
+    <h3>Q8. Why are ADC readings noisy?</h3>
+    <p>Noise can come from power supplies, references, grounding, switching circuits and analog input circuitry.</p>
+
+    <h3>Q9. What is the purpose of ADC DMA?</h3>
+    <p>DMA transfers conversion results to memory with reduced CPU involvement.</p>
+
+    <h3>Q10. What is the difference between polling and interrupt-based ADC?</h3>
+    <p>Polling checks conversion status in software, while interrupt-based operation notifies the CPU when a conversion event occurs.</p>
+
+    <h3>Q11. How can overvoltage be detected?</h3>
+    <p>Measure the scaled input voltage and compare it against a defined upper threshold.</p>
+
+    <h3>Q12. Why should mains voltage not be connected directly to an ADC pin?</h3>
+    <p>Mains voltage can cause lethal shock, destroy the MCU and create fire hazards. A suitably rated isolated measurement design is required.</p>
+</section>
+
+<section>
+    <h2>17. Practical Exercises</h2>
+    <ol>
+        <li>Read an analog voltage using STM32 ADC.</li>
+        <li>Calculate voltage from a 12-bit ADC result.</li>
+        <li>Design a suitable low-voltage resistor divider.</li>
+        <li>Display ADC voltage through UART.</li>
+        <li>Implement overvoltage detection.</li>
+        <li>Implement undervoltage detection.</li>
+        <li>Compare polling and interrupt-based conversion.</li>
+        <li>Implement ADC DMA sampling.</li>
+        <li>Apply a moving-average filter.</li>
+        <li>Compare ADC measurements with a multimeter.</li>
+    </ol>
+</section>
+
+<section>
+    <h2>18. Lesson Summary</h2>
+    <ul>
+        <li>STM32 ADC converts analog input into digital codes.</li>
+        <li>ADC resolution determines the number of possible output codes.</li>
+        <li>VREF is important for voltage calculation.</li>
+        <li>A voltage divider scales higher voltages to safe ADC levels.</li>
+        <li>HAL provides polling, interrupt and DMA-based ADC methods.</li>
+        <li>Filtering and calibration improve measurement quality.</li>
+        <li>Threshold comparison supports voltage monitoring and warning systems.</li>
+    </ul>
+</section>
+
+<section class="lesson-navigation">
+    <a href="L05_Timer_PWM_and_Motor_Control_Project.html">← Previous Lesson</a>
+    <a href="index.html">Chapter Index</a>
+    <a href="L07_Firmware_Debugging_and_Fault_Analysis.html">Next Lesson →</a>
+</section>
+
+</main>
+</body>
+</html>
