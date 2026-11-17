@@ -1,1 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 3: UART-Based Serial Command Interface</title>
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
 
+<header class="lesson-header">
+    <h1>Lesson 3: UART-Based Serial Command Interface</h1>
+    <p>STM32 Practical Projects, Debugging and Troubleshooting</p>
+</header>
+
+<main class="lesson-container">
+
+    <section>
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand a UART-based command interface.</li>
+            <li>Configure UART communication using STM32CubeMX.</li>
+            <li>Transmit and receive serial data using HAL.</li>
+            <li>Receive commands from a computer terminal.</li>
+            <li>Implement a command parser.</li>
+            <li>Control GPIO peripherals using UART commands.</li>
+            <li>Understand UART communication errors and troubleshooting.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>2. Project Overview</h2>
+        <p>
+            A UART-based serial command interface allows a computer
+            or another controller to communicate with an STM32
+            microcontroller through serial commands.
+        </p>
+
+        <p>
+            In this project, a user enters commands through a serial
+            terminal. The STM32 receives and processes each command
+            and performs the requested operation.
+        </p>
+
+        <h3>Example Commands</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Command</th>
+                    <th>Function</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>LED ON</td>
+                    <td>Switch ON the LED</td>
+                </tr>
+                <tr>
+                    <td>LED OFF</td>
+                    <td>Switch OFF the LED</td>
+                </tr>
+                <tr>
+                    <td>LED TOGGLE</td>
+                    <td>Toggle LED state</td>
+                </tr>
+                <tr>
+                    <td>STATUS</td>
+                    <td>Display system status</td>
+                </tr>
+                <tr>
+                    <td>HELP</td>
+                    <td>Display available commands</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>3. System Architecture</h2>
+
+        <pre>
++-----------------------+
+| Computer / Laptop     |
+|                       |
+| Serial Terminal       |
++-----------------------+
+           |
+           | USB
+           |
++-----------------------+
+| USB-UART Interface    |
+| or Virtual COM Port   |
++-----------------------+
+           |
+           | UART TX/RX
+           |
++-----------------------+
+| STM32 Microcontroller|
+|                       |
+| UART Peripheral       |
+| Command Parser        |
+| Application Logic     |
++-----------------------+
+           |
+           | GPIO
+           |
++-----------------------+
+| LED / External Device |
++-----------------------+
+        </pre>
+
+        <p>
+            Some STM32 development boards provide a virtual COM port
+            through their integrated ST-LINK. Otherwise, an external
+            USB-UART adapter may be required.
+        </p>
+    </section>
+
+    <section>
+        <h2>4. Hardware Requirements</h2>
+        <ul>
+            <li>STM32 development board.</li>
+            <li>Computer or laptop.</li>
+            <li>STM32CubeIDE.</li>
+            <li>Serial terminal application.</li>
+            <li>USB cable or compatible USB-UART adapter.</li>
+            <li>LED connected to a configured GPIO pin, if not built in.</li>
+        </ul>
+
+        <h3>UART Connections</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>STM32 Signal</th>
+                    <th>USB-UART Signal</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>TX</td>
+                    <td>RX</td>
+                </tr>
+                <tr>
+                    <td>RX</td>
+                    <td>TX</td>
+                </tr>
+                <tr>
+                    <td>GND</td>
+                    <td>GND</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>
+            Connect TX to RX and RX to TX. Ensure a common ground and
+            compatible logic voltage levels. Do not connect an RS-232
+            voltage-level interface directly to STM32 GPIO pins.
+        </p>
+    </section>
+
+    <section>
+        <h2>5. UART Configuration Using STM32CubeMX</h2>
+
+        <ol>
+            <li>Open the STM32CubeIDE project.</li>
+            <li>Open the MCU configuration.</li>
+            <li>Select a supported USART or UART peripheral.</li>
+            <li>Enable asynchronous mode.</li>
+            <li>Configure the TX and RX pins.</li>
+            <li>Set baud rate to 115200 bits per second.</li>
+            <li>Select 8 data bits, no parity and 1 stop bit (8-N-1).</li>
+            <li>Disable hardware flow control for this basic project.</li>
+            <li>Generate the code.</li>
+        </ol>
+
+        <h3>Typical UART Configuration</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Parameter</th>
+                    <th>Example Setting</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Mode</td>
+                    <td>Asynchronous</td>
+                </tr>
+                <tr>
+                    <td>Baud Rate</td>
+                    <td>115200</td>
+                </tr>
+                <tr>
+                    <td>Word Length</td>
+                    <td>8 bits</td>
+                </tr>
+                <tr>
+                    <td>Parity</td>
+                    <td>None</td>
+                </tr>
+                <tr>
+                    <td>Stop Bits</td>
+                    <td>1</td>
+                </tr>
+                <tr>
+                    <td>Flow Control</td>
+                    <td>None</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>
+            The UART instance, pin mapping and clock source depend on
+            the selected STM32 device and board.
+        </p>
+    </section>
+
+    <section>
+        <h2>6. UART HAL Functions</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Function</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>HAL_UART_Transmit()</code></td>
+                    <td>Blocking UART transmission.</td>
+                </tr>
+                <tr>
+                    <td><code>HAL_UART_Receive()</code></td>
+                    <td>Blocking UART reception.</td>
+                </tr>
+                <tr>
+                    <td><code>HAL_UART_Transmit_IT()</code></td>
+                    <td>Interrupt-based transmission.</td>
+                </tr>
+                <tr>
+                    <td><code>HAL_UART_Receive_IT()</code></td>
+                    <td>Interrupt-based reception.</td>
+                </tr>
+                <tr>
+                    <td><code>HAL_UART_Transmit_DMA()</code></td>
+                    <td>DMA-based transmission.</td>
+                </tr>
+                <tr>
+                    <td><code>HAL_UART_Receive_DMA()</code></td>
+                    <td>DMA-based reception.</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>7. Transmitting a Welcome Message</h2>
+
+        <p>
+            First, verify that the STM32 can transmit a message to
+            the computer.
+        </p>
+
+        <h3>Program</h3>
+        <pre><code>
+#include "main.h"
+#include <string.h>
+
+extern UART_HandleTypeDef huart2;
+
+int main(void)
+{
+    HAL_Init();
+
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_USART2_UART_Init();
+
+    uint8_t message[] =
+        "STM32 Serial Interface Ready\r\n";
+
+    while (1)
+    {
+        HAL_UART_Transmit(
+            &huart2,
+            message,
+            sizeof(message) - 1,
+            100
+        );
+
+        HAL_Delay(1000);
+    }
+}
+        </code></pre>
+
+        <h3>Expected Result</h3>
+        <p>
+            The serial terminal displays the welcome message once
+            every second.
+        </p>
+
+        <p>
+            This example assumes that USART2 is configured and connected
+            to the computer. Replace the UART handle and instance if
+            the board uses a different peripheral.
+        </p>
+    </section>
+
+    <section>
+        <h2>8. Receiving a Command from the Computer</h2>
+
+        <p>
+            The STM32 can receive a fixed number of bytes using
+            <code>HAL_UART_Receive()</code>. For this project, commands
+            will be received one character at a time until a newline
+            character is detected.
+        </p>
+
+        <h3>Basic Character Reception</h3>
+        <pre><code>
+uint8_t receivedChar;
+
+HAL_UART_Receive(
+    &huart2,
+    &receivedChar,
+    1,
+    HAL_MAX_DELAY
+);
+        </code></pre>
+
+        <p>
+            This blocking function waits until one byte is received
+            or the configured timeout occurs. HAL_MAX_DELAY can wait
+            indefinitely.
+        </p>
+    </section>
+
+    <section>
+        <h2>9. Complete Project: UART Command-Based LED Control</h2>
+
+        <p>
+            This program receives a line of text, compares it with
+            known commands and controls an LED.
+        </p>
+
+        <h3>Program</h3>
+        <pre><code>
+#include "main.h"
+#include <string.h>
+#include <stdint.h>
+
+extern UART_HandleTypeDef huart2;
+
+#define COMMAND_SIZE 32
+
+uint8_t commandBuffer[COMMAND_SIZE];
+
+void UART_SendMessage(const char *message)
+{
+    HAL_UART_Transmit(
+        &huart2,
+        (uint8_t *)message,
+        strlen(message),
+        100
+    );
+}
+
+void Process_Command(char *command)
+{
+    if (strcmp(command, "LED ON") == 0)
+    {
+        HAL_GPIO_WritePin(
+            GPIOA,
+            GPIO_PIN_5,
+            GPIO_PIN_SET
+        );
+
+        UART_SendMessage("LED TURNED ON\r\n");
+    }
+    else if (strcmp(command, "LED OFF") == 0)
+    {
+        HAL_GPIO_WritePin(
+            GPIOA,
+            GPIO_PIN_5,
+            GPIO_PIN_RESET
+        );
+
+        UART_SendMessage("LED TURNED OFF\r\n");
+    }
+    else if (strcmp(command, "LED TOGGLE") == 0)
+    {
+        HAL_GPIO_TogglePin(
+            GPIOA,
+            GPIO_PIN_5
+        );
+
+        UART_SendMessage("LED STATE TOGGLED\r\n");
+    }
+    else if (strcmp(command, "STATUS") == 0)
+    {
+        UART_SendMessage("STM32 SYSTEM RUNNING\r\n");
+    }
+    else if (strcmp(command, "HELP") == 0)
+    {
+        UART_SendMessage(
+            "COMMANDS:\r\n"
+            "LED ON\r\n"
+            "LED OFF\r\n"
+            "LED TOGGLE\r\n"
+            "STATUS\r\n"
+            "HELP\r\n"
+        );
+    }
+    else
+    {
+        UART_SendMessage("INVALID COMMAND\r\n");
+    }
+}
+
+int main(void)
+{
+    uint8_t receivedChar;
+    uint8_t index = 0;
+
+    HAL_Init();
+
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_USART2_UART_Init();
+
+    UART_SendMessage(
+        "\r\nSTM32 COMMAND INTERFACE\r\n"
+        "Type HELP for commands\r\n"
+    );
+
+    while (1)
+    {
+        if (HAL_UART_Receive(
+                &huart2,
+                &receivedChar,
+                1,
+                HAL_MAX_DELAY) == HAL_OK)
+        {
+            if (receivedChar == '\r' ||
+                receivedChar == '\n')
+            {
+                if (index > 0)
+                {
+                    commandBuffer[index] = '\0';
+
+                    Process_Command(
+                        (char *)commandBuffer
+                    );
+
+                    index = 0;
+                }
+            }
+            else
+            {
+                if (index < COMMAND_SIZE - 1)
+                {
+                    commandBuffer[index++] =
+                        receivedChar;
+                }
+                else
+                {
+                    index = 0;
+
+                    UART_SendMessage(
+                        "ERROR: COMMAND TOO LONG\r\n"
+                    );
+                }
+            }
+        }
+    }
+}
+        </code></pre>
+
+        <h3>Program Explanation</h3>
+        <ul>
+            <li><code>UART_SendMessage()</code> transmits a response.</li>
+            <li><code>HAL_UART_Receive()</code> receives one character.</li>
+            <li>The command buffer stores incoming characters.</li>
+            <li>Carriage return or newline marks the end of a command.</li>
+            <li><code>strcmp()</code> compares the received command.</li>
+            <li>The matching command performs the requested operation.</li>
+            <li>Unknown commands produce an error response.</li>
+        </ul>
+
+        <p>
+            The code is a basic blocking command-interface example.
+            It assumes the generated GPIO and UART initialization
+            functions are available and the LED is active-high on PA5.
+            Change the pin and polarity to match the actual board.
+        </p>
+
+        <p>
+            For production firmware, also handle UART errors and timeouts,
+            discard the remainder of an overlength command until the next
+            line ending, and add input validation and command time limits.
+            A nonblocking receive design is preferable when the application
+            must continue performing other tasks.
+        </p>
+    </section>
+
+    <section>
+        <h2>10. Serial Terminal Configuration</h2>
+
+        <p>
+            A serial terminal is used to send commands and view
+            responses from the STM32.
+        </p>
+
+        <h3>Terminal Settings</h3>
+        <ul>
+            <li>Port: Correct STM32 virtual COM port or USB-UART port.</li>
+            <li>Baud rate: 115200.</li>
+            <li>Data bits: 8.</li>
+            <li>Parity: None.</li>
+            <li>Stop bits: 1.</li>
+            <li>Flow control: None.</li>
+            <li>Line ending: CR, LF or CR+LF according to the terminal setting.</li>
+        </ul>
+
+        <h3>Example Terminal Session</h3>
+        <pre>
+STM32 COMMAND INTERFACE
+Type HELP for commands
+
+HELP
+
+COMMANDS:
+LED ON
+LED OFF
+LED TOGGLE
+STATUS
+HELP
+
+LED ON
+LED TURNED ON
+
+STATUS
+STM32 SYSTEM RUNNING
+
+LED OFF
+LED TURNED OFF
+        </pre>
+    </section>
+
+    <section>
+        <h2>11. Improving the Interface Using Interrupt Reception</h2>
+
+        <p>
+            Blocking reception prevents the main loop from progressing
+            while waiting for the next character. Interrupt-based
+            reception allows the processor to perform other work
+            between received bytes.
+        </p>
+
+        <h3>Interrupt Reception Example</h3>
+        <pre><code>
+uint8_t rxByte;
+
+void UART_StartReception(void)
+{
+    HAL_UART_Receive_IT(
+        &huart2,
+        &rxByte,
+        1
+    );
+}
+
+void HAL_UART_RxCpltCallback(
+    UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART2)
+    {
+        /*
+         * Process or store rxByte here.
+         * Keep the callback short.
+         */
+
+        HAL_UART_Receive_IT(
+            &huart2,
+            &rxByte,
+            1
+        );
+    }
+}
+        </code></pre>
+
+        <p>
+            Call <code>UART_StartReception()</code> after UART
+            initialization. The interrupt handler must call
+            <code>HAL_UART_IRQHandler()</code> for the configured
+            UART instance.
+        </p>
+
+        <p>
+            In a complete application, the callback should place
+            the received byte into a ring buffer or queue. Avoid
+            parsing complete commands or performing lengthy
+            transmissions inside the interrupt callback.
+        </p>
+    </section>
+
+    <section>
+        <h2>12. Command Parser Design</h2>
+
+        <p>
+            A command parser interprets received characters and
+            determines which operation should be executed.
+        </p>
+
+        <h3>Basic Processing Flow</h3>
+        <pre>
+UART Receive
+     |
+     v
+Store Characters
+     |
+     v
+Detect Line Ending
+     |
+     v
+Validate Command Length
+     |
+     v
+Compare Command
+     |
+     +----------------------+
+     |          |           |
+     v          v           v
+  LED ON     LED OFF      STATUS
+     |          |           |
+     v          v           v
+GPIO SET    GPIO RESET   Send Response
+        </pre>
+
+        <h3>Good Parser Design Practices</h3>
+        <ul>
+            <li>Use a fixed-size receive buffer.</li>
+            <li>Prevent buffer overflow.</li>
+            <li>Validate command length.</li>
+            <li>Use clear command names.</li>
+            <li>Handle invalid commands.</li>
+            <li>Define command termination rules.</li>
+            <li>Use timeouts for incomplete commands.</li>
+            <li>Separate command parsing from hardware control.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>13. UART Troubleshooting</h2>
+
+        <h3>Problem 1: No Serial Output</h3>
+        <ul>
+            <li>Check the selected COM port.</li>
+            <li>Verify UART TX pin configuration.</li>
+            <li>Check the USB-UART connection.</li>
+            <li>Verify the correct UART instance and handle.</li>
+            <li>Check peripheral clock configuration.</li>
+        </ul>
+
+        <h3>Problem 2: Garbled Characters</h3>
+        <ul>
+            <li>Check baud-rate settings at both ends.</li>
+            <li>Verify word length, parity and stop bits.</li>
+            <li>Check the UART peripheral clock.</li>
+            <li>Verify electrical signal levels and grounding.</li>
+        </ul>
+
+        <h3>Problem 3: Commands Are Not Recognized</h3>
+        <ul>
+            <li>Check line-ending configuration.</li>
+            <li>Check command spelling and capitalization.</li>
+            <li>Verify string termination with a null character.</li>
+            <li>Inspect buffer length and received bytes.</li>
+        </ul>
+
+        <h3>Problem 4: UART Reception Stops</h3>
+        <ul>
+            <li>Check the HAL return status.</li>
+            <li>Inspect UART error flags and error callbacks.</li>
+            <li>Verify that interrupt reception is rearmed.</li>
+            <li>Check for buffer overflow and overrun conditions.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>14. Placement-Oriented Interview Questions and Answers</h2>
+
+        <h3>Q1. What is UART?</h3>
+        <p>UART is an asynchronous serial communication peripheral used to transmit and receive data.</p>
+
+        <h3>Q2. What is a baud rate?</h3>
+        <p>It is the symbol rate of a serial communication signal. For conventional binary UART, the baud rate equals the bit rate.</p>
+
+        <h3>Q3. What is 8-N-1?</h3>
+        <p>It represents eight data bits, no parity and one stop bit.</p>
+
+        <h3>Q4. Why are TX and RX connected in cross direction?</h3>
+        <p>The transmitter of one device must connect to the receiver of the other device.</p>
+
+        <h3>Q5. What is a virtual COM port?</h3>
+        <p>It is a software interface that exposes a serial communication channel through USB.</p>
+
+        <h3>Q6. What is a command parser?</h3>
+        <p>A command parser processes received input and identifies the requested operation.</p>
+
+        <h3>Q7. What is the difference between blocking and interrupt-based UART reception?</h3>
+        <p>Blocking reception waits for data in the calling code, while interrupt-based reception reports data through an interrupt callback.</p>
+
+        <h3>Q8. Why is a receive buffer required?</h3>
+        <p>It stores incoming characters until a complete message or command is available for processing.</p>
+
+        <h3>Q9. Why must a UART buffer be checked for overflow?</h3>
+        <p>To prevent writes beyond its allocated memory and avoid memory corruption.</p>
+
+        <h3>Q10. What is a UART overrun error?</h3>
+        <p>It occurs when incoming data cannot be transferred or read in time and a new character arrives before the previous data is handled.</p>
+
+        <h3>Q11. Why should lengthy processing be avoided inside a UART ISR?</h3>
+        <p>Long interrupt processing increases latency and can interfere with other real-time activities.</p>
+
+        <h3>Q12. How can UART communication be debugged?</h3>
+        <p>Check the baud rate, pin mapping, clock, terminal settings, wiring and received data using a debugger or logic analyzer.</p>
+    </section>
+
+    <section>
+        <h2>15. Practical Exercises</h2>
+        <ol>
+            <li>Transmit a welcome message from STM32 to a computer.</li>
+            <li>Receive one character using blocking UART reception.</li>
+            <li>Implement LED ON and LED OFF commands.</li>
+            <li>Implement a STATUS command.</li>
+            <li>Display HELP for available commands.</li>
+            <li>Handle invalid commands.</li>
+            <li>Implement interrupt-based UART reception.</li>
+            <li>Use a ring buffer for received characters.</li>
+            <li>Test communication using different baud rates.</li>
+            <li>Debug a UART communication failure.</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>16. Lesson Summary</h2>
+        <ul>
+            <li>UART enables serial communication with a computer or another controller.</li>
+            <li>TX and RX signals must be connected correctly.</li>
+            <li>Matching baud rate and frame settings are essential.</li>
+            <li>HAL provides blocking, interrupt and DMA communication APIs.</li>
+            <li>A command parser converts received text into application actions.</li>
+            <li>Buffer validation prevents memory errors.</li>
+            <li>Interrupt callbacks should remain short and nonblocking.</li>
+        </ul>
+    </section>
+
+    <section class="lesson-navigation">
+        <a href="L02_GPIO_Based_LED_and_Button_Project.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L04_Sensor_Interfacing_Using_I2C_and_SPI.html">Next Lesson →</a>
+    </section>
+
+</main>
+
+</body>
+</html>
