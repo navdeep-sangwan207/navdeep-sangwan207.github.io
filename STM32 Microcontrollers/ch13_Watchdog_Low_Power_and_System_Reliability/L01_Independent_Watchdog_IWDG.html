@@ -1,1 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 1 - Independent Watchdog (IWDG)</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dce5f0;
+            border-radius: 9px;
+        }
+        h2, h3 { color: #174ea6; }
+        .info-box {
+            background: #eef6ff;
+            border-left: 5px solid #174ea6;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 5px solid #e09b24;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        pre {
+            background: #172033;
+            color: #e8f0ff;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 16px;
+            border-radius: 6px;
+        }
+        .lesson-nav a:hover { background: #007bff; }
+    </style>
+</head>
 
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 1: Independent Watchdog (IWDG)</h1>
+        <p>STM32 Microcontrollers – Chapter 13</p>
+        <p>Learn watchdog operation, timeout calculation, refresh mechanism and fault recovery.</p>
+    </header>
+
+    <p><a href="index.html">← Back to Chapter 13</a></p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand the purpose of a watchdog timer.</li>
+            <li>Explain the Independent Watchdog architecture.</li>
+            <li>Understand the watchdog clock and counter.</li>
+            <li>Calculate the IWDG timeout.</li>
+            <li>Configure IWDG using STM32 HAL.</li>
+            <li>Understand watchdog refresh operation.</li>
+            <li>Identify common watchdog programming errors.</li>
+            <li>Apply watchdog recovery in embedded applications.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Is a Watchdog Timer?</h2>
+
+        <p>
+            A watchdog timer is a hardware timer used
+            to detect software failures. If the application
+            does not refresh the watchdog within the
+            configured time, the watchdog generates
+            a reset or another device-defined recovery action.
+        </p>
+
+        <h3>Why Is a Watchdog Required?</h3>
+        <ul>
+            <li>To recover from software lockups.</li>
+            <li>To detect a program stuck in an unexpected loop.</li>
+            <li>To recover from certain firmware execution failures.</li>
+            <li>To improve unattended system reliability.</li>
+            <li>To support automatic recovery in industrial and automotive applications.</li>
+        </ul>
+
+        <pre><code>       STM32 APPLICATION
+               |
+               v
+        Execute Main Tasks
+               |
+               v
+        Application Healthy?
+          /          \
+        YES           NO
+         |             |
+         v             v
+    Refresh IWDG   No Refresh
+         |             |
+         v             v
+    Continue       Timeout
+    Execution          |
+                       v
+                 System Reset</code></pre>
+
+        <div class="info-box">
+            A watchdog is a recovery mechanism, not
+            a substitute for correct software design.
+            Refreshing it without checking application
+            health can hide a stalled task.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Independent Watchdog (IWDG)</h2>
+
+        <p>
+            The Independent Watchdog is a hardware
+            watchdog peripheral found on many STM32
+            microcontrollers. It typically uses a
+            low-speed internal clock source, commonly
+            LSI, independent of the main system clock.
+        </p>
+
+        <h3>Important Features</h3>
+        <ul>
+            <li>Uses an independent low-speed clock source.</li>
+            <li>Contains a down-counter.</li>
+            <li>Uses a prescaler to adjust the counter clock.</li>
+            <li>Uses a reload register to set the timeout.</li>
+            <li>Can reset the microcontroller if not refreshed in time.</li>
+            <li>On many STM32 devices, can continue operating when the main system clock stops.</li>
+        </ul>
+
+        <pre><code>             LSI CLOCK
+                 |
+                 v
+             PRESCALER
+                 |
+                 v
+           IWDG DOWN-COUNTER
+                 |
+                 v
+           RELOAD REGISTER
+                 |
+                 v
+          Counter reaches zero
+                 |
+                 v
+            SYSTEM RESET</code></pre>
+
+        <div class="warning-box">
+            IWDG clock behavior, availability, reset
+            behavior and operation in low-power modes
+            vary by STM32 family. Check the reference
+            manual for the selected device.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. IWDG Registers and Keys</h2>
+
+        <p>
+            Many STM32 IWDG implementations use
+            dedicated registers to control the watchdog.
+        </p>
+
+        <table>
+            <tr>
+                <th>Register</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>IWDG_KR</td>
+                <td>Key register for enabling, refreshing and unlocking configuration.</td>
+            </tr>
+            <tr>
+                <td>IWDG_PR</td>
+                <td>Prescaler register.</td>
+            </tr>
+            <tr>
+                <td>IWDG_RLR</td>
+                <td>Reload register.</td>
+            </tr>
+            <tr>
+                <td>IWDG_SR</td>
+                <td>Status register for configuration update status.</td>
+            </tr>
+            <tr>
+                <td>IWDG_WINR</td>
+                <td>Window register on devices implementing a window feature in the IWDG peripheral.</td>
+            </tr>
+        </table>
+
+        <h3>Common IWDG Key Values</h3>
+
+        <table>
+            <tr>
+                <th>Key</th>
+                <th>Value</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>Enable</td>
+                <td>0xCCCC</td>
+                <td>Starts the watchdog.</td>
+            </tr>
+            <tr>
+                <td>Refresh</td>
+                <td>0xAAAA</td>
+                <td>Reloads the counter.</td>
+            </tr>
+            <tr>
+                <td>Unlock</td>
+                <td>0x5555</td>
+                <td>Enables access to configuration registers on applicable devices.</td>
+            </tr>
+        </table>
+
+        <div class="info-box">
+            These are common STM32 IWDG key values.
+            Register details and optional features must
+            be checked against the exact device reference
+            manual.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>5. IWDG Prescaler and Reload Counter</h2>
+
+        <p>
+            The prescaler divides the watchdog clock.
+            The reload value determines how many
+            counter ticks occur before timeout.
+        </p>
+
+        <h3>Timeout Formula</h3>
+
+        <p>
+            For a typical STM32 IWDG down-counter:
+        </p>
+
+        <pre><code>       IWDG Timeout =
+       (Reload Value + 1) x Prescaler
+       --------------------------------
+                LSI Frequency</code></pre>
+
+        <p>
+            Here, the prescaler is the division factor,
+            not the raw register encoding.
+        </p>
+
+        <h3>Example</h3>
+
+        <p>Assume:</p>
+        <ul>
+            <li>LSI frequency = 32,000 Hz</li>
+            <li>Prescaler division factor = 32</li>
+            <li>Reload value = 999</li>
+        </ul>
+
+        <pre><code>Timeout =
+(999 + 1) x 32
+----------------
+     32000
+
+Timeout = 1 second</code></pre>
+
+        <h3>Another Example</h3>
+
+        <p>Assume:</p>
+        <ul>
+            <li>LSI frequency = 40,000 Hz</li>
+            <li>Prescaler division factor = 64</li>
+            <li>Reload value = 1249</li>
+        </ul>
+
+        <pre><code>Timeout =
+(1249 + 1) x 64
+----------------
+     40000
+
+Timeout = 2 seconds</code></pre>
+
+        <div class="warning-box">
+            LSI is an internal oscillator and its
+            frequency has tolerance. These calculations
+            are nominal estimates. For a reliable design,
+            calculate the minimum and maximum timeout
+            using the specified LSI frequency limits
+            and actual device constraints.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Watchdog Refresh Mechanism</h2>
+
+        <p>
+            The application must refresh the IWDG
+            before the counter reaches zero.
+            Refreshing reloads the counter with its
+            configured reload value.
+        </p>
+
+        <pre><code>       IWDG COUNTER RUNNING
+                |
+                v
+         Application Executes
+                |
+                v
+          Health Check Passed?
+             /       \
+           YES        NO
+            |          |
+            v          v
+       Refresh IWDG  Do Not Refresh
+            |          |
+            v          v
+       Reload Count   Timeout
+            |          |
+            v          v
+        Continue      Reset</code></pre>
+
+        <h3>Important Design Rule</h3>
+
+        <p>
+            Refresh the watchdog only after the
+            required application tasks have completed
+            successfully or reported healthy status.
+        </p>
+
+        <p>
+            A watchdog refresh placed unconditionally
+            inside a fast main loop may allow a faulty
+            application to continue running without
+            performing its essential work.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>7. IWDG Configuration Using STM32CubeMX</h2>
+
+        <ol>
+            <li>Open the STM32CubeIDE project.</li>
+            <li>Open the device configuration in the .ioc file.</li>
+            <li>Locate the IWDG peripheral under the available system peripherals.</li>
+            <li>Enable IWDG.</li>
+            <li>Select a suitable prescaler.</li>
+            <li>Enter the reload value.</li>
+            <li>Review the calculated timeout.</li>
+            <li>Generate the initialization code.</li>
+            <li>Build and test the application.</li>
+        </ol>
+
+        <div class="info-box">
+            CubeMX menus and IWDG configuration options
+            vary by STM32 family and CubeMX version.
+            Some devices may provide additional options,
+            such as a hardware start mode or window
+            configuration.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. IWDG Programming Using STM32 HAL</h2>
+
+        <p>
+            The following example uses the STM32 HAL
+            IWDG interface. It assumes the selected
+            device and HAL package support these APIs.
+        </p>
+
+        <h3>Step 1: Declare the IWDG Handle</h3>
+
+        <pre><code>IWDG_HandleTypeDef hiwdg;</code></pre>
+
+        <h3>Step 2: Configure IWDG</h3>
+
+        <pre><code>void MX_IWDG_Init(void)
+{
+    hiwdg.Instance = IWDG;
+
+    hiwdg.Init.Prescaler = IWDG_PRESCALER_32;
+    hiwdg.Init.Reload = 999;
+
+    if (HAL_IWDG_Init(&amp;hiwdg) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}</code></pre>
+
+        <h3>Step 3: Refresh the Watchdog</h3>
+
+        <pre><code>void IWDG_Refresh(void)
+{
+    if (HAL_IWDG_Refresh(&amp;hiwdg) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}</code></pre>
+
+        <h3>Step 4: Main Application</h3>
+
+        <pre><code>int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_IWDG_Init();
+
+    while (1)
+    {
+        /* Perform application work. */
+        Application_Task();
+
+        /* Refresh after successful work. */
+        if (Application_Health_Check())
+        {
+            HAL_IWDG_Refresh(&amp;hiwdg);
+        }
+    }
+}</code></pre>
+
+        <div class="warning-box">
+            This is a teaching example. The actual
+            timeout must be calculated from the selected
+            device's LSI frequency and supported
+            prescaler/reload values. Also ensure the
+            application health check cannot incorrectly
+            report success when critical tasks are stalled.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. IWDG Without HAL – Register-Level Concept</h2>
+
+        <p>
+            The following example illustrates the
+            common IWDG key-register sequence.
+            It is not a complete portable driver.
+        </p>
+
+        <pre><code>/* Enable IWDG */
+IWDG-&gt;KR = 0xCCCC;
+
+/* Unlock configuration registers */
+IWDG-&gt;KR = 0x5555;
+
+/* Set prescaler encoding */
+IWDG-&gt;PR = 3U;
+
+/* Set reload value */
+IWDG-&gt;RLR = 999U;
+
+/* Refresh counter */
+IWDG-&gt;KR = 0xAAAA;</code></pre>
+
+        <p>
+            On devices that require status-register
+            synchronization, software must wait until
+            the relevant update flags indicate that
+            configuration changes have taken effect.
+        </p>
+
+        <div class="warning-box">
+            Prescaler register encoding is not the
+            same as the prescaler division factor.
+            The example's encoding and reload value
+            must be validated for the selected STM32.
+            Once enabled, IWDG may be difficult or
+            impossible to stop without a reset.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. What Happens When IWDG Times Out?</h2>
+
+        <ol>
+            <li>The watchdog counter reaches its timeout condition.</li>
+            <li>The IWDG generates a reset request.</li>
+            <li>The microcontroller resets according to device reset behavior.</li>
+            <li>Startup code executes again.</li>
+            <li>The application can inspect reset flags if supported and retained.</li>
+            <li>The system initializes and resumes normal operation.</li>
+        </ol>
+
+        <h3>Typical Applications</h3>
+        <ul>
+            <li>Industrial controllers.</li>
+            <li>Sensor monitoring devices.</li>
+            <li>Remote monitoring systems.</li>
+            <li>Motor control systems.</li>
+            <li>Unattended embedded equipment.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Common IWDG Programming Errors</h2>
+
+        <table>
+            <tr>
+                <th>Error</th>
+                <th>Possible Result</th>
+                <th>Prevention</th>
+            </tr>
+            <tr>
+                <td>Incorrect timeout calculation</td>
+                <td>Unexpected reset</td>
+                <td>Check LSI limits and prescaler.</td>
+            </tr>
+            <tr>
+                <td>Refresh not performed</td>
+                <td>Watchdog reset</td>
+                <td>Check execution flow.</td>
+            </tr>
+            <tr>
+                <td>Unconditional refresh</td>
+                <td>Fault may remain undetected</td>
+                <td>Refresh after health checks.</td>
+            </tr>
+            <tr>
+                <td>Incorrect reload configuration</td>
+                <td>Unexpected timeout</td>
+                <td>Validate register values.</td>
+            </tr>
+            <tr>
+                <td>Assuming IWDG stops in low power</td>
+                <td>Unexpected reset during sleep</td>
+                <td>Check device-specific low-power behavior.</td>
+            </tr>
+            <tr>
+                <td>Assuming watchdog can be disabled anytime</td>
+                <td>Failed configuration or recovery</td>
+                <td>Review hardware start and option-byte settings.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Practical Project: Watchdog-Based System Recovery</h2>
+
+        <h3>Project Objective</h3>
+
+        <p>
+            Implement a basic watchdog-based recovery
+            mechanism for an STM32 application.
+        </p>
+
+        <h3>Project Operation</h3>
+        <ol>
+            <li>Initialize system peripherals.</li>
+            <li>Initialize the IWDG.</li>
+            <li>Execute the application task.</li>
+            <li>Check whether the required task completed.</li>
+            <li>Refresh IWDG only after successful health checks.</li>
+            <li>Test a controlled software hang.</li>
+            <li>Verify that the watchdog resets the device.</li>
+            <li>Inspect the reset cause after restart.</li>
+        </ol>
+
+        <h3>Example Health Check Concept</h3>
+
+        <pre><code>uint8_t sensor_task_ok = 0;
+uint8_t communication_task_ok = 0;
+
+uint8_t Application_Health_Check(void)
+{
+    if ((sensor_task_ok == 1U) &amp;&amp;
+        (communication_task_ok == 1U))
+    {
+        return 1U;
+    }
+
+    return 0U;
+}</code></pre>
+
+        <p>
+            In a real application, task health indicators
+            must be updated with suitable timing and
+            synchronization. A stale flag must not be
+            treated as proof that a task is still healthy.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Placement Interview Questions and Answers</h2>
+
+        <h3>Q1. What is a watchdog timer?</h3>
+        <p>
+            A watchdog is a hardware timer that detects
+            failure to refresh within a specified time
+            and triggers a recovery action, commonly reset.
+        </p>
+
+        <h3>Q2. What is IWDG?</h3>
+        <p>
+            IWDG stands for Independent Watchdog.
+            It is a watchdog peripheral that commonly
+            uses an independent low-speed clock.
+        </p>
+
+        <h3>Q3. Why is it called independent?</h3>
+        <p>
+            It generally uses a clock source separate
+            from the main system clock, allowing watchdog
+            operation even if the main clock fails.
+        </p>
+
+        <h3>Q4. What happens if IWDG is not refreshed?</h3>
+        <p>
+            The counter reaches its timeout condition
+            and normally generates a system reset.
+        </p>
+
+        <h3>Q5. What is the purpose of the prescaler?</h3>
+        <p>
+            It divides the watchdog clock to obtain
+            a suitable counter frequency.
+        </p>
+
+        <h3>Q6. What is the reload register?</h3>
+        <p>
+            It stores the value used to reload the
+            watchdog counter and determine its timeout.
+        </p>
+
+        <h3>Q7. What is the IWDG timeout formula?</h3>
+        <p>
+            For a typical implementation:
+            (Reload + 1) × Prescaler division factor
+            ÷ watchdog clock frequency.
+        </p>
+
+        <h3>Q8. Can IWDG operate when the main system clock fails?</h3>
+        <p>
+            It is designed to use an independent clock,
+            so it can often continue operating. Exact
+            behavior depends on the device.
+        </p>
+
+        <h3>Q9. Why should the watchdog not be refreshed unconditionally?</h3>
+        <p>
+            An application may continue refreshing
+            the watchdog even when important tasks
+            are no longer functioning correctly.
+        </p>
+
+        <h3>Q10. What is the difference between IWDG and WWDG?</h3>
+        <p>
+            IWDG commonly uses an independent low-speed
+            clock and a timeout mechanism. WWDG uses
+            a refresh window and can detect refreshes
+            that occur too early as well as too late.
+        </p>
+
+        <h3>Q11. Can IWDG be used in low-power modes?</h3>
+        <p>
+            It can operate in certain low-power modes
+            on supported STM32 devices. The exact
+            behavior must be checked in the reference manual.
+        </p>
+
+        <h3>Q12. Where is IWDG used?</h3>
+        <p>
+            It is used in industrial controllers,
+            monitoring systems, motor controllers
+            and other applications requiring automatic
+            recovery from software failures.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Practical Exercises</h2>
+
+        <ol>
+            <li>Explain the purpose of a watchdog timer.</li>
+            <li>Draw the IWDG block diagram.</li>
+            <li>Calculate timeout for a 32 kHz LSI, prescaler 32 and reload 999.</li>
+            <li>Configure IWDG in STM32CubeMX.</li>
+            <li>Write HAL code to initialize and refresh IWDG.</li>
+            <li>Test a controlled software hang and observe reset behavior.</li>
+            <li>Inspect reset flags after an IWDG reset.</li>
+            <li>Design a health-check-based watchdog refresh strategy.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Lesson Summary</h2>
+
+        <ul>
+            <li>IWDG detects software execution failures through a timeout mechanism.</li>
+            <li>It commonly uses an independent low-speed clock.</li>
+            <li>The prescaler controls the watchdog counter frequency.</li>
+            <li>The reload value determines the timeout interval.</li>
+            <li>The application must refresh the watchdog in time.</li>
+            <li>Health checks should determine when refreshing is appropriate.</li>
+            <li>Watchdog timeout commonly generates a system reset.</li>
+            <li>Clock tolerance and device-specific limits must be considered.</li>
+        </ul>
+    </section>
+
+    <nav class="lesson-nav">
+        <a href="index.html">Chapter Index</a>
+        <a href="L02_Window_Watchdog_WWDG.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
