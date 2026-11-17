@@ -1,1 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 5: Task Notifications and Interrupt Integration</title>
+    <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
 
+<header class="lesson-header">
+    <h1>Lesson 5: Task Notifications and Interrupt Integration</h1>
+    <p>STM32 RTOS and FreeRTOS Fundamentals</p>
+</header>
+
+<main class="lesson-container">
+
+    <section>
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand direct-to-task notifications in FreeRTOS.</li>
+            <li>Learn task notification APIs and notification actions.</li>
+            <li>Understand interrupt integration with FreeRTOS.</li>
+            <li>Learn how an ISR signals a task.</li>
+            <li>Understand Cortex-M interrupt-priority restrictions.</li>
+            <li>Implement interrupt-driven embedded applications.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>2. What is a Task Notification?</h2>
+        <p>
+            A direct-to-task notification is a lightweight mechanism used
+            to send a notification or a 32-bit value directly to a task.
+            It can be used for synchronization, event signaling and simple
+            data transfer.
+        </p>
+
+        <p>
+            Unlike a queue or semaphore, a task notification is associated
+            directly with a particular task. This often makes it more
+            efficient when only one receiving task is required.
+        </p>
+
+        <h3>Applications</h3>
+        <ul>
+            <li>Signal that an ADC conversion has completed.</li>
+            <li>Notify a task that UART data has arrived.</li>
+            <li>Wake a task after a GPIO interrupt.</li>
+            <li>Signal completion of a DMA transfer.</li>
+            <li>Send simple event information to a task.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>3. Task Notification Architecture</h2>
+
+        <pre>
++-------------------------+
+|     Hardware Event      |
+| GPIO / UART / ADC / DMA |
++-------------------------+
+             |
+             v
++-------------------------+
+| Interrupt Service       |
+| Routine (ISR)           |
++-------------------------+
+             |
+             | Notify task
+             v
++-------------------------+
+|    FreeRTOS Kernel      |
+| Task Notification       |
++-------------------------+
+             |
+             v
++-------------------------+
+|     Receiving Task      |
+| Process Event or Data   |
++-------------------------+
+        </pre>
+
+        <p>
+            The ISR performs only the necessary interrupt servicing and
+            notification. The receiving task performs the longer
+            application processing.
+        </p>
+    </section>
+
+    <section>
+        <h2>4. Task Notification APIs</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>API</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>xTaskNotifyGive()</code></td>
+                    <td>Increment a task's notification value.</td>
+                </tr>
+                <tr>
+                    <td><code>vTaskNotifyGiveFromISR()</code></td>
+                    <td>Increment a task's notification value from an ISR.</td>
+                </tr>
+                <tr>
+                    <td><code>ulTaskNotifyTake()</code></td>
+                    <td>Wait for and decrement or clear a notification count.</td>
+                </tr>
+                <tr>
+                    <td><code>xTaskNotify()</code></td>
+                    <td>Send a notification value using a selected action.</td>
+                </tr>
+                <tr>
+                    <td><code>xTaskNotifyFromISR()</code></td>
+                    <td>Send a notification value from an ISR.</td>
+                </tr>
+                <tr>
+                    <td><code>xTaskNotifyWait()</code></td>
+                    <td>Wait for a notification and optionally update its value.</td>
+                </tr>
+                <tr>
+                    <td><code>xTaskNotifyStateClear()</code></td>
+                    <td>Clear the notification state of a task.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>
+            A task can have an array of notification entries in supported
+            FreeRTOS versions and configurations. The default commonly
+            provides one notification entry per task.
+        </p>
+    </section>
+
+    <section>
+        <h2>5. Task Notification as a Binary Event</h2>
+
+        <p>
+            A notification can be used to wake a task when an event occurs.
+            The following example uses a task notification as an event signal.
+        </p>
+
+        <pre><code>
+#include "FreeRTOS.h"
+#include "task.h"
+
+TaskHandle_t processingTaskHandle = NULL;
+
+void Processing_Task(void *argument)
+{
+    for (;;)
+    {
+        if (ulTaskNotifyTake(
+                pdTRUE,
+                portMAX_DELAY
+            ) > 0)
+        {
+            /* Process the received event. */
+        }
+    }
+}
+
+void Event_Generator_Task(void *argument)
+{
+    for (;;)
+    {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        xTaskNotifyGive(processingTaskHandle);
+    }
+}
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    xTaskCreate(
+        Processing_Task,
+        "Process",
+        256,
+        NULL,
+        2,
+        &processingTaskHandle
+    );
+
+    xTaskCreate(
+        Event_Generator_Task,
+        "Generator",
+        256,
+        NULL,
+        1,
+        NULL
+    );
+
+    vTaskStartScheduler();
+
+    Error_Handler();
+
+    while (1)
+    {
+    }
+}
+        </code></pre>
+
+        <p>
+            With <code>pdTRUE</code>, the notification count is cleared
+            when the task takes it. If multiple notifications arrive before
+            the task processes them, they may be handled as one wake-up.
+            Use <code>pdFALSE</code> when decrementing one notification
+            count at a time is required.
+        </p>
+    </section>
+
+    <section>
+        <h2>6. Task Notification with a 32-Bit Value</h2>
+
+        <p>
+            Task notifications can also transfer a 32-bit value. The
+            notification action determines how the receiving task's
+            notification value is updated.
+        </p>
+
+        <h3>Common Notification Actions</h3>
+        <ul>
+            <li><code>eNoAction</code> – Update notification state without changing the value.</li>
+            <li><code>eSetBits</code> – Set specified bits in the notification value.</li>
+            <li><code>eIncrement</code> – Increment the notification value.</li>
+            <li><code>eSetValueWithOverwrite</code> – Replace the existing value.</li>
+            <li><code>eSetValueWithoutOverwrite</code> – Write only when the previous notification is not pending.</li>
+        </ul>
+
+        <h3>Example</h3>
+        <pre><code>
+TaskHandle_t dataTaskHandle;
+
+void Data_Task(void *argument)
+{
+    uint32_t receivedValue;
+
+    for (;;)
+    {
+        if (xTaskNotifyWait(
+                0,
+                0xFFFFFFFFU,
+                &receivedValue,
+                portMAX_DELAY
+            ) == pdTRUE)
+        {
+            /* Process receivedValue. */
+        }
+    }
+}
+
+void Send_Data(void)
+{
+    xTaskNotify(
+        dataTaskHandle,
+        100U,
+        eSetValueWithOverwrite
+    );
+}
+        </code></pre>
+
+        <p>
+            The overwrite action replaces an earlier pending value.
+            Use it only when the newest value is more important than
+            retaining every previous value. Use a queue when every data
+            item must be preserved.
+        </p>
+    </section>
+
+    <section>
+        <h2>7. Interrupt Integration with FreeRTOS</h2>
+
+        <p>
+            Embedded applications often use hardware interrupts to detect
+            events such as GPIO transitions, UART reception, timer updates,
+            ADC completion and DMA completion.
+        </p>
+
+        <p>
+            In an RTOS application, an ISR should generally acknowledge
+            the hardware event, capture minimal information and notify
+            an appropriate task. The task then performs the remaining
+            processing.
+        </p>
+
+        <h3>Interrupt-to-Task Flow</h3>
+        <ol>
+            <li>A hardware peripheral generates an interrupt.</li>
+            <li>The Cortex-M processor enters the corresponding ISR.</li>
+            <li>The ISR services or acknowledges the interrupt source.</li>
+            <li>The ISR sends an ISR-safe notification or queue message.</li>
+            <li>The scheduler can switch to an unblocked higher-priority task.</li>
+            <li>The task processes the event outside interrupt context.</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>8. Task Notification from an ISR</h2>
+
+        <p>
+            The <code>vTaskNotifyGiveFromISR()</code> API can be used
+            to notify a task from an interrupt service routine.
+        </p>
+
+        <pre><code>
+TaskHandle_t adcTaskHandle;
+
+void ADC_Task(void *argument)
+{
+    for (;;)
+    {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        /* Read or process the completed ADC result. */
+    }
+}
+
+void ADC_IRQHandler(void)
+{
+    BaseType_t higherPriorityTaskWoken = pdFALSE;
+
+    /* Service and acknowledge the ADC interrupt here. */
+
+    vTaskNotifyGiveFromISR(
+        adcTaskHandle,
+        &higherPriorityTaskWoken
+    );
+
+    portYIELD_FROM_ISR(higherPriorityTaskWoken);
+}
+        </code></pre>
+
+        <p>
+            This is a conceptual example. A real STM32 ADC interrupt handler
+            must use the correct device-specific interrupt flags and
+            peripheral handling, or the generated HAL IRQ handler.
+            Do not create a second handler if CubeMX already generated one.
+        </p>
+    </section>
+
+    <section>
+        <h2>9. STM32 HAL Callback and FreeRTOS Task</h2>
+
+        <p>
+            When using STM32 HAL, a peripheral interrupt handler commonly
+            forwards control to a HAL IRQ handler. HAL then invokes the
+            appropriate callback. The callback can notify a task using
+            an ISR-safe FreeRTOS API when the interrupt priority permits it.
+        </p>
+
+        <h3>Example: UART Reception Completion</h3>
+
+        <pre><code>
+#include "main.h"
+#include "FreeRTOS.h"
+#include "task.h"
+
+extern UART_HandleTypeDef huart2;
+
+TaskHandle_t uartTaskHandle;
+
+uint8_t rxByte;
+
+void UART_Task(void *argument)
+{
+    for (;;)
+    {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        /* Process rxByte after notification. */
+
+        HAL_UART_Receive_IT(&huart2, &rxByte, 1);
+    }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    BaseType_t higherPriorityTaskWoken = pdFALSE;
+
+    if (huart->Instance == USART2)
+    {
+        vTaskNotifyGiveFromISR(
+            uartTaskHandle,
+            &higherPriorityTaskWoken
+        );
+
+        portYIELD_FROM_ISR(higherPriorityTaskWoken);
+    }
+}
+        </code></pre>
+
+        <p>
+            Start the first UART receive operation before the scheduler
+            begins or from a suitable initialized task. The receiving
+            buffer must remain valid until reception completes. For
+            continuous or high-rate data, use a suitable circular DMA
+            or receive-to-idle design rather than assuming one-byte
+            interrupt reception is sufficient.
+        </p>
+    </section>
+
+    <section>
+        <h2>10. Cortex-M Interrupt Priority Restrictions</h2>
+
+        <p>
+            FreeRTOS Cortex-M ports impose interrupt-priority rules because
+            some interrupts are allowed to call kernel APIs while others
+            are not.
+        </p>
+
+        <h3>Important Concepts</h3>
+        <ul>
+            <li>Lower numerical NVIC priority values represent higher urgency.</li>
+            <li>Only interrupts at permitted priority levels may call FreeRTOS ISR APIs.</li>
+            <li><code>configMAX_SYSCALL_INTERRUPT_PRIORITY</code> defines an important API-calling priority boundary in common Cortex-M ports.</li>
+            <li><code>configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY</code> may be used by STM32 FreeRTOS projects as a library-level configuration value.</li>
+            <li>Priority values must account for the number of implemented NVIC priority bits and any priority grouping configuration.</li>
+        </ul>
+
+        <p>
+            An interrupt configured at a priority that is too urgent must
+            not call FreeRTOS kernel APIs. It can instead set a hardware
+            flag or use another permitted communication mechanism, with
+            processing deferred appropriately.
+        </p>
+
+        <p>
+            Always check the selected FreeRTOS port documentation and
+            the project's <code>FreeRTOSConfig.h</code>. Do not copy
+            priority numbers from another STM32 project without checking
+            its configuration.
+        </p>
+    </section>
+
+    <section>
+        <h2>11. Interrupt Latency and Real-Time Performance</h2>
+
+        <p>
+            Interrupt latency is the time between an interrupt event
+            occurring and the processor beginning the corresponding
+            interrupt handler.
+        </p>
+
+        <h3>Factors Affecting Latency</h3>
+        <ul>
+            <li>Interrupt priority.</li>
+            <li>Time spent with interrupts masked.</li>
+            <li>Execution time of higher-priority ISRs.</li>
+            <li>Processor clock frequency.</li>
+            <li>Memory and bus access delays.</li>
+            <li>Critical sections and kernel port behavior.</li>
+        </ul>
+
+        <p>
+            Task response time also includes scheduling delay and the
+            time needed for the receiving task to execute. A fast ISR
+            does not automatically guarantee a fast task response.
+        </p>
+    </section>
+
+    <section>
+        <h2>12. Task Notification vs Queue vs Semaphore</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Feature</th>
+                    <th>Task Notification</th>
+                    <th>Queue</th>
+                    <th>Semaphore</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Primary use</td>
+                    <td>Notify one task</td>
+                    <td>Transfer data</td>
+                    <td>Synchronization</td>
+                </tr>
+                <tr>
+                    <td>Receiver</td>
+                    <td>Specific task</td>
+                    <td>One or more waiting tasks</td>
+                    <td>Waiting task(s)</td>
+                </tr>
+                <tr>
+                    <td>Data storage</td>
+                    <td>32-bit notification value per entry</td>
+                    <td>Configured item storage</td>
+                    <td>Synchronization state/count</td>
+                </tr>
+                <tr>
+                    <td>Overhead</td>
+                    <td>Often lower for simple one-task signaling</td>
+                    <td>Higher for general data transfer</td>
+                    <td>Depends on semaphore type</td>
+                </tr>
+                <tr>
+                    <td>ISR support</td>
+                    <td>ISR-safe notification APIs</td>
+                    <td>ISR-safe queue APIs</td>
+                    <td>ISR-safe give APIs</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>
+            Select the mechanism according to the number of receivers,
+            data requirements and whether events must be counted or retained.
+        </p>
+    </section>
+
+    <section>
+        <h2>13. Common Programming Errors</h2>
+        <ul>
+            <li>Calling task-context APIs from an ISR.</li>
+            <li>Using an interrupt priority that is not permitted to call FreeRTOS APIs.</li>
+            <li>Forgetting to acknowledge the hardware interrupt source.</li>
+            <li>Failing to initialize the receiving task handle.</li>
+            <li>Using a notification value without defining its update behavior.</li>
+            <li>Assuming notifications preserve every data item when overwrite or clear behavior is used.</li>
+            <li>Performing long processing inside an ISR.</li>
+            <li>Using a temporary buffer that becomes invalid before an asynchronous operation completes.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>14. Placement-Oriented Interview Questions and Answers</h2>
+
+        <h3>Q1. What is a task notification?</h3>
+        <p>A task notification is a lightweight mechanism for sending an event or value directly to a specific task.</p>
+
+        <h3>Q2. What is the size of a task notification value?</h3>
+        <p>The notification value is 32 bits wide.</p>
+
+        <h3>Q3. Which API increments a task notification from an ISR?</h3>
+        <p><code>vTaskNotifyGiveFromISR()</code>.</p>
+
+        <h3>Q4. What does ulTaskNotifyTake() do?</h3>
+        <p>It waits for a task notification and either clears or decrements the notification value according to its clear-on-exit argument.</p>
+
+        <h3>Q5. Why are task notifications efficient?</h3>
+        <p>They operate directly on a receiving task and avoid the general data-storage overhead of a queue for simple signaling.</p>
+
+        <h3>Q6. Can a task notification transfer data?</h3>
+        <p>Yes. It can transfer a 32-bit value using notification actions.</p>
+
+        <h3>Q7. Why should long processing be avoided inside an ISR?</h3>
+        <p>Long ISRs increase interrupt latency and delay other interrupts and task execution.</p>
+
+        <h3>Q8. What is portYIELD_FROM_ISR() used for?</h3>
+        <p>It requests an appropriate context switch when an ISR unblocks a higher-priority task, according to the port implementation.</p>
+
+        <h3>Q9. What is interrupt latency?</h3>
+        <p>It is the delay between an interrupt event and the start of its service routine.</p>
+
+        <h3>Q10. Can every NVIC interrupt call a FreeRTOS API?</h3>
+        <p>No. Only interrupts at permitted priority levels may call FreeRTOS ISR-safe APIs.</p>
+
+        <h3>Q11. What is configMAX_SYSCALL_INTERRUPT_PRIORITY?</h3>
+        <p>It defines the interrupt-priority boundary used by common Cortex-M FreeRTOS ports for API-calling interrupts.</p>
+
+        <h3>Q12. When should a queue be preferred over a task notification?</h3>
+        <p>Use a queue when multiple data items, structured messages or communication with multiple receiving tasks is required.</p>
+    </section>
+
+    <section>
+        <h2>15. Practical Exercises</h2>
+        <ol>
+            <li>Create a task that waits for a direct-to-task notification.</li>
+            <li>Notify the task from another FreeRTOS task.</li>
+            <li>Use a 32-bit notification value to transfer an event code.</li>
+            <li>Configure a GPIO interrupt to notify an application task.</li>
+            <li>Use a UART HAL callback to signal a receiving task.</li>
+            <li>Explain Cortex-M interrupt-priority restrictions.</li>
+            <li>Compare task notifications, queues and semaphores.</li>
+            <li>Measure ISR execution time and task response time on an STM32 board.</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>16. Lesson Summary</h2>
+        <ul>
+            <li>Task notifications provide efficient direct signaling to a task.</li>
+            <li>Notification values can carry 32-bit information.</li>
+            <li>ISRs can use ISR-safe notification APIs.</li>
+            <li>Long processing should be deferred from ISR context to tasks.</li>
+            <li>Cortex-M FreeRTOS ports impose interrupt-priority restrictions.</li>
+            <li>Interrupt latency and task response time are important real-time metrics.</li>
+            <li>Queues are preferable when structured or multiple data items must be retained.</li>
+        </ul>
+    </section>
+
+    <section class="lesson-navigation">
+        <a href="L04_Queues_Semaphores_and_Mutexes.html">← Previous Lesson</a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L06_Real_Time_Embedded_Application_Design.html">Next Lesson →</a>
+    </section>
+
+</main>
+
+</body>
+</html>
