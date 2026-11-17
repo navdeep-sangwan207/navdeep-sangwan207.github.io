@@ -1,1 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 5 - ADC Interrupt and DMA Programming</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dce5f0;
+            border-radius: 9px;
+        }
+        h2, h3 { color: #174ea6; }
+        .info-box {
+            background: #eef6ff;
+            border-left: 5px solid #174ea6;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 5px solid #e09b24;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        pre {
+            background: #172033;
+            color: #e8f0ff;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 16px;
+            border-radius: 6px;
+        }
+        .lesson-nav a:hover { background: #007bff; }
+    </style>
+</head>
 
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 5: ADC Interrupt and DMA Programming</h1>
+        <p>STM32 Microcontrollers – Chapter 11</p>
+        <p>Implement efficient ADC data acquisition using interrupts and DMA.</p>
+    </header>
+
+    <p><a href="index.html">← Back to Chapter 11</a></p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand interrupt-based ADC conversion.</li>
+            <li>Understand ADC conversion-complete interrupts.</li>
+            <li>Configure ADC interrupts using STM32 HAL.</li>
+            <li>Understand Direct Memory Access (DMA).</li>
+            <li>Configure ADC with DMA.</li>
+            <li>Implement continuous ADC data acquisition.</li>
+            <li>Compare polling, interrupt and DMA methods.</li>
+            <li>Identify common ADC interrupt and DMA problems.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. ADC Conversion Methods</h2>
+
+        <p>
+            STM32 ADC conversions can be managed using
+            polling, interrupts or DMA. The appropriate
+            method depends on data rate, CPU workload
+            and application requirements.
+        </p>
+
+        <table>
+            <tr>
+                <th>Method</th>
+                <th>Working Principle</th>
+                <th>Typical Use</th>
+            </tr>
+            <tr>
+                <td>Polling</td>
+                <td>CPU waits for conversion completion.</td>
+                <td>Simple measurements.</td>
+            </tr>
+            <tr>
+                <td>Interrupt</td>
+                <td>ADC notifies CPU when a configured event occurs.</td>
+                <td>Event-driven measurements.</td>
+            </tr>
+            <tr>
+                <td>DMA</td>
+                <td>Transfers ADC data to memory automatically.</td>
+                <td>Repeated or high-rate sampling.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>3. What is ADC Interrupt?</h2>
+
+        <p>
+            ADC interrupt programming allows the ADC
+            peripheral to notify the processor when
+            a conversion event occurs.
+        </p>
+
+        <p>
+            The CPU does not need to continuously check
+            the conversion status. Instead, it can
+            execute other application code until the
+            interrupt is generated.
+        </p>
+
+        <pre><code>Start ADC Conversion
+        |
+        v
+ADC Performs Conversion
+        |
+        v
+Conversion Complete
+        |
+        v
+ADC Interrupt Request
+        |
+        v
+NVIC
+        |
+        v
+Interrupt Handler
+        |
+        v
+ADC Callback</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>4. ADC Interrupt Configuration</h2>
+
+        <h3>STM32CubeMX Configuration</h3>
+        <ol>
+            <li>Select an ADC peripheral.</li>
+            <li>Enable the required ADC channel.</li>
+            <li>Configure the conversion mode.</li>
+            <li>Enable the ADC interrupt in NVIC if required by the device configuration.</li>
+            <li>Configure the ADC clock and sampling time.</li>
+            <li>Generate the initialization code.</li>
+        </ol>
+
+        <div class="info-box">
+            The ADC interrupt request must be enabled
+            in the peripheral, and the corresponding
+            NVIC interrupt must also be enabled.
+            CubeMX usually configures the required
+            interrupt settings.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>5. ADC Interrupt HAL Functions</h2>
+
+        <table>
+            <tr>
+                <th>Function</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td><code>HAL_ADC_Start_IT()</code></td>
+                <td>Starts ADC conversion using interrupt mode.</td>
+            </tr>
+            <tr>
+                <td><code>HAL_ADC_IRQHandler()</code></td>
+                <td>Processes the ADC interrupt in the HAL driver.</td>
+            </tr>
+            <tr>
+                <td><code>HAL_ADC_ConvCpltCallback()</code></td>
+                <td>User callback for conversion completion.</td>
+            </tr>
+            <tr>
+                <td><code>HAL_ADC_Stop_IT()</code></td>
+                <td>Stops interrupt-based ADC operation.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>6. ADC Interrupt Programming Example</h2>
+
+        <p>
+            This example starts a single ADC conversion
+            using interrupt mode. The ADC handle and
+            peripheral interrupt handler are assumed
+            to be configured by CubeMX.
+        </p>
+
+        <h3>Global Variables</h3>
+
+        <pre><code>#include "main.h"
+#include &lt;stdint.h&gt;
+
+extern ADC_HandleTypeDef hadc1;
+
+volatile uint16_t adc_value = 0;
+volatile uint8_t adc_ready = 0;</code></pre>
+
+        <h3>Start ADC Interrupt Conversion</h3>
+
+        <pre><code>void Start_ADC_Interrupt(void)
+{
+    adc_ready = 0;
+
+    if (HAL_ADC_Start_IT(&amp;hadc1) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}</code></pre>
+
+        <h3>ADC Conversion Complete Callback</h3>
+
+        <pre><code>void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
+{
+    if (hadc-&gt;Instance == ADC1)
+    {
+        adc_value = (uint16_t)HAL_ADC_GetValue(hadc);
+        adc_ready = 1;
+    }
+}</code></pre>
+
+        <h3>Main Loop</h3>
+
+        <pre><code>int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_ADC1_Init();
+
+    Start_ADC_Interrupt();
+
+    while (1)
+    {
+        if (adc_ready)
+        {
+            adc_ready = 0;
+
+            /* Process adc_value here. */
+
+            Start_ADC_Interrupt();
+        }
+
+        /* Other application tasks can run here. */
+    }
+}</code></pre>
+
+        <div class="warning-box">
+            This is a single-conversion example. The ADC
+            IRQ handler must call the appropriate HAL
+            handler, commonly <code>HAL_ADC_IRQHandler()</code>.
+            Do not block or perform lengthy calculations
+            inside the callback. For a production design,
+            handle error conditions and synchronization
+            carefully.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. What is DMA?</h2>
+
+        <p>
+            DMA stands for Direct Memory Access.
+            It is a hardware mechanism that transfers
+            data between peripherals and memory without
+            requiring the CPU to copy each individual
+            data item.
+        </p>
+
+        <pre><code>        +----------------+
+        |   STM32 ADC    |
+        +----------------+
+                |
+                | Conversion Result
+                v
+        +----------------+
+        |      DMA       |
+        |   Controller   |
+        +----------------+
+                |
+                | Automatic Transfer
+                v
+        +----------------+
+        |   SRAM Buffer  |
+        +----------------+
+                |
+                v
+           STM32 CPU
+        Processes Data</code></pre>
+
+        <h3>Why is DMA Useful?</h3>
+        <ul>
+            <li>Reduces CPU involvement in repetitive data transfers.</li>
+            <li>Supports continuous data acquisition.</li>
+            <li>Allows the CPU to perform other tasks.</li>
+            <li>Can reduce interrupt frequency when using buffers.</li>
+            <li>Is useful for ADC, UART, SPI and other peripherals.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>8. ADC with DMA Working Principle</h2>
+
+        <ol>
+            <li>Configure the ADC peripheral.</li>
+            <li>Configure DMA for the ADC data register.</li>
+            <li>Allocate a memory buffer.</li>
+            <li>Start ADC conversion with DMA.</li>
+            <li>ADC generates conversion results.</li>
+            <li>DMA transfers the results into the buffer.</li>
+            <li>DMA completion or half-completion event notifies software.</li>
+            <li>The CPU processes the buffered samples.</li>
+        </ol>
+
+        <pre><code>ADC Conversion
+      |
+      v
+DMA Request
+      |
+      v
+DMA Controller
+      |
+      v
+Memory Buffer
+      |
+      v
+Half / Full Transfer Event
+      |
+      v
+Application Processes Samples</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>9. ADC DMA Configuration Using CubeMX</h2>
+
+        <ol>
+            <li>Enable the ADC peripheral.</li>
+            <li>Select the required ADC channel or sequence.</li>
+            <li>Configure the conversion mode.</li>
+            <li>Open the DMA settings for the ADC.</li>
+            <li>Add the required DMA request.</li>
+            <li>Select the appropriate DMA direction.</li>
+            <li>Configure peripheral and memory data alignment.</li>
+            <li>Configure transfer mode and priority.</li>
+            <li>Enable DMA interrupt handling if required.</li>
+            <li>Generate the code.</li>
+        </ol>
+
+        <div class="warning-box">
+            DMA request routing, stream/channel selection,
+            transfer widths, cache behavior and circular
+            mode support vary across STM32 families.
+            Follow the selected MCU reference manual.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. ADC DMA HAL Functions</h2>
+
+        <table>
+            <tr>
+                <th>Function</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td><code>HAL_ADC_Start_DMA()</code></td>
+                <td>Starts ADC conversion with DMA.</td>
+            </tr>
+            <tr>
+                <td><code>HAL_ADC_Stop_DMA()</code></td>
+                <td>Stops ADC DMA operation.</td>
+            </tr>
+            <tr>
+                <td><code>HAL_ADC_ConvHalfCpltCallback()</code></td>
+                <td>Notifies software when the first buffer half is complete.</td>
+            </tr>
+            <tr>
+                <td><code>HAL_ADC_ConvCpltCallback()</code></td>
+                <td>Notifies software when the configured transfer is complete.</td>
+            </tr>
+            <tr>
+                <td><code>HAL_ADC_ErrorCallback()</code></td>
+                <td>Handles ADC errors.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>11. ADC DMA Programming Example</h2>
+
+        <p>
+            This example uses a buffer of 10 ADC samples.
+            It assumes CubeMX has configured the ADC,
+            DMA request, data alignment and interrupt
+            handling for the selected MCU.
+        </p>
+
+        <h3>Global Variables</h3>
+
+        <pre><code>#include "main.h"
+#include &lt;stdint.h&gt;
+
+#define ADC_BUFFER_SIZE 10
+
+extern ADC_HandleTypeDef hadc1;
+
+uint16_t adc_buffer[ADC_BUFFER_SIZE];
+
+volatile uint8_t adc_dma_complete = 0;
+volatile uint8_t adc_dma_error = 0;</code></pre>
+
+        <h3>Start ADC DMA</h3>
+
+        <pre><code>void Start_ADC_DMA(void)
+{
+    adc_dma_complete = 0;
+    adc_dma_error = 0;
+
+    if (HAL_ADC_Start_DMA(
+            &amp;hadc1,
+            (uint32_t *)adc_buffer,
+            ADC_BUFFER_SIZE) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}</code></pre>
+
+        <h3>DMA Completion Callback</h3>
+
+        <pre><code>void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
+{
+    if (hadc-&gt;Instance == ADC1)
+    {
+        adc_dma_complete = 1;
+    }
+}</code></pre>
+
+        <h3>DMA Error Callback</h3>
+
+        <pre><code>void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *hadc)
+{
+    if (hadc-&gt;Instance == ADC1)
+    {
+        adc_dma_error = 1;
+    }
+}</code></pre>
+
+        <h3>Main Loop</h3>
+
+        <pre><code>int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_DMA_Init();
+    MX_ADC1_Init();
+
+    Start_ADC_DMA();
+
+    while (1)
+    {
+        if (adc_dma_complete)
+        {
+            adc_dma_complete = 0;
+
+            /* Process adc_buffer here. */
+
+            Start_ADC_DMA();
+        }
+
+        if (adc_dma_error)
+        {
+            adc_dma_error = 0;
+
+            /* Handle the DMA or ADC error. */
+        }
+    }
+}</code></pre>
+
+        <div class="warning-box">
+            This example is intended for a finite DMA
+            transfer. For continuous sampling, configure
+            circular DMA where supported and process
+            half-complete and complete callbacks.
+            Do not restart DMA blindly while a transfer
+            is still active.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Circular DMA Mode</h2>
+
+        <p>
+            In circular DMA mode, the DMA controller
+            automatically returns to the beginning of
+            the buffer after reaching its end.
+        </p>
+
+        <pre><code>ADC Samples
+     |
+     v
++----------------------+
+| DMA Circular Buffer  |
+|                      |
+| Sample 1             |
+| Sample 2             |
+| Sample 3             |
+| ...                  |
+| Sample N             |
++----------------------+
+     |
+     v
+Return to Buffer Start
+     |
+     +---------- Repeat</code></pre>
+
+        <h3>Double-Half Buffer Processing</h3>
+
+        <p>
+            A circular buffer can be divided into two
+            halves. While DMA fills one half, the CPU
+            processes the other half, provided processing
+            finishes before that half is overwritten.
+        </p>
+
+        <ul>
+            <li>Half-transfer callback: first half is available.</li>
+            <li>Transfer-complete callback: second half is available.</li>
+            <li>DMA continues filling the buffer in circular mode.</li>
+        </ul>
+
+        <div class="info-box">
+            Circular DMA requires careful synchronization.
+            The CPU must not read a buffer region while
+            DMA is modifying it. Cache-equipped STM32
+            devices may also require cache maintenance
+            and suitable memory placement.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Polling vs Interrupt vs DMA</h2>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>Polling</th>
+                <th>Interrupt</th>
+                <th>DMA</th>
+            </tr>
+            <tr>
+                <td>CPU involvement</td>
+                <td>High while waiting</td>
+                <td>At configured events</td>
+                <td>Low for each transfer</td>
+            </tr>
+            <tr>
+                <td>Data transfer</td>
+                <td>CPU reads result</td>
+                <td>CPU reads result in callback or application</td>
+                <td>Hardware transfers to memory</td>
+            </tr>
+            <tr>
+                <td>Complexity</td>
+                <td>Low</td>
+                <td>Medium</td>
+                <td>Higher configuration effort</td>
+            </tr>
+            <tr>
+                <td>Typical application</td>
+                <td>Simple measurements</td>
+                <td>Event-driven conversion</td>
+                <td>Continuous or high-rate sampling</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Common ADC Interrupt and DMA Problems</h2>
+
+        <table>
+            <tr>
+                <th>Problem</th>
+                <th>Possible Cause</th>
+                <th>Solution</th>
+            </tr>
+            <tr>
+                <td>Callback not executed</td>
+                <td>NVIC or peripheral interrupt not enabled.</td>
+                <td>Check interrupt configuration and IRQ handler.</td>
+            </tr>
+            <tr>
+                <td>DMA buffer unchanged</td>
+                <td>Incorrect DMA request or ADC start.</td>
+                <td>Check DMA mapping and start status.</td>
+            </tr>
+            <tr>
+                <td>Only one sample received</td>
+                <td>Wrong conversion or DMA mode.</td>
+                <td>Check continuous conversion and transfer length.</td>
+            </tr>
+            <tr>
+                <td>Corrupted readings</td>
+                <td>Buffer accessed while DMA writes.</td>
+                <td>Use safe buffer ownership and synchronization.</td>
+            </tr>
+            <tr>
+                <td>DMA transfer error</td>
+                <td>Wrong alignment or invalid configuration.</td>
+                <td>Check data widths, request routing and memory.</td>
+            </tr>
+            <tr>
+                <td>Unexpected ADC data</td>
+                <td>Incorrect sequence or buffer ordering.</td>
+                <td>Verify ADC sequence and DMA configuration.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Placement Interview Questions and Answers</h2>
+
+        <h3>Q1. What is ADC interrupt mode?</h3>
+        <p>
+            It is a conversion method in which the ADC
+            notifies the CPU when a configured conversion
+            event occurs.
+        </p>
+
+        <h3>Q2. What is DMA?</h3>
+        <p>
+            Direct Memory Access is a hardware mechanism
+            for transferring data between peripherals
+            and memory with minimal CPU involvement.
+        </p>
+
+        <h3>Q3. What is the difference between ADC interrupt and ADC DMA?</h3>
+        <p>
+            With interrupt mode, the CPU typically reads
+            the conversion result. With DMA, hardware
+            transfers conversion data into memory.
+        </p>
+
+        <h3>Q4. Which HAL function starts ADC interrupt conversion?</h3>
+        <p><code>HAL_ADC_Start_IT()</code>.</p>
+
+        <h3>Q5. Which HAL function starts ADC DMA conversion?</h3>
+        <p><code>HAL_ADC_Start_DMA()</code>.</p>
+
+        <h3>Q6. What is circular DMA?</h3>
+        <p>
+            It is a transfer mode in which DMA repeatedly
+            uses the same memory buffer.
+        </p>
+
+        <h3>Q7. What is a half-transfer callback?</h3>
+        <p>
+            It notifies the application when the first
+            half of a DMA transfer buffer has been filled.
+        </p>
+
+        <h3>Q8. Why is DMA useful for continuous ADC sampling?</h3>
+        <p>
+            It transfers repeated conversion results
+            into memory without requiring the CPU to
+            read each sample individually.
+        </p>
+
+        <h3>Q9. Can the CPU process data while DMA is working?</h3>
+        <p>
+            Yes. The CPU can process data in a safe
+            buffer region while DMA fills another region.
+        </p>
+
+        <h3>Q10. Why should DMA buffer synchronization be considered?</h3>
+        <p>
+            Because the CPU and DMA may access the same
+            memory. Without proper ownership and
+            synchronization, data can be overwritten
+            or read inconsistently.
+        </p>
+
+        <h3>Q11. Does volatile make a DMA buffer cache coherent?</h3>
+        <p>
+            No. Volatile does not perform cache
+            maintenance or guarantee synchronization.
+            Cache-equipped devices may require explicit
+            cache operations and suitable memory placement.
+        </p>
+
+        <h3>Q12. When should DMA be preferred?</h3>
+        <p>
+            DMA is useful for repeated, high-rate or
+            multi-sample data transfers where reducing
+            CPU overhead is important.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Practical Exercises</h2>
+        <ol>
+            <li>Configure ADC conversion using interrupt mode.</li>
+            <li>Read an ADC result inside the conversion-complete callback.</li>
+            <li>Set a flag in the callback and process the result in the main loop.</li>
+            <li>Configure ADC with DMA in STM32CubeMX.</li>
+            <li>Transfer ten ADC samples into a memory buffer.</li>
+            <li>Inspect DMA buffer values using the debugger.</li>
+            <li>Configure circular DMA where supported.</li>
+            <li>Implement half-buffer and full-buffer processing.</li>
+            <li>Compare polling, interrupt and DMA performance.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Lesson Summary</h2>
+        <ul>
+            <li>ADC interrupt mode notifies the CPU of conversion events.</li>
+            <li>NVIC and peripheral interrupt configuration must be correct.</li>
+            <li>DMA transfers ADC results directly into memory.</li>
+            <li>HAL provides polling, interrupt and DMA APIs.</li>
+            <li>Circular DMA supports repeated buffer transfers.</li>
+            <li>Half-transfer and transfer-complete callbacks support buffer processing.</li>
+            <li>Buffer synchronization is essential.</li>
+            <li>DMA configuration is device-specific.</li>
+        </ul>
+    </section>
+
+    <nav class="lesson-nav">
+        <a href="L04_Multi_Channel_ADC_and_Sensor_Interfacing.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L06_DAC_Configuration_and_Analog_Output.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
