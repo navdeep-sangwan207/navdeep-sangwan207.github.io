@@ -1,1 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 4 - Diagnostic DTC and UDS Project</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-header {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .lesson-content { line-height: 1.7; }
+        .lesson-content h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #dce6f5;
+            padding-bottom: 6px;
+            margin-top: 30px;
+        }
+        .lesson-content h3 { color: #1765ad; }
+        .lesson-content pre {
+            background: #17212f;
+            color: #e8f0fe;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        .lesson-content code { font-family: Consolas, monospace; }
+        .note {
+            background: #eef5ff;
+            border-left: 4px solid #174ea6;
+            padding: 12px 16px;
+            margin: 15px 0;
+        }
+        .question {
+            background: #f5f7fa;
+            padding: 14px;
+            border-radius: 8px;
+            margin: 12px 0;
+        }
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 35px;
+        }
+        .navigation a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 17px;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
 
+<div class="lesson-header">
+    <h1>Lesson 4: Diagnostic DTC and UDS Project</h1>
+    <p>Chapter 12: AUTOSAR Practical Projects and Placement Preparation</p>
+    <p>Automotive Diagnostics | DEM | DCM | UDS</p>
+</div>
+
+<div class="lesson-content">
+
+<h2>1. Project Introduction</h2>
+
+<p>
+Automotive ECUs continuously monitor sensors, actuators and
+internal software conditions. When a fault is detected, the
+ECU may record diagnostic information so that technicians
+can identify and troubleshoot the problem.
+</p>
+
+<p>
+This project demonstrates how an AUTOSAR Classic ECU detects
+a fault, processes a diagnostic event, stores a Diagnostic
+Trouble Code (DTC), and responds to diagnostic requests
+using Unified Diagnostic Services (UDS).
+</p>
+
+<h3>1.1 Project Objective</h3>
+
+<ul>
+    <li>Understand automotive diagnostic architecture.</li>
+    <li>Study Diagnostic Event Manager (DEM).</li>
+    <li>Understand Diagnostic Communication Manager (DCM).</li>
+    <li>Learn Diagnostic Trouble Codes (DTCs).</li>
+    <li>Understand UDS request and response messages.</li>
+    <li>Study diagnostic communication over CAN.</li>
+    <li>Develop a simplified fault-monitoring example.</li>
+</ul>
+
+<h2>2. Project Scenario</h2>
+
+<p>
+Consider an engine cooling system ECU that monitors coolant
+temperature. If the temperature exceeds a configured
+diagnostic threshold for the required time, the ECU reports
+a fault event to DEM.
+</p>
+
+<p>
+DEM processes the event and manages its diagnostic status
+and associated DTC. A diagnostic tester can then request
+the DTC information through UDS.
+</p>
+
+<h3>2.1 System Architecture</h3>
+
+<pre>
++-------------------------------+
+|       Temperature Sensor      |
++---------------+---------------+
+                |
+                v
++-------------------------------+
+|       Temperature SWC         |
+|       Fault Monitoring        |
++---------------+---------------+
+                |
+                v
++-------------------------------+
+|       Diagnostic Event        |
+|       Manager (DEM)            |
+|                               |
+| Event Status / DTC Management |
+| Freeze Frame / Event Data     |
++---------------+---------------+
+                |
+                v
++-------------------------------+
+|       Diagnostic              |
+|       Communication Manager   |
+|       (DCM)                   |
++---------------+---------------+
+                |
+                v
++-------------------------------+
+|       PduR / CanTp / CanIf    |
++---------------+---------------+
+                |
+                v
++-------------------------------+
+|       CAN Bus                 |
++---------------+---------------+
+                |
+                v
++-------------------------------+
+|       Diagnostic Tester       |
+|       CANoe / Scan Tool       |
++-------------------------------+
+</pre>
+
+<div class="note">
+<strong>Architecture note:</strong> The diagram is simplified.
+The exact diagnostic routing, DEM/DCM interfaces, transport
+protocol and storage implementation depend on ECU configuration
+and the AUTOSAR release.
+</div>
+
+<h2>3. Important Diagnostic Terms</h2>
+
+<h3>3.1 Diagnostic Event</h3>
+
+<p>
+A diagnostic event represents a monitored condition that
+may indicate a fault in an ECU or vehicle function.
+</p>
+
+<p>Examples:</p>
+<ul>
+    <li>Coolant temperature sensor circuit fault.</li>
+    <li>Engine temperature too high.</li>
+    <li>Fan actuator malfunction.</li>
+    <li>Communication timeout.</li>
+    <li>Supply voltage outside the permitted range.</li>
+</ul>
+
+<h3>3.2 Diagnostic Trouble Code (DTC)</h3>
+
+<p>
+A DTC is an identifier used by diagnostic systems to represent
+a detected fault. DTCs allow diagnostic testers and technicians
+to identify the type of fault recorded by an ECU.
+</p>
+
+<p>Example illustrative DTC:</p>
+
+<pre>
+DTC: 0x123456
+Description: Engine Coolant Temperature Too High
+Status: Test Failed
+</pre>
+
+<p>
+The example DTC is project-specific and is not a universal
+standard DTC assignment.
+</p>
+
+<h3>3.3 DEM</h3>
+
+<p>
+DEM stands for Diagnostic Event Manager. It manages diagnostic
+events and their associated information.
+</p>
+
+<ul>
+    <li>Processes reported diagnostic events.</li>
+    <li>Manages event status information.</li>
+    <li>Manages DTC status according to configuration.</li>
+    <li>Supports debouncing.</li>
+    <li>Manages configured freeze-frame and extended data.</li>
+    <li>Supports diagnostic data access by other modules.</li>
+</ul>
+
+<h3>3.4 DCM</h3>
+
+<p>
+DCM stands for Diagnostic Communication Manager. It handles
+diagnostic communication between an external tester and the ECU.
+</p>
+
+<p>
+DCM processes diagnostic requests, manages diagnostic
+sessions and security-related access, and provides configured
+UDS services.
+</p>
+
+<h2>4. AUTOSAR Diagnostic Architecture</h2>
+
+<h3>4.1 Main Modules</h3>
+
+<table border="1" cellpadding="9" cellspacing="0" width="100%">
+    <tr>
+        <th>Module</th>
+        <th>Function</th>
+    </tr>
+    <tr>
+        <td>Application SWC</td>
+        <td>Monitors application conditions and reports faults through configured interfaces.</td>
+    </tr>
+    <tr>
+        <td>DEM</td>
+        <td>Manages diagnostic events, DTC status and configured event data.</td>
+    </tr>
+    <tr>
+        <td>DCM</td>
+        <td>Processes diagnostic communication and UDS services.</td>
+    </tr>
+    <tr>
+        <td>PduR</td>
+        <td>Routes configured diagnostic PDUs.</td>
+    </tr>
+    <tr>
+        <td>CanTp</td>
+        <td>Segments and reassembles diagnostic messages when transport protocol is required.</td>
+    </tr>
+    <tr>
+        <td>CanIf</td>
+        <td>Provides the configured interface to the CAN driver.</td>
+    </tr>
+    <tr>
+        <td>CAN Driver</td>
+        <td>Controls the CAN controller hardware.</td>
+    </tr>
+</table>
+
+<h3>4.2 DEM and DCM Relationship</h3>
+
+<pre>
+Application Fault Monitor
+          |
+          v
+         DEM
+          |
+          | Diagnostic Information
+          v
+         DCM
+          |
+          v
+       UDS Request
+       Processing
+          |
+          v
+     Diagnostic Response
+          |
+          v
+       CAN Network
+</pre>
+
+<h2>5. Project Fault Detection Logic</h2>
+
+<p>
+The temperature monitoring application checks whether
+the measured temperature exceeds a configured limit.
+For this example, assume a diagnostic threshold of 110°C.
+The threshold and debounce behavior are illustrative.
+</p>
+
+<h3>5.1 Fault Conditions</h3>
+
+<table border="1" cellpadding="9" cellspacing="0" width="100%">
+    <tr>
+        <th>Temperature</th>
+        <th>Condition</th>
+        <th>Expected Event</th>
+    </tr>
+    <tr>
+        <td>70°C</td>
+        <td>Normal operating range</td>
+        <td>No over-temperature fault</td>
+    </tr>
+    <tr>
+        <td>95°C</td>
+        <td>Below diagnostic threshold</td>
+        <td>No over-temperature fault</td>
+    </tr>
+    <tr>
+        <td>115°C</td>
+        <td>Above threshold</td>
+        <td>Fault may be qualified after debounce</td>
+    </tr>
+    <tr>
+        <td>85°C</td>
+        <td>Temperature returns to normal range</td>
+        <td>Fault may pass after configured recovery criteria</td>
+    </tr>
+</table>
+
+<h3>5.2 Fault Monitoring Flow</h3>
+
+<pre>
+Read Temperature
+       |
+       v
+Temperature > 110 C?
+       |
+   +---+---+
+   |       |
+  YES      NO
+   |       |
+   v       v
+Report     Report
+PREFAILED  PREPASSED
+   |       |
+   +---+---+
+       |
+       v
+      DEM
+       |
+       v
+Debounce and Event Processing
+       |
+       v
+Update Diagnostic Status
+</pre>
+
+<h2>6. Simplified C Fault Monitoring Example</h2>
+
+<p>
+The following standalone C example demonstrates threshold
+monitoring and a simplified debounce counter. It is not a
+complete AUTOSAR DEM implementation.
+</p>
+
+<pre>
+#include &lt;stdio.h&gt;
+#include &lt;stdint.h&gt;
+
+#define TEMP_LIMIT       110U
+#define DEBOUNCE_LIMIT   3U
+
+static uint8_t faultCounter = 0U;
+
+void MonitorTemperature(uint16_t temperature)
+{
+    if (temperature &gt; TEMP_LIMIT)
+    {
+        if (faultCounter &lt; DEBOUNCE_LIMIT)
+        {
+            faultCounter++;
+        }
+    }
+    else
+    {
+        if (faultCounter &gt; 0U)
+        {
+            faultCounter--;
+        }
+    }
+
+    if (faultCounter &gt;= DEBOUNCE_LIMIT)
+    {
+        printf("Fault Detected\n");
+
+        /*
+         * Illustrative location for a configured
+         * AUTOSAR diagnostic event report.
+         */
+    }
+    else
+    {
+        printf("Fault Not Confirmed\n");
+    }
+}
+
+int main(void)
+{
+    MonitorTemperature(115U);
+    MonitorTemperature(116U);
+    MonitorTemperature(118U);
+
+    return 0;
+}
+</pre>
+
+<h3>6.1 Expected Output</h3>
+
+<pre>
+Fault Not Confirmed
+Fault Not Confirmed
+Fault Detected
+</pre>
+
+<div class="note">
+<strong>Important:</strong> This counter is a teaching example.
+AUTOSAR DEM supports configured debounce strategies and
+event-processing behavior. A real application normally reports
+event status through generated or configured interfaces,
+rather than implementing the DEM internally.
+</div>
+
+<h2>7. Reporting a Diagnostic Event to DEM</h2>
+
+<p>
+In AUTOSAR Classic, an application fault monitor reports the
+event through the configured diagnostic event interface.
+A commonly used API pattern is:
+</p>
+
+<pre>
+Dem_SetEventStatus(
+    DEM_EVENT_ID_TEMPERATURE_HIGH,
+    DEM_EVENT_STATUS_PREFAILED
+);
+</pre>
+
+<p>
+When the monitor determines that the fault condition has
+passed, it may report:
+</p>
+
+<pre>
+Dem_SetEventStatus(
+    DEM_EVENT_ID_TEMPERATURE_HIGH,
+    DEM_EVENT_STATUS_PREPASSED
+);
+</pre>
+
+<p>
+The event identifier and generated symbols are illustrative.
+The exact API availability and integration depend on the
+AUTOSAR release, DEM configuration and supplier implementation.
+</p>
+
+<h2>8. DTC Status Management</h2>
+
+<p>
+A DTC status byte contains flags that describe the diagnostic
+state of a DTC. The commonly defined UDS status bits include:
+</p>
+
+<table border="1" cellpadding="9" cellspacing="0" width="100%">
+    <tr>
+        <th>Bit</th>
+        <th>Status</th>
+        <th>Meaning</th>
+    </tr>
+    <tr>
+        <td>0</td>
+        <td>testFailed</td>
+        <td>Test currently indicates failure.</td>
+    </tr>
+    <tr>
+        <td>1</td>
+        <td>testFailedThisOperationCycle</td>
+        <td>Test failed during the current operation cycle.</td>
+    </tr>
+    <tr>
+        <td>2</td>
+        <td>pendingDTC</td>
+        <td>DTC is pending according to its status rules.</td>
+    </tr>
+    <tr>
+        <td>3</td>
+        <td>confirmedDTC</td>
+        <td>DTC has reached the configured confirmation criteria.</td>
+    </tr>
+    <tr>
+        <td>4</td>
+        <td>testNotCompletedSinceLastClear</td>
+        <td>Test has not completed since the last clear operation.</td>
+    </tr>
+    <tr>
+        <td>5</td>
+        <td>testFailedSinceLastClear</td>
+        <td>Test has failed since the last clear operation.</td>
+    </tr>
+    <tr>
+        <td>6</td>
+        <td>testNotCompletedThisOperationCycle</td>
+        <td>Test has not completed in the current operation cycle.</td>
+    </tr>
+    <tr>
+        <td>7</td>
+        <td>warningIndicatorRequested</td>
+        <td>A warning indicator is requested according to diagnostic logic.</td>
+    </tr>
+</table>
+
+<p>
+The reported status depends on diagnostic configuration,
+event qualification, operation cycles and status availability.
+</p>
+
+<h2>9. UDS Protocol Introduction</h2>
+
+<p>
+UDS stands for Unified Diagnostic Services. It is specified
+by ISO 14229 and provides diagnostic services for communication
+between a tester and an ECU.
+</p>
+
+<h3>9.1 Common UDS Services</h3>
+
+<table border="1" cellpadding="9" cellspacing="0" width="100%">
+    <tr>
+        <th>Service</th>
+        <th>SID</th>
+        <th>Purpose</th>
+    </tr>
+    <tr>
+        <td>Diagnostic Session Control</td>
+        <td>0x10</td>
+        <td>Changes diagnostic session.</td>
+    </tr>
+    <tr>
+        <td>ECU Reset</td>
+        <td>0x11</td>
+        <td>Requests an ECU reset.</td>
+    </tr>
+    <tr>
+        <td>Clear Diagnostic Information</td>
+        <td>0x14</td>
+        <td>Requests clearing of configured diagnostic information.</td>
+    </tr>
+    <tr>
+        <td>Read DTC Information</td>
+        <td>0x19</td>
+        <td>Reads diagnostic trouble code information.</td>
+    </tr>
+    <tr>
+        <td>Read Data By Identifier</td>
+        <td>0x22</td>
+        <td>Reads configured data identifiers.</td>
+    </tr>
+    <tr>
+        <td>Security Access</td>
+        <td>0x27</td>
+        <td>Performs configured security access procedures.</td>
+    </tr>
+    <tr>
+        <td>Write Data By Identifier</td>
+        <td>0x2E</td>
+        <td>Writes permitted configured data identifiers.</td>
+    </tr>
+    <tr>
+        <td>Tester Present</td>
+        <td>0x3E</td>
+        <td>Maintains diagnostic session activity.</td>
+    </tr>
+</table>
+
+<h2>10. UDS Request and Response Example</h2>
+
+<p>
+A diagnostic tester can request DTC information using
+Read DTC Information (SID 0x19). The exact subfunction and
+response layout depend on the requested DTC information type.
+</p>
+
+<h3>10.1 Example Request</h3>
+
+<pre>
+Request:
+19 02 FF
+
+19 = Read DTC Information
+02 = Report DTC By Status Mask
+FF = Status Mask
+</pre>
+
+<h3>10.2 Example Positive Response</h3>
+
+<pre>
+59 02 00 12 34 56 0F
+
+59 = Positive response for service 0x19
+02 = Response subfunction
+00 = Availability/status information example
+12 34 56 = Illustrative DTC
+0F = Illustrative DTC status byte
+</pre>
+
+<p>
+This byte sequence is an illustrative response layout.
+Actual response content and length depend on the requested
+subfunction, status mask, number of DTCs and applicable
+UDS specification.
+</p>
+
+<h3>10.3 Negative Response</h3>
+
+<pre>
+7F 19 31
+
+7F = Negative response
+19 = Original request service
+31 = Request Out Of Range
+</pre>
+
+<p>
+A negative response has the general format:
+</p>
+
+<pre>
+7F [Request SID] [Negative Response Code]
+</pre>
+
+<p>
+A positive response SID is generally the request SID plus
+0x40. Some UDS services have additional service-specific
+response rules.
+</p>
+
+<h2>11. Diagnostic Communication over CAN</h2>
+
+<p>
+UDS messages can be transported over CAN using ISO 15765-2
+(DoCAN). This transport protocol supports segmentation and
+reassembly when a diagnostic message does not fit into a
+single CAN frame.
+</p>
+
+<h3>11.1 ISO-TP Frame Types</h3>
+
+<ul>
+    <li>Single Frame (SF): Carries a message that fits in one frame.</li>
+    <li>First Frame (FF): Starts a segmented message.</li>
+    <li>Consecutive Frame (CF): Carries subsequent message data.</li>
+    <li>Flow Control (FC): Controls segmented message transmission.</li>
+</ul>
+
+<h3>11.2 AUTOSAR Diagnostic Communication Path</h3>
+
+<pre>
+Diagnostic Tester
+       |
+       v
+    CAN Bus
+       |
+       v
+     CanIf
+       |
+       v
+     CanTp
+       |
+       v
+     PduR
+       |
+       v
+     DCM
+       |
+       +-------- DEM
+       |
+       v
+Diagnostic Response
+</pre>
+
+<p>
+This is a simplified receive-side path. Transmit communication
+uses the corresponding configured response path. Exact routing
+depends on the ECU's communication configuration.
+</p>
+
+<h2>12. Practical Project Configuration Workflow</h2>
+
+<ol>
+    <li>Define the temperature monitoring requirement.</li>
+    <li>Create or identify the application fault monitor.</li>
+    <li>Define the diagnostic event in DEM configuration.</li>
+    <li>Assign the event to a configured DTC.</li>
+    <li>Configure debounce behavior and event status processing.</li>
+    <li>Configure required freeze-frame or extended data records.</li>
+    <li>Configure DCM diagnostic sessions and UDS services.</li>
+    <li>Configure diagnostic communication routing through PduR and CanTp where required.</li>
+    <li>Generate configured BSW and integration code.</li>
+    <li>Build and flash the ECU using the approved development workflow.</li>
+    <li>Connect a diagnostic tester and verify the fault response.</li>
+</ol>
+
+<h2>13. Diagnostic Testing Using CANoe</h2>
+
+<p>
+CANoe can be used to send diagnostic requests, observe
+responses and verify diagnostic behavior. Diagnostic
+configuration and the appropriate diagnostic description
+must be loaded into the test setup.
+</p>
+
+<h3>13.1 Test Scenarios</h3>
+
+<table border="1" cellpadding="9" cellspacing="0" width="100%">
+    <tr>
+        <th>Test</th>
+        <th>Action</th>
+        <th>Expected Result</th>
+    </tr>
+    <tr>
+        <td>TC01</td>
+        <td>Keep temperature below threshold.</td>
+        <td>No over-temperature DTC confirmation.</td>
+    </tr>
+    <tr>
+        <td>TC02</td>
+        <td>Increase temperature above threshold for the configured debounce period.</td>
+        <td>Fault event qualifies and DTC status updates.</td>
+    </tr>
+    <tr>
+        <td>TC03</td>
+        <td>Send UDS Read DTC Information request.</td>
+        <td>ECU returns the configured DTC information.</td>
+    </tr>
+    <tr>
+        <td>TC04</td>
+        <td>Send an authorized Clear Diagnostic Information request.</td>
+        <td>ECU performs the configured clearing operation.</td>
+    </tr>
+    <tr>
+        <td>TC05</td>
+        <td>Return temperature to normal.</td>
+        <td>Event status follows configured recovery behavior.</td>
+    </tr>
+    <tr>
+        <td>TC06</td>
+        <td>Send an unsupported diagnostic request.</td>
+        <td>ECU returns an applicable negative response if required.</td>
+    </tr>
+</table>
+
+<div class="note">
+Clearing a DTC does not repair the underlying fault. If the
+fault remains present, the diagnostic monitor may report it
+again and the DTC may be stored again according to the
+configured qualification rules.
+</div>
+
+<h2>14. Common Diagnostic Problems</h2>
+
+<table border="1" cellpadding="9" cellspacing="0" width="100%">
+    <tr>
+        <th>Problem</th>
+        <th>Possible Cause</th>
+        <th>Investigation</th>
+    </tr>
+    <tr>
+        <td>DTC not stored</td>
+        <td>Event not reported or qualification incomplete</td>
+        <td>Check event reporting, debounce and DEM configuration.</td>
+    </tr>
+    <tr>
+        <td>DTC not readable</td>
+        <td>Incorrect DCM service or DTC configuration</td>
+        <td>Check DCM and DEM configuration.</td>
+    </tr>
+    <tr>
+        <td>No diagnostic response</td>
+        <td>Transport or routing issue</td>
+        <td>Inspect CanTp, PduR, CanIf and CAN communication.</td>
+    </tr>
+    <tr>
+        <td>Negative response</td>
+        <td>Invalid session, unsupported service or invalid parameter</td>
+        <td>Check the NRC and service preconditions.</td>
+    </tr>
+    <tr>
+        <td>DTC returns after clearing</td>
+        <td>Fault condition still exists</td>
+        <td>Inspect the physical signal and fault monitor.</td>
+    </tr>
+</table>
+
+<h2>15. Important Placement Concepts</h2>
+
+<ul>
+    <li>DEM manages diagnostic events and DTC information.</li>
+    <li>DCM handles diagnostic communication and UDS services.</li>
+    <li>UDS is specified by ISO 14229.</li>
+    <li>DoCAN transport over CAN is specified by ISO 15765-2.</li>
+    <li>Read DTC Information uses SID 0x19.</li>
+    <li>Clear Diagnostic Information uses SID 0x14.</li>
+    <li>Negative responses use the general format 7F, request SID, NRC.</li>
+    <li>Debouncing prevents transient conditions from immediately becoming qualified faults.</li>
+    <li>Freeze-frame data can capture configured operating conditions associated with a fault.</li>
+    <li>DTC status depends on configured event processing and diagnostic rules.</li>
+</ul>
+
+<h2>16. Placement Interview Questions and Answers</h2>
+
+<div class="question">
+<strong>Q1. What is a DTC?</strong>
+<p>
+A Diagnostic Trouble Code is an identifier representing a
+detected fault condition in an ECU or vehicle system.
+</p>
+</div>
+
+<div class="question">
+<strong>Q2. What is DEM?</strong>
+<p>
+DEM manages diagnostic events, DTC status and configured
+diagnostic event data.
+</p>
+</div>
+
+<div class="question">
+<strong>Q3. What is DCM?</strong>
+<p>
+DCM handles diagnostic communication between an external
+tester and an ECU and processes configured UDS services.
+</p>
+</div>
+
+<div class="question">
+<strong>Q4. What is UDS?</strong>
+<p>
+UDS stands for Unified Diagnostic Services. It is an
+automotive diagnostic protocol specified by ISO 14229.
+</p>
+</div>
+
+<div class="question">
+<strong>Q5. What is the SID for Read DTC Information?</strong>
+<p>0x19.</p>
+</div>
+
+<div class="question">
+<strong>Q6. What is the SID for Clear Diagnostic Information?</strong>
+<p>0x14.</p>
+</div>
+
+<div class="question">
+<strong>Q7. What is diagnostic debouncing?</strong>
+<p>
+Debouncing qualifies a fault condition using configured
+counter-based or time-based criteria to avoid reacting
+immediately to transient failures.
+</p>
+</div>
+
+<div class="question">
+<strong>Q8. What is freeze-frame data?</strong>
+<p>
+It is a configured snapshot of operating data associated
+with a diagnostic event or DTC.
+</p>
+</div>
+
+<div class="question">
+<strong>Q9. What is ISO-TP?</strong>
+<p>
+ISO-TP is a transport protocol used to transmit diagnostic
+messages over CAN, including messages requiring segmentation.
+</p>
+</div>
+
+<div class="question">
+<strong>Q10. Does clearing a DTC fix the fault?</strong>
+<p>
+No. Clearing diagnostic information does not repair the
+physical or software fault. The fault may be detected again.
+</p>
+</div>
+
+<div class="question">
+<strong>Q11. What is a negative response?</strong>
+<p>
+It indicates that the ECU cannot process a diagnostic
+request as requested. The general format is 7F, request
+service ID and negative response code.
+</p>
+</div>
+
+<div class="question">
+<strong>Q12. What is NRC 0x78?</strong>
+<p>
+ResponsePending. It indicates that the ECU needs more
+time to complete the requested service.
+</p>
+</div>
+
+<h2>17. Quick Assessment</h2>
+
+<div class="question">
+<strong>1. Which AUTOSAR module manages DTC information?</strong>
+<p>A. DEM &nbsp; B. COM &nbsp; C. CanIf</p>
+</div>
+
+<div class="question">
+<strong>2. Which module handles UDS diagnostic requests?</strong>
+<p>A. DCM &nbsp; B. PORT &nbsp; C. DIO</p>
+</div>
+
+<div class="question">
+<strong>3. What is the UDS SID for Read DTC Information?</strong>
+<p>A. 0x10 &nbsp; B. 0x19 &nbsp; C. 0x22</p>
+</div>
+
+<div class="question">
+<strong>4. What is the UDS SID for Clear Diagnostic Information?</strong>
+<p>A. 0x14 &nbsp; B. 0x27 &nbsp; C. 0x3E</p>
+</div>
+
+<div class="question">
+<strong>5. Which protocol supports segmented diagnostic messages over CAN?</strong>
+<p>A. SPI &nbsp; B. ISO-TP &nbsp; C. UART</p>
+</div>
+
+<h3>Answers</h3>
+
+<p>
+1. A — DEM<br>
+2. A — DCM<br>
+3. B — 0x19<br>
+4. A — 0x14<br>
+5. B — ISO-TP
+</p>
+
+<h2>18. Lesson Summary</h2>
+
+<ul>
+    <li>Studied automotive diagnostic architecture.</li>
+    <li>Learned DEM and DCM responsibilities.</li>
+    <li>Understood diagnostic events and DTC management.</li>
+    <li>Implemented a simplified temperature fault monitor.</li>
+    <li>Studied UDS services and diagnostic responses.</li>
+    <li>Learned diagnostic communication over CAN.</li>
+    <li>Reviewed ISO-TP frame types.</li>
+    <li>Studied diagnostic testing using CANoe.</li>
+</ul>
+
+<div class="note">
+<strong>Practical Learning Outcome:</strong>
+You should be able to explain how an application detects
+a fault, reports it to DEM, makes DTC information available
+through DCM, and responds to a diagnostic tester using UDS.
+</div>
+
+<div class="navigation">
+    <a href="index.html">← Chapter Index</a>
+    <a href="L03_CAN_Based_ECU_Communication_Project.html">← Previous Lesson</a>
+    <a href="L05_AUTOSAR_Configuration_and_Integration_Project.html">Next Lesson →</a>
+</div>
+
+</div>
+</body>
+</html>
