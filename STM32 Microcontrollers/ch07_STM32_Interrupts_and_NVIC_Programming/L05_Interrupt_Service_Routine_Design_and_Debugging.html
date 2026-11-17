@@ -1,1 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 5 - ISR Design and Debugging | NS Learning Hub</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+
+        .content-section {
+            background: #fff;
+            border: 1px solid #e0e6ef;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 18px 0;
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #e5edf8;
+            padding-bottom: 8px;
+        }
+
+        h3 { color: #1769aa; }
+
+        pre {
+            background: #17212f;
+            color: #e8f1ff;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+
+        code { font-family: Consolas, monospace; }
+
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e0a000;
+            padding: 12px;
+            margin: 15px 0;
+        }
+
+        .example {
+            background: #eef6ff;
+            border-left: 5px solid #007bff;
+            padding: 12px;
+            margin: 15px 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th { background: #eaf2ff; }
+
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+
+        .navigation a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 17px;
+            border-radius: 6px;
+        }
+
+        .navigation a:hover { background: #007bff; }
+    </style>
+</head>
+
+<body>
+
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 5: Interrupt Service Routine Design and Debugging</h1>
+        <p>
+            Learn efficient ISR design, interrupt safety,
+            shared data handling, debugging techniques,
+            timing analysis and common embedded firmware failures.
+        </p>
+    </header>
+
+    <p>
+        <a href="index.html">← Back to Chapter 7</a> |
+        <a href="../stm32-microcontrollers.html">STM32 Course Home</a>
+    </p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand ISR execution and responsibilities.</li>
+            <li>Learn best practices for writing efficient ISRs.</li>
+            <li>Understand shared data between ISR and main code.</li>
+            <li>Learn volatile, atomicity and race conditions.</li>
+            <li>Understand interrupt nesting and stack usage.</li>
+            <li>Debug interrupt-related firmware problems.</li>
+            <li>Analyze ISR execution time and response time.</li>
+            <li>Apply interrupt design practices in STM32 projects.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Is an Interrupt Service Routine?</h2>
+
+        <p>
+            An Interrupt Service Routine (ISR) is a special
+            function executed when the processor accepts an
+            interrupt or exception.
+        </p>
+
+        <p>
+            The ISR handles the event, acknowledges or clears
+            the relevant interrupt condition when required,
+            and returns control to the interrupted execution.
+        </p>
+
+        <h3>Basic ISR Execution Sequence</h3>
+
+        <pre><code>
+       Main Program
+            |
+            v
+      Interrupt Occurs
+            |
+            v
+    Processor Accepts Request
+            |
+            v
+       Exception Entry
+            |
+            v
+        Execute ISR
+            |
+            v
+   Acknowledge Event / Handle
+            |
+            v
+       Exception Return
+            |
+            v
+     Resume Interrupted Code
+        </code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Responsibilities of an ISR</h2>
+
+        <p>
+            An ISR should perform only the operations necessary
+            to respond to the interrupt event.
+        </p>
+
+        <h3>Typical ISR Responsibilities</h3>
+        <ul>
+            <li>Identify the interrupt source.</li>
+            <li>Read essential peripheral status or data.</li>
+            <li>Acknowledge or clear the interrupt condition as required.</li>
+            <li>Store data in a buffer or update an event flag.</li>
+            <li>Notify the main loop or an RTOS task.</li>
+            <li>Return quickly to normal execution.</li>
+        </ul>
+
+        <div class="example">
+            <strong>Example:</strong>
+            <p>
+                A UART receive ISR can read the received byte
+                and place it into a ring buffer. The main loop
+                can parse the command later instead of performing
+                lengthy string processing inside the ISR.
+            </p>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>4. ISR Design Best Practices</h2>
+
+        <h3>Recommended Practices</h3>
+        <ol>
+            <li>Keep the ISR short and predictable.</li>
+            <li>Acknowledge the interrupt source correctly.</li>
+            <li>Avoid blocking delays.</li>
+            <li>Avoid lengthy calculations.</li>
+            <li>Avoid blocking communication operations.</li>
+            <li>Use flags, queues or buffers to defer processing.</li>
+            <li>Protect shared data where necessary.</li>
+            <li>Consider interrupt priority and execution time.</li>
+            <li>Ensure nested interrupts cannot exhaust the stack.</li>
+            <li>Measure timing under realistic operating conditions.</li>
+        </ol>
+
+        <h3>Operations to Avoid in an ISR</h3>
+
+        <table>
+            <tr>
+                <th>Operation</th>
+                <th>Why It Is Risky</th>
+            </tr>
+            <tr>
+                <td>HAL_Delay()</td>
+                <td>Can block execution and may depend on a tick interrupt that cannot run.</td>
+            </tr>
+            <tr>
+                <td>Long loops</td>
+                <td>Increase interrupt blocking time.</td>
+            </tr>
+            <tr>
+                <td>Blocking UART transmission</td>
+                <td>Can keep the processor in the ISR for too long.</td>
+            </tr>
+            <tr>
+                <td>Large data processing</td>
+                <td>Increases ISR execution time.</td>
+            </tr>
+            <tr>
+                <td>Unbounded waiting</td>
+                <td>Can prevent timely handling of other events.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>5. Shared Data Between ISR and Main Program</h2>
+
+        <p>
+            A shared variable is a variable accessed by both
+            an ISR and the main program.
+        </p>
+
+        <p>
+            Since an ISR can execute asynchronously relative
+            to normal code, shared data must be handled carefully.
+        </p>
+
+        <h3>Example: Shared Event Flag</h3>
+
+        <pre><code>#include "main.h"
+
+volatile uint8_t timer_event = 0;
+
+void HAL_TIM_PeriodElapsedCallback(
+    TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM2)
+    {
+        timer_event = 1;
+    }
+}
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_TIM2_Init();
+
+    HAL_TIM_Base_Start_IT(&amp;htim2);
+
+    while (1)
+    {
+        if (timer_event != 0)
+        {
+            timer_event = 0;
+
+            /* Process the event outside the ISR */
+        }
+    }
+}</code></pre>
+
+        <p>
+            The ISR sets the event flag. The main loop checks
+            the flag and performs the required processing.
+        </p>
+
+        <div class="note">
+            This simple flag is suitable when losing repeated
+            events is acceptable or the event rate is controlled.
+            If multiple events must be counted or preserved,
+            use an appropriate counter, queue or buffer.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Understanding the volatile Keyword</h2>
+
+        <p>
+            The volatile keyword tells the compiler that a
+            variable's value can change in ways not visible
+            through the current execution flow, so accesses
+            must follow the language's volatile rules.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>volatile uint8_t interrupt_flag = 0;
+
+void EXTI0_IRQHandler(void)
+{
+    interrupt_flag = 1;
+}</code></pre>
+
+        <p>
+            The main program can read the flag:
+        </p>
+
+        <pre><code>while (1)
+{
+    if (interrupt_flag)
+    {
+        interrupt_flag = 0;
+
+        /* Handle event */
+    }
+}</code></pre>
+
+        <h3>Important Properties of volatile</h3>
+        <ul>
+            <li>Prevents certain compiler optimizations of volatile accesses.</li>
+            <li>Useful for memory-mapped hardware registers.</li>
+            <li>Useful for variables shared with interrupt handlers.</li>
+            <li>Does not make operations atomic.</li>
+            <li>Does not provide a general synchronization mechanism.</li>
+            <li>Does not automatically protect compound operations.</li>
+        </ul>
+
+        <div class="note">
+            A volatile variable is not automatically thread-safe.
+            Use atomic operations, critical sections or suitable
+            synchronization mechanisms when data consistency
+            requires them.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Atomicity and Race Conditions</h2>
+
+        <h3>What Is Atomicity?</h3>
+        <p>
+            An operation is atomic when it appears indivisible
+            to other execution contexts.
+        </p>
+
+        <h3>What Is a Race Condition?</h3>
+        <p>
+            A race condition occurs when the result of an
+            operation depends on the timing or interleaving
+            of accesses by multiple execution contexts.
+        </p>
+
+        <h3>Example: Shared Counter</h3>
+
+        <pre><code>volatile uint32_t event_count = 0;
+
+void EXTI0_IRQHandler(void)
+{
+    event_count++;
+}</code></pre>
+
+        <p>
+            The increment is a read-modify-write operation.
+            It should not be assumed atomic merely because
+            event_count is volatile.
+        </p>
+
+        <h3>Critical Section Concept</h3>
+
+        <pre><code>uint32_t primask = __get_PRIMASK();
+
+__disable_irq();
+
+/* Protect a short shared-data operation */
+
+__set_PRIMASK(primask);</code></pre>
+
+        <div class="note">
+            This example masks configurable interrupts globally
+            and restores the previous PRIMASK state. Keep the
+            protected section very short. NMI and HardFault
+            are not masked by PRIMASK. Use an appropriate
+            synchronization design for the actual application.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>8. Interrupt Stack Usage</h2>
+
+        <p>
+            Cortex-M processors use a stack during exception
+            handling. On exception entry, the processor
+            automatically stacks a basic register frame.
+        </p>
+
+        <p>
+            The basic frame normally contains:
+        </p>
+
+        <ul>
+            <li>R0</li>
+            <li>R1</li>
+            <li>R2</li>
+            <li>R3</li>
+            <li>R12</li>
+            <li>LR</li>
+            <li>PC</li>
+            <li>xPSR</li>
+        </ul>
+
+        <p>
+            Additional stack space may be needed for compiler
+            register saving, local variables, nested interrupts,
+            alignment padding and floating-point context where
+            supported and used.
+        </p>
+
+        <h3>Stack Usage Considerations</h3>
+        <ul>
+            <li>Keep ISR local variables small.</li>
+            <li>Avoid large local arrays.</li>
+            <li>Limit nested interrupt depth.</li>
+            <li>Estimate worst-case stack usage.</li>
+            <li>Check linker and startup stack configuration.</li>
+            <li>Use stack monitoring where available.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>9. Interrupt Debugging Using STM32CubeIDE</h2>
+
+        <p>
+            STM32CubeIDE provides debugging features that
+            help identify interrupt configuration and
+            execution problems.
+        </p>
+
+        <h3>Debugging Procedure</h3>
+        <ol>
+            <li>Build the project and resolve compilation errors.</li>
+            <li>Start a debug session using ST-LINK or a supported target.</li>
+            <li>Set a breakpoint in the interrupt handler.</li>
+            <li>Set another breakpoint in the HAL callback if applicable.</li>
+            <li>Run the processor.</li>
+            <li>Trigger the peripheral event.</li>
+            <li>Check whether the handler breakpoint is reached.</li>
+            <li>Inspect peripheral and NVIC registers.</li>
+            <li>Check interrupt enable, pending and priority settings.</li>
+            <li>Step through the handler and inspect the return path.</li>
+        </ol>
+
+        <h3>Useful Debugging Views</h3>
+        <ul>
+            <li>Disassembly view.</li>
+            <li>Registers view.</li>
+            <li>Expressions and Variables view.</li>
+            <li>Memory view.</li>
+            <li>Peripheral register view, where supported.</li>
+            <li>Call Stack view.</li>
+        </ul>
+
+        <div class="note">
+            Live register inspection and peripheral behavior
+            depend on the selected target and debugger support.
+            A hardware debugger is required to validate real
+            external pin events on a physical board.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Measuring ISR Execution Time</h2>
+
+        <p>
+            Measuring ISR execution time helps verify that
+            the interrupt handler meets timing requirements.
+        </p>
+
+        <h3>Method 1: GPIO Timing Measurement</h3>
+
+        <p>
+            Toggle a GPIO pin at the beginning and end of
+            an ISR, then measure the pulse width using an
+            oscilloscope or logic analyzer.
+        </p>
+
+        <pre><code>void EXTI0_IRQHandler(void)
+{
+    HAL_GPIO_WritePin(
+        GPIOB,
+        GPIO_PIN_0,
+        GPIO_PIN_SET
+    );
+
+    /* Handle interrupt event */
+
+    HAL_GPIO_WritePin(
+        GPIOB,
+        GPIO_PIN_0,
+        GPIO_PIN_RESET
+    );
+}</code></pre>
+
+        <h3>Method 2: Cortex-M Cycle Counter</h3>
+
+        <p>
+            On supported Cortex-M implementations, the DWT
+            cycle counter can be used to measure elapsed
+            processor cycles.
+        </p>
+
+        <pre><code>uint32_t start_cycle;
+uint32_t end_cycle;
+uint32_t elapsed_cycles;
+
+start_cycle = DWT->CYCCNT;
+
+/* Code being measured */
+
+end_cycle = DWT->CYCCNT;
+
+elapsed_cycles = end_cycle - start_cycle;</code></pre>
+
+        <div class="note">
+            DWT cycle-counter availability and enable procedure
+            vary by Cortex-M implementation and debug configuration.
+            Counter wraparound must also be considered. The example
+            measures the code placed between the two reads; it does
+            not automatically include exception-entry overhead.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Common ISR Debugging Problems</h2>
+
+        <table>
+            <tr>
+                <th>Problem</th>
+                <th>Possible Cause</th>
+                <th>Suggested Check</th>
+            </tr>
+            <tr>
+                <td>ISR never executes</td>
+                <td>Interrupt source or NVIC not enabled.</td>
+                <td>Check peripheral configuration and NVIC registers.</td>
+            </tr>
+            <tr>
+                <td>ISR executes repeatedly</td>
+                <td>Interrupt condition not acknowledged.</td>
+                <td>Inspect peripheral and EXTI pending flags.</td>
+            </tr>
+            <tr>
+                <td>Unexpected ISR order</td>
+                <td>Priority grouping or priority configuration.</td>
+                <td>Inspect priority registers and grouping.</td>
+            </tr>
+            <tr>
+                <td>Main loop appears stuck</td>
+                <td>ISR too long or interrupt storm.</td>
+                <td>Measure ISR execution and inspect pending sources.</td>
+            </tr>
+            <tr>
+                <td>Shared data is inconsistent</td>
+                <td>Race condition or non-atomic access.</td>
+                <td>Review synchronization and critical sections.</td>
+            </tr>
+            <tr>
+                <td>HardFault during interrupt</td>
+                <td>Invalid memory access or stack problem.</td>
+                <td>Inspect fault registers, stack and call stack.</td>
+            </tr>
+            <tr>
+                <td>Callback is not reached</td>
+                <td>HAL handler not called or wrong callback condition.</td>
+                <td>Inspect IRQ handler and HAL dispatch path.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>12. HardFault and Interrupt Fault Analysis</h2>
+
+        <p>
+            A HardFault is a processor exception that can occur
+            when a serious fault is detected or when another
+            fault cannot be handled by the configured fault
+            handlers.
+        </p>
+
+        <h3>Common Causes</h3>
+        <ul>
+            <li>Invalid pointer dereference.</li>
+            <li>Stack overflow or stack corruption.</li>
+            <li>Invalid memory access.</li>
+            <li>Incorrect function pointer or return address.</li>
+            <li>Faults occurring during interrupt execution.</li>
+            <li>Incorrect peripheral register access.</li>
+        </ul>
+
+        <h3>Debugging Steps</h3>
+        <ol>
+            <li>Stop execution in HardFault_Handler.</li>
+            <li>Inspect the processor's stacked exception frame.</li>
+            <li>Examine the stacked PC and LR values.</li>
+            <li>Inspect CFSR, HFSR and other supported fault registers.</li>
+            <li>Locate the instruction that caused the fault.</li>
+            <li>Check pointer validity, stack limits and memory layout.</li>
+        </ol>
+
+        <div class="note">
+            Fault status registers and available fault types
+            depend on the Cortex-M core. Use the selected
+            STM32 reference manual and core documentation
+            when interpreting fault status.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Placement-Oriented Interview Questions</h2>
+
+        <h3>Q1. What is an ISR?</h3>
+        <p>
+            An ISR is a function executed by the processor
+            to handle an interrupt or exception.
+        </p>
+
+        <h3>Q2. Why should an ISR be short?</h3>
+        <p>
+            A short ISR reduces interrupt blocking time and
+            helps other events meet their response deadlines.
+        </p>
+
+        <h3>Q3. Why should HAL_Delay() generally be avoided inside an ISR?</h3>
+        <p>
+            It is a blocking delay and may depend on a system
+            tick interrupt that cannot execute while the
+            current ISR is active or has a higher priority.
+        </p>
+
+        <h3>Q4. Why is volatile used for ISR-shared variables?</h3>
+        <p>
+            It prevents certain compiler optimizations that
+            could otherwise hide changes made outside the
+            current execution flow.
+        </p>
+
+        <h3>Q5. Does volatile guarantee atomicity?</h3>
+        <p>
+            No. Volatile does not guarantee atomic read-modify-write
+            operations or provide full synchronization.
+        </p>
+
+        <h3>Q6. What is a race condition?</h3>
+        <p>
+            A race condition occurs when the result depends
+            on the timing or interleaving of concurrent accesses.
+        </p>
+
+        <h3>Q7. What is a critical section?</h3>
+        <p>
+            A critical section is a protected region in which
+            access to shared resources is controlled to prevent
+            unsafe concurrent operations.
+        </p>
+
+        <h3>Q8. What is interrupt nesting?</h3>
+        <p>
+            Interrupt nesting occurs when a higher-priority
+            interrupt preempts an ISR that is already executing.
+        </p>
+
+        <h3>Q9. How can ISR execution time be measured?</h3>
+        <p>
+            It can be measured using GPIO timing with an
+            oscilloscope or by using a supported processor
+            cycle counter such as DWT CYCCNT.
+        </p>
+
+        <h3>Q10. What is interrupt latency?</h3>
+        <p>
+            It is the time between an interrupt request
+            becoming eligible and the beginning of its handler.
+        </p>
+
+        <h3>Q11. What happens if an interrupt flag is not cleared?</h3>
+        <p>
+            The interrupt may remain pending or be requested
+            again, depending on the peripheral's interrupt
+            and flag-clearing behavior.
+        </p>
+
+        <h3>Q12. How do you debug an ISR that does not execute?</h3>
+        <p>
+            Check the peripheral interrupt source, NVIC enable,
+            priority, vector table, IRQ handler name and
+            interrupt masking state.
+        </p>
+
+        <h3>Q13. What is stack overflow in interrupt handling?</h3>
+        <p>
+            Stack overflow occurs when interrupt and program
+            stack usage exceeds the allocated stack space,
+            potentially corrupting memory and causing faults.
+        </p>
+
+        <h3>Q14. What is the purpose of an event flag?</h3>
+        <p>
+            An event flag allows an ISR to signal the main
+            program that an event occurred, so processing
+            can be deferred outside the ISR.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Practical Exercises</h2>
+
+        <ol>
+            <li>Write a short timer ISR using STM32 HAL.</li>
+            <li>Use a volatile flag to communicate between ISR and main.</li>
+            <li>Explain why volatile does not guarantee atomicity.</li>
+            <li>Demonstrate a shared counter and discuss race conditions.</li>
+            <li>Measure ISR execution time using a GPIO output.</li>
+            <li>Inspect an interrupt handler using STM32CubeIDE.</li>
+            <li>Identify the cause of a repeated interrupt.</li>
+            <li>Analyze a HardFault caused by an invalid pointer.</li>
+            <li>Estimate stack requirements for nested interrupts.</li>
+            <li>Design an interrupt-driven UART receive buffer.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Lesson Summary</h2>
+
+        <ul>
+            <li>ISR handles an accepted interrupt or exception.</li>
+            <li>Keep interrupt handlers short and predictable.</li>
+            <li>Acknowledge peripheral interrupt conditions correctly.</li>
+            <li>Use flags, queues and buffers to defer processing.</li>
+            <li>Volatile does not guarantee atomicity or synchronization.</li>
+            <li>Critical sections can protect short shared-data operations.</li>
+            <li>Nested interrupts increase stack and timing requirements.</li>
+            <li>GPIO and DWT cycle counter methods can measure execution time.</li>
+            <li>STM32CubeIDE helps inspect handlers, registers and fault states.</li>
+            <li>Correct interrupt design improves firmware reliability.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Chapter 7 Completion</h2>
+
+        <p>
+            You have completed the STM32 Interrupts and NVIC
+            Programming chapter.
+        </p>
+
+        <ul>
+            <li>Interrupts and Polling Comparison</li>
+            <li>NVIC Configuration and Programming</li>
+            <li>Interrupt Priority and Preemption</li>
+            <li>External Interrupt Programming Using EXTI</li>
+            <li>Interrupt Service Routine Design and Debugging</li>
+        </ul>
+
+        <p>
+            You should now be able to configure STM32 interrupts,
+            manage priorities, handle external events and
+            troubleshoot common interrupt-related firmware issues.
+        </p>
+    </section>
+
+    <nav class="navigation">
+        <a href="L04_External_Interrupt_Programming_Using_EXTI.html">
+            ← Previous Lesson
+        </a>
+
+        <a href="index.html">
+            Chapter 7 Index
+        </a>
+
+        <a href="../ch08_STM32_Timer_Counter_and_PWM/index.html">
+            Next Chapter: Timers and PWM →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
