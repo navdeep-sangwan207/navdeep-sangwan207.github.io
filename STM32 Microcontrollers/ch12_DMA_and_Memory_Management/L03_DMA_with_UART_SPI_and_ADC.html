@@ -1,1 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 3 - DMA with UART, SPI and ADC</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #dce5f0;
+            border-radius: 9px;
+        }
+        h2, h3 { color: #174ea6; }
+        .info-box {
+            background: #eef6ff;
+            border-left: 5px solid #174ea6;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff5e6;
+            border-left: 5px solid #e09b24;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        pre {
+            background: #172033;
+            color: #e8f0ff;
+            padding: 15px;
+            border-radius: 7px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .lesson-nav {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .lesson-nav a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 16px;
+            border-radius: 6px;
+        }
+        .lesson-nav a:hover { background: #007bff; }
+    </style>
+</head>
 
+<body>
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 3: DMA with UART, SPI and ADC</h1>
+        <p>STM32 Microcontrollers – Chapter 12</p>
+        <p>Implement efficient peripheral communication and data acquisition using DMA.</p>
+    </header>
+
+    <p><a href="index.html">← Back to Chapter 12</a></p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand DMA integration with STM32 peripherals.</li>
+            <li>Implement UART transmission and reception using DMA.</li>
+            <li>Understand SPI DMA communication.</li>
+            <li>Acquire ADC samples using DMA.</li>
+            <li>Understand normal and circular DMA buffering.</li>
+            <li>Use half-transfer and complete-transfer callbacks.</li>
+            <li>Understand buffer ownership and synchronization.</li>
+            <li>Debug peripheral DMA communication problems.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. Why Use DMA with Peripherals?</h2>
+
+        <p>
+            UART, SPI and ADC peripherals generate or
+            consume data. The CPU can handle each item
+            through polling or interrupts, but this
+            can become inefficient when data rates
+            or transfer sizes increase.
+        </p>
+
+        <p>
+            DMA moves data between a peripheral data
+            register and a memory buffer after the
+            transfer has been configured.
+        </p>
+
+        <pre><code>             +----------------+
+             |      CPU       |
+             |                |
+             | Configure DMA  |
+             | Process Buffer |
+             +--------+-------+
+                      |
+                      v
+             +----------------+
+             | DMA Controller |
+             +--------+-------+
+                      |
+           +----------+----------+
+           |          |          |
+           v          v          v
+         UART        SPI        ADC
+           |          |          |
+           +----------+----------+
+                      |
+                      v
+                   Memory
+                   Buffer</code></pre>
+
+        <h3>Benefits</h3>
+        <ul>
+            <li>Reduces CPU involvement in repetitive data movement.</li>
+            <li>Supports continuous ADC sampling.</li>
+            <li>Improves efficiency for large UART and SPI transfers.</li>
+            <li>Allows processing to overlap with data acquisition.</li>
+            <li>Supports half-buffer and full-buffer processing techniques.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>3. UART Communication Using DMA</h2>
+
+        <p>
+            UART DMA allows data to be transmitted
+            from a memory buffer to the UART peripheral
+            or received from UART into a memory buffer.
+        </p>
+
+        <h3>3.1 UART DMA Transmission</h3>
+
+        <pre><code>Memory TX Buffer
+       |
+       v
+ DMA Controller
+       |
+       v
+ UART Data Register
+       |
+       v
+     TX Pin</code></pre>
+
+        <h3>HAL API</h3>
+
+        <pre><code>HAL_UART_Transmit_DMA(
+    &amp;huart2,
+    tx_buffer,
+    tx_length
+);</code></pre>
+
+        <h3>Example: UART DMA Transmission</h3>
+
+        <pre><code>#include "main.h"
+#include &lt;string.h&gt;
+
+extern UART_HandleTypeDef huart2;
+
+uint8_t tx_buffer[] = "STM32 UART DMA\r\n";
+
+volatile uint8_t uart_tx_done = 0;
+volatile uint8_t uart_tx_error = 0;
+
+void UART_DMA_Send(void)
+{
+    uart_tx_done = 0;
+    uart_tx_error = 0;
+
+    if (HAL_UART_Transmit_DMA(
+            &amp;huart2,
+            tx_buffer,
+            sizeof(tx_buffer) - 1U) != HAL_OK)
+    {
+        uart_tx_error = 1;
+    }
+}
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart == &amp;huart2)
+    {
+        uart_tx_done = 1;
+    }
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart == &amp;huart2)
+    {
+        uart_tx_error = 1;
+    }
+}</code></pre>
+
+        <p>
+            The completion callback indicates that
+            the DMA-driven UART transfer has completed.
+            UART transmission completion and DMA memory
+            transfer completion are related but distinct
+            hardware events; the HAL UART callback is
+            the application-level completion notification.
+        </p>
+
+        <h3>3.2 UART DMA Reception</h3>
+
+        <p>
+            UART DMA reception stores incoming bytes
+            in a memory buffer.
+        </p>
+
+        <pre><code>UART RX Pin
+     |
+     v
+UART Data Register
+     |
+     v
+DMA Controller
+     |
+     v
+RX Memory Buffer</code></pre>
+
+        <h3>Example: Fixed-Length UART Reception</h3>
+
+        <pre><code>#define RX_SIZE 16
+
+uint8_t rx_buffer[RX_SIZE];
+
+volatile uint8_t uart_rx_done = 0;
+
+void UART_DMA_Receive_Start(void)
+{
+    uart_rx_done = 0;
+
+    if (HAL_UART_Receive_DMA(
+            &amp;huart2,
+            rx_buffer,
+            RX_SIZE) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart == &amp;huart2)
+    {
+        uart_rx_done = 1;
+    }
+}</code></pre>
+
+        <div class="info-box">
+            This example receives exactly RX_SIZE bytes.
+            Variable-length reception requires an
+            appropriate method such as UART IDLE-line
+            detection, receive-to-idle DMA where supported,
+            or a protocol with delimiters and timeouts.
+        </div>
+
+        <h3>UART DMA Applications</h3>
+        <ul>
+            <li>GPS data reception.</li>
+            <li>Modem communication.</li>
+            <li>Serial command interfaces.</li>
+            <li>High-volume logging.</li>
+            <li>Communication with external controllers.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>4. SPI Communication Using DMA</h2>
+
+        <p>
+            SPI DMA transfers data between an SPI
+            peripheral and memory. SPI is normally
+            full-duplex, so transmitted and received
+            data can be exchanged simultaneously.
+        </p>
+
+        <h3>SPI DMA Architecture</h3>
+
+        <pre><code>TX Memory Buffer
+       |
+       v
+ DMA Controller
+       |
+       v
+ SPI Peripheral
+       |
+       v
+   MOSI / SCLK
+       |
+       v
+ External SPI Device
+       |
+       v
+      MISO
+       |
+       v
+ SPI Peripheral
+       |
+       v
+ DMA Controller
+       |
+       v
+RX Memory Buffer</code></pre>
+
+        <h3>4.1 SPI DMA Transmission</h3>
+
+        <pre><code>HAL_SPI_Transmit_DMA(
+    &amp;hspi1,
+    tx_buffer,
+    DATA_SIZE
+);</code></pre>
+
+        <h3>4.2 SPI DMA Reception</h3>
+
+        <pre><code>HAL_SPI_Receive_DMA(
+    &amp;hspi1,
+    rx_buffer,
+    DATA_SIZE
+);</code></pre>
+
+        <h3>4.3 SPI Full-Duplex DMA Example</h3>
+
+        <pre><code>#include "main.h"
+#include &lt;stdint.h&gt;
+
+extern SPI_HandleTypeDef hspi1;
+
+#define SPI_DATA_SIZE 4
+
+uint8_t spi_tx_buffer[SPI_DATA_SIZE] =
+{
+    0x9F, 0x00, 0x00, 0x00
+};
+
+uint8_t spi_rx_buffer[SPI_DATA_SIZE];
+
+volatile uint8_t spi_transfer_done = 0;
+volatile uint8_t spi_transfer_error = 0;
+
+void SPI_DMA_Transfer_Start(void)
+{
+    spi_transfer_done = 0;
+    spi_transfer_error = 0;
+
+    HAL_GPIO_WritePin(
+        SPI_CS_GPIO_Port,
+        SPI_CS_Pin,
+        GPIO_PIN_RESET
+    );
+
+    if (HAL_SPI_TransmitReceive_DMA(
+            &amp;hspi1,
+            spi_tx_buffer,
+            spi_rx_buffer,
+            SPI_DATA_SIZE) != HAL_OK)
+    {
+        HAL_GPIO_WritePin(
+            SPI_CS_GPIO_Port,
+            SPI_CS_Pin,
+            GPIO_PIN_SET
+        );
+
+        spi_transfer_error = 1;
+    }
+}
+
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+    if (hspi == &amp;hspi1)
+    {
+        HAL_GPIO_WritePin(
+            SPI_CS_GPIO_Port,
+            SPI_CS_Pin,
+            GPIO_PIN_SET
+        );
+
+        spi_transfer_done = 1;
+    }
+}
+
+void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
+{
+    if (hspi == &amp;hspi1)
+    {
+        HAL_GPIO_WritePin(
+            SPI_CS_GPIO_Port,
+            SPI_CS_Pin,
+            GPIO_PIN_SET
+        );
+
+        spi_transfer_error = 1;
+    }
+}</code></pre>
+
+        <div class="warning-box">
+            The example assumes an active-LOW chip-select
+            signal and a four-byte exchange. The command
+            and dummy bytes are device-specific. Some
+            SPI devices require additional command,
+            address, dummy-clock or CS timing rules.
+            Check the peripheral datasheet and HAL
+            behavior for the selected STM32 family.
+        </div>
+
+        <h3>SPI DMA Applications</h3>
+        <ul>
+            <li>SPI Flash memory communication.</li>
+            <li>Display data transfer.</li>
+            <li>High-speed sensor data exchange.</li>
+            <li>External ADC and DAC communication.</li>
+            <li>Wireless module communication.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>5. ADC Data Acquisition Using DMA</h2>
+
+        <p>
+            ADC DMA is commonly used to collect
+            repeated analog samples into a memory
+            buffer without requiring the CPU to read
+            every conversion result.
+        </p>
+
+        <h3>ADC DMA Architecture</h3>
+
+        <pre><code>Analog Sensor
+      |
+      v
+ADC Conversion
+      |
+      v
+ADC Data Register
+      |
+      v
+DMA Controller
+      |
+      v
+SRAM Sample Buffer
+      |
+      v
+CPU Processing</code></pre>
+
+        <h3>5.1 ADC DMA HAL Function</h3>
+
+        <pre><code>HAL_ADC_Start_DMA(
+    &amp;hadc1,
+    (uint32_t *)adc_buffer,
+    ADC_BUFFER_SIZE
+);</code></pre>
+
+        <h3>5.2 ADC DMA Example</h3>
+
+        <pre><code>#include "main.h"
+#include &lt;stdint.h&gt;
+
+extern ADC_HandleTypeDef hadc1;
+
+#define ADC_BUFFER_SIZE 16
+
+uint16_t adc_buffer[ADC_BUFFER_SIZE];
+
+volatile uint8_t adc_conversion_done = 0;
+volatile uint8_t adc_half_done = 0;
+
+void ADC_DMA_Start(void)
+{
+    adc_conversion_done = 0;
+    adc_half_done = 0;
+
+    if (HAL_ADC_Start_DMA(
+            &amp;hadc1,
+            (uint32_t *)adc_buffer,
+            ADC_BUFFER_SIZE) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc)
+{
+    if (hadc == &amp;hadc1)
+    {
+        adc_half_done = 1;
+    }
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
+{
+    if (hadc == &amp;hadc1)
+    {
+        adc_conversion_done = 1;
+    }
+}</code></pre>
+
+        <p>
+            This example assumes the ADC and DMA have
+            already been configured and that the
+            selected ADC mode produces the expected
+            sequence of conversions.
+        </p>
+
+        <h3>5.3 Convert ADC Samples into Voltage</h3>
+
+        <p>
+            For an ideal N-bit ADC with reference
+            voltage VREF, a common approximation is:
+        </p>
+
+        <pre><code>Voltage = (ADC_Code / (2^N - 1)) * VREF</code></pre>
+
+        <p>For a 12-bit ADC and a 3.3 V reference:</p>
+
+        <pre><code>float ADC_To_Voltage(uint16_t adc_value)
+{
+    return ((float)adc_value * 3.3f) / 4095.0f;
+}</code></pre>
+
+        <p>
+            Example: an ADC result of 2048 corresponds
+            to approximately 1.65 V.
+        </p>
+
+        <div class="info-box">
+            Use the actual reference voltage and
+            resolution for the selected device. ADC
+            calibration, input settling time and
+            analog front-end design affect measurement
+            accuracy.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Circular DMA and Continuous Data Acquisition</h2>
+
+        <p>
+            Circular DMA is useful when a peripheral
+            continuously produces or receives data.
+            The DMA controller repeatedly fills the
+            configured memory buffer.
+        </p>
+
+        <pre><code>DMA Buffer
+
++-----------------------+
+| First Half            |
+|                       |
++-----------------------+
+| Second Half           |
+|                       |
++-----------------------+
+
+Half Transfer:
+CPU processes first half
+while DMA fills second half.
+
+Transfer Complete:
+CPU processes second half
+while DMA returns to first half.</code></pre>
+
+        <h3>Example Buffer</h3>
+
+        <pre><code>#define BUFFER_SIZE 100
+
+uint16_t adc_buffer[BUFFER_SIZE];</code></pre>
+
+        <p>
+            With circular mode and suitable interrupt
+            configuration, the half-transfer callback
+            indicates that the first half is ready,
+            while the complete-transfer callback
+            indicates that the second half is ready.
+        </p>
+
+        <h3>Half-Transfer Callback</h3>
+
+        <pre><code>void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc)
+{
+    if (hadc == &amp;hadc1)
+    {
+        /* First half is available for processing. */
+    }
+}</code></pre>
+
+        <h3>Complete-Transfer Callback</h3>
+
+        <pre><code>void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
+{
+    if (hadc == &amp;hadc1)
+    {
+        /* Second half is available for processing
+           in circular DMA mode. */
+    }
+}</code></pre>
+
+        <div class="warning-box">
+            A callback should not perform lengthy
+            calculations or blocking operations.
+            Signal the main loop or a task to process
+            the completed buffer region. Processing
+            must finish before DMA overwrites that
+            region. Use a suitable ownership or
+            synchronization scheme.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Normal DMA vs Circular DMA in Peripheral Applications</h2>
+
+        <table>
+            <tr>
+                <th>Feature</th>
+                <th>Normal Mode</th>
+                <th>Circular Mode</th>
+            </tr>
+            <tr>
+                <td>Transfer</td>
+                <td>Finite transfer</td>
+                <td>Repeated transfer</td>
+            </tr>
+            <tr>
+                <td>Completion</td>
+                <td>Stops after completion</td>
+                <td>Reloads and continues</td>
+            </tr>
+            <tr>
+                <td>UART use</td>
+                <td>Fixed message or block</td>
+                <td>Continuous receive where supported</td>
+            </tr>
+            <tr>
+                <td>SPI use</td>
+                <td>Finite device transaction</td>
+                <td>Repeated streaming where supported</td>
+            </tr>
+            <tr>
+                <td>ADC use</td>
+                <td>Finite sample collection</td>
+                <td>Continuous sampling</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>8. DMA Configuration Checklist</h2>
+
+        <ul>
+            <li>Enable the peripheral clock.</li>
+            <li>Configure the required GPIO alternate function or analog mode.</li>
+            <li>Select the correct DMA request mapping.</li>
+            <li>Configure the transfer direction.</li>
+            <li>Set correct peripheral and memory data widths.</li>
+            <li>Set peripheral and memory increment appropriately.</li>
+            <li>Choose normal or circular mode.</li>
+            <li>Configure the DMA interrupt and NVIC if required.</li>
+            <li>Link DMA handles to the peripheral HAL handle.</li>
+            <li>Check the buffer address, size and lifetime.</li>
+            <li>Check DMA-accessible memory regions.</li>
+            <li>Check cache coherency on applicable MCUs.</li>
+            <li>Handle transfer completion and errors.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>9. DMA Troubleshooting</h2>
+
+        <table>
+            <tr>
+                <th>Problem</th>
+                <th>Possible Cause</th>
+                <th>Solution</th>
+            </tr>
+            <tr>
+                <td>UART data missing</td>
+                <td>Wrong DMA request or UART configuration.</td>
+                <td>Verify request, baud rate and peripheral setup.</td>
+            </tr>
+            <tr>
+                <td>UART reception stops</td>
+                <td>Normal mode completed or buffer full.</td>
+                <td>Restart reception or use suitable circular/receive-to-idle operation.</td>
+            </tr>
+            <tr>
+                <td>SPI data incorrect</td>
+                <td>Wrong CPOL, CPHA, data size or CS timing.</td>
+                <td>Check the slave datasheet and SPI configuration.</td>
+            </tr>
+            <tr>
+                <td>ADC samples repeat</td>
+                <td>ADC sequence or DMA mode is incorrect.</td>
+                <td>Check conversion sequence and DMA configuration.</td>
+            </tr>
+            <tr>
+                <td>DMA callback missing</td>
+                <td>IRQ, callback or interrupt configuration issue.</td>
+                <td>Check NVIC, IRQ handler and HAL setup.</td>
+            </tr>
+            <tr>
+                <td>Buffer values corrupted</td>
+                <td>CPU/DMA access conflict or cache issue.</td>
+                <td>Coordinate buffer access and cache maintenance.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Important Technical Considerations</h2>
+
+        <h3>Buffer Lifetime</h3>
+        <p>
+            DMA can continue accessing memory after
+            the function that started the transfer
+            has returned. Keep the buffer valid until
+            the operation completes or is stopped.
+        </p>
+
+        <h3>Buffer Ownership</h3>
+        <p>
+            During a receive operation, DMA owns the
+            active buffer region while it is writing.
+            The CPU should process only regions that
+            are known to be complete and not currently
+            being overwritten.
+        </p>
+
+        <h3>Data Alignment</h3>
+        <p>
+            Match DMA transfer widths and memory
+            element types. For example, a 12-bit ADC
+            result is often stored in a 16-bit buffer.
+        </p>
+
+        <h3>Cache Coherency</h3>
+        <p>
+            On cache-equipped MCUs, CPU cache maintenance
+            may be required before or after DMA transfers.
+            Volatile does not make cached data coherent.
+        </p>
+
+        <h3>DMA Throughput</h3>
+        <p>
+            The configured DMA rate must be sufficient
+            for the peripheral data rate. Bus contention,
+            memory access restrictions and conversion
+            timing can limit throughput.
+        </p>
+
+        <div class="info-box">
+            DMA request mapping, channel/stream selection,
+            transfer widths, ADC sequence behavior and
+            HAL callback signatures vary across STM32
+            families and HAL versions. Use CubeMX-generated
+            code and the exact reference manual as the
+            starting point for a real project.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Placement Interview Questions and Answers</h2>
+
+        <h3>Q1. Why is DMA used with UART?</h3>
+        <p>
+            It transfers UART data between the peripheral
+            and memory without requiring the CPU to handle
+            every byte.
+        </p>
+
+        <h3>Q2. Which HAL function starts UART transmission using DMA?</h3>
+        <p><code>HAL_UART_Transmit_DMA()</code>.</p>
+
+        <h3>Q3. Which HAL function starts UART reception using DMA?</h3>
+        <p><code>HAL_UART_Receive_DMA()</code>.</p>
+
+        <h3>Q4. Why is DMA useful with SPI?</h3>
+        <p>
+            It efficiently transfers larger SPI data
+            blocks and can support simultaneous transmit
+            and receive operations.
+        </p>
+
+        <h3>Q5. Which HAL function starts full-duplex SPI DMA?</h3>
+        <p><code>HAL_SPI_TransmitReceive_DMA()</code>.</p>
+
+        <h3>Q6. Why is ADC DMA commonly used?</h3>
+        <p>
+            It collects repeated ADC conversion results
+            into memory with reduced CPU involvement.
+        </p>
+
+        <h3>Q7. Which HAL function starts ADC DMA?</h3>
+        <p><code>HAL_ADC_Start_DMA()</code>.</p>
+
+        <h3>Q8. What is circular DMA?</h3>
+        <p>
+            It repeatedly uses the configured buffer
+            by reloading the transfer count after
+            reaching the end.
+        </p>
+
+        <h3>Q9. What is half-transfer callback?</h3>
+        <p>
+            It notifies the application that half
+            of the configured DMA transfer has completed.
+        </p>
+
+        <h3>Q10. What is double-buffer or ping-pong processing?</h3>
+        <p>
+            It uses two buffers or buffer regions so
+            one can be processed while another receives
+            new data. Hardware double-buffer support
+            depends on the DMA controller.
+        </p>
+
+        <h3>Q11. Why should DMA callbacks be short?</h3>
+        <p>
+            Long callback execution increases interrupt
+            latency and can delay other real-time work.
+        </p>
+
+        <h3>Q12. What can cause ADC DMA buffer corruption?</h3>
+        <p>
+            Incorrect transfer width, buffer ownership
+            conflicts, invalid memory placement, cache
+            coherency issues or incorrect DMA configuration.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Practical Exercises</h2>
+
+        <ol>
+            <li>Transmit a message using UART DMA.</li>
+            <li>Receive a fixed-size UART data block using DMA.</li>
+            <li>Implement SPI full-duplex DMA communication.</li>
+            <li>Acquire ADC samples into a memory buffer using DMA.</li>
+            <li>Configure ADC circular DMA.</li>
+            <li>Observe half-transfer and complete-transfer callbacks.</li>
+            <li>Convert ADC samples into voltage values.</li>
+            <li>Inspect buffers using the STM32CubeIDE debugger.</li>
+            <li>Identify and correct a DMA configuration error.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Lesson Summary</h2>
+
+        <ul>
+            <li>UART DMA supports efficient serial transmission and reception.</li>
+            <li>SPI DMA supports efficient data exchange with external devices.</li>
+            <li>ADC DMA collects conversion results into memory buffers.</li>
+            <li>Normal mode performs finite transfers.</li>
+            <li>Circular mode supports repeated data acquisition.</li>
+            <li>Half-transfer and complete-transfer callbacks support buffer processing.</li>
+            <li>Buffer lifetime and ownership must be managed correctly.</li>
+            <li>Cache maintenance may be required on cache-equipped MCUs.</li>
+            <li>Correct DMA configuration depends on the exact STM32 device.</li>
+        </ul>
+    </section>
+
+    <nav class="lesson-nav">
+        <a href="L02_DMA_Configuration_and_Programming.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter Index</a>
+        <a href="L04_Flash_SRAM_and_Memory_Organization.html">
+            Next Lesson →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
