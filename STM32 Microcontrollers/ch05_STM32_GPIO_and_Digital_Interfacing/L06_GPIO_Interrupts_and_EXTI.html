@@ -1,1 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 6 - GPIO Interrupts and EXTI | NS Learning Hub</title>
+    <link rel="stylesheet" href="../../style.css">
+    <style>
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        .content-section {
+            background: #fff;
+            border: 1px solid #e0e6ef;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 18px 0;
+        }
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #e5edf8;
+            padding-bottom: 8px;
+        }
+        h3 { color: #1769aa; }
+        pre {
+            background: #17212f;
+            color: #e8f1ff;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        code { font-family: Consolas, monospace; }
+        .note {
+            background: #fff7df;
+            border-left: 5px solid #e0a000;
+            padding: 12px;
+            margin: 15px 0;
+        }
+        .example {
+            background: #eef6ff;
+            border-left: 5px solid #007bff;
+            padding: 12px;
+            margin: 15px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #d5deea;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #eaf2ff; }
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 30px 0;
+        }
+        .navigation a {
+            background: #174ea6;
+            color: white;
+            text-decoration: none;
+            padding: 11px 17px;
+            border-radius: 6px;
+        }
+        .navigation a:hover { background: #007bff; }
+    </style>
+</head>
+<body>
 
+<main class="container">
+
+    <header class="lesson-banner">
+        <h1>Lesson 6: GPIO Interrupts and EXTI</h1>
+        <p>
+            Understand external interrupts, EXTI lines, edge detection,
+            NVIC configuration and interrupt-based GPIO programming
+            in STM32 microcontrollers.
+        </p>
+    </header>
+
+    <p>
+        <a href="index.html">← Back to Chapter 5</a> |
+        <a href="../stm32-microcontrollers.html">STM32 Course Home</a>
+    </p>
+
+    <section class="content-section">
+        <h2>1. Learning Objectives</h2>
+        <ul>
+            <li>Understand polling and interrupt-based GPIO input.</li>
+            <li>Understand the STM32 EXTI peripheral.</li>
+            <li>Identify EXTI lines and GPIO port mapping.</li>
+            <li>Understand rising-edge and falling-edge detection.</li>
+            <li>Configure GPIO external interrupts using HAL.</li>
+            <li>Understand NVIC configuration and interrupt handlers.</li>
+            <li>Implement a push-button interrupt application.</li>
+            <li>Understand interrupt flags, debouncing and troubleshooting.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>2. What Is a GPIO Interrupt?</h2>
+
+        <p>
+            A GPIO interrupt is an event generated when a configured
+            GPIO input detects a specified signal transition.
+            The processor temporarily pauses its normal execution
+            and executes an Interrupt Service Routine (ISR).
+        </p>
+
+        <h3>Example</h3>
+        <p>
+            Consider a push button connected to an STM32 GPIO input.
+            When the button is pressed, the input changes from LOW
+            to HIGH. This transition can generate an interrupt.
+        </p>
+
+        <ul>
+            <li>Button press generates an external interrupt.</li>
+            <li>Processor enters the corresponding interrupt handler.</li>
+            <li>Application code processes the event.</li>
+            <li>Processor returns to the interrupted program.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>3. Polling vs Interrupt-Based GPIO</h2>
+
+        <table>
+            <tr>
+                <th>Polling</th>
+                <th>Interrupt</th>
+            </tr>
+            <tr>
+                <td>CPU repeatedly checks the input.</td>
+                <td>Hardware signals the CPU when an event occurs.</td>
+            </tr>
+            <tr>
+                <td>Can waste CPU time while waiting.</td>
+                <td>CPU can perform other work while waiting.</td>
+            </tr>
+            <tr>
+                <td>Simple to implement.</td>
+                <td>Requires interrupt configuration.</td>
+            </tr>
+            <tr>
+                <td>Detection depends on polling frequency.</td>
+                <td>Responds to configured hardware events.</td>
+            </tr>
+        </table>
+
+        <h3>Polling Example</h3>
+        <pre><code>while (1)
+{
+    if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
+    {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+    }
+}</code></pre>
+
+        <h3>Interrupt-Based Approach</h3>
+        <pre><code>void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == GPIO_PIN_0)
+    {
+        /* Handle button event */
+    }
+}</code></pre>
+    </section>
+
+    <section class="content-section">
+        <h2>4. What Is EXTI?</h2>
+
+        <p>
+            EXTI stands for External Interrupt/Event Controller.
+            It detects configured external signal transitions and
+            generates interrupt or event requests.
+        </p>
+
+        <p>
+            On many STM32 families, GPIO pins are connected to EXTI
+            lines through a port-selection mechanism. The exact EXTI
+            architecture and register organization vary by family.
+        </p>
+
+        <h3>Basic EXTI Operation</h3>
+        <ol>
+            <li>Configure a GPIO pin as an input.</li>
+            <li>Select the GPIO port connected to the EXTI line.</li>
+            <li>Configure rising-edge or falling-edge detection.</li>
+            <li>Enable the EXTI interrupt request.</li>
+            <li>Enable the corresponding interrupt in NVIC.</li>
+            <li>Execute the ISR when the event occurs.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>5. EXTI Lines and GPIO Mapping</h2>
+
+        <p>
+            In the common STM32F4 architecture, EXTI lines 0 to 15
+            correspond to GPIO pin numbers 0 to 15.
+        </p>
+
+        <table>
+            <tr>
+                <th>EXTI Line</th>
+                <th>Possible GPIO Sources</th>
+            </tr>
+            <tr>
+                <td>EXTI0</td>
+                <td>PA0, PB0, PC0, etc.</td>
+            </tr>
+            <tr>
+                <td>EXTI1</td>
+                <td>PA1, PB1, PC1, etc.</td>
+            </tr>
+            <tr>
+                <td>EXTI2</td>
+                <td>PA2, PB2, PC2, etc.</td>
+            </tr>
+            <tr>
+                <td>EXTI3</td>
+                <td>PA3, PB3, PC3, etc.</td>
+            </tr>
+            <tr>
+                <td>EXTI4</td>
+                <td>PA4, PB4, PC4, etc.</td>
+            </tr>
+            <tr>
+                <td>EXTI5 to EXTI9</td>
+                <td>Corresponding pin numbers on selectable ports.</td>
+            </tr>
+            <tr>
+                <td>EXTI10 to EXTI15</td>
+                <td>Corresponding pin numbers on selectable ports.</td>
+            </tr>
+        </table>
+
+        <div class="note">
+            On STM32F4, a given EXTI line can select one GPIO port
+            source at a time. For example, EXTI0 cannot independently
+            select both PA0 and PB0 simultaneously. Consult the selected
+            MCU reference manual for exact mapping and available lines.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>6. Rising Edge and Falling Edge Detection</h2>
+
+        <h3>Rising Edge</h3>
+        <p>
+            A rising edge occurs when a digital signal changes
+            from LOW to HIGH.
+        </p>
+
+        <pre><code>LOW  ______
+          |
+          |________ HIGH</code></pre>
+
+        <h3>Falling Edge</h3>
+        <p>
+            A falling edge occurs when a digital signal changes
+            from HIGH to LOW.
+        </p>
+
+        <pre><code>HIGH ______
+           |
+           |________ LOW</code></pre>
+
+        <h3>Both-Edge Detection</h3>
+        <p>
+            Some applications require detection of both rising and
+            falling transitions. STM32 EXTI implementations commonly
+            provide separate rising and falling trigger configuration.
+        </p>
+
+        <ul>
+            <li>Rising edge: useful for active-high button events.</li>
+            <li>Falling edge: useful for active-low button events.</li>
+            <li>Both edges: useful for monitoring transitions.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>7. Important EXTI Registers</h2>
+
+        <p>
+            The following register names describe the common STM32F4
+            EXTI architecture. Newer STM32 families may use a different
+            register organization.
+        </p>
+
+        <table>
+            <tr>
+                <th>Register</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>IMR</td>
+                <td>Interrupt mask register.</td>
+            </tr>
+            <tr>
+                <td>EMR</td>
+                <td>Event mask register.</td>
+            </tr>
+            <tr>
+                <td>RTSR</td>
+                <td>Rising trigger selection register.</td>
+            </tr>
+            <tr>
+                <td>FTSR</td>
+                <td>Falling trigger selection register.</td>
+            </tr>
+            <tr>
+                <td>PR</td>
+                <td>Pending register.</td>
+            </tr>
+        </table>
+
+        <h3>EXTI Interrupt Mask</h3>
+        <p>
+            The interrupt mask controls whether an EXTI line is allowed
+            to generate an interrupt request.
+        </p>
+
+        <h3>Rising and Falling Trigger Selection</h3>
+        <p>
+            These registers select which signal transitions can
+            generate an EXTI request.
+        </p>
+
+        <h3>Pending Register</h3>
+        <p>
+            The pending register records a detected interrupt condition.
+            On STM32F4, pending bits are cleared by writing one to the
+            corresponding bit.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>8. NVIC and EXTI Relationship</h2>
+
+        <p>
+            EXTI detects the external event, while NVIC controls the
+            interrupt request at the processor level.
+        </p>
+
+        <h3>Interrupt Flow</h3>
+        <ol>
+            <li>GPIO input changes state.</li>
+            <li>EXTI detects the configured edge.</li>
+            <li>EXTI generates an interrupt request.</li>
+            <li>NVIC accepts the enabled interrupt according to priority and masking.</li>
+            <li>Processor executes the associated interrupt handler.</li>
+            <li>Pending condition is acknowledged or cleared as required.</li>
+            <li>Processor returns to normal execution.</li>
+        </ol>
+
+        <div class="note">
+            Configuring EXTI alone is not sufficient. The corresponding
+            NVIC interrupt must also be enabled, and the GPIO/EXTI
+            source must be configured correctly.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>9. GPIO External Interrupt Using STM32 HAL</h2>
+
+        <p>
+            STM32 HAL provides functions and callbacks for handling
+            GPIO external interrupts.
+        </p>
+
+        <h3>Step 1: Configure GPIO in STM32CubeMX</h3>
+        <ol>
+            <li>Select the required GPIO pin.</li>
+            <li>Choose GPIO_EXTI mode.</li>
+            <li>Select rising, falling or both-edge trigger.</li>
+            <li>Configure the internal pull-up or pull-down if required.</li>
+            <li>Enable the corresponding EXTI interrupt in NVIC settings.</li>
+            <li>Generate the project code.</li>
+        </ol>
+
+        <h3>Step 2: HAL GPIO Initialization Example</h3>
+
+        <pre><code>GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+/* Enable GPIOA clock */
+__HAL_RCC_GPIOA_CLK_ENABLE();
+
+/* Configure PA0 as external interrupt input */
+GPIO_InitStruct.Pin = GPIO_PIN_0;
+GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+
+HAL_GPIO_Init(GPIOA, &amp;GPIO_InitStruct);
+
+/* Configure EXTI0 interrupt priority */
+HAL_NVIC_SetPriority(EXTI0_IRQn, 2, 0);
+
+/* Enable EXTI0 interrupt */
+HAL_NVIC_EnableIRQ(EXTI0_IRQn);</code></pre>
+
+        <div class="note">
+            This example assumes an STM32F4 device and a button circuit
+            that produces a LOW-to-HIGH transition on PA0. The pin,
+            pull configuration and IRQ name must match the selected
+            MCU and board.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>10. Interrupt Handler and HAL Callback</h2>
+
+        <p>
+            The EXTI interrupt handler calls the HAL EXTI handler.
+            HAL then processes the interrupt and invokes the GPIO
+            EXTI callback.
+        </p>
+
+        <h3>Step 1: Interrupt Handler</h3>
+
+        <pre><code>void EXTI0_IRQHandler(void)
+{
+    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
+}</code></pre>
+
+        <h3>Step 2: HAL Callback</h3>
+
+        <pre><code>volatile uint8_t button_event = 0;
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == GPIO_PIN_0)
+    {
+        button_event = 1;
+    }
+}</code></pre>
+
+        <h3>Step 3: Process the Event in Main</h3>
+
+        <pre><code>int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    while (1)
+    {
+        if (button_event != 0)
+        {
+            button_event = 0;
+
+            HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+        }
+    }
+}</code></pre>
+
+        <div class="note">
+            <code>MX_GPIO_Init()</code> and
+            <code>SystemClock_Config()</code> are generated or
+            application-defined initialization functions. The
+            <code>button_event</code> flag is volatile because it is
+            shared between interrupt and main execution contexts.
+            Volatile does not make compound operations atomic.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>11. Push Button Interrupt Application</h2>
+
+        <p>
+            Consider a push button connected to PA0 and an LED connected
+            to PA5 on a compatible STM32F4 development board.
+        </p>
+
+        <h3>Working Principle</h3>
+        <ol>
+            <li>Configure PA0 as an external interrupt input.</li>
+            <li>Configure PA5 as a digital output.</li>
+            <li>Enable rising-edge detection for PA0.</li>
+            <li>Pressing the button generates an interrupt.</li>
+            <li>The callback sets an event flag.</li>
+            <li>The main loop detects the flag and toggles the LED.</li>
+        </ol>
+
+        <div class="example">
+            <strong>Expected Result:</strong>
+            Each valid button press causes the LED to change its state.
+            Mechanical switch bounce may cause multiple events unless
+            debouncing is implemented.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>12. Switch Debouncing</h2>
+
+        <p>
+            Mechanical push buttons do not always produce a clean
+            transition. Their contacts can rapidly open and close
+            for a short time after pressing or releasing.
+        </p>
+
+        <p>
+            This behavior is called switch bouncing.
+        </p>
+
+        <h3>Problems Caused by Switch Bounce</h3>
+        <ul>
+            <li>Multiple interrupts from one physical press.</li>
+            <li>Unexpected LED toggling.</li>
+            <li>Incorrect button event counting.</li>
+            <li>Unreliable user-interface behavior.</li>
+        </ul>
+
+        <h3>Common Debouncing Techniques</h3>
+        <ul>
+            <li>Software time-based debouncing.</li>
+            <li>Timer-based input validation.</li>
+            <li>Hardware RC filtering.</li>
+            <li>Dedicated switch-debouncing circuits.</li>
+        </ul>
+
+        <div class="note">
+            Avoid using long blocking delays inside an ISR for
+            debouncing. Record the event or timestamp and validate
+            the input in the main loop or a timer-driven task.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>13. Direct Register-Level EXTI Configuration</h2>
+
+        <p>
+            The following is a simplified STM32F4 example showing
+            the main configuration steps for PA0 external interrupt.
+        </p>
+
+        <pre><code>#include "stm32f4xx.h"
+
+void EXTI0_Init(void)
+{
+    /* Enable GPIOA clock */
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+
+    /* Configure PA0 as input */
+    GPIOA->MODER &= ~(3U &lt;&lt; 0U);
+
+    /* Configure PA0 pull-down */
+    GPIOA->PUPDR &= ~(3U &lt;&lt; 0U);
+    GPIOA->PUPDR |=  (2U &lt;&lt; 0U);
+
+    /* Enable SYSCFG clock */
+    RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
+
+    /* Map EXTI0 to GPIOA */
+    SYSCFG->EXTICR[0] &= ~(0xFU &lt;&lt; 0U);
+
+    /* Select rising-edge trigger */
+    EXTI->RTSR |= (1U &lt;&lt; 0U);
+
+    /* Disable falling-edge trigger */
+    EXTI->FTSR &= ~(1U &lt;&lt; 0U);
+
+    /* Unmask EXTI0 interrupt */
+    EXTI->IMR |= (1U &lt;&lt; 0U);
+
+    /* Enable EXTI0 in NVIC */
+    NVIC_SetPriority(EXTI0_IRQn, 2);
+    NVIC_EnableIRQ(EXTI0_IRQn);
+}
+
+void EXTI0_IRQHandler(void)
+{
+    if (EXTI->PR &amp; (1U &lt;&lt; 0U))
+    {
+        /* Clear pending bit by writing one */
+        EXTI->PR = (1U &lt;&lt; 0U);
+
+        /* Handle event */
+    }
+}
+
+int main(void)
+{
+    EXTI0_Init();
+
+    while (1)
+    {
+        /* Main application */
+    }
+}</code></pre>
+
+        <div class="note">
+            This register-level example is specific to the common
+            STM32F4 EXTI/SYSCFG register architecture. Check the exact
+            device reference manual and CMSIS header before using it.
+            The example assumes PA0 is connected to a circuit that
+            produces a rising edge.
+        </div>
+    </section>
+
+    <section class="content-section">
+        <h2>14. Interrupt Service Routine Best Practices</h2>
+
+        <ul>
+            <li>Keep interrupt handlers short and predictable.</li>
+            <li>Acknowledge or clear the interrupt source correctly.</li>
+            <li>Avoid blocking delays inside an ISR.</li>
+            <li>Avoid lengthy calculations inside an ISR.</li>
+            <li>Use flags, queues or task notifications to communicate with main code or RTOS tasks.</li>
+            <li>Use appropriate synchronization for shared data.</li>
+            <li>Understand interrupt priority and nesting behavior.</li>
+            <li>Do not assume volatile guarantees atomic access.</li>
+        </ul>
+    </section>
+
+    <section class="content-section">
+        <h2>15. Common GPIO Interrupt Problems</h2>
+
+        <table>
+            <tr>
+                <th>Problem</th>
+                <th>Possible Cause</th>
+            </tr>
+            <tr>
+                <td>Interrupt does not occur</td>
+                <td>Incorrect EXTI mapping or disabled NVIC interrupt.</td>
+            </tr>
+            <tr>
+                <td>Interrupt occurs on wrong pin</td>
+                <td>Incorrect GPIO-to-EXTI source selection.</td>
+            </tr>
+            <tr>
+                <td>Multiple interrupts per press</td>
+                <td>Mechanical switch bouncing.</td>
+            </tr>
+            <tr>
+                <td>Unexpected interrupt events</td>
+                <td>Floating input or incorrect trigger selection.</td>
+            </tr>
+            <tr>
+                <td>Program gets stuck</td>
+                <td>Incorrect ISR or interrupt flag handling.</td>
+            </tr>
+            <tr>
+                <td>Callback does not execute</td>
+                <td>Missing HAL EXTI handler call or incorrect pin argument.</td>
+            </tr>
+        </table>
+    </section>
+
+    <section class="content-section">
+        <h2>16. Placement-Oriented Interview Questions</h2>
+
+        <h3>Q1. What is a GPIO interrupt?</h3>
+        <p>
+            It is an interrupt generated when a GPIO input detects
+            a configured signal transition or event.
+        </p>
+
+        <h3>Q2. What is EXTI?</h3>
+        <p>
+            EXTI is the external interrupt/event controller that
+            detects configured external signal transitions.
+        </p>
+
+        <h3>Q3. What is the difference between rising and falling edges?</h3>
+        <p>
+            Rising edge is LOW-to-HIGH; falling edge is HIGH-to-LOW.
+        </p>
+
+        <h3>Q4. What is NVIC?</h3>
+        <p>
+            NVIC is the Nested Vectored Interrupt Controller. It
+            manages interrupt enabling, priority and exception handling.
+        </p>
+
+        <h3>Q5. Can two GPIO ports use the same EXTI line number simultaneously?</h3>
+        <p>
+            In the common STM32F4 architecture, each EXTI line selects
+            one GPIO port source at a time.
+        </p>
+
+        <h3>Q6. What is an ISR?</h3>
+        <p>
+            An Interrupt Service Routine is a function executed
+            in response to an interrupt.
+        </p>
+
+        <h3>Q7. Why should an ISR be short?</h3>
+        <p>
+            A long ISR increases interrupt latency and can delay
+            other time-critical processing.
+        </p>
+
+        <h3>Q8. What is switch debouncing?</h3>
+        <p>
+            It is the process of eliminating unwanted transitions
+            caused by mechanical switch contact bouncing.
+        </p>
+
+        <h3>Q9. What is the purpose of EXTI pending register?</h3>
+        <p>
+            It records pending external interrupt conditions.
+        </p>
+
+        <h3>Q10. How does HAL handle an EXTI interrupt?</h3>
+        <p>
+            The IRQ handler calls HAL_GPIO_EXTI_IRQHandler(), which
+            processes the interrupt and invokes the HAL GPIO EXTI callback.
+        </p>
+
+        <h3>Q11. Why is volatile used for an ISR-shared flag?</h3>
+        <p>
+            It prevents the compiler from treating accesses as ordinary
+            unchanging memory values. It does not provide atomicity.
+        </p>
+
+        <h3>Q12. What is the difference between polling and interrupts?</h3>
+        <p>
+            Polling repeatedly checks an input, while interrupt-based
+            handling responds to a configured hardware event.
+        </p>
+    </section>
+
+    <section class="content-section">
+        <h2>17. Practical Exercises</h2>
+
+        <ol>
+            <li>Configure PA0 as an EXTI input.</li>
+            <li>Generate an interrupt on a rising edge.</li>
+            <li>Generate an interrupt on a falling edge.</li>
+            <li>Configure both-edge detection.</li>
+            <li>Enable and configure the corresponding NVIC interrupt.</li>
+            <li>Write an ISR that acknowledges the EXTI pending condition.</li>
+            <li>Toggle an LED using a button interrupt.</li>
+            <li>Implement software debouncing without blocking inside the ISR.</li>
+            <li>Compare polling and interrupt-based button handling.</li>
+            <li>Debug an EXTI application using STM32CubeIDE.</li>
+        </ol>
+    </section>
+
+    <section class="content-section">
+        <h2>18. Lesson Summary</h2>
+
+        <ul>
+            <li>GPIO interrupts allow event-driven input handling.</li>
+            <li>EXTI detects configured external signal transitions.</li>
+            <li>Rising edge means LOW-to-HIGH.</li>
+            <li>Falling edge means HIGH-to-LOW.</li>
+            <li>GPIO pins are mapped to EXTI lines.</li>
+            <li>NVIC manages interrupt enabling and priority.</li>
+            <li>HAL provides EXTI handlers and callbacks.</li>
+            <li>Direct register-level programming provides hardware control.</li>
+            <li>Debouncing improves mechanical button reliability.</li>
+            <li>ISRs should remain short and predictable.</li>
+        </ul>
+    </section>
+
+    <nav class="navigation">
+        <a href="L05_GPIO_Registers_and_Bit_Set_Reset.html">
+            ← Previous Lesson
+        </a>
+        <a href="index.html">Chapter 5 Index</a>
+        <a href="../ch06_STM32_Clock_System_and_Reset/index.html">
+            Next Chapter →
+        </a>
+    </nav>
+
+</main>
+
+<footer>
+    <p style="text-align:center;">
+        © NS Learning Hub | STM32 Microcontrollers
+    </p>
+</footer>
+
+</body>
+</html>
