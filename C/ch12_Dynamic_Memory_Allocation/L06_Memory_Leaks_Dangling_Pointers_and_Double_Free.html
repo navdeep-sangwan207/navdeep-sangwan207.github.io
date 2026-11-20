@@ -1,1 +1,1340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L06 - Memory Leaks, Dangling Pointers and Double Free | C Programming</title>
+    <link rel="stylesheet" href="../../style.css">
 
+    <style>
+        .container {
+            max-width: 1100px;
+            margin: 25px auto;
+            padding: 20px;
+        }
+
+        .lesson-banner {
+            background: linear-gradient(135deg, #174ea6, #007bff);
+            color: white;
+            padding: 28px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+        }
+
+        .lesson-section {
+            background: white;
+            padding: 22px;
+            margin: 20px 0;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+        }
+
+        h2 {
+            color: #174ea6;
+            border-bottom: 2px solid #e5edfa;
+            padding-bottom: 8px;
+        }
+
+        h3 {
+            color: #174ea6;
+            margin-top: 22px;
+        }
+
+        pre {
+            background: #17212f;
+            color: #e8f0fe;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            line-height: 1.5;
+        }
+
+        .output-box {
+            background: #eef6ff;
+            border-left: 4px solid #007bff;
+            padding: 14px;
+            margin: 12px 0;
+            border-radius: 5px;
+        }
+
+        .info-box {
+            background: #eaf7ef;
+            border-left: 4px solid #198754;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+
+        .warning-box {
+            background: #fff4e5;
+            border-left: 4px solid #f0a000;
+            padding: 14px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            border: 1px solid #d7deea;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th {
+            background: #eaf1fc;
+        }
+
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 30px;
+        }
+
+        .navigation a {
+            display: inline-block;
+            background: #174ea6;
+            color: white;
+            padding: 11px 18px;
+            border-radius: 6px;
+            text-decoration: none;
+        }
+
+        .navigation a:hover {
+            background: #007bff;
+        }
+
+        @media (max-width: 650px) {
+            .container {
+                padding: 12px;
+            }
+
+            .lesson-section {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <header class="lesson-banner">
+        <h1>Lecture 06: Memory Leaks, Dangling Pointers and Double Free</h1>
+        <p>
+            Understand common dynamic memory-management
+            defects, identify their causes, debug memory
+            errors and write safer C programs.
+        </p>
+    </header>
+
+    <section class="lesson-section">
+        <h2>1. Learning Objectives</h2>
+
+        <ul>
+            <li>Understand memory leaks and their causes.</li>
+            <li>Identify dangling pointers.</li>
+            <li>Understand use-after-free errors.</li>
+            <li>Recognize double-free defects.</li>
+            <li>Understand invalid free operations.</li>
+            <li>Identify uninitialized and lost pointers.</li>
+            <li>Understand heap corruption.</li>
+            <li>Apply safe memory ownership practices.</li>
+            <li>Debug memory errors using compiler tools.</li>
+            <li>Understand memory safety in embedded systems.</li>
+        </ul>
+    </section>
+
+    <section class="lesson-section">
+        <h2>2. Review: Dynamic Memory Allocation</h2>
+
+        <p>
+            Dynamic memory allocation allows a program
+            to request storage during execution.
+        </p>
+
+        <p>The main functions are:</p>
+
+        <table>
+            <tr>
+                <th>Function</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>malloc()</td>
+                <td>Allocates a block of memory without initializing its contents.</td>
+            </tr>
+            <tr>
+                <td>calloc()</td>
+                <td>Allocates an array and initializes all allocated bytes to zero.</td>
+            </tr>
+            <tr>
+                <td>realloc()</td>
+                <td>Changes the size of an existing allocation.</td>
+            </tr>
+            <tr>
+                <td>free()</td>
+                <td>Releases dynamically allocated storage.</td>
+            </tr>
+        </table>
+
+        <h3>Basic Example</h3>
+
+        <pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void)
+{
+    int *ptr = malloc(sizeof *ptr);
+
+    if (ptr == NULL)
+    {
+        return 1;
+    }
+
+    *ptr = 100;
+
+    printf("Value = %d\n", *ptr);
+
+    free(ptr);
+    ptr = NULL;
+
+    return 0;
+}</code></pre>
+
+        <div class="output-box">
+            <strong>Output:</strong>
+            <pre>Value = 100</pre>
+        </div>
+
+        <p>
+            Correct memory management requires
+            releasing allocated storage when it is
+            no longer needed.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>3. What Is a Memory Leak?</h2>
+
+        <p>
+            A memory leak occurs when dynamically
+            allocated memory is no longer reachable
+            through the program's usable pointers
+            but has not been released.
+        </p>
+
+        <h3>Example of a Memory Leak</h3>
+
+        <pre><code>#include &lt;stdlib.h&gt;
+
+int main(void)
+{
+    int *ptr = malloc(10 * sizeof *ptr);
+
+    if (ptr == NULL)
+    {
+        return 1;
+    }
+
+    ptr = NULL;
+
+    return 0;
+}</code></pre>
+
+        <p>
+            The allocation is still active, but the
+            program loses its only pointer to it.
+            It cannot subsequently release that
+            allocation through the lost pointer.
+        </p>
+
+        <h3>Memory Diagram</h3>
+
+        <pre>
+Before losing the pointer:
+
+ptr ---------> [Allocated memory]
+
+
+After ptr = NULL:
+
+ptr ---------> NULL
+
+               [Allocated memory]
+               Still allocated,
+               but no usable pointer remains.
+        </pre>
+
+        <div class="warning-box">
+            Assigning NULL to a pointer does not
+            release the memory previously allocated
+            through that pointer.
+        </div>
+
+        <h3>Corrected Program</h3>
+
+        <pre><code>#include &lt;stdlib.h&gt;
+
+int main(void)
+{
+    int *ptr = malloc(10 * sizeof *ptr);
+
+    if (ptr == NULL)
+    {
+        return 1;
+    }
+
+    free(ptr);
+    ptr = NULL;
+
+    return 0;
+}</code></pre>
+    </section>
+
+    <section class="lesson-section">
+        <h2>4. Common Causes of Memory Leaks</h2>
+
+        <h3>Cause 1: Forgetting free()</h3>
+
+        <pre><code>int *ptr = malloc(sizeof *ptr);
+
+if (ptr == NULL)
+{
+    return 1;
+}
+
+/* Use ptr */
+
+/* Missing free(ptr) */</code></pre>
+
+        <p>
+            The allocation remains active after
+            the program stops using it.
+        </p>
+
+        <h3>Cause 2: Overwriting an Allocated Pointer</h3>
+
+        <pre><code>int *ptr = malloc(5 * sizeof *ptr);
+
+if (ptr == NULL)
+{
+    return 1;
+}
+
+ptr = malloc(10 * sizeof *ptr);</code></pre>
+
+        <p>
+            The address of the first allocation is
+            overwritten. The first allocation becomes
+            unreachable.
+        </p>
+
+        <h3>Cause 3: Incorrect realloc() Usage</h3>
+
+        <pre><code>ptr = realloc(ptr, new_size);</code></pre>
+
+        <p>
+            If realloc() fails for a nonzero requested
+            size, it returns NULL and leaves the
+            original allocation unchanged. Directly
+            assigning the result can lose the
+            original pointer and cause a memory leak.
+        </p>
+
+        <h3>Safe realloc() Pattern</h3>
+
+        <pre><code>int *temp = realloc(ptr, new_size);
+
+if (temp == NULL)
+{
+    /* Original allocation is still valid */
+    free(ptr);
+    return 1;
+}
+
+ptr = temp;</code></pre>
+
+        <div class="info-box">
+            In a program that needs to preserve the
+            original data after realloc() failure,
+            do not free ptr in the failure branch.
+            Retain it for later use or release it
+            during normal cleanup.
+        </div>
+
+        <h3>Cause 4: Returning from a Function Without Cleanup</h3>
+
+        <pre><code>void process(void)
+{
+    int *data = malloc(100 * sizeof *data);
+
+    if (data == NULL)
+    {
+        return;
+    }
+
+    if (some_condition)
+    {
+        return;  /* Memory leak */
+    }
+
+    free(data);
+}</code></pre>
+
+        <p>
+            If the condition is true, the function
+            returns without releasing the allocation.
+        </p>
+
+        <h3>Improved Cleanup Pattern</h3>
+
+        <pre><code>void process(void)
+{
+    int *data = malloc(100 * sizeof *data);
+
+    if (data == NULL)
+    {
+        return;
+    }
+
+    if (some_condition)
+    {
+        goto cleanup;
+    }
+
+    /* Perform processing */
+
+cleanup:
+    free(data);
+}</code></pre>
+
+        <p>
+            In C, a cleanup label can help centralize
+            resource release when a function has
+            multiple error paths.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>5. What Is a Dangling Pointer?</h2>
+
+        <p>
+            A dangling pointer is a pointer that
+            refers to an object whose lifetime has
+            ended.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void)
+{
+    int *ptr = malloc(sizeof *ptr);
+
+    if (ptr == NULL)
+    {
+        return 1;
+    }
+
+    *ptr = 50;
+
+    free(ptr);
+
+    printf("%d\n", *ptr);  /* Invalid access */
+
+    return 0;
+}</code></pre>
+
+        <p>
+            After free(ptr), the allocated object
+            no longer exists. The pointer value
+            must not be dereferenced.
+        </p>
+
+        <div class="warning-box">
+            Dereferencing a dangling pointer causes
+            undefined behavior. The program may
+            crash, display unexpected values or
+            appear to work temporarily.
+        </div>
+
+        <h3>Safer Version</h3>
+
+        <pre><code>free(ptr);
+ptr = NULL;</code></pre>
+
+        <p>
+            Setting a pointer to NULL after freeing
+            it helps prevent accidental reuse through
+            that particular pointer.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>6. Use-After-Free Error</h2>
+
+        <p>
+            Use-after-free occurs when a program
+            accesses dynamically allocated memory
+            after that allocation has been released.
+        </p>
+
+        <h3>Example</h3>
+
+        <pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void)
+{
+    int *ptr = malloc(3 * sizeof *ptr);
+
+    if (ptr == NULL)
+    {
+        return 1;
+    }
+
+    ptr[0] = 10;
+    ptr[1] = 20;
+    ptr[2] = 30;
+
+    free(ptr);
+
+    ptr[1] = 100;  /* Use-after-free */
+
+    return 0;
+}</code></pre>
+
+        <h3>Why Is It Dangerous?</h3>
+
+        <ul>
+            <li>The memory may have been reused for another allocation.</li>
+            <li>Data belonging to another object may be corrupted.</li>
+            <li>The program may crash unpredictably.</li>
+            <li>It can create serious security vulnerabilities.</li>
+        </ul>
+
+        <div class="info-box">
+            Do not access an object after its lifetime
+            has ended. Assigning NULL to the pointer
+            immediately after free() is a useful
+            defensive practice.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>7. What Is a Double Free Error?</h2>
+
+        <p>
+            A double free occurs when the same
+            allocation is released more than once
+            without a new allocation establishing
+            a valid object at that address.
+        </p>
+
+        <h3>Incorrect Example</h3>
+
+        <pre><code>#include &lt;stdlib.h&gt;
+
+int main(void)
+{
+    int *ptr = malloc(sizeof *ptr);
+
+    if (ptr == NULL)
+    {
+        return 1;
+    }
+
+    free(ptr);
+
+    free(ptr);  /* Double free */
+
+    return 0;
+}</code></pre>
+
+        <p>
+            The second free() call is invalid
+            because the allocation has already
+            been released.
+        </p>
+
+        <h3>Corrected Example</h3>
+
+        <pre><code>#include &lt;stdlib.h&gt;
+
+int main(void)
+{
+    int *ptr = malloc(sizeof *ptr);
+
+    if (ptr == NULL)
+    {
+        return 1;
+    }
+
+    free(ptr);
+    ptr = NULL;
+
+    free(ptr);  /* Safe: free(NULL) does nothing */
+
+    return 0;
+}</code></pre>
+
+        <div class="info-box">
+            Calling free(NULL) is explicitly permitted
+            by C. It performs no operation.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>8. Invalid Free Operations</h2>
+
+        <p>
+            The free() function must receive either
+            NULL or a pointer value returned by a
+            compatible memory allocation function
+            that has not already been released.
+        </p>
+
+        <h3>Example 1: Freeing a Normal Local Variable</h3>
+
+        <pre><code>#include &lt;stdlib.h&gt;
+
+int main(void)
+{
+    int value = 100;
+
+    free(&amp;value);  /* Invalid */
+
+    return 0;
+}</code></pre>
+
+        <p>
+            value is an automatic local object,
+            not a dynamically allocated object.
+        </p>
+
+        <h3>Example 2: Freeing an Interior Pointer</h3>
+
+        <pre><code>#include &lt;stdlib.h&gt;
+
+int main(void)
+{
+    int *ptr = malloc(5 * sizeof *ptr);
+
+    if (ptr == NULL)
+    {
+        return 1;
+    }
+
+    free(ptr + 1);  /* Invalid */
+
+    free(ptr);
+
+    return 0;
+}</code></pre>
+
+        <p>
+            ptr + 1 points to an element inside
+            the allocation. It is not the original
+            pointer returned by malloc().
+        </p>
+
+        <h3>Correct Version</h3>
+
+        <pre><code>free(ptr);</code></pre>
+
+        <div class="warning-box">
+            Never pass an interior pointer, a stack
+            variable address or an already freed
+            pointer to free().
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>9. Uninitialized and Lost Pointers</h2>
+
+        <h3>Uninitialized Pointer</h3>
+
+        <pre><code>int *ptr;
+
+*ptr = 100;  /* Undefined behavior */</code></pre>
+
+        <p>
+            ptr has not been initialized. It does
+            not point to a valid int object.
+        </p>
+
+        <h3>Safer Declaration</h3>
+
+        <pre><code>int *ptr = NULL;</code></pre>
+
+        <p>
+            Before dereferencing it, assign it a
+            valid address.
+        </p>
+
+        <h3>Lost Pointer Example</h3>
+
+        <pre><code>int *ptr = malloc(5 * sizeof *ptr);
+
+if (ptr == NULL)
+{
+    return 1;
+}
+
+ptr = NULL;  /* Allocation becomes unreachable */</code></pre>
+
+        <p>
+            The pointer is valid initially, but
+            assigning NULL without first freeing
+            the allocation causes a memory leak.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>10. Heap Buffer Overflow</h2>
+
+        <p>
+            A heap buffer overflow occurs when a
+            program accesses memory beyond the
+            boundaries of a dynamically allocated
+            block.
+        </p>
+
+        <h3>Incorrect Example</h3>
+
+        <pre><code>#include &lt;stdlib.h&gt;
+
+int main(void)
+{
+    int *arr = malloc(3 * sizeof *arr);
+
+    if (arr == NULL)
+    {
+        return 1;
+    }
+
+    arr[0] = 10;
+    arr[1] = 20;
+    arr[2] = 30;
+
+    arr[3] = 40;  /* Out of bounds */
+
+    free(arr);
+
+    return 0;
+}</code></pre>
+
+        <p>
+            Only indexes 0, 1 and 2 are valid.
+            Index 3 is outside the allocation.
+        </p>
+
+        <h3>Correct Practice</h3>
+
+        <pre><code>for (size_t i = 0; i &lt; 3; i++)
+{
+    arr[i] = (int)i;
+}</code></pre>
+
+        <div class="warning-box">
+            Out-of-bounds writes may corrupt unrelated
+            memory and cause failures far away from
+            the original programming mistake.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>11. Heap Corruption</h2>
+
+        <p>
+            Heap corruption occurs when a program
+            damages memory-management data or
+            allocated objects through invalid
+            memory operations.
+        </p>
+
+        <p>Common causes include:</p>
+
+        <ul>
+            <li>Writing beyond allocated memory.</li>
+            <li>Writing through dangling pointers.</li>
+            <li>Double-free operations.</li>
+            <li>Invalid free() calls.</li>
+            <li>Incorrect pointer arithmetic.</li>
+        </ul>
+
+        <p>
+            Heap corruption may not be detected
+            immediately. A failure can occur later
+            when another allocation or deallocation
+            takes place.
+        </p>
+
+        <h3>Debugging Approach</h3>
+
+        <ol>
+            <li>Identify the first invalid memory operation.</li>
+            <li>Check allocation sizes and array indexes.</li>
+            <li>Inspect pointer initialization and lifetime.</li>
+            <li>Review every free() call.</li>
+            <li>Use runtime memory-checking tools.</li>
+        </ol>
+    </section>
+
+    <section class="lesson-section">
+        <h2>12. Memory Ownership and Lifetime</h2>
+
+        <p>
+            Memory ownership describes which part
+            of a program is responsible for releasing
+            a dynamically allocated object.
+        </p>
+
+        <h3>Example: Function Owns the Allocation</h3>
+
+        <pre><code>#include &lt;stdlib.h&gt;
+
+int *createValue(void)
+{
+    int *ptr = malloc(sizeof *ptr);
+
+    if (ptr == NULL)
+    {
+        return NULL;
+    }
+
+    *ptr = 100;
+
+    return ptr;
+}
+
+int main(void)
+{
+    int *data = createValue();
+
+    if (data == NULL)
+    {
+        return 1;
+    }
+
+    /* Caller uses the returned allocation. */
+
+    free(data);
+    data = NULL;
+
+    return 0;
+}</code></pre>
+
+        <p>
+            The function creates the allocation and
+            transfers responsibility to the caller.
+            The caller releases it when finished.
+        </p>
+
+        <h3>Ownership Rules</h3>
+
+        <ul>
+            <li>Every allocation should have a clearly defined owner.</li>
+            <li>The owner is responsible for releasing the allocation.</li>
+            <li>Do not free memory owned by another component unless ownership is transferred.</li>
+            <li>Document whether a function borrows or transfers a pointer.</li>
+            <li>Do not return the address of an automatic local variable.</li>
+        </ul>
+    </section>
+
+    <section class="lesson-section">
+        <h2>13. Safe Memory Management Pattern</h2>
+
+        <p>
+            A reliable C program should follow a
+            consistent allocation and cleanup process.
+        </p>
+
+        <pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(void)
+{
+    int *data = NULL;
+    int status = EXIT_FAILURE;
+
+    data = malloc(5 * sizeof *data);
+
+    if (data == NULL)
+    {
+        fprintf(stderr, "Allocation failed\n");
+        goto cleanup;
+    }
+
+    for (size_t i = 0; i &lt; 5; i++)
+    {
+        data[i] = (int)(i + 1) * 10;
+    }
+
+    for (size_t i = 0; i &lt; 5; i++)
+    {
+        printf("%d ", data[i]);
+    }
+
+    printf("\n");
+
+    status = EXIT_SUCCESS;
+
+cleanup:
+    free(data);
+    data = NULL;
+
+    return status;
+}</code></pre>
+
+        <div class="output-box">
+            <strong>Output:</strong>
+            <pre>10 20 30 40 50</pre>
+        </div>
+
+        <p>
+            This pattern ensures that the allocated
+            pointer is released through one cleanup
+            section, including error paths.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>14. Detecting Memory Errors Using GCC AddressSanitizer</h2>
+
+        <p>
+            AddressSanitizer is a runtime memory
+            error detector supported by several
+            compilers, including GCC and Clang.
+        </p>
+
+        <p>It can detect errors such as:</p>
+
+        <ul>
+            <li>Heap buffer overflow.</li>
+            <li>Stack buffer overflow.</li>
+            <li>Use-after-free.</li>
+            <li>Double free.</li>
+            <li>Some memory leaks, when leak detection is supported.</li>
+        </ul>
+
+        <h3>Compile Command</h3>
+
+        <pre><code>gcc -std=c11 -Wall -Wextra -g -fsanitize=address -fno-omit-frame-pointer memory_test.c -o memory_test</code></pre>
+
+        <h3>Run</h3>
+
+        <pre><code>./memory_test</code></pre>
+
+        <p>
+            If the program performs an invalid memory
+            operation, AddressSanitizer can report
+            the error and provide a stack trace.
+        </p>
+
+        <div class="info-box">
+            AddressSanitizer availability and some
+            features depend on the compiler,
+            operating system and runtime environment.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>15. Detecting Memory Leaks Using Valgrind</h2>
+
+        <p>
+            Valgrind is a memory debugging tool
+            commonly used on Linux systems.
+        </p>
+
+        <h3>Installation on Ubuntu</h3>
+
+        <pre><code>sudo apt update
+sudo apt install valgrind</code></pre>
+
+        <h3>Compile with Debug Information</h3>
+
+        <pre><code>gcc -std=c11 -Wall -Wextra -g memory_test.c -o memory_test</code></pre>
+
+        <h3>Run Valgrind</h3>
+
+        <pre><code>valgrind --leak-check=full --show-leak-kinds=all ./memory_test</code></pre>
+
+        <p>Valgrind can report:</p>
+
+        <ul>
+            <li>Definitely lost memory.</li>
+            <li>Indirectly lost memory.</li>
+            <li>Possibly lost memory.</li>
+            <li>Still reachable allocations.</li>
+            <li>Invalid memory reads and writes.</li>
+        </ul>
+
+        <p>
+            A clean report is useful evidence that
+            the tested execution did not exhibit
+            the reported memory errors. It does not
+            prove that every execution path is safe.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>16. Memory Management in Embedded Systems</h2>
+
+        <p>
+            Dynamic memory allocation requires
+            particular care in embedded systems.
+        </p>
+
+        <h3>Potential Problems</h3>
+
+        <ul>
+            <li>Limited RAM availability.</li>
+            <li>Heap fragmentation.</li>
+            <li>Unpredictable allocation failures.</li>
+            <li>Allocation and deallocation overhead.</li>
+            <li>Memory leaks during long-running operation.</li>
+            <li>Timing uncertainty in real-time applications.</li>
+        </ul>
+
+        <h3>Example: Embedded Sensor Buffer</h3>
+
+        <p>
+            Suppose an embedded device receives
+            sensor samples continuously.
+        </p>
+
+        <p>
+            Repeatedly allocating and releasing
+            memory for every sample can create
+            unnecessary overhead and fragmentation.
+        </p>
+
+        <p>
+            A fixed-size buffer or a preallocated
+            ring buffer may be more appropriate
+            when the maximum data size is known.
+        </p>
+
+        <h3>Recommended Practices</h3>
+
+        <ul>
+            <li>Prefer static or preallocated memory when requirements are known.</li>
+            <li>Define maximum buffer sizes.</li>
+            <li>Avoid unnecessary allocation in time-critical code.</li>
+            <li>Check every allocation result.</li>
+            <li>Use predictable ownership and cleanup rules.</li>
+            <li>Test memory usage over long-running executions.</li>
+            <li>Consider RTOS memory-pool facilities where appropriate.</li>
+        </ul>
+
+        <div class="info-box">
+            Dynamic allocation is not universally
+            prohibited in embedded systems. Its
+            suitability depends on memory limits,
+            timing requirements, allocator behavior
+            and the system's reliability requirements.
+        </div>
+    </section>
+
+    <section class="lesson-section">
+        <h2>17. Common Interview Questions</h2>
+
+        <h3>Q1. What is a memory leak?</h3>
+        <p>
+            A memory leak occurs when an allocation
+            is no longer reachable through usable
+            pointers and cannot be released through
+            the program's normal cleanup process.
+        </p>
+
+        <h3>Q2. What is a dangling pointer?</h3>
+        <p>
+            A dangling pointer refers to an object
+            whose lifetime has ended.
+        </p>
+
+        <h3>Q3. What is use-after-free?</h3>
+        <p>
+            It is an invalid access to an object
+            after its allocated storage has been
+            released.
+        </p>
+
+        <h3>Q4. What is a double free?</h3>
+        <p>
+            It is an attempt to release the same
+            allocation more than once.
+        </p>
+
+        <h3>Q5. What happens if free() is called twice?</h3>
+        <p>
+            The behavior is undefined if the same
+            allocation has already been released.
+        </p>
+
+        <h3>Q6. What happens when free(NULL) is called?</h3>
+        <p>
+            No operation is performed. It is safe
+            and explicitly permitted by C.
+        </p>
+
+        <h3>Q7. Does setting a pointer to NULL free memory?</h3>
+        <p>
+            No. It changes the pointer value but
+            does not release the allocation.
+        </p>
+
+        <h3>Q8. How can a memory leak be detected?</h3>
+        <p>
+            Tools such as Valgrind and AddressSanitizer
+            can detect many memory-management errors.
+        </p>
+
+        <h3>Q9. What is heap corruption?</h3>
+        <p>
+            It is damage to allocated memory or
+            memory-management data caused by invalid
+            memory operations.
+        </p>
+
+        <h3>Q10. What is the difference between a memory leak and dangling pointer?</h3>
+        <p>
+            A memory leak involves an allocation
+            that cannot be reached for cleanup.
+            A dangling pointer refers to an object
+            whose lifetime has already ended.
+        </p>
+
+        <h3>Q11. Why should realloc() use a temporary pointer?</h3>
+        <p>
+            If realloc() fails for a nonzero size,
+            the original allocation remains valid.
+            A temporary pointer prevents losing
+            the original address.
+        </p>
+
+        <h3>Q12. Why is dynamic memory risky in embedded systems?</h3>
+        <p>
+            Limited RAM, fragmentation, allocation
+            failures and timing uncertainty can
+            affect reliability and real-time behavior.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>18. Placement-Oriented Debugging Exercises</h2>
+
+        <h3>Problem 1: Identify the Memory Leak</h3>
+
+        <pre><code>int *ptr = malloc(10 * sizeof *ptr);
+
+if (ptr == NULL)
+{
+    return 1;
+}
+
+ptr = malloc(20 * sizeof *ptr);
+
+free(ptr);</code></pre>
+
+        <p><strong>Question:</strong> What is wrong?</p>
+
+        <p><strong>Answer:</strong></p>
+
+        <p>
+            The first allocation is overwritten
+            without being released. The program
+            loses access to that allocation.
+        </p>
+
+        <h3>Problem 2: Identify the Invalid Access</h3>
+
+        <pre><code>int *ptr = malloc(sizeof *ptr);
+
+if (ptr == NULL)
+{
+    return 1;
+}
+
+*ptr = 100;
+
+free(ptr);
+
+printf("%d", *ptr);</code></pre>
+
+        <p><strong>Answer:</strong></p>
+
+        <p>
+            The program dereferences ptr after
+            the allocated object has been released.
+            This is a use-after-free error.
+        </p>
+
+        <h3>Problem 3: Identify the Double Free</h3>
+
+        <pre><code>int *ptr = malloc(sizeof *ptr);
+
+if (ptr == NULL)
+{
+    return 1;
+}
+
+free(ptr);
+free(ptr);</code></pre>
+
+        <p><strong>Answer:</strong></p>
+
+        <p>
+            The same allocation is released twice.
+            The second call has undefined behavior.
+        </p>
+
+        <h3>Problem 4: Correct the Invalid Free</h3>
+
+        <pre><code>int *ptr = malloc(5 * sizeof *ptr);
+
+if (ptr == NULL)
+{
+    return 1;
+}
+
+free(ptr + 2);</code></pre>
+
+        <p><strong>Correct statement:</strong></p>
+
+        <pre><code>free(ptr);</code></pre>
+
+        <h3>Problem 5: Correct the Missing Cleanup</h3>
+
+        <pre><code>int *data = malloc(100 * sizeof *data);
+
+if (data == NULL)
+{
+    return 1;
+}
+
+if (input_error)
+{
+    return 1;
+}
+
+free(data);</code></pre>
+
+        <p><strong>Answer:</strong></p>
+
+        <p>
+            The error path returns without freeing
+            data. Use a common cleanup section or
+            explicitly release data before returning.
+        </p>
+    </section>
+
+    <section class="lesson-section">
+        <h2>19. Practical Exercises</h2>
+
+        <h3>Basic Level</h3>
+
+        <ol>
+            <li>Write a program that allocates and frees an integer array.</li>
+            <li>Identify a memory leak caused by overwriting a pointer.</li>
+            <li>Demonstrate why a pointer must not be used after free().</li>
+            <li>Correct a program containing a double-free error.</li>
+        </ol>
+
+        <h3>Intermediate Level</h3>
+
+        <ol>
+            <li>Write a function that allocates memory and returns it to the caller.</li>
+            <li>Implement safe resizing with realloc().</li>
+            <li>Correct a program with multiple early-return memory leaks.</li>
+            <li>Use AddressSanitizer to identify a heap buffer overflow.</li>
+            <li>Use Valgrind to detect a memory leak on Ubuntu.</li>
+        </ol>
+
+        <h3>Advanced Level</h3>
+
+        <ol>
+            <li>Design a dynamic array module with clear ownership rules.</li>
+            <li>Implement a cleanup strategy for a program with multiple allocations.</li>
+            <li>Debug a use-after-free error involving two pointers to the same allocation.</li>
+            <li>Analyze heap fragmentation in a long-running application.</li>
+            <li>Design a bounded memory buffer suitable for an embedded application.</li>
+        </ol>
+    </section>
+
+    <section class="lesson-section">
+        <h2>20. Quick Revision Checklist</h2>
+
+        <ul>
+            <li>Every successful dynamic allocation needs an appropriate cleanup strategy.</li>
+            <li>Never overwrite the only pointer to an active allocation.</li>
+            <li>Never dereference a pointer after its object's lifetime ends.</li>
+            <li>Never free the same allocation twice.</li>
+            <li>Never pass an interior pointer to free().</li>
+            <li>free(NULL) is safe.</li>
+            <li>Use a temporary pointer with realloc().</li>
+            <li>Check array boundaries before accessing elements.</li>
+            <li>Define clear memory ownership.</li>
+            <li>Use memory debugging tools during testing.</li>
+            <li>Consider fragmentation and deterministic allocation in embedded systems.</li>
+        </ul>
+    </section>
+
+    <section class="lesson-section">
+        <h2>21. Next Lecture</h2>
+
+        <h3>Lecture 07: Allocation Failure and Safe Memory Management</h3>
+
+        <p>
+            The next lecture focuses on writing
+            robust memory allocation code and
+            handling allocation failures safely.
+        </p>
+
+        <p>Topics include:</p>
+
+        <ul>
+            <li>Allocation failure scenarios.</li>
+            <li>Safe allocation wrappers.</li>
+            <li>Integer overflow in allocation calculations.</li>
+            <li>Defensive memory management.</li>
+            <li>Resource cleanup strategies.</li>
+            <li>Memory ownership and API design.</li>
+            <li>Embedded memory constraints.</li>
+            <li>Placement-oriented memory management problems.</li>
+        </ul>
+    </section>
+
+    <nav class="navigation">
+        <a href="L05_Dynamic_Arrays_and_Multidimensional_Arrays.html">
+            ← Previous Lecture
+        </a>
+
+        <a href="index.html">
+            Chapter Index
+        </a>
+
+        <a href="../c.html">
+            C Programming Home
+        </a>
+
+        <a href="L07_Allocation_Failure_and_Safe_Memory_Management.html">
+            Next Lecture →
+        </a>
+    </nav>
+
+</div>
+
+</body>
+</html>
