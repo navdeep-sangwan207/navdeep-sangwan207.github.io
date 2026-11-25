@@ -1,1 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOSFET Driver and Load Switching Circuits</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f3f7fc;color:#1e293b;line-height:1.65}
+header{background:linear-gradient(135deg,#174ea6,#007bff);color:white;padding:28px 20px;text-align:center}
+header h1{margin:0}
+.container{max-width:1100px;margin:auto;padding:20px}
+.card{background:white;padding:22px;margin:20px 0;border-radius:12px;box-shadow:0 3px 12px #00000010}
+h2{color:#174ea6;border-bottom:2px solid #e5efff;padding-bottom:8px}
+h3{color:#2563eb}
+svg{max-width:100%;height:auto}
+.diagram{display:block;margin:auto}
+button{background:#174ea6;color:white;border:0;padding:10px 16px;border-radius:7px;cursor:pointer;margin:5px}
+button:hover{background:#007bff}
+input[type=range]{width:100%;accent-color:#174ea6}
+input[type=number],select{padding:9px;border:1px solid #ccd5e1;border-radius:6px;width:100%;margin:5px 0}
+label{font-weight:bold;display:block;margin-top:12px}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{padding:10px;border:1px solid #dbe3ef;text-align:left}
+th{background:#eaf2ff}
+canvas{width:100%;height:300px;border:1px solid #dbe3ef;border-radius:8px;background:white}
+.note{background:#eaf4ff;padding:14px;border-left:5px solid #174ea6;border-radius:6px}
+.warn{background:#fff3e0;padding:14px;border-left:5px solid #f59e0b;border-radius:6px}
+footer{text-align:center;padding:25px;background:#eaf2ff}
+</style>
+</head>
+<body>
 
+<header>
+<h1>Chapter 7: Field Effect Transistors</h1>
+<h2 style="color:white;border:0">Lecture 11: MOSFET Driver and Load Switching Circuits</h2>
+<p>Gate Drivers • Low-Side Switching • High-Side Switching • Inductive Loads • PWM</p>
+</header>
+
+<div class="container">
+
+<div class="card">
+<h2>1. Learning Objectives</h2>
+<ul>
+<li>Understand the role of MOSFET gate drivers.</li>
+<li>Understand low-side and high-side switching.</li>
+<li>Design basic MOSFET load-switching circuits.</li>
+<li>Understand gate resistors, pull-down resistors and gate charge.</li>
+<li>Understand LED, relay, motor and other load switching.</li>
+<li>Calculate gate-drive, conduction and switching losses.</li>
+<li>Understand flyback diode protection for inductive loads.</li>
+<li>Understand PWM switching and practical MOSFET selection.</li>
+</ul>
+</div>
+
+<div class="card">
+<h2>2. Why MOSFET Drivers Are Required</h2>
+<p>A MOSFET gate behaves approximately as a capacitive load. A controller GPIO can sometimes directly drive a small MOSFET, but the GPIO must be capable of charging and discharging the gate sufficiently fast and to the required voltage.</p>
+
+<svg class="diagram" viewBox="0 0 850 380">
+<rect x="10" y="10" width="830" height="360" rx="12" fill="#f8fbff" stroke="#cbd5e1"/>
+<text x="425" y="42" text-anchor="middle" font-size="22" fill="#174ea6" font-weight="bold">Gate-Drive System</text>
+
+<rect x="60" y="100" width="180" height="110" rx="12" fill="#dbeafe" stroke="#2563eb" stroke-width="3"/>
+<text x="150" y="145" text-anchor="middle" font-size="20">Controller</text>
+<text x="150" y="180" text-anchor="middle" font-size="17">MCU / GPIO</text>
+
+<rect x="330" y="100" width="180" height="110" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/>
+<text x="420" y="145" text-anchor="middle" font-size="20">Gate Driver</text>
+<text x="420" y="180" text-anchor="middle" font-size="17">Optional</text>
+
+<rect x="600" y="100" width="180" height="110" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="3"/>
+<text x="690" y="145" text-anchor="middle" font-size="20">MOSFET</text>
+<text x="690" y="180" text-anchor="middle" font-size="17">Power switch</text>
+
+<line x1="240" y1="155" x2="330" y2="155" stroke="#334155" stroke-width="4"/>
+<polygon points="320,147 330,155 320,163" fill="#334155"/>
+<line x1="510" y1="155" x2="600" y2="155" stroke="#334155" stroke-width="4"/>
+<polygon points="590,147 600,155 590,163" fill="#334155"/>
+
+<text x="425" y="265" text-anchor="middle" font-size="18">Gate charging and discharging current</text>
+<text x="425" y="300" text-anchor="middle" font-size="18">Switching speed • Losses • EMI</text>
+<text x="425" y="335" text-anchor="middle" font-size="16">Driver selection depends on gate charge and switching requirements</text>
+</svg>
+
+<h3>Gate-driver functions</h3>
+<ul>
+<li>Provide adequate gate voltage.</li>
+<li>Supply and remove gate charge quickly.</li>
+<li>Reduce switching time when appropriate.</li>
+<li>Improve switching control.</li>
+<li>Help manage switching losses and EMI.</li>
+<li>Provide additional protection in some driver ICs.</li>
+</ul>
+
+<div class="note">
+A gate driver is not mandatory for every MOSFET. A GPIO can directly drive a suitable MOSFET when the drive voltage, current, switching speed, GPIO capability and circuit conditions are appropriate.
+</div>
+</div>
+
+<div class="card">
+<h2>3. Low-Side NMOS Driver Circuit</h2>
+<p>A low-side NMOS is commonly used to switch a DC load. The MOSFET is connected between the load and ground.</p>
+
+<svg class="diagram" viewBox="0 0 850 480">
+<rect x="10" y="10" width="830" height="460" rx="12" fill="#f8fbff" stroke="#cbd5e1"/>
+<text x="425" y="42" text-anchor="middle" font-size="22" fill="#174ea6" font-weight="bold">Low-Side NMOS Switching</text>
+
+<text x="140" y="90" font-size="20">+VLOAD</text>
+<line x1="170" y1="110" x2="170" y2="145" stroke="#334155" stroke-width="3"/>
+<rect x="130" y="145" width="80" height="95" rx="8" fill="#dbeafe" stroke="#2563eb" stroke-width="3"/>
+<text x="170" y="195" text-anchor="middle" font-size="18">Load</text>
+<line x1="170" y1="240" x2="170" y2="280" stroke="#334155" stroke-width="3"/>
+
+<rect x="130" y="280" width="80" height="95" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/>
+<text x="170" y="325" text-anchor="middle" font-size="18">NMOS</text>
+<text x="220" y="305" font-size="17">D</text>
+<text x="220" y="355" font-size="17">S</text>
+
+<line x1="170" y1="375" x2="170" y2="410" stroke="#334155" stroke-width="3"/>
+<line x1="130" y1="410" x2="210" y2="410" stroke="#334155" stroke-width="3"/>
+<line x1="140" y1="420" x2="200" y2="420" stroke="#334155" stroke-width="3"/>
+<line x1="155" y1="430" x2="185" y2="430" stroke="#334155" stroke-width="3"/>
+
+<line x1="210" y1="330" x2="280" y2="330" stroke="#334155" stroke-width="3"/>
+<rect x="280" y="310" width="100" height="40" rx="6" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+<text x="330" y="335" text-anchor="middle" font-size="16">RG</text>
+<line x1="380" y1="330" x2="430" y2="330" stroke="#334155" stroke-width="3"/>
+
+<rect x="430" y="290" width="150" height="80" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="3"/>
+<text x="505" y="325" text-anchor="middle" font-size="18">Driver / GPIO</text>
+<text x="505" y="350" text-anchor="middle" font-size="16">Gate control</text>
+
+<line x1="170" y1="330" x2="170" y2="250" stroke="#2563eb" stroke-width="4" stroke-dasharray="8 6"/>
+<text x="70" y="270" font-size="17" fill="#2563eb">Drain</text>
+
+<text x="620" y="120" font-size="18" font-weight="bold">Pull-down resistor</text>
+<text x="620" y="155" font-size="17">Gate to source</text>
+<text x="620" y="190" font-size="17">Prevents floating gate</text>
+
+<text x="620" y="245" font-size="18" font-weight="bold">Gate resistor</text>
+<text x="620" y="280" font-size="17">Controls gate current</text>
+<text x="620" y="315" font-size="17">Helps control ringing</text>
+<text x="620" y="350" font-size="17">Affects switching speed</text>
+</svg>
+
+<h3>Working</h3>
+<ol>
+<li>GPIO LOW: MOSFET OFF.</li>
+<li>GPIO HIGH: MOSFET turns ON if gate drive is adequate.</li>
+<li>Current flows through the load, drain, MOSFET channel and ground.</li>
+<li>Gate resistor influences switching transitions.</li>
+<li>Pull-down resistor ensures the gate remains LOW when the driver is disconnected or high impedance.</li>
+</ol>
+</div>
+
+<div class="card">
+<h2>4. Gate Resistor Selection</h2>
+<p>A series gate resistor is used to influence the transient gate current and switching behavior.</p>
+
+<p>A simplified initial peak current estimate is:</p>
+<p><strong>IG ≈ VDRIVE/RG</strong></p>
+
+<p>This is only a rough initial estimate. The actual current depends on driver output impedance, gate voltage, MOSFET capacitance and gate-charge behavior.</p>
+
+<h3>Example</h3>
+<ul>
+<li>Driver voltage = 5V</li>
+<li>Gate resistor = 50Ω</li>
+</ul>
+
+<p>IG ≈ 5/50</p>
+<p><strong>IG ≈ 0.1A = 100mA</strong></p>
+
+<p>This is a simplified estimate of initial drive current, not continuous current.</p>
+
+<h3>Factors affecting RG</h3>
+<ul>
+<li>MOSFET gate charge.</li>
+<li>Driver peak-current capability.</li>
+<li>Switching frequency.</li>
+<li>Desired transition time.</li>
+<li>Ringing and EMI.</li>
+<li>PCB layout and parasitic inductance.</li>
+</ul>
+</div>
+
+<div class="card">
+<h2>5. Gate Pull-Down Resistor</h2>
+<p>A pull-down resistor is connected between gate and source in a low-side NMOS circuit.</p>
+
+<h3>Purpose</h3>
+<ul>
+<li>Prevents gate floating.</li>
+<li>Provides a defined OFF state.</li>
+<li>Discharges the gate when the controller output becomes high impedance.</li>
+<li>Helps ensure predictable startup and reset behavior.</li>
+</ul>
+
+<h3>Typical starting values</h3>
+<p>10kΩ to 100kΩ may be used in many circuits, but the value depends on leakage, driver behavior, switching requirements, noise and power consumption.</p>
+</div>
+
+<div class="card">
+<h2>6. High-Side Switching</h2>
+<p>High-side switching places the transistor between the positive supply and the load.</p>
+
+<h3>PMOS high-side switch</h3>
+<ul>
+<li>PMOS source is commonly connected to the positive supply.</li>
+<li>Gate near source voltage: OFF.</li>
+<li>Gate pulled sufficiently below source: ON.</li>
+<li>Gate control must be referenced to the source.</li>
+</ul>
+
+<svg class="diagram" viewBox="0 0 850 430">
+<rect x="10" y="10" width="830" height="410" rx="12" fill="#f8fbff" stroke="#cbd5e1"/>
+<text x="425" y="42" text-anchor="middle" font-size="22" fill="#174ea6" font-weight="bold">PMOS High-Side Switching</text>
+
+<text x="140" y="90" font-size="20">+V</text>
+<line x1="170" y1="110" x2="170" y2="145" stroke="#334155" stroke-width="3"/>
+
+<rect x="130" y="145" width="80" height="75" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/>
+<text x="170" y="190" text-anchor="middle" font-size="18">PMOS</text>
+<line x1="170" y1="220" x2="170" y2="255" stroke="#334155" stroke-width="3"/>
+
+<rect x="130" y="255" width="80" height="95" rx="8" fill="#dbeafe" stroke="#2563eb" stroke-width="3"/>
+<text x="170" y="305" text-anchor="middle" font-size="18">Load</text>
+<line x1="170" y1="350" x2="170" y2="380" stroke="#334155" stroke-width="3"/>
+<line x1="130" y1="380" x2="210" y2="380" stroke="#334155" stroke-width="3"/>
+<line x1="140" y1="390" x2="200" y2="390" stroke="#334155" stroke-width="3"/>
+<line x1="155" y1="400" x2="185" y2="400" stroke="#334155" stroke-width="3"/>
+
+<line x1="210" y1="180" x2="300" y2="180" stroke="#334155" stroke-width="3"/>
+<rect x="300" y="160" width="130" height="40" rx="6" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+<text x="365" y="185" text-anchor="middle" font-size="17">Gate control</text>
+
+<text x="480" y="130" font-size="18" font-weight="bold">PMOS operation</text>
+<text x="480" y="170" font-size="17">VGS ≈ 0: OFF</text>
+<text x="480" y="210" font-size="17">VGS sufficiently negative: ON</text>
+<text x="480" y="260" font-size="17">Gate voltage is measured</text>
+<text x="480" y="290" font-size="17">relative to source.</text>
+<text x="480" y="340" font-size="17">Observe maximum |VGS|.</text>
+</svg>
+
+<h3>N-channel high-side switching</h3>
+<p>An N-channel MOSFET on the high side may require the gate voltage to rise above the source voltage to turn ON. A dedicated high-side driver, bootstrap circuit or charge pump may be required, depending on topology.</p>
+
+<div class="warn">
+Do not assume an N-channel MOSFET high-side switch can be fully driven by a ground-referenced GPIO. The required VGS must be maintained relative to the moving source voltage.
+</div>
+</div>
+
+<div class="card">
+<h2>7. MOSFET Switching an LED</h2>
+
+<svg class="diagram" viewBox="0 0 750 350">
+<rect x="10" y="10" width="730" height="330" rx="12" fill="#f8fbff" stroke="#cbd5e1"/>
+<text x="375" y="42" text-anchor="middle" font-size="22" fill="#174ea6" font-weight="bold">NMOS LED Driver</text>
+
+<text x="130" y="90" font-size="18">+5V</text>
+<line x1="160" y1="110" x2="160" y2="140" stroke="#334155" stroke-width="3"/>
+<rect x="130" y="140" width="60" height="50" rx="6" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+<text x="160" y="170" text-anchor="middle">R</text>
+<line x1="160" y1="190" x2="160" y2="215" stroke="#334155" stroke-width="3"/>
+
+<circle cx="160" cy="235" r="20" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/>
+<text x="160" y="241" text-anchor="middle" font-size="15">LED</text>
+<line x1="160" y1="255" x2="160" y2="275" stroke="#334155" stroke-width="3"/>
+
+<rect x="130" y="275" width="60" height="45" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+<text x="160" y="303" text-anchor="middle">NMOS</text>
+
+<line x1="160" y1="320" x2="160" y2="330" stroke="#334155" stroke-width="3"/>
+<text x="250" y="140" font-size="18">LED current limited by R</text>
+<text x="250" y="185" font-size="18">MOSFET controlled by GPIO</text>
+<text x="250" y="230" font-size="18">GPIO HIGH → ON</text>
+<text x="250" y="275" font-size="18">GPIO LOW → OFF</text>
+</svg>
+
+<h3>LED resistor calculation</h3>
+<p><strong>R = (VS − VF − VDS)/ILED</strong></p>
+
+<h3>Example</h3>
+<ul>
+<li>Supply = 5V</li>
+<li>LED forward voltage = 2V</li>
+<li>Target current = 10mA</li>
+<li>MOSFET ON voltage drop assumed negligible for this estimate</li>
+</ul>
+
+<p>R ≈ (5 − 2)/0.01</p>
+<p>R ≈ 300Ω</p>
+<p>A standard resistor such as 330Ω could be considered, with the actual LED current verified.</p>
+</div>
+
+<div class="card">
+<h2>8. MOSFET Switching a Relay</h2>
+<p>A relay coil is inductive. When current through the coil is interrupted, the collapsing magnetic field can produce a voltage transient.</p>
+
+<svg class="diagram" viewBox="0 0 850 460">
+<rect x="10" y="10" width="830" height="440" rx="12" fill="#f8fbff" stroke="#cbd5e1"/>
+<text x="425" y="42" text-anchor="middle" font-size="22" fill="#174ea6" font-weight="bold">Low-Side Relay Driver with Flyback Diode</text>
+
+<text x="120" y="95" font-size="18">+12V</text>
+<line x1="150" y1="110" x2="150" y2="150" stroke="#334155" stroke-width="3"/>
+
+<rect x="110" y="150" width="80" height="110" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="3"/>
+<text x="150" y="195" text-anchor="middle" font-size="18">Relay</text>
+<text x="150" y="225" text-anchor="middle" font-size="16">Coil</text>
+
+<line x1="150" y1="260" x2="150" y2="300" stroke="#334155" stroke-width="3"/>
+<rect x="110" y="300" width="80" height="100" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/>
+<text x="150" y="345" text-anchor="middle" font-size="18">NMOS</text>
+<line x1="150" y1="400" x2="150" y2="420" stroke="#334155" stroke-width="3"/>
+
+<line x1="80" y1="150" x2="80" y2="260" stroke="#2563eb" stroke-width="3"/>
+<line x1="80" y1="150" x2="110" y2="150" stroke="#2563eb" stroke-width="3"/>
+<line x1="80" y1="260" x2="150" y2="260" stroke="#2563eb" stroke-width="3"/>
+<polygon points="60,195 80,195 70,185 70,205" fill="#2563eb"/>
+<text x="30" y="140" font-size="16" fill="#2563eb">DIODE</text>
+
+<line x1="190" y1="350" x2="280" y2="350" stroke="#334155" stroke-width="3"/>
+<rect x="280" y="330" width="120" height="40" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+<text x="340" y="355" text-anchor="middle" font-size="17">GPIO</text>
+
+<text x="480" y="130" font-size="18" font-weight="bold">Flyback diode</text>
+<text x="480" y="170" font-size="17">Cathode → coil positive</text>
+<text x="480" y="210" font-size="17">Anode → MOSFET drain / coil negative</text>
+<text x="480" y="270" font-size="17">Provides recirculation path</text>
+<text x="480" y="310" font-size="17">when switch turns OFF.</text>
+<text x="480" y="370" font-size="17">Diode must be appropriately rated.</text>
+</svg>
+
+<h3>Relay driver operation</h3>
+<ol>
+<li>GPIO HIGH drives the MOSFET gate.</li>
+<li>MOSFET turns ON.</li>
+<li>Current flows through the relay coil.</li>
+<li>Relay energizes.</li>
+<li>When MOSFET turns OFF, the flyback diode provides a current path for the coil current as it decays.</li>
+</ol>
+
+<div class="warn">
+The flyback diode must be connected with its cathode to the coil's positive supply and its anode to the low-side switching node. Incorrect polarity can cause a supply short. Select diode current and reverse-voltage ratings appropriately. A simple diode may slow relay release; other suppression methods may be needed when faster release is required.
+</div>
+</div>
+
+<div class="card">
+<h2>9. MOSFET Switching a DC Motor</h2>
+<p>DC motors are inductive loads. Low-side MOSFET switching is commonly used for simple ON/OFF control and PWM control.</p>
+
+<h3>Requirements</h3>
+<ul>
+<li>MOSFET rated for motor voltage and current.</li>
+<li>Suitable gate drive.</li>
+<li>Transient protection.</li>
+<li>Current and thermal margin.</li>
+<li>Appropriate wiring and decoupling.</li>
+<li>Flyback diode or other suitable suppression when appropriate to the topology.</li>
+</ul>
+
+<p>For a brushed DC motor controlled with PWM, the motor's inductance and mechanical inertia help smooth current and speed response. The switching circuit still needs suitable protection and current handling.</p>
+</div>
+
+<div class="card">
+<h2>10. Flyback Diode Operation</h2>
+
+<svg class="diagram" viewBox="0 0 800 350">
+<rect x="10" y="10" width="780" height="330" rx="12" fill="#f8fbff" stroke="#cbd5e1"/>
+<text x="400" y="42" text-anchor="middle" font-size="22" fill="#174ea6" font-weight="bold">Inductive Load Protection</text>
+
+<rect x="120" y="90" width="150" height="90" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="3"/>
+<text x="195" y="140" text-anchor="middle" font-size="20">Inductive Load</text>
+
+<line x1="270" y1="135" x2="350" y2="135" stroke="#334155" stroke-width="3"/>
+<rect x="350" y="110" width="100" height="50" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/>
+<text x="400" y="140" text-anchor="middle" font-size="18">Switch</text>
+
+<line x1="450" y1="135" x2="520" y2="135" stroke="#334155" stroke-width="3"/>
+<text x="535" y="140" font-size="18">Ground</text>
+
+<line x1="120" y1="90" x2="120" y2="60" stroke="#2563eb" stroke-width="3"/>
+<line x1="120" y1="60" x2="270" y2="60" stroke="#2563eb" stroke-width="3"/>
+<line x1="270" y1="60" x2="270" y2="90" stroke="#2563eb" stroke-width="3"/>
+
+<text x="380" y="220" text-anchor="middle" font-size="18">Inductor current cannot change instantaneously.</text>
+<text x="380" y="255" text-anchor="middle" font-size="18">Switch OFF → voltage transient.</text>
+<text x="380" y="290" text-anchor="middle" font-size="18">Suppression limits circuit stress.</text>
+</svg>
+
+<h3>Protection options</h3>
+<ul>
+<li>Flyback diode.</li>
+<li>TVS diode.</li>
+<li>RC snubber.</li>
+<li>Other application-specific suppression networks.</li>
+</ul>
+
+<p>Protection choice depends on the load, switching speed, voltage ratings and desired transient behavior.</p>
+</div>
+
+<div class="card">
+<h2>11. PWM Load Control</h2>
+<p>PWM switches the MOSFET rapidly to control average power delivered to the load.</p>
+
+<label>Duty cycle: <span id="dutyText">50</span>%</label>
+<input type="range" id="duty" min="0" max="100" value="50">
+
+<label>Supply voltage (V)</label>
+<input type="number" id="supply" value="12" min="0" step="0.1">
+
+<label>Switching frequency (Hz)</label>
+<input type="number" id="freq" value="1000" min="1" step="1">
+
+<canvas id="pwmCanvas" width="850" height="300"></canvas>
+<div id="pwmResult" class="note"></div>
+
+<p>For an ideal switch with a resistive load, the average switched voltage is approximately D × VSupply. The actual load response depends on its characteristics.</p>
+</div>
+
+<div class="card">
+<h2>12. Gate-Drive Power</h2>
+<p>Gate-drive power is approximately:</p>
+<p><strong>Pgate ≈ Qg × VGS × f</strong></p>
+
+<h3>Example</h3>
+<ul>
+<li>Qg = 40nC</li>
+<li>VGS = 10V</li>
+<li>f = 100kHz</li>
+</ul>
+
+<p>Pgate = 40 × 10⁻⁹ × 10 × 100 × 10³</p>
+<p><strong>Pgate ≈ 0.04W</strong></p>
+
+<p>This represents an approximate gate-drive energy requirement per second. It does not include all driver losses or other MOSFET losses.</p>
+</div>
+
+<div class="card">
+<h2>13. MOSFET Conduction Loss</h2>
+<p><strong>Pcond = ID² × RDS(on)</strong></p>
+
+<h3>Example</h3>
+<ul>
+<li>Load current = 4A</li>
+<li>RDS(on) = 40mΩ</li>
+</ul>
+
+<p>Pcond = 4² × 0.04</p>
+<p>Pcond = 16 × 0.04</p>
+<p><strong>Pcond = 0.64W</strong></p>
+
+<p>ON-state voltage drop:</p>
+<p>VDS = ID × RDS(on) = 4 × 0.04 = <strong>0.16V</strong></p>
+</div>
+
+<div class="card">
+<h2>14. Switching Loss</h2>
+<p>Approximate switching-overlap loss:</p>
+<p><strong>Pswitch ≈ ½ × VDS × ID × (tr + tf) × f</strong></p>
+
+<h3>Example</h3>
+<ul>
+<li>VDS = 12V</li>
+<li>ID = 3A</li>
+<li>tr + tf = 100ns</li>
+<li>f = 20kHz</li>
+</ul>
+
+<p>Pswitch ≈ 0.5 × 12 × 3 × 100 × 10⁻⁹ × 20 × 10³</p>
+<p><strong>Pswitch ≈ 0.036W</strong></p>
+
+<div class="note">
+Actual switching loss depends on waveforms, gate drive, load, parasitics, reverse recovery, Miller effect and circuit layout.
+</div>
+</div>
+
+<div class="card">
+<h2>15. Interactive MOSFET Load-Switch Calculator</h2>
+
+<label>Supply voltage (V)</label>
+<input type="number" id="calcV" value="12" min="0" step="0.1">
+
+<label>Load current (A)</label>
+<input type="number" id="calcI" value="2" min="0" step="0.1">
+
+<label>RDS(on) (mΩ)</label>
+<input type="number" id="calcR" value="50" min="0" step="1">
+
+<label>Gate charge (nC)</label>
+<input type="number" id="calcQg" value="40" min="0" step="1">
+
+<label>Gate drive voltage (V)</label>
+<input type="number" id="calcGate" value="10" min="0" step="0.1">
+
+<label>Switching frequency (Hz)</label>
+<input type="number" id="calcF" value="20000" min="0" step="100">
+
+<label>Total transition time (ns)</label>
+<input type="number" id="calcT" value="100" min="0" step="1">
+
+<button onclick="calculate()">Calculate</button>
+<div id="calcResult" class="note">Enter parameters and click Calculate.</div>
+</div>
+
+<div class="card">
+<h2>16. MOSFET Selection Checklist</h2>
+<ul>
+<li>VDS rating with appropriate margin.</li>
+<li>Drain current and realistic thermal conditions.</li>
+<li>RDS(on) at actual VGS.</li>
+<li>Qg and driver capability.</li>
+<li>Maximum VGS rating.</li>
+<li>Package and thermal resistance.</li>
+<li>Safe operating area.</li>
+<li>Body diode behavior.</li>
+<li>Transient protection requirements.</li>
+<li>Load type: resistive, inductive or capacitive.</li>
+<li>Switching frequency and desired speed.</li>
+<li>PCB layout, grounding and decoupling.</li>
+</ul>
+</div>
+
+<div class="card">
+<h2>17. Practical Lab: Relay Driver</h2>
+<h3>Objective</h3>
+<p>Build and test a low-side NMOS relay driver using a flyback diode.</p>
+
+<h3>Components</h3>
+<ul>
+<li>Logic-level NMOS.</li>
+<li>Low-voltage DC relay.</li>
+<li>Flyback diode.</li>
+<li>Gate resistor.</li>
+<li>Gate pull-down resistor.</li>
+<li>GPIO or low-voltage signal source.</li>
+<li>Low-voltage DC supply.</li>
+<li>Multimeter.</li>
+</ul>
+
+<h3>Procedure</h3>
+<ol>
+<li>Identify MOSFET pinout from datasheet.</li>
+<li>Connect source to circuit ground.</li>
+<li>Connect relay coil between positive supply and drain.</li>
+<li>Connect flyback diode across the relay coil with cathode to positive and anode to drain.</li>
+<li>Connect gate through the series gate resistor.</li>
+<li>Connect pull-down between gate and source.</li>
+<li>Apply a LOW gate signal and observe relay OFF.</li>
+<li>Apply a HIGH gate signal and observe relay activation.</li>
+<li>Measure VGS and VDS.</li>
+<li>Observe the behavior when switching the relay OFF.</li>
+</ol>
+
+<h3>Expected result</h3>
+<ul>
+<li>Gate LOW: relay OFF.</li>
+<li>Gate HIGH: relay ON if the MOSFET is adequately driven.</li>
+<li>Flyback diode helps limit the coil turn-off voltage.</li>
+<li>Proper gate resistors ensure predictable control.</li>
+</ul>
+
+<div class="warn">Use low-voltage DC only. Do not use mains voltage. Observe relay, diode, MOSFET and supply ratings.</div>
+</div>
+
+<div class="card">
+<h2>18. Troubleshooting</h2>
+<table>
+<tr><th>Problem</th><th>Possible cause</th><th>Solution</th></tr>
+<tr><td>Load does not turn ON</td><td>Insufficient VGS</td><td>Verify gate drive and MOSFET specifications.</td></tr>
+<tr><td>MOSFET overheats</td><td>High RDS(on), poor drive or excessive current</td><td>Evaluate conduction and switching losses.</td></tr>
+<tr><td>Relay damages MOSFET</td><td>Transient voltage</td><td>Verify flyback protection and voltage ratings.</td></tr>
+<tr><td>MCU resets</td><td>Supply disturbances or ground issues</td><td>Review decoupling, wiring and PCB layout.</td></tr>
+<tr><td>Gate oscillation</td><td>Ringing, parasitic inductance or poor layout</td><td>Review gate resistor and layout.</td></tr>
+<tr><td>Slow switching</td><td>High gate charge or weak driver</td><td>Review driver capability and gate resistor.</td></tr>
+<tr><td>Load remains ON at reset</td><td>Floating gate or incorrect logic</td><td>Use pull-down and defined startup state.</td></tr>
+<tr><td>High-side switch does not fully turn ON</td><td>Insufficient gate-to-source voltage</td><td>Use an appropriate driver topology.</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h2>19. Placement Interview Questions</h2>
+<ol>
+<li>What is a MOSFET gate driver?</li>
+<li>Why is gate charge important?</li>
+<li>Can a GPIO directly drive a MOSFET?</li>
+<li>What is a gate resistor?</li>
+<li>Why is a pull-down resistor used?</li>
+<li>What is low-side switching?</li>
+<li>What is high-side switching?</li>
+<li>Why is a PMOS commonly used for simple high-side switching?</li>
+<li>Why may an N-channel high-side MOSFET require a driver?</li>
+<li>What is a flyback diode?</li>
+<li>How should a flyback diode be connected across a relay coil?</li>
+<li>Why does a relay coil generate a transient when switched OFF?</li>
+<li>How is PWM used for load control?</li>
+<li>What is MOSFET conduction loss?</li>
+<li>What is switching loss?</li>
+<li>What is gate-drive power?</li>
+<li>What is the importance of RDS(on)?</li>
+<li>Why is thermal design necessary?</li>
+<li>What are the advantages of a logic-level MOSFET?</li>
+<li>How do you troubleshoot a MOSFET driver circuit?</li>
+</ol>
+</div>
+
+<div class="card">
+<h2>20. Practice Problems</h2>
+<ol>
+<li>A gate driver supplies 5V through a 25Ω resistor. Estimate the initial peak gate current using the simplified model.</li>
+<li>A MOSFET has Qg = 50nC, VGS = 10V and f = 100kHz. Estimate gate-drive power.</li>
+<li>A MOSFET carries 5A with RDS(on) = 20mΩ. Calculate conduction loss.</li>
+<li>Estimate switching loss for VDS = 24V, ID = 2A, tr + tf = 150ns and f = 20kHz.</li>
+<li>Explain the correct orientation of a flyback diode across a low-side relay driver.</li>
+<li>Explain the difference between low-side and high-side switching.</li>
+<li>Explain why an MCU GPIO may not be sufficient for a high-Qg MOSFET.</li>
+<li>Explain the purpose of a gate pull-down resistor.</li>
+</ol>
+</div>
+
+<div class="card">
+<h2>21. Summary</h2>
+<ul>
+<li>Gate drivers provide adequate gate voltage and current for switching.</li>
+<li>Low-side NMOS switching is a common load-control topology.</li>
+<li>PMOS devices can simplify high-side switching.</li>
+<li>N-channel high-side switching often requires a specialized driver.</li>
+<li>Gate resistor controls switching behavior.</li>
+<li>Pull-down resistors prevent floating gates.</li>
+<li>Flyback diodes protect against inductive turn-off transients.</li>
+<li>Conduction, switching and gate-drive losses must be evaluated.</li>
+<li>Thermal design and transient protection are important.</li>
+</ul>
+</div>
+
+<div class="card">
+<h2>22. Navigation</h2>
+<button onclick="location.href='../../index.html'">Portal Home</button>
+<button onclick="location.href='../analog-electronics.html'">Analog Electronics Course</button>
+<button onclick="location.href='index.html'">Chapter 7 Index</button>
+<button onclick="location.href='L10_FET_vs_BJT_Comparison_and_Applications.html'">Previous Lecture</button>
+<button onclick="location.href='../ch08_Feedback_and_Power_Amplifiers/index.html'">Next Chapter</button>
+</div>
+
+</div>
+
+<footer>
+<p>NS Learning Hub | Analog Electronics | Field Effect Transistors</p>
+</footer>
+
+<script>
+const duty=document.getElementById("duty");
+const supply=document.getElementById("supply");
+const freq=document.getElementById("freq");
+const pwmCanvas=document.getElementById("pwmCanvas");
+const pctx=pwmCanvas.getContext("2d");
+
+function drawPWM(){
+ const d=parseFloat(duty.value);
+ const v=parseFloat(supply.value);
+ const f=parseFloat(freq.value);
+
+ document.getElementById("dutyText").textContent=d;
+
+ const W=pwmCanvas.width,H=pwmCanvas.height;
+ pctx.clearRect(0,0,W,H);
+
+ const left=60,right=30,top=35,bottom=50;
+ const plotW=W-left-right,plotH=H-top-bottom;
+ const yLow=H-bottom;
+ const yHigh=top+20;
+
+ pctx.strokeStyle="#334155";
+ pctx.lineWidth=2;
+ pctx.beginPath();
+ pctx.moveTo(left,top);
+ pctx.lineTo(left,yLow);
+ pctx.lineTo(W-right,yLow);
+ pctx.stroke();
+
+ pctx.fillStyle="#334155";
+ pctx.font="16px Arial";
+ pctx.fillText("Voltage (V)",10,25);
+ pctx.fillText("Time",W-60,H-15);
+
+ const periods=3;
+ const periodW=plotW/periods;
+ const dutyW=periodW*d/100;
+
+ pctx.strokeStyle="#2563eb";
+ pctx.lineWidth=3;
+ pctx.beginPath();
+ pctx.moveTo(left,yLow);
+ for(let i=0;i<periods;i++){
+  let start=left+i*periodW;
+  pctx.lineTo(start,yLow);
+  pctx.lineTo(start,yHigh);
+  pctx.lineTo(start+dutyW,yHigh);
+  pctx.lineTo(start+dutyW,yLow);
+  pctx.lineTo(start+periodW,yLow);
+ }
+ pctx.stroke();
+
+ pctx.fillStyle="#2563eb";
+ pctx.fillText(v.toFixed(2)+" V",left+5,yHigh-10);
+ pctx.fillText("0 V",left+5,yLow-10);
+
+ const avg=v*d/100;
+ document.getElementById("pwmResult").innerHTML=
+ "<strong>Duty cycle:</strong> "+d.toFixed(1)+"%<br>"+
+ "<strong>Supply voltage:</strong> "+v.toFixed(2)+" V<br>"+
+ "<strong>Ideal average switched voltage:</strong> "+avg.toFixed(3)+" V<br>"+
+ "<strong>Switching frequency:</strong> "+f.toFixed(0)+" Hz";
+}
+[duty,supply,freq].forEach(el=>el.addEventListener("input",drawPWM));
+drawPWM();
+
+function calculate(){
+ const V=parseFloat(document.getElementById("calcV").value);
+ const I=parseFloat(document.getElementById("calcI").value);
+ const R=parseFloat(document.getElementById("calcR").value)/1000;
+ const Qg=parseFloat(document.getElementById("calcQg").value)*1e-9;
+ const gate=parseFloat(document.getElementById("calcGate").value);
+ const f=parseFloat(document.getElementById("calcF").value);
+ const T=parseFloat(document.getElementById("calcT").value)*1e-9;
+
+ if([V,I,R,Qg,gate,f,T].some(x=>!Number.isFinite(x)||x<0)){
+  document.getElementById("calcResult").innerHTML="Please enter valid non-negative values.";
+  return;
+ }
+
+ const pcond=I*I*R;
+ const pswitch=0.5*V*I*T*f;
+ const pgate=Qg*gate*f;
+ const vdrop=I*R;
+ const total=pcond+pswitch;
+
+ document.getElementById("calcResult").innerHTML=
+ "<strong>Conduction loss:</strong> "+pcond.toFixed(4)+" W<br>"+
+ "<strong>Approx. switching loss:</strong> "+pswitch.toFixed(4)+" W<br>"+
+ "<strong>Approx. gate-drive power:</strong> "+pgate.toFixed(4)+" W<br>"+
+ "<strong>Estimated sum of MOSFET conduction and switching loss:</strong> "+total.toFixed(4)+" W<br>"+
+ "<strong>ON-state voltage drop:</strong> "+vdrop.toFixed(4)+" V<br>"+
+ "<em>Gate-drive power is estimated separately. The loss estimate does not include all circuit losses.</em>";
+}
+</script>
+</body>
+</html>
